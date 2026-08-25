@@ -103,6 +103,7 @@ import Testing
             func contentsOfDirectory(at url: URL) throws -> [URL] { [] }
             func allFiles(under url: URL) throws -> [URL] { [] }
             func fileSize(at url: URL) throws -> Int64 { 0 }
+            func readFile(at url: URL, chunk: (Data) throws -> Void) throws {}
         }
         let source = Source(name: "Ext", rootPath: "/Volumes/Gone")
         #expect(source.isOnline(using: FakeAccess(reachable: true)))

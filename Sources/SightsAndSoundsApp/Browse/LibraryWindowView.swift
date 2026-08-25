@@ -28,7 +28,11 @@ struct LibraryWindowView: View {
         .task {
             guard model == nil else { return }
             do {
-                model = BrowseModel(libraryID: libraryID, library: try app.library(for: libraryID))
+                model = BrowseModel(
+                    libraryID: libraryID,
+                    library: try app.library(for: libraryID),
+                    runner: try app.runner(for: libraryID),
+                    onWorkFinished: { [weak app] in app?.signalMaintenance(for: libraryID) })
             } catch {
                 openError = "\(error)"
             }
@@ -66,6 +70,10 @@ struct BrowseView: View {
                     showCategoryManager = true
                 }
                 .help("Edit this library's categories and tags")
+            }
+            ToolbarItem {
+                TasksWindowButton()
+                    .help("Imports, hashing, thumbnails — across all libraries")
             }
         }
         .sheet(isPresented: $showCategoryManager) {

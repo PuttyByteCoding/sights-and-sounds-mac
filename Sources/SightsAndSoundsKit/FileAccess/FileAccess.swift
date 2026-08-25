@@ -25,6 +25,10 @@ public protocol FileAccess: Sendable {
 
     /// Size of the file in bytes.
     func fileSize(at url: URL) throws -> Int64
+
+    /// Stream a file's contents in chunks (hashing, checksumming). The
+    /// whole file never sits in memory.
+    func readFile(at url: URL, chunk: (Data) throws -> Void) throws
 }
 
 /// The real implementation over `FileManager`.
@@ -56,5 +60,13 @@ public struct LiveFileAccess: FileAccess {
     public func fileSize(at url: URL) throws -> Int64 {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         return Int64(values.fileSize ?? 0)
+    }
+
+    public func readFile(at url: URL, chunk: (Data) throws -> Void) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        while let data = try handle.read(upToCount: 1 << 20), !data.isEmpty {
+            try chunk(data)
+        }
     }
 }

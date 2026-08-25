@@ -28,6 +28,20 @@ public actor JobRunner {
         return record
     }
 
+    /// Enqueue unless a job of this kind is already queued or running —
+    /// the signal-driven pattern: signals arrive freely, work never
+    /// duplicates. Returns nil when a pending job made this a no-op.
+    @discardableResult
+    public func enqueueUnlessPending(_ type: any Job.Type, payload: Data? = nil) throws -> JobRecord? {
+        let pending = try library.writer.read { db in
+            try JobRecord
+                .filter(sql: "kind = ? AND state IN ('queued','running')", arguments: [type.kind])
+                .fetchCount(db)
+        }
+        guard pending == 0 else { return nil }
+        return try enqueue(type, payload: payload)
+    }
+
     /// Ask a queued or running job to stop. Queued jobs are cancelled
     /// before they start; running jobs stop at their next cooperative
     /// check.

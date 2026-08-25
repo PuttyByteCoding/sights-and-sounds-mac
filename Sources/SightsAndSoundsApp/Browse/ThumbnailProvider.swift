@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import SightsAndSoundsKit
 
 /// On-demand grid thumbnails via AVAssetImageGenerator, cached to disk.
 ///
@@ -19,10 +20,8 @@ actor ThumbnailProvider {
     private let memory = NSCache<NSString, NSData>()
     private var inFlight: [String: Task<Data?, Never>] = [:]
 
-    private let cacheRoot: URL = {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("SightsAndSounds/Thumbnails", isDirectory: true)
-    }()
+    // Shared with ThumbnailBatchJob — one definition of "already generated".
+    private let cacheRoot: URL = ThumbnailStore.root
 
     /// Cached JPEG bytes, generating them if needed and possible.
     /// `fileURL` nil (offline source) still serves from cache.
@@ -32,9 +31,7 @@ actor ThumbnailProvider {
 
         if let existing = inFlight[key] { return await existing.value }
         let task = Task<Data?, Never> { [cacheRoot] in
-            let diskURL = cacheRoot
-                .appendingPathComponent(libraryID.uuidString, isDirectory: true)
-                .appendingPathComponent(itemID.uuidString + ".jpg")
+            let diskURL = ThumbnailStore.url(libraryID: libraryID, itemID: itemID)
 
             if let data = try? Data(contentsOf: diskURL) { return data }
             guard let fileURL else { return nil }

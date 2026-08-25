@@ -31,16 +31,44 @@ final class BrowseModel {
 
     private let fileAccess: any FileAccess = LiveFileAccess()
     private let jobRunner: JobRunner
+    private let onWorkFinished: () -> Void
+    // nonisolated(unsafe): only appended in init and drained in deinit;
+    // NotificationCenter removal is thread-safe.
+    nonisolated(unsafe) private var mountObservers: [any NSObjectProtocol] = []
 
     /// Sources with an import in flight, and their progress line.
     private(set) var importStatus: [UUID: String] = [:]
 
-    init(libraryID: UUID, library: LibraryDatabase) {
+    init(
+        libraryID: UUID, library: LibraryDatabase, runner: JobRunner,
+        onWorkFinished: @escaping () -> Void = {}
+    ) {
         self.libraryID = libraryID
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
-        self.jobRunner = JobRunner(library: library)
+        self.jobRunner = runner
+        self.onWorkFinished = onWorkFinished
         refreshAll()
+
+        // Mount/unmount drives online-state transitions and wakes the
+        // workers — the reachability check stays the fallback truth.
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+            mountObservers.append(center.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.refreshAll()
+                    self?.onWorkFinished()
+                }
+            })
+        }
+    }
+
+    deinit {
+        for observer in mountObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
     }
 
     func refreshAll() {
@@ -144,6 +172,9 @@ final class BrowseModel {
             }
             importStatus[source.id] = nil
             refreshAll()
+            // Import finishing is a worker signal: new rows want hashes
+            // and thumbnails.
+            onWorkFinished()
         }
     }
 
