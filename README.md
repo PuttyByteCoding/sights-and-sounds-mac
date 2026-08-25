@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 3a: browse workspace
+## Status — Phase 3: browse and playback
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -42,7 +42,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     the migrator must carry; the engine itself ports in Phase 4.
   - App shell: library list + the New Library flow (name → template →
     review → create).
-- ✅ **Phase 3a** (this): the browse workspace.
+- ✅ **Phase 3a** (merged): the browse workspace.
   - One library per window; the workspace is a shell composing sidebar,
     grid and player as independent scenes.
   - Sidebar: sources with observed online/offline state (enable/disable
@@ -51,8 +51,21 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Filtered grid backed entirely by the SQL compiler; thumbnails via
     AVAssetImageGenerator with a disk cache, so offline sources still
     look complete; offline items badge and refuse playback.
-  - Basic native playback (AVKit) with clip in-point seek. Scrub
-    previews, waveforms and the keyboard map land in Phase 3b.
+  - Basic native playback with clip in-point seek.
+- ✅ **Phase 3b** (this): the player, finished.
+  - Custom transport (AVPlayerLayer): scrubber with hover **scrub
+    previews** (AVAssetImageGenerator replaces the sprite sheets),
+    **waveform timelines** for audio (streamed PCM decode, disk-cached),
+    clip-range shading with out-point loop-back, playback-rate menu.
+  - **The keyboard map**, ported from the web app's decision table:
+    1/4/7 back · 3/6/9 forward (2s/30s/240s defaults, settings-backed),
+    5/Space play-pause, 0 start, 8/numpad− near end, Shift+digit and
+    numpad variants, ←/→ walk the filtered listing, F/R/D/W flag
+    toggles, Escape closes.
+  - Progress recording on the media item: resume position (cleared near
+    either edge), lastWatchedAt, watch tally + completed on 90% crossing.
+  - Privacy guard in CI: library databases and snapshot exports can
+    never be tracked (`scripts/check-no-private-data.sh`).
 
 ## Building
 
