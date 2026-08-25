@@ -43,6 +43,7 @@ struct LibraryWindowView: View {
 struct BrowseView: View {
     @Environment(BrowseModel.self) private var model
     @State private var showCategoryManager = false
+    @State private var showDuplicates = false
 
     var body: some View {
         @Bindable var model = model
@@ -72,12 +73,27 @@ struct BrowseView: View {
                 .help("Edit this library's categories and tags")
             }
             ToolbarItem {
+                Button {
+                    showDuplicates = true
+                } label: {
+                    Label("Duplicates", systemImage: "rectangle.on.rectangle")
+                        .badge(model.pendingDuplicateCount)
+                }
+                .help(model.pendingDuplicateCount > 0
+                    ? "\(model.pendingDuplicateCount) duplicate pairs awaiting review"
+                    : "No pending duplicate pairs")
+            }
+            ToolbarItem {
                 TasksWindowButton()
                     .help("Imports, hashing, thumbnails — across all libraries")
             }
         }
         .sheet(isPresented: $showCategoryManager) {
             CategoryManagerView()
+                .environment(model)
+        }
+        .sheet(isPresented: $showDuplicates) {
+            DuplicatesView()
                 .environment(model)
         }
         .frame(minWidth: 900, minHeight: 560)

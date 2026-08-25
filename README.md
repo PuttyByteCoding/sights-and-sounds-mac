@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 6a: duplicate detection
+## Status — Phase 6: duplicates and compare
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -106,7 +106,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     share it, so cancellation works from anywhere.
   - Background Tasks window: every library's jobs, live progress,
     summaries, cancellation.
-- ✅ **Phase 6a** (this): duplicate detection.
+- ✅ **Phase 6a** (merged): duplicate detection.
   - The fingerprint matcher, ported with its measured thresholds intact
     (BER 0.30 gate, the 25s reliability floor, the calibrated 14-bit
     relative prefilter) — including both survey-hardened behaviors: the
@@ -116,7 +116,19 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Three sweeps on the maintenance signal: identical hashes, audio
     fingerprint capture (fpcalc; a missing tool is a note with install
     guidance, not a failure), and prefiltered fingerprint matching.
-  - Compare view, quality scoring and decide-and-merge follow as 6b.
+  - Compare view, quality scoring and decide-and-merge landed as 6b.
+- ✅ **Phase 6b** (this): compare and decide.
+  - QualityScore ported: scaled composition (missing signal analysis is
+    a non-special case), tier tables intact, blockiness deliberately an
+    unscored annotation until a real calibration exists.
+  - Decide semantics ported: the library recomputes mergeability (never
+    trusts the caller), single-value categories claim in-loop so the
+    keeper's pick always wins exactly once, a deletion-staged keeper is
+    refused, skipped merges are explained. Loser is flag-marked; the
+    physical staging move joins in Phase 7.
+  - Review UI: candidate queue with source/confidence, side-by-side
+    compare with thumbnails, metadata, score breakdowns, tag carry-over
+    toggles, Keep/Not Duplicates. Toolbar badge shows pending count.
 
 ### Demo library
 
