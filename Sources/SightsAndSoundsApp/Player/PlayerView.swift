@@ -51,44 +51,101 @@ struct PlayerView: View {
         .onDisappear { model?.shutdown() }
     }
 
+    /// Option+digit reaches us as the layout's option glyph on most
+    /// keyboards; map the US row back to digits (and accept plain digits
+    /// for layouts that pass them through).
+    private static let optionDigitGlyphs: [Character: Int] = [
+        "¡": 1, "™": 2, "£": 3, "¢": 4, "∞": 5, "§": 6, "¶": 7, "•": 8, "ª": 9,
+    ]
+
     private func handle(_ press: KeyPress) -> Bool {
         guard let model else { return false }
         switch press.key {
         case .leftArrow: model.goPrevious(); return true
         case .rightArrow: model.goNext(); return true
-        case .escape: dismiss(); return true
-        default:
-            guard let character = press.characters.first else { return false }
-            return model.handle(
-                character: character,
-                shift: press.modifiers.contains(.shift),
-                numpad: press.modifiers.contains(.numericPad))
+        case .escape:
+            if model.showTagPanel { model.showTagPanel = false } else { dismiss() }
+            return true
+        default: break
         }
+
+        guard let character = press.characters.first else { return false }
+
+        // Alt+1…9: toggle the checkbox category's Nth tag.
+        if press.modifiers.contains(.option) {
+            let digit = Self.optionDigitGlyphs[character]
+                ?? character.wholeNumberValue.flatMap { (1...9).contains($0) ? $0 : nil }
+            if let digit { return model.toggleCheckboxTag(at: digit) }
+            return false
+        }
+
+        // T: tag panel (fixed key, matching the old map).
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
+           character.lowercased() == "t" {
+            model.showTagPanel.toggle()
+            return true
+        }
+
+        // F-key tag bindings fire regardless of shift (function keys never
+        // type text); letter bindings only without modifiers.
+        if let fMatch = press.key.character.unicodeScalars.first,
+           (0xF704...0xF70C).contains(fMatch.value) {  // NSF1FunctionKey…NSF9
+            let index = Int(fMatch.value - 0xF704) + 1
+            if model.handleBoundKey("F\(index)") { return true }
+        }
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
+           character.isLetter, model.handleBoundKey(String(character)) {
+            return true
+        }
+
+        return model.handle(
+            character: character,
+            shift: press.modifiers.contains(.shift),
+            numpad: press.modifiers.contains(.numericPad))
     }
 }
 
 private struct PlayerContent: View {
     @Environment(PlayerModel.self) private var model
+    @State private var showBindingsEditor = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Color.black
-                if let error = model.loadError {
-                    ContentUnavailableView(
-                        "Cannot Play", systemImage: "play.slash",
-                        description: Text(error))
-                } else if model.isAudio {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.secondary)
-                } else {
-                    PlayerSurface(player: model.player)
+        @Bindable var model = model
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Color.black
+                    if let error = model.loadError {
+                        ContentUnavailableView(
+                            "Cannot Play", systemImage: "play.slash",
+                            description: Text(error))
+                    } else if model.isAudio {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        PlayerSurface(player: model.player)
+                    }
                 }
+                TransportBar()
+                    .padding(10)
+                    .background(.bar)
             }
-            TransportBar()
-                .padding(10)
-                .background(.bar)
+            if model.showTagPanel {
+                TagPanelView()
+            }
+        }
+        .toolbar {
+            Button("Tags", systemImage: "tag") {
+                model.showTagPanel.toggle()
+            }
+            .help("Tag panel (T)")
+            Button("Key Bindings", systemImage: "keyboard") { showBindingsEditor = true }
+                .help("Bind keys to tags")
+        }
+        .sheet(isPresented: $showBindingsEditor) {
+            KeyBindingsEditor()
+                .environment(model)
         }
     }
 }

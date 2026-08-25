@@ -31,6 +31,19 @@ final class PlayerModel {
     var title: String { item?.fileName ?? "Player" }
     var isAudio: Bool { item?.kind == .audio }
 
+    // MARK: - Tagging state
+
+    var showTagPanel = false
+    private(set) var itemTags: [CategoryTags] = []
+    private(set) var panelVocabulary: [CategoryTags] = []
+    private(set) var boundKeys: [String: TagKeyBinding] = [:]
+
+    /// The category whose tags Alt+1…9 toggles: the first checkbox-mode
+    /// category by sort order (old app rule — exactly one gets the keys).
+    var checkboxCategory: CategoryTags? {
+        panelVocabulary.first { $0.category.displayAsCheckboxes }
+    }
+
     init(request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?) {
         self.library = library
         self.libraryID = request.libraryID
@@ -72,6 +85,7 @@ final class PlayerModel {
 
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
             installObserver()
+            refreshTagging()
 
             // Clips start at their in-point; everything else resumes.
             if let start = loaded.clipStartSeconds {
@@ -147,6 +161,68 @@ final class PlayerModel {
         } catch {
             loadError = "\(error)"
         }
+    }
+
+    // MARK: - Tagging
+
+    func refreshTagging() {
+        guard let item else { return }
+        do {
+            itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
+            panelVocabulary = try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) }
+            boundKeys = Dictionary(
+                uniqueKeysWithValues: try library.keyBindings().map { ($0.key, $0) })
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    func hasTag(_ tagID: UUID) -> Bool {
+        itemTags.contains { $0.tags.contains { $0.id == tagID } }
+    }
+
+    func toggleTag(_ tagID: UUID) {
+        guard let item else { return }
+        do {
+            _ = try library.toggleTag(tagID, on: item.id)
+            refreshTagging()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// Autocomplete-create: normalize, find-or-create, assign.
+    func addTag(named raw: String, categoryID: UUID) {
+        guard let item else { return }
+        do {
+            let tag = try library.ensureTag(named: raw, inCategory: categoryID)
+            try library.assignTag(tag.id, to: item.id)
+            refreshTagging()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// Alt+digit: toggle the Nth (1-based) tag of the checkbox category.
+    func toggleCheckboxTag(at digit: Int) -> Bool {
+        guard let entry = checkboxCategory, digit >= 1, digit <= entry.tags.count else { return false }
+        toggleTag(entry.tags[digit - 1].id)
+        return true
+    }
+
+    /// A user key binding: toggle the bound tag; when the binding says
+    /// advance and the tag was APPLIED (not removed), step to the next item.
+    func handleBoundKey(_ key: String) -> Bool {
+        let canonical = key.count == 1 ? key.lowercased() : key
+        guard let binding = boundKeys[canonical], let item else { return false }
+        do {
+            let applied = try library.toggleTag(binding.tagID, on: item.id)
+            refreshTagging()
+            if binding.advance && applied { goNext() }
+        } catch {
+            loadError = "\(error)"
+        }
+        return true
     }
 
     // MARK: - Playlist walking
