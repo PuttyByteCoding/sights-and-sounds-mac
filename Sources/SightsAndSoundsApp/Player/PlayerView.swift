@@ -335,8 +335,16 @@ private struct ScrubberView: View {
                 .padding(.vertical, 1)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 3))
         }
-        .offset(x: (fraction * width - 80).clamped(to: 0...(width - 160)), y: -78)
+        .offset(x: overlayX(fraction: fraction, width: width), y: -78)
         .allowsHitTesting(false)
+    }
+
+    /// Explicit CGFloat arithmetic — mixed Double/CGFloat expressions are
+    /// ambiguous to the CI toolchain (Xcode 16).
+    private func overlayX(fraction: Double, width: CGFloat) -> CGFloat {
+        let x = CGFloat(fraction) * width - 80
+        let upper = max(width - 160, 0)
+        return x.clamped(to: 0...upper)
     }
 
     private func requestPreview(at seconds: Double) {
