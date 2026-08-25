@@ -5,13 +5,13 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 1: libraries, sources, schema, jobs
+## Status — Phase 2: library creation
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
   two-library structural isolation, the `FileAccess` boundary, terminology
   guard in CI.
-- ✅ **Phase 1** (this): the schema that holds the whole product.
+- ✅ **Phase 1** (merged): the schema that holds the whole product.
   - `LibraryInfo` identity in each library file + the app-level registry
     (`AppDatabase`) that reconciles by library id when files move.
   - `Source` with real FK ownership (never path prefixes), source-relative
@@ -29,6 +29,19 @@ follow. Full context, locked decisions and the 11-phase plan live in
     `JobRecord`: state machine, progress, failure capture, cooperative
     cancellation. The web app implemented this thirteen times; here it
     exists once and every later operation is a conformance.
+- ✅ **Phase 2** (this): library creation.
+  - `LibraryPlan` — the editable review model both flows share: template
+    creation now, snapshot migration next. Rename, exclude, adjust;
+    nothing is written until the whole plan validates.
+  - Templates per the brief's sample table: Concerts, Learning (with the
+    Subject/Course/Lesson-as-flat-categories decision and Lesson Number
+    ordering field), Home Videos, Empty.
+  - `LibraryCreator` executes a reviewed plan: file, identity, vocabulary,
+    optional first source, registry entry.
+  - `analysisRule` storage (phase2 migration) — rules are authored data
+    the migrator must carry; the engine itself ports in Phase 4.
+  - App shell: library list + the New Library flow (name → template →
+    review → create).
 
 ## Building
 

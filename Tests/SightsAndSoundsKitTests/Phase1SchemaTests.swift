@@ -12,7 +12,7 @@ import Testing
 
     @Test func freshLibraryAppliesBothMigrations() throws {
         let library = try LibraryDatabase.openInMemory()
-        #expect(try library.appliedMigrations() == ["phase0", "phase1"])
+        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2"])
     }
 
     @Test func phase0DatabaseUpgradesToPhase1() throws {
@@ -29,7 +29,7 @@ import Testing
         try queue.close()
 
         let upgraded = try LibraryDatabase.open(at: url)
-        #expect(try upgraded.appliedMigrations() == ["phase0", "phase1"])
+        #expect(try upgraded.appliedMigrations() == ["phase0", "phase1", "phase2"])
         // Phase 1 tables exist and are usable.
         try upgraded.writer.write { db in
             try Source(name: "S", rootPath: "/tmp/media").insert(db)

@@ -352,6 +352,19 @@ public final class LibraryDatabase: Sendable {
                 index: "job_state_createdAt", on: "job", columns: ["state", "createdAt"])
         }
 
+        // Phase 2: persisted tag-analysis rules. Storage only — the engine
+        // ports in Phase 4 — but the table exists now so the migrator can
+        // carry the rules (authored data, the one thing the old snapshot
+        // gates call out as not self-healing).
+        migrator.registerMigration("phase2") { db in
+            try db.create(table: "analysisRule") { t in
+                t.primaryKey("id", .blob)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("matchJSON", .text).notNull()
+                t.column("actionsJSON", .text).notNull()
+            }
+        }
+
         return migrator
     }
 
