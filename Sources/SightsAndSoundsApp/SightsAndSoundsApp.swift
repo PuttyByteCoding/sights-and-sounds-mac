@@ -344,13 +344,14 @@ struct DemoLibraryButton: View {
                 try library.ensureInfo(name: "Demo Concerts")
                 let source = Source(name: "Demo Media", rootPath: mediaRoot.path)
 
-                var variant = 0
-                try DemoLibrarySeeder.seed(library: library, source: source) { path, kind in
+                try await DemoLibrarySeeder.seed(library: library, source: source) { path, kind in
                     let fileURL = mediaRoot.appendingPathComponent(path)
-                    variant += 1
+                    // Variant from the path bytes: deterministic, no shared
+                    // counter to capture.
+                    let variant = Int(path.utf8.reduce(UInt64(0)) { $0 &+ UInt64($1) } % 8)
                     switch kind {
                     case .video:
-                        try DemoMediaFactory.writeVideo(to: fileURL, variant: variant)
+                        try await DemoMediaFactory.writeVideo(to: fileURL, variant: variant)
                     case .audio:
                         try DemoMediaFactory.writeAudio(to: fileURL, variant: variant)
                     }

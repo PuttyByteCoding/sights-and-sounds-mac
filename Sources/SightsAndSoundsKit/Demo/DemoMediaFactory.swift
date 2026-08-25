@@ -6,6 +6,12 @@ import Foundation
 /// pipeline — thumbnails, scrub previews, waveforms, playback — with zero
 /// real data. Video: a few seconds of drifting color bars (H.264). Audio:
 /// a chord of sine waves (AAC).
+///
+/// Video synthesis is async and **serialized through a gate**: concurrent
+/// AVAssetWriter H.264 sessions starve the small software encoder on CI
+/// virtual machines, and blocking waits starve the cooperative thread
+/// pool — the combination hung CI for over an hour. One session at a
+/// time, suspending (never blocking) between frames, every wait bounded.
 public enum DemoMediaFactory {
     public struct GenerationError: Error, CustomStringConvertible {
         public let stage: String
@@ -13,12 +19,18 @@ public enum DemoMediaFactory {
     }
 
     /// Write a small MP4. `variant` shifts the palette so files are
-    /// visually distinct in the grid. Synchronous by design — the demo
-    /// flow runs it on a background task and the seeder's per-file
-    /// callback stays a plain closure.
+    /// visually distinct in the grid.
     public static func writeVideo(
         to url: URL, seconds: Double = 4, variant: Int = 0
-    ) throws {
+    ) async throws {
+        try await SerialGate.shared.withTurn {
+            try await writeVideoUnserialized(to: url, seconds: seconds, variant: variant)
+        }
+    }
+
+    private static func writeVideoUnserialized(
+        to url: URL, seconds: Double, variant: Int
+    ) async throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
@@ -43,8 +55,13 @@ public enum DemoMediaFactory {
 
         let frameCount = Int(seconds * Double(fps))
         for frame in 0..<frameCount {
+            // Bounded, suspending wait — a stalled encoder fails the write
+            // instead of hanging the process.
+            var waited = 0
             while !input.isReadyForMoreMediaData {
-                usleep(2000)
+                try await Task.sleep(for: .milliseconds(10))
+                waited += 1
+                if waited > 1_000 { throw GenerationError(stage: "encoder stalled") }
             }
             guard let pool = adaptor.pixelBufferPool else { throw GenerationError(stage: "bufferPool") }
             var pixelBuffer: CVPixelBuffer?
@@ -57,9 +74,7 @@ public enum DemoMediaFactory {
         }
 
         input.markAsFinished()
-        let done = DispatchSemaphore(value: 0)
-        writer.finishWriting { done.signal() }
-        done.wait()
+        await writer.finishWriting()
         guard writer.status == .completed else {
             throw GenerationError(stage: "finish: \(writer.error.map(String.init(describing:)) ?? "unknown")")
         }
@@ -95,7 +110,8 @@ public enum DemoMediaFactory {
     }
 
     /// Write a small M4A: a three-note chord with a slow amplitude swell,
-    /// pitched by variant — waveforms come out visibly different.
+    /// pitched by variant. Pure CPU (no encoder session, no callbacks) —
+    /// safe to stay synchronous.
     public static func writeAudio(
         to url: URL, seconds: Double = 5, variant: Int = 0
     ) throws {
@@ -126,5 +142,23 @@ public enum DemoMediaFactory {
         }
         pcmBuffer.frameLength = frameCount
         try file.write(from: pcmBuffer)
+    }
+}
+
+/// FIFO turn-taking for async work: unlike a bare actor (whose suspension
+/// points interleave), each turn fully completes before the next starts.
+actor SerialGate {
+    static let shared = SerialGate()
+
+    private var tail: Task<Void, Never> = Task {}
+
+    func withTurn<T: Sendable>(_ op: @Sendable @escaping () async throws -> T) async throws -> T {
+        let previous = tail
+        let turn = Task { () throws -> T in
+            await previous.value
+            return try await op()
+        }
+        tail = Task { _ = try? await turn.value }
+        return try await turn.value
     }
 }

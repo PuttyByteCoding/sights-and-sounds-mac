@@ -17,7 +17,7 @@ import Testing
         init() async throws {
             root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("sas-workers-\(UUID().uuidString)", isDirectory: true)
-            try DemoMediaFactory.writeVideo(
+            try await DemoMediaFactory.writeVideo(
                 to: root.appendingPathComponent("a.mp4"), seconds: 2, variant: 1)
             try DemoMediaFactory.writeAudio(
                 to: root.appendingPathComponent("b.m4a"), seconds: 2, variant: 1)
