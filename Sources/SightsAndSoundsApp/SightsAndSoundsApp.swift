@@ -28,6 +28,13 @@ struct SightsAndSoundsApp: App {
                     .environment(model)
             }
         }
+
+        // One dashboard across every library (workers run once and
+        // service them all).
+        Window("Background Tasks", id: "tasks") {
+            BackgroundTasksView()
+                .environment(model)
+        }
     }
 }
 
@@ -73,6 +80,41 @@ final class AppModel {
         try? appDatabase?.touchLastOpened(id)
         return library
     }
+
+    // ONE job runner per library, shared by windows and the dashboard —
+    // cancellation only works against the runner that owns the job.
+    private var runners: [UUID: JobRunner] = [:]
+
+    func runner(for libraryID: UUID) throws -> JobRunner {
+        if let existing = runners[libraryID] { return existing }
+        let runner = JobRunner(library: try library(for: libraryID))
+        runners[libraryID] = runner
+        Task {
+            await runner.register(ImportJob.self)
+            await runner.register(ContentHashJob.self)
+            await runner.register(ThumbnailBatchJob.self)
+        }
+        return runner
+    }
+
+    /// The signal: wake the library's workers. Sleeps-until-woken, never
+    /// polls — imports finishing and volumes mounting call this. Work is
+    /// decided from disk/db state inside the jobs; duplicate signals
+    /// collapse via enqueueUnlessPending.
+    func signalMaintenance(for libraryID: UUID) {
+        Task {
+            do {
+                let runner = try runner(for: libraryID)
+                _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+                _ = try await runner.enqueueUnlessPending(
+                    ThumbnailBatchJob.self,
+                    payload: JSONEncoder().encode(ThumbnailBatchJob.Payload(libraryID: libraryID)))
+                try await runner.runPending()
+            } catch {
+                loadError = "Maintenance failed: \(error)"
+            }
+        }
+    }
 }
 
 /// Identifies one item to play, across window boundaries, plus the
@@ -108,6 +150,7 @@ struct LibraryListView: View {
         .toolbar {
             Button("New Library…", systemImage: "plus") { showingNewLibrary = true }
             DemoLibraryButton()
+            TasksWindowButton()
         }
         .sheet(isPresented: $showingNewLibrary) {
             NewLibraryFlow()
@@ -301,13 +344,14 @@ struct DemoLibraryButton: View {
                 try library.ensureInfo(name: "Demo Concerts")
                 let source = Source(name: "Demo Media", rootPath: mediaRoot.path)
 
-                var variant = 0
-                try DemoLibrarySeeder.seed(library: library, source: source) { path, kind in
+                try await DemoLibrarySeeder.seed(library: library, source: source) { path, kind in
                     let fileURL = mediaRoot.appendingPathComponent(path)
-                    variant += 1
+                    // Variant from the path bytes: deterministic, no shared
+                    // counter to capture.
+                    let variant = Int(path.utf8.reduce(UInt64(0)) { $0 &+ UInt64($1) } % 8)
                     switch kind {
                     case .video:
-                        try DemoMediaFactory.writeVideo(to: fileURL, variant: variant)
+                        try await DemoMediaFactory.writeVideo(to: fileURL, variant: variant)
                     case .audio:
                         try DemoMediaFactory.writeAudio(to: fileURL, variant: variant)
                     }
@@ -324,6 +368,17 @@ struct DemoLibraryButton: View {
                 if let message { model.loadError = "Demo library failed: \(message)" }
                 model.refresh()
             }
+        }
+    }
+}
+
+
+struct TasksWindowButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Background Tasks", systemImage: "list.bullet.rectangle") {
+            openWindow(id: "tasks")
         }
     }
 }

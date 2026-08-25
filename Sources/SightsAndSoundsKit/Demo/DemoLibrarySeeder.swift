@@ -25,14 +25,14 @@ public enum DemoLibrarySeeder {
         showCount: Int = 18,
         audioShowCount: Int = 4,
         seed: UInt64 = 1,
-        makeFile: ((_ relativePath: String, _ kind: MediaKind) throws -> Int64?)? = nil
-    ) throws -> DemoSeedReport {
+        makeFile: (@Sendable (_ relativePath: String, _ kind: MediaKind) async throws -> Int64?)? = nil
+    ) async throws -> DemoSeedReport {
         var rng = DemoVocabulary.SeededGenerator(seed: seed)
         var report = DemoSeedReport()
 
         // Vocabulary via the same plan the app's creation flow writes.
         let plan = LibraryTemplate.concerts.plan(named: (try library.info()?.name) ?? "Demo")
-        try library.writer.write { db in try source.insert(db) }
+        try await library.writer.write { db in try source.insert(db) }
         _ = try writePlan(plan, into: library)
 
         // Look the created rows back up by name.
@@ -45,89 +45,139 @@ public enum DemoLibrarySeeder {
         else { throw DatabaseError(message: "concerts template shape changed") }
 
         // Bands, venues and years become tags up front.
-        var bandTags: [Tag] = []
-        var venueTags: [Tag] = []
+        let bandTags = DemoVocabulary.bands.enumerated().map { index, name in
+            Tag(tagCategoryID: bandCategory.id, name: name, sortOrder: index)
+        }
+        let venueTags = DemoVocabulary.venues.enumerated().map { index, name in
+            Tag(tagCategoryID: venueCategory.id, name: name, sortOrder: index)
+        }
         var yearTags: [UUID: Tag] = [:]  // keyed by year value
-        try library.writer.write { db in
-            for (index, name) in DemoVocabulary.bands.enumerated() {
-                let tag = Tag(tagCategoryID: bandCategory.id, name: name, sortOrder: index)
-                try tag.insert(db)
-                bandTags.append(tag)
-            }
-            for (index, name) in DemoVocabulary.venues.enumerated() {
-                let tag = Tag(tagCategoryID: venueCategory.id, name: name, sortOrder: index)
-                try tag.insert(db)
-                venueTags.append(tag)
-            }
+        try await library.writer.write { db in
+            for tag in bandTags + venueTags { try tag.insert(db) }
         }
         let recTypeTags = tagsByCategory[recTypeCategory.id] ?? []
 
-        // Shows: a dated folder per show, several files inside.
+        // Pass 1 — PLAN: every RNG decision, in the exact order the
+        // single-pass version made them, so a given seed still produces an
+        // identical library.
+        struct PlannedFile {
+            let item: MediaItem
+            let tagIDs: [UUID]
+            let showDate: String
+            let setlistNote: String?
+            let generateReal: Bool
+        }
+        var newYearTags: [Tag] = []
+        var planned: [PlannedFile] = []
         let totalShows = showCount + audioShowCount
-        try library.writer.write { db in
-            for showIndex in 0..<totalShows {
-                let isAudio = showIndex >= showCount
-                let band = bandTags[Int(rng.next() % UInt64(bandTags.count))]
-                let venue = venueTags[Int(rng.next() % UInt64(venueTags.count))]
-                let recType = recTypeTags[Int(rng.next() % UInt64(max(recTypeTags.count, 1)))]
-                let year = 1988 + Int(rng.next() % 16)
-                let month = 1 + Int(rng.next() % 12)
-                let day = 1 + Int(rng.next() % 28)
-                let date = String(format: "%04d-%02d-%02d", year, month, day)
 
-                let yearTag: Tag
-                if let existing = yearTags.values.first(where: { $0.name == String(year) }) {
-                    yearTag = existing
+        for showIndex in 0..<totalShows {
+            let isAudio = showIndex >= showCount
+            let band = bandTags[Int(rng.next() % UInt64(bandTags.count))]
+            let venue = venueTags[Int(rng.next() % UInt64(venueTags.count))]
+            let recType = recTypeTags[Int(rng.next() % UInt64(max(recTypeTags.count, 1)))]
+            let year = 1988 + Int(rng.next() % 16)
+            let month = 1 + Int(rng.next() % 12)
+            let day = 1 + Int(rng.next() % 28)
+            let date = String(format: "%04d-%02d-%02d", year, month, day)
+
+            let yearTag: Tag
+            if let existing = (yearTags.values + newYearTags).first(where: { $0.name == String(year) }) {
+                yearTag = existing
+            } else {
+                let tag = Tag(tagCategoryID: yearCategory.id, name: String(year))
+                newYearTags.append(tag)
+                yearTag = tag
+            }
+
+            let folder = (isAudio ? "audio/" : "shows/") + "\(year)/\(date) \(band.name)"
+            let fileCount = 2 + Int(rng.next() % 3)
+            report.shows += 1
+
+            for fileIndex in 1...fileCount {
+                let ext = isAudio ? "m4a" : "mp4"
+                let path = "\(folder)/d1t\(String(format: "%02d", fileIndex)).\(ext)"
+                let generateReal = makeFile != nil
+                let sizeFallback = Int64(20_000_000 + rng.next() % 500_000_000)
+                let durationFallback = Double(180 + rng.next() % 3_400)
+
+                var item = MediaItem(
+                    sourceID: source.id,
+                    kind: isAudio ? .audio : .video,
+                    relativePath: path,
+                    fileSize: sizeFallback,
+                    durationSeconds: generateReal ? nil : durationFallback,
+                    width: isAudio ? nil : 1280,
+                    height: isAudio ? nil : 720,
+                    videoCodec: isAudio ? nil : "h264",
+                    audioCodec: isAudio ? "aac" : "aac",
+                    needsReview: rng.next() % 8 == 0)
+                item.isFavorite = rng.next() % 7 == 0
+                item.watchCount = Int(rng.next() % 4)
+
+                let note: String?
+                if fileIndex == 1 {
+                    note = DemoVocabulary.setlistNotes[Int(rng.next() % UInt64(DemoVocabulary.setlistNotes.count))]
                 } else {
-                    let tag = Tag(tagCategoryID: yearCategory.id, name: String(year))
-                    try tag.insert(db)
-                    yearTags[tag.id] = tag
-                    yearTag = tag
+                    note = nil
                 }
+                planned.append(PlannedFile(
+                    item: item,
+                    tagIDs: [band.id, recType.id, yearTag.id, venue.id],
+                    showDate: date,
+                    setlistNote: note,
+                    generateReal: generateReal))
+            }
+        }
 
-                let folder = (isAudio ? "audio/" : "shows/") + "\(year)/\(date) \(band.name)"
-                let fileCount = 2 + Int(rng.next() % 3)
-                report.shows += 1
-
-                for fileIndex in 1...fileCount {
-                    let ext = isAudio ? "m4a" : "mp4"
-                    let path = "\(folder)/d1t\(String(format: "%02d", fileIndex)).\(ext)"
-                    let fileSize = try makeFile?(path, isAudio ? .audio : .video)
-
-                    var item = MediaItem(
-                        sourceID: source.id,
-                        kind: isAudio ? .audio : .video,
-                        relativePath: path,
-                        fileSize: fileSize ?? Int64(20_000_000 + rng.next() % 500_000_000),
-                        durationSeconds: fileSize != nil ? nil : Double(180 + rng.next() % 3_400),
-                        width: isAudio ? nil : 1280,
-                        height: isAudio ? nil : 720,
-                        videoCodec: isAudio ? nil : "h264",
-                        audioCodec: isAudio ? "aac" : "aac",
-                        needsReview: rng.next() % 8 == 0)
-                    item.isFavorite = rng.next() % 7 == 0
-                    item.watchCount = Int(rng.next() % 4)
-                    try item.insert(db)
-                    if isAudio { report.audioItems += 1 } else { report.videoItems += 1 }
-
-                    for tag in [band, recType, yearTag] {
-                        try MediaItemTag(mediaItemID: item.id, tagID: tag.id).insert(db)
-                        report.taggings += 1
-                    }
-                    try MediaItemTag(mediaItemID: item.id, tagID: venue.id).insert(db)
-                    report.taggings += 1
-
-                    if let showDate = fieldsByName["Show Date"] {
-                        try MediaItemFieldValue(mediaItemID: item.id, definition: showDate, value: date).insert(db)
-                        report.fieldValues += 1
-                    }
-                    if fileIndex == 1, let notes = fieldsByName["Setlist Notes"] {
-                        let note = DemoVocabulary.setlistNotes[Int(rng.next() % UInt64(DemoVocabulary.setlistNotes.count))]
-                        try MediaItemFieldValue(mediaItemID: item.id, definition: notes, value: note).insert(db)
-                        report.fieldValues += 1
-                    }
+        // Pass 2 — GENERATE: file synthesis awaits outside any transaction.
+        var sizes: [String: Int64] = [:]
+        if let makeFile {
+            for file in planned {
+                if let size = try await makeFile(file.item.relativePath, file.item.kind) {
+                    sizes[file.item.relativePath] = size
                 }
             }
+        }
+
+        // Pass 3 — INSERT: one write transaction. (Counting happens outside
+        // the Sendable closure.)
+        let fields = fieldsByName
+        let finalSizes = sizes
+        let toInsert = planned.map { file -> PlannedFile in
+            var updated = file
+            if let size = finalSizes[file.item.relativePath] {
+                var item = file.item
+                item.fileSize = size
+                updated = PlannedFile(
+                    item: item, tagIDs: file.tagIDs, showDate: file.showDate,
+                    setlistNote: file.setlistNote, generateReal: file.generateReal)
+            }
+            return updated
+        }
+        let yearTagsToInsert = newYearTags
+        try await library.writer.write { db in
+            for tag in yearTagsToInsert { try tag.insert(db) }
+            for file in toInsert {
+                try file.item.insert(db)
+                for tagID in file.tagIDs {
+                    try MediaItemTag(mediaItemID: file.item.id, tagID: tagID).insert(db)
+                }
+                if let showDate = fields["Show Date"] {
+                    try MediaItemFieldValue(
+                        mediaItemID: file.item.id, definition: showDate, value: file.showDate).insert(db)
+                }
+                if let note = file.setlistNote, let notes = fields["Setlist Notes"] {
+                    try MediaItemFieldValue(
+                        mediaItemID: file.item.id, definition: notes, value: note).insert(db)
+                }
+            }
+        }
+        for file in toInsert {
+            if file.item.kind == .audio { report.audioItems += 1 } else { report.videoItems += 1 }
+            report.taggings += file.tagIDs.count
+            if fields["Show Date"] != nil { report.fieldValues += 1 }
+            if file.setlistNote != nil, fields["Setlist Notes"] != nil { report.fieldValues += 1 }
         }
         return report
     }

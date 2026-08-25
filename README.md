@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 5a: ingest
+## Status — Phase 5: ingest and background work
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -80,7 +80,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     advance-on-apply for triage; editor sheet included.
   - Category manager: full category configuration plus per-tag rename /
     hide / delete with cascades.
-- ✅ **Phase 5a** (this): directory scan and import.
+- ✅ **Phase 5a** (merged): directory scan and import.
   - `ImportJob` — the first real `Job` conformance: recursive scan,
     AVFoundation probing (duration, dimensions, codecs, streams),
     idempotent by the unique source-relative path, serialized by the
@@ -94,6 +94,18 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Note: the rule-engine port (old Phase 4b) is replaced by a
     claims-based metadata pipeline, deliberately sequenced after
     Phase 8.
+- ✅ **Phase 5b** (this): background workers and the dashboard.
+  - Content hashing sweep (MD5 for cross-migration comparability; the
+    column stays algorithm-neutral): per-item failures recorded beside
+    the feature and never stall the sweep or retry endlessly.
+  - Thumbnail sweep: disk state decides — a deleted cache file
+    regenerates on the next signal even though the DB row says done.
+  - Signal-driven, no polling: import completion and volume mounts wake
+    the workers; duplicate signals collapse (enqueueUnlessPending).
+  - One job runner per library, app-owned — windows and the dashboard
+    share it, so cancellation works from anywhere.
+  - Background Tasks window: every library's jobs, live progress,
+    summaries, cancellation.
 
 ### Demo library
 
