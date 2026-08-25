@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 5: ingest and background work
+## Status — Phase 6a: duplicate detection
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -94,7 +94,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Note: the rule-engine port (old Phase 4b) is replaced by a
     claims-based metadata pipeline, deliberately sequenced after
     Phase 8.
-- ✅ **Phase 5b** (this): background workers and the dashboard.
+- ✅ **Phase 5b** (merged): background workers and the dashboard.
   - Content hashing sweep (MD5 for cross-migration comparability; the
     column stays algorithm-neutral): per-item failures recorded beside
     the feature and never stall the sweep or retry endlessly.
@@ -106,6 +106,17 @@ follow. Full context, locked decisions and the 11-phase plan live in
     share it, so cancellation works from anywhere.
   - Background Tasks window: every library's jobs, live progress,
     summaries, cancellation.
+- ✅ **Phase 6a** (this): duplicate detection.
+  - The fingerprint matcher, ported with its measured thresholds intact
+    (BER 0.30 gate, the 25s reliability floor, the calibrated 14-bit
+    relative prefilter) — including both survey-hardened behaviors: the
+    in-loop overlap floor and the asymmetric-stride offset voting.
+  - Candidate pairs: order-normalized, one row per pair ever — a
+    rejected pair permanently blocks re-flagging. Human review absolute.
+  - Three sweeps on the maintenance signal: identical hashes, audio
+    fingerprint capture (fpcalc; a missing tool is a note with install
+    guidance, not a failure), and prefiltered fingerprint matching.
+  - Compare view, quality scoring and decide-and-merge follow as 6b.
 
 ### Demo library
 

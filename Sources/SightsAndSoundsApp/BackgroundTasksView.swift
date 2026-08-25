@@ -101,6 +101,9 @@ private struct JobRow: View {
         case ImportJob.kind: "Import"
         case ContentHashJob.kind: "Content hashing"
         case ThumbnailBatchJob.kind: "Thumbnail generation"
+        case HashDuplicateSweepJob.kind: "Duplicate check (hashes)"
+        case FingerprintCaptureJob.kind: "Audio fingerprinting"
+        case FingerprintMatchSweepJob.kind: "Duplicate check (fingerprints)"
         default: job.kind
         }
     }
