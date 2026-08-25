@@ -377,6 +377,15 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 5: jobs gain a human-readable completion summary ("38 new,
+        // 2 skipped") so the dashboard can say what happened without
+        // re-deriving it.
+        migrator.registerMigration("phase5") { db in
+            try db.alter(table: "job") { t in
+                t.add(column: "summary", .text)
+            }
+        }
+
         return migrator
     }
 

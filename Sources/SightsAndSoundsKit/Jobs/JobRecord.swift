@@ -32,6 +32,8 @@ public struct JobRecord: Codable, Equatable, Identifiable, Sendable, FetchableRe
     /// Job-specific parameters, JSON-encoded by the conformance.
     public var payload: Data?
     public var error: String?
+    /// One line describing the outcome, written by the job on completion.
+    public var summary: String?
     public var progressCurrent: Int
     public var progressTotal: Int?
     public var createdAt: Date
@@ -49,6 +51,7 @@ public struct JobRecord: Codable, Equatable, Identifiable, Sendable, FetchableRe
         self.state = .queued
         self.payload = payload
         self.error = nil
+        self.summary = nil
         self.progressCurrent = 0
         self.progressTotal = nil
         self.createdAt = createdAt

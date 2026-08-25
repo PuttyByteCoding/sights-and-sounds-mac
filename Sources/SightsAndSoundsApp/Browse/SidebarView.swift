@@ -16,6 +16,9 @@ struct SidebarView: View {
                 ForEach(model.sources) { source in
                     SourceRow(source: source)
                 }
+                Button("Add Source…", systemImage: "plus") { addSource() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Folders") {
@@ -65,13 +68,21 @@ private struct SourceRow: View {
             Text(source.name)
                 .foregroundStyle(source.enabled ? .primary : .secondary)
             Spacer()
-            if !model.onlineSourceIDs.contains(source.id) && source.enabled {
+            if let status = model.importStatus[source.id] {
+                Text(status)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tint)
+            } else if !model.onlineSourceIDs.contains(source.id) && source.enabled {
                 Text("offline")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
         .contextMenu {
+            Button("Import New Files") { model.importSource(source) }
+                .disabled(!source.enabled
+                    || !model.onlineSourceIDs.contains(source.id)
+                    || model.importStatus[source.id] != nil)
             Button(source.enabled ? "Disable" : "Enable") {
                 model.setSourceEnabled(source, !source.enabled)
             }
@@ -175,6 +186,18 @@ private struct StatusRow: View {
         case .exported: "Exported Clip"
         case .edited: "Edited"
         }
+    }
+}
+
+extension SidebarView {
+    fileprivate func addSource() {
+        let panel = NSOpenPanel()
+        panel.title = "Add Source Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.prompt = "Add Source"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        model.addSource(at: url)
     }
 }
 

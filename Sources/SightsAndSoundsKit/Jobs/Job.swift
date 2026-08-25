@@ -29,6 +29,7 @@ public struct JobContext: Sendable {
 
     let progressHandler: @Sendable (Int, Int?) async -> Void
     let cancellationCheck: @Sendable () async -> Bool
+    let summaryHandler: @Sendable (String) async -> Void
 
     /// Persist progress. Throttling is the job's concern (report at natural
     /// batch boundaries, not per byte).
@@ -45,6 +46,11 @@ public struct JobContext: Sendable {
     /// Convenience: throw if cancellation was requested.
     public func checkCancellation() async throws {
         if await isCancelled { throw CancellationError() }
+    }
+
+    /// Record the job's one-line outcome ("38 new, 2 skipped").
+    public func setSummary(_ text: String) async {
+        await summaryHandler(text)
     }
 }
 
