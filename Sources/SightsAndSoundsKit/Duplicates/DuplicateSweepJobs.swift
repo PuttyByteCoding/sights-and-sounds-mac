@@ -11,7 +11,7 @@ public struct HashDuplicateSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        let groups = try await library.writer.read { db in
+        let groups = try await library.writer.read { db -> [Row] in
             try Row.fetchAll(
                 db,
                 sql: """
@@ -24,7 +24,7 @@ public struct HashDuplicateSweepJob: Job {
         for group in groups {
             try await context.checkCancellation()
             let hash: String = group["contentHash"]
-            let ids = try await library.writer.read { db in
+            let ids = try await library.writer.read { db -> [UUID] in
                 try UUID.fetchAll(
                     db, sql: "SELECT id FROM mediaItem WHERE contentHash = ? ORDER BY id",
                     arguments: [hash])
@@ -76,13 +76,13 @@ public struct FingerprintCaptureJob: Job {
             return
         }
         let library = context.library
-        let sources = try await library.writer.read { db in
+        let sources = try await library.writer.read { db -> [UUID: Source] in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
         let online = Set(
             sources.values.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
 
-        let pending = try await library.writer.read { db in
+        let pending = try await library.writer.read { db -> [MediaItem] in
             try MediaItem.fetchAll(
                 db,
                 sql: """
@@ -175,7 +175,7 @@ public struct FingerprintMatchSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        let records = try await library.writer.read { db in
+        let records = try await library.writer.read { db -> [AudioFingerprintRecord] in
             try AudioFingerprintRecord.fetchAll(db)
         }
         guard records.count > 1 else {
@@ -189,7 +189,7 @@ public struct FingerprintMatchSweepJob: Job {
             Set(FingerprintMatcher.bucketKeys($0.fp, maskBits: FingerprintMatcher.sweepMaskBits))
         }
 
-        let existingPairs = try await library.writer.read { db in
+        let existingPairs = try await library.writer.read { db -> Set<String> in
             Set(try Row.fetchAll(db, sql: "SELECT itemAID, itemBID FROM duplicateCandidate")
                 .map { "\($0["itemAID"] as UUID)|\($0["itemBID"] as UUID)" })
         }
