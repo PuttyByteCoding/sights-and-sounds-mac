@@ -67,6 +67,15 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Privacy guard in CI: library databases and snapshot exports can
     never be tracked (`scripts/check-no-private-data.sh`).
 
+### Demo library
+
+**Create Demo Library…** in the app builds a complete fake concert
+collection — invented bands and venues, dated show folders, taggings,
+field values, and tiny *synthesized* media files (color-bar MP4s,
+sine-chord M4As) — so thumbnails, waveforms, scrub previews, playback
+and filters all run on data that is fake by construction. Deterministic
+per seed; also the fixture generator for tests and future screenshots.
+
 ## Building
 
 Requires Xcode 16+ (Swift 6). Open `Package.swift` in Xcode, or:

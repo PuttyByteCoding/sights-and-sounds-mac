@@ -107,6 +107,7 @@ struct LibraryListView: View {
         .navigationTitle("Sights and Sounds")
         .toolbar {
             Button("New Library…", systemImage: "plus") { showingNewLibrary = true }
+            DemoLibraryButton()
         }
         .sheet(isPresented: $showingNewLibrary) {
             NewLibraryFlow()
@@ -257,5 +258,72 @@ struct LibraryRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { openWindow(id: "library", value: library.id) }
+    }
+}
+
+
+/// Builds a complete demo library — vocabulary, items, and tiny synthesized
+/// media files — so every pipeline (thumbnails, waveforms, scrub previews,
+/// playback, filters) runs on data that is fake by construction.
+struct DemoLibraryButton: View {
+    @Environment(AppModel.self) private var model
+    @State private var busyText: String?
+
+    var body: some View {
+        if let busyText {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(busyText).font(.caption)
+            }
+        } else {
+            Button("Create Demo Library…", systemImage: "sparkles") { create() }
+                .help("A fake concert collection with generated media files")
+        }
+    }
+
+    private func create() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a folder for the demo library"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Create Here"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        busyText = "Generating demo library…"
+        let appDatabase = model.appDatabase
+        Task.detached(priority: .userInitiated) {
+            var failure: String?
+            do {
+                let libraryURL = folder.appendingPathComponent("Demo Concerts.sqlite")
+                let mediaRoot = folder.appendingPathComponent("Demo Media", isDirectory: true)
+                let library = try LibraryDatabase.open(at: libraryURL)
+                try library.ensureInfo(name: "Demo Concerts")
+                let source = Source(name: "Demo Media", rootPath: mediaRoot.path)
+
+                var variant = 0
+                try DemoLibrarySeeder.seed(library: library, source: source) { path, kind in
+                    let fileURL = mediaRoot.appendingPathComponent(path)
+                    variant += 1
+                    switch kind {
+                    case .video:
+                        try DemoMediaFactory.writeVideo(to: fileURL, variant: variant)
+                    case .audio:
+                        try DemoMediaFactory.writeAudio(to: fileURL, variant: variant)
+                    }
+                    let size = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size]
+                    return (size as? Int64) ?? 0
+                }
+                if let appDatabase { _ = try await MainActor.run { try appDatabase.register(library) } }
+            } catch {
+                failure = "\(error)"
+            }
+            let message = failure
+            await MainActor.run {
+                busyText = nil
+                if let message { model.loadError = "Demo library failed: \(message)" }
+                model.refresh()
+            }
+        }
     }
 }
