@@ -26,6 +26,7 @@ final class BrowseModel {
     private(set) var folderTree: [FolderNode] = []
     private(set) var vocabulary: [CategoryTags] = []
     private(set) var sources: [Source] = []
+    private(set) var pendingDuplicateCount = 0
     private(set) var onlineSourceIDs: Set<UUID> = []
     var errorMessage: String?
 
@@ -80,6 +81,7 @@ final class BrowseModel {
                 .filter { !$0.category.hiddenFromBrowse }
                 .map { CategoryTags(category: $0.category, tags: $0.tags) }
             folderTree = FolderTreeBuilder.build(from: try library.folderCounts(kind: kind))
+            pendingDuplicateCount = try library.pendingCandidates().count
             refreshItems()
         } catch {
             errorMessage = "\(error)"
