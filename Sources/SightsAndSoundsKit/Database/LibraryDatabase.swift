@@ -386,6 +386,42 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 6: duplicate candidates and audio fingerprints. Candidate
+        // pairs are order-normalized with a unique index — one row per
+        // pair, ever, which is how a rejected pair stays rejected.
+        migrator.registerMigration("phase6") { db in
+            try db.create(table: "duplicateCandidate") { t in
+                t.primaryKey("id", .blob)
+                t.column("itemAID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("itemBID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("source", .text).notNull()
+                t.column("confidence", .double)
+                t.column("offsetSeconds", .double)
+                t.column("matchKind", .text)
+                t.column("createdAt", .datetime).notNull()
+                t.uniqueKey(["itemAID", "itemBID"])
+            }
+
+            try db.create(table: "audioFingerprint") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("durationSeconds", .double).notNull()
+                t.column("fingerprint", .blob).notNull()
+                t.column("toolVersion", .text).notNull()
+                t.column("computedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "fingerprintFailure") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("message", .text).notNull()
+                t.column("occurredAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 

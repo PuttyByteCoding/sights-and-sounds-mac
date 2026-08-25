@@ -93,6 +93,9 @@ final class AppModel {
             await runner.register(ImportJob.self)
             await runner.register(ContentHashJob.self)
             await runner.register(ThumbnailBatchJob.self)
+            await runner.register(HashDuplicateSweepJob.self)
+            await runner.register(FingerprintCaptureJob.self)
+            await runner.register(FingerprintMatchSweepJob.self)
         }
         return runner
     }
@@ -109,6 +112,11 @@ final class AppModel {
                 _ = try await runner.enqueueUnlessPending(
                     ThumbnailBatchJob.self,
                     payload: JSONEncoder().encode(ThumbnailBatchJob.Payload(libraryID: libraryID)))
+                // Duplicates ride the same signal: hash pairs after hashing,
+                // fingerprints after capture, matches after both.
+                _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
+                _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
+                _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
                 try await runner.runPending()
             } catch {
                 loadError = "Maintenance failed: \(error)"
