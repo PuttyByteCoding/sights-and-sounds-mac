@@ -12,6 +12,22 @@ struct SightsAndSoundsApp: App {
             LibraryListView()
                 .environment(model)
         }
+
+        // One library per window — several can be open at once, each backed
+        // by its own LibraryDatabase (locked decision 02).
+        WindowGroup(id: "library", for: LibraryRef.ID.self) { $libraryID in
+            if let libraryID {
+                LibraryWindowView(libraryID: libraryID)
+                    .environment(model)
+            }
+        }
+
+        WindowGroup(id: "player", for: PlayerRequest.self) { $request in
+            if let request {
+                PlayerView(request: request)
+                    .environment(model)
+            }
+        }
     }
 }
 
@@ -43,6 +59,26 @@ final class AppModel {
             loadError = "Could not read libraries: \(error)"
         }
     }
+
+    // One open handle per library, shared by every window and the player.
+    private var openHandles: [UUID: LibraryDatabase] = [:]
+
+    func library(for id: UUID) throws -> LibraryDatabase {
+        if let open = openHandles[id] { return open }
+        guard let ref = libraries.first(where: { $0.id == id }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let library = try LibraryDatabase.open(at: URL(fileURLWithPath: ref.filePath))
+        openHandles[id] = library
+        try? appDatabase?.touchLastOpened(id)
+        return library
+    }
+}
+
+/// Identifies one item to play, across window boundaries.
+struct PlayerRequest: Codable, Hashable {
+    var libraryID: UUID
+    var itemID: UUID
 }
 
 struct LibraryListView: View {
@@ -61,13 +97,7 @@ struct LibraryListView: View {
                     description: Text("Create your first library to get started."))
             } else {
                 List(model.libraries) { library in
-                    VStack(alignment: .leading) {
-                        Text(library.name).font(.headline)
-                        Text(library.filePath)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 2)
+                    LibraryRow(library: library)
                 }
             }
         }
@@ -203,5 +233,27 @@ struct NewLibraryFlow: View {
         } catch {
             creationError = "\(error)"
         }
+    }
+}
+
+
+struct LibraryRow: View {
+    @Environment(\.openWindow) private var openWindow
+    let library: LibraryRef
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(library.name).font(.headline)
+                Text(library.filePath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Open") { openWindow(id: "library", value: library.id) }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { openWindow(id: "library", value: library.id) }
     }
 }
