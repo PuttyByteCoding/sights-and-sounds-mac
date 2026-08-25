@@ -1,0 +1,43 @@
+import Foundation
+
+/// The one narrow interface between the app and the file system.
+///
+/// **Rule: no code outside this file touches `FileManager`, `FileHandle`, or
+/// path-based I/O directly.** The app ships unsandboxed for now (locked
+/// decision 04), but sandboxing later means moving every file access onto
+/// security-scoped bookmarks — keeping all access behind this protocol makes
+/// that a change to one conformance instead of a hunt through the codebase.
+///
+/// Deliberately small. It grows only when a phase needs a new operation,
+/// and each addition is reviewed against "could a sandboxed implementation
+/// provide this?"
+public protocol FileAccess: Sendable {
+    /// Whether the location exists and is reachable right now. Drives the
+    /// per-source online/offline state (offline is observed, never stored).
+    func isReachable(_ url: URL) -> Bool
+
+    /// Immediate children of a directory.
+    func contentsOfDirectory(at url: URL) throws -> [URL]
+
+    /// Size of the file in bytes.
+    func fileSize(at url: URL) throws -> Int64
+}
+
+/// The real implementation over `FileManager`.
+public struct LiveFileAccess: FileAccess {
+    public init() {}
+
+    public func isReachable(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
+    }
+
+    public func contentsOfDirectory(at url: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+    }
+
+    public func fileSize(at url: URL) throws -> Int64 {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        return Int64(values.fileSize ?? 0)
+    }
+}
