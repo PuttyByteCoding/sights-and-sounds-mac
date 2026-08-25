@@ -87,11 +87,12 @@ private struct ItemCell: View {
                 .disabled(!model.isOnline(item))
         }
         .task(id: item.id) {
-            thumbnail = await ThumbnailProvider.shared.thumbnail(
+            let data = await ThumbnailProvider.shared.thumbnailData(
                 itemID: item.id,
                 libraryID: model.libraryID,
                 fileURL: model.fileURL(for: item),
                 durationSeconds: item.durationSeconds)
+            thumbnail = data.flatMap(NSImage.init(data:))
         }
     }
 

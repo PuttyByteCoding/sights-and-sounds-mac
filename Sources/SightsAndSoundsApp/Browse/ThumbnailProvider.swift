@@ -9,30 +9,34 @@ import Foundation
 /// file is reachable. Missing thumbnails self-heal on the next request
 /// with the source online — disk state decides, no flags (the worker in
 /// Phase 5 follows the same rule).
+///
+/// The actor traffics in JPEG `Data`, not images: `NSImage` is expressly
+/// not Sendable, so it never crosses the actor boundary — callers decode
+/// on their own side.
 actor ThumbnailProvider {
     static let shared = ThumbnailProvider()
 
-    private let memory = NSCache<NSString, NSImage>()
-    private var inFlight: [String: Task<NSImage?, Never>] = [:]
+    private let memory = NSCache<NSString, NSData>()
+    private var inFlight: [String: Task<Data?, Never>] = [:]
 
     private let cacheRoot: URL = {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("SightsAndSounds/Thumbnails", isDirectory: true)
     }()
 
-    /// The cached thumbnail, generating it if needed and possible.
+    /// Cached JPEG bytes, generating them if needed and possible.
     /// `fileURL` nil (offline source) still serves from cache.
-    func thumbnail(itemID: UUID, libraryID: UUID, fileURL: URL?, durationSeconds: Double?) async -> NSImage? {
+    func thumbnailData(itemID: UUID, libraryID: UUID, fileURL: URL?, durationSeconds: Double?) async -> Data? {
         let key = "\(libraryID)/\(itemID)"
-        if let cached = memory.object(forKey: key as NSString) { return cached }
+        if let cached = memory.object(forKey: key as NSString) { return cached as Data }
 
         if let existing = inFlight[key] { return await existing.value }
-        let task = Task<NSImage?, Never> { [cacheRoot] in
+        let task = Task<Data?, Never> { [cacheRoot] in
             let diskURL = cacheRoot
                 .appendingPathComponent(libraryID.uuidString, isDirectory: true)
                 .appendingPathComponent(itemID.uuidString + ".jpg")
 
-            if let image = NSImage(contentsOf: diskURL) { return image }
+            if let data = try? Data(contentsOf: diskURL) { return data }
             guard let fileURL else { return nil }
 
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: fileURL))
@@ -44,18 +48,18 @@ actor ThumbnailProvider {
                 at: CMTime(seconds: seconds, preferredTimescale: 600)).image
             else { return nil }
 
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            guard let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
+            else { return nil }
             try? FileManager.default.createDirectory(
                 at: diskURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let rep = NSBitmapImageRep(cgImage: cgImage)
-            if let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-                try? jpeg.write(to: diskURL)
-            }
-            return NSImage(cgImage: cgImage, size: .zero)
+            try? jpeg.write(to: diskURL)
+            return jpeg
         }
         inFlight[key] = task
-        let image = await task.value
+        let data = await task.value
         inFlight[key] = nil
-        if let image { memory.setObject(image, forKey: key as NSString) }
-        return image
+        if let data { memory.setObject(data as NSData, forKey: key as NSString) }
+        return data
     }
 }
