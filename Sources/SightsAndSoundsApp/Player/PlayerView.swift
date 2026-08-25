@@ -245,14 +245,14 @@ private struct ScrubberView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let fraction = (value.location.x / width).clamped01
+                        let fraction = Double((value.location.x / width).clamped01)
                         model.seek(to: fraction * model.durationSeconds)
                     }
             )
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let point):
-                    let fraction = (point.x / width).clamped01
+                    let fraction = Double((point.x / width).clamped01)
                     hoverFraction = fraction
                     requestPreview(at: fraction * model.durationSeconds)
                 case .ended:
@@ -273,8 +273,10 @@ private struct ScrubberView: View {
 
     @ViewBuilder
     private func track(width: CGFloat) -> some View {
-        let progress = model.durationSeconds > 0
-            ? (model.currentSeconds / model.durationSeconds).clamped01 : 0
+        // CGFloat throughout — mixed Double/CGFloat arithmetic is ambiguous
+        // to the CI toolchain (Xcode 16).
+        let progress: CGFloat = model.durationSeconds > 0
+            ? CGFloat((model.currentSeconds / model.durationSeconds).clamped01) : 0
         Canvas { context, size in
             // Base track / waveform.
             if let peaks, !peaks.isEmpty {
@@ -286,7 +288,7 @@ private struct ScrubberView: View {
                         y: (size.height - barHeight) / 2,
                         width: max(barWidth - 0.5, 0.5),
                         height: barHeight)
-                    let played = Double(index) / Double(peaks.count) <= progress
+                    let played = CGFloat(index) / CGFloat(peaks.count) <= progress
                     context.fill(
                         Path(rect),
                         with: .color(played ? .accentColor : .secondary.opacity(0.45)))
@@ -302,8 +304,8 @@ private struct ScrubberView: View {
             if let item = model.item, model.durationSeconds > 0,
                let start = item.clipStartSeconds {
                 let end = item.clipEndSeconds ?? model.durationSeconds
-                let x0 = size.width * (start / model.durationSeconds).clamped01
-                let x1 = size.width * (end / model.durationSeconds).clamped01
+                let x0 = size.width * CGFloat((start / model.durationSeconds).clamped01)
+                let x1 = size.width * CGFloat((end / model.durationSeconds).clamped01)
                 context.fill(
                     Path(CGRect(x: x0, y: 0, width: x1 - x0, height: size.height)),
                     with: .color(.accentColor.opacity(0.12)))
