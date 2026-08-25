@@ -38,6 +38,7 @@ struct LibraryWindowView: View {
 
 struct BrowseView: View {
     @Environment(BrowseModel.self) private var model
+    @State private var showCategoryManager = false
 
     var body: some View {
         @Bindable var model = model
@@ -60,6 +61,16 @@ struct BrowseView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            ToolbarItem {
+                Button("Categories", systemImage: "tag.square") {
+                    showCategoryManager = true
+                }
+                .help("Edit this library's categories and tags")
+            }
+        }
+        .sheet(isPresented: $showCategoryManager) {
+            CategoryManagerView()
+                .environment(model)
         }
         .frame(minWidth: 900, minHeight: 560)
     }

@@ -365,6 +365,18 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 4: user key -> tag bindings, library-owned (the old app
+        // kept them in browser localStorage; the brief moves them into the
+        // library, which owns everything that names its tags).
+        migrator.registerMigration("phase4") { db in
+            try db.create(table: "tagKeyBinding") { t in
+                t.primaryKey("key", .text)
+                t.column("tagID", .blob).notNull().indexed()
+                    .references("tag", onDelete: .cascade)
+                t.column("advance", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         return migrator
     }
 

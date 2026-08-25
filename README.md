@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 3: browse and playback
+## Status — Phase 4a: tagging core
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -52,7 +52,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     AVAssetImageGenerator with a disk cache, so offline sources still
     look complete; offline items badge and refuse playback.
   - Basic native playback with clip in-point seek.
-- ✅ **Phase 3b** (this): the player, finished.
+- ✅ **Phase 3b** (merged): the player, finished.
   - Custom transport (AVPlayerLayer): scrubber with hover **scrub
     previews** (AVAssetImageGenerator replaces the sprite sheets),
     **waveform timelines** for audio (streamed PCM decode, disk-cached),
@@ -66,6 +66,20 @@ follow. Full context, locked decisions and the 11-phase plan live in
     either edge), lastWatchedAt, watch tally + completed on 90% crossing.
   - Privacy guard in CI: library databases and snapshot exports can
     never be tracked (`scripts/check-no-private-data.sh`).
+- ✅ **Phase 4a** (this): tagging core.
+  - Tag panel beside the player (T): checkbox categories as checkbox
+    lists with ⌥1–9 toggles, pill + autocomplete for the rest,
+    default-focus category takes the keyboard.
+  - The ported name formatter: TextFormat case rules with
+    separators-to-spaces running first, applied identically on every
+    create/rename path; single-select categories replace on assign;
+    default focus is exclusive — all enforced in the kit's single write
+    path, not the UI.
+  - Key → tag bindings, library-owned (a table, not browser storage):
+    free F-keys and letters toggle tags in the player, optional
+    advance-on-apply for triage; editor sheet included.
+  - Category manager: full category configuration plus per-tag rename /
+    hide / delete with cascades.
 
 ### Demo library
 
