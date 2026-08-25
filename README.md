@@ -5,26 +5,30 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 0: skeleton and store
+## Status — Phase 1: libraries, sources, schema, jobs
 
-Phase 0 proves the hardest things first, per the brief:
-
-- ✅ **SPM skeleton** — `SightsAndSoundsKit` (shared models + GRDB store) and a
-  minimal SwiftUI app shell. Later platforms build their own presentation on
-  the same kit.
-- ✅ **Migration mechanism** — `DatabaseMigrator` with the `phase0` schema
-  slice; applied on open, verified against real files in tests.
-- ✅ **The three-way tag filter compiles to SQL** — required / optional /
-  excluded slots, tag / folder / subtree / missing-category / status terms,
-  hidden-by-default suppression, the media-kind hard filter — one statement,
-  no in-memory pass. The exact-folder term (the web app's one untranslatable
-  filter) is an indexed equality on a denormalized `folderPath` column.
-- ✅ **Two libraries at once, structurally isolated** — one SQLite file per
-  library, one pool per file, no ATTACH. Proven in tests.
-- ✅ **One narrow file-access interface** — `FileAccess`; the sandboxing
-  insurance. No code outside it touches `FileManager`.
-- ✅ **Terminology guard in CI** — `scripts/check-terminology.sh` enforces
-  [docs/terminology.md](docs/terminology.md) from the first commit.
+- ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
+  the three-way filter compiling to one SQL statement (no in-memory pass),
+  two-library structural isolation, the `FileAccess` boundary, terminology
+  guard in CI.
+- ✅ **Phase 1** (this): the schema that holds the whole product.
+  - `LibraryInfo` identity in each library file + the app-level registry
+    (`AppDatabase`) that reconciles by library id when files move.
+  - `Source` with real FK ownership (never path prefixes), source-relative
+    paths, enabled flag; online-ness is observed via `FileAccess`, never
+    stored. Disabled sources leave every listing; offline hides nothing.
+  - Full vocabulary: `TagCategory` configuration, `Tag` + `TagAlias`,
+    `FieldDefinition` with schema-checked scopes.
+  - **Sortable field values** — number fields keep a derived `numericValue`
+    so a Learning course orders by Lesson Number ("10" after "2"); typed
+    `MediaOrdering.fieldValue` joins it in SQL.
+  - Per-feature state in side tables (`contentHashFailure`,
+    `thumbnailState`, `ocrProgress`) — the 48-column lesson. The line:
+    filter/grid state is a column, single-feature state is a side table.
+  - **The generic job abstraction** — `Job` + `JobRunner` + persisted
+    `JobRecord`: state machine, progress, failure capture, cooperative
+    cancellation. The web app implemented this thirteen times; here it
+    exists once and every later operation is a conformance.
 
 ## Building
 
@@ -32,8 +36,8 @@ Requires Xcode 16+ (Swift 6). Open `Package.swift` in Xcode, or:
 
 ```sh
 swift build          # build kit + app shell
-swift test           # 23 tests: filter semantics, SQL shape, isolation
-swift run            # run the Phase 0 app shell
+swift test           # filter semantics, SQL shape, schema integrity, jobs
+swift run            # run the app shell
 ./scripts/check-terminology.sh
 ```
 
@@ -41,11 +45,12 @@ swift run            # run the Phase 0 app shell
 
 | Path | What |
 |---|---|
-| `Sources/SightsAndSoundsKit/Models` | `MediaItem`, `TagCategory`, `Tag`, `MediaItemTag`, `MediaPath` |
-| `Sources/SightsAndSoundsKit/Database` | `LibraryDatabase` — open/migrate one library file |
+| `Sources/SightsAndSoundsKit/Models` | Entities: media, sources, vocabulary, fields, feature state |
+| `Sources/SightsAndSoundsKit/Database` | `LibraryDatabase` (one library file) + `AppDatabase` (registry, prefs) |
 | `Sources/SightsAndSoundsKit/Filtering` | `MediaFilter` + `FilterCompiler` (filter → one SQL statement) |
+| `Sources/SightsAndSoundsKit/Jobs` | `Job`, `JobRunner`, `JobRecord` — the one job abstraction |
 | `Sources/SightsAndSoundsKit/FileAccess` | The one file-system boundary |
-| `Sources/SightsAndSoundsApp` | Phase 0 SwiftUI shell |
+| `Sources/SightsAndSoundsApp` | Early SwiftUI shell |
 | `docs/` | Replatform brief, terminology ledger |
 | `scripts/` | Terminology guard (bash 3.2 portable, wired into CI) |
 
