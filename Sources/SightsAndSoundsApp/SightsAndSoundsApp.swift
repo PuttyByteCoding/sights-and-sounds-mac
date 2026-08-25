@@ -75,10 +75,12 @@ final class AppModel {
     }
 }
 
-/// Identifies one item to play, across window boundaries.
+/// Identifies one item to play, across window boundaries, plus the
+/// filtered listing it came from so the player's arrows can walk it.
 struct PlayerRequest: Codable, Hashable {
     var libraryID: UUID
     var itemID: UUID
+    var playlist: [UUID] = []
 }
 
 struct LibraryListView: View {

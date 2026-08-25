@@ -115,7 +115,9 @@ private struct ItemCell: View {
 
     private func play() {
         guard model.isOnline(item) else { return }
-        openWindow(id: "player", value: PlayerRequest(libraryID: model.libraryID, itemID: item.id))
+        openWindow(id: "player", value: PlayerRequest(
+            libraryID: model.libraryID, itemID: item.id,
+            playlist: model.items.map(\.id)))
     }
 
     static func format(duration: Double) -> String {

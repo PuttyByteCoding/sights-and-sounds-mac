@@ -60,3 +60,11 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Private library data — never in the repo (see docs/replatform-brief.md §6
+# and the CI guard in scripts/check-no-private-data.sh)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+snapshot*.json
+*.snapshot.json

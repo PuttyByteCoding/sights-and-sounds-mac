@@ -13,6 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Banned-words check
         run: ./scripts/check-terminology.sh
+      - name: Private-data check
+        run: ./scripts/check-no-private-data.sh
 
   test:
     name: Build & test
