@@ -373,6 +373,44 @@ public final class LibraryDatabase: Sendable {
         try writer.read { try Self.migrator.appliedIdentifiers($0) }
     }
 
+    // MARK: - Browse queries
+
+    /// Visible-item counts per folder, for the sidebar tree. Applies the
+    /// same baseline as every listing: kind, spent clip rows, enabled
+    /// sources.
+    public func folderCounts(kind: MediaKind) throws -> [(path: String, count: Int)] {
+        try writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT mediaItem.folderPath AS path, COUNT(*) AS n FROM mediaItem \
+                WHERE mediaItem.kind = ? AND mediaItem.clipExported = 0 \
+                AND EXISTS (SELECT 1 FROM source \
+                            WHERE source.id = mediaItem.sourceID AND source.enabled) \
+                GROUP BY mediaItem.folderPath
+                """,
+                arguments: [kind.rawValue])
+            return rows.map { ($0["path"] as String, $0["n"] as Int) }
+        }
+    }
+
+    /// The library's vocabulary for the filter panel: categories in sort
+    /// order, each with its tags in sort order.
+    public func vocabulary() throws -> [(category: TagCategory, tags: [Tag])] {
+        try writer.read { db in
+            let categories = try TagCategory.order(sql: "sortOrder, name").fetchAll(db)
+            let tagsByCategory = Dictionary(
+                grouping: try Tag.order(sql: "sortOrder, name").fetchAll(db),
+                by: \.tagCategoryID)
+            return categories.map { ($0, tagsByCategory[$0.id] ?? []) }
+        }
+    }
+
+    /// All sources, sidebar order.
+    public func sources() throws -> [Source] {
+        try writer.read { try Source.order(sql: "name").fetchAll($0) }
+    }
+
     // MARK: - Filtered listing
 
     /// The visible items for a filter — the product's central query.

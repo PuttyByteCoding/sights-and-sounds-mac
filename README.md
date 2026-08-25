@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 2: library creation
+## Status — Phase 3a: browse workspace
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -29,7 +29,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     `JobRecord`: state machine, progress, failure capture, cooperative
     cancellation. The web app implemented this thirteen times; here it
     exists once and every later operation is a conformance.
-- ✅ **Phase 2** (this): library creation.
+- ✅ **Phase 2** (merged): library creation.
   - `LibraryPlan` — the editable review model both flows share: template
     creation now, snapshot migration next. Rename, exclude, adjust;
     nothing is written until the whole plan validates.
@@ -42,6 +42,17 @@ follow. Full context, locked decisions and the 11-phase plan live in
     the migrator must carry; the engine itself ports in Phase 4.
   - App shell: library list + the New Library flow (name → template →
     review → create).
+- ✅ **Phase 3a** (this): the browse workspace.
+  - One library per window; the workspace is a shell composing sidebar,
+    grid and player as independent scenes.
+  - Sidebar: sources with observed online/offline state (enable/disable
+    via context menu), folder tree with counts, the three-way tag filter
+    panel (click cycles require → exclude → clear), status flags.
+  - Filtered grid backed entirely by the SQL compiler; thumbnails via
+    AVAssetImageGenerator with a disk cache, so offline sources still
+    look complete; offline items badge and refuse playback.
+  - Basic native playback (AVKit) with clip in-point seek. Scrub
+    previews, waveforms and the keyboard map land in Phase 3b.
 
 ## Building
 
