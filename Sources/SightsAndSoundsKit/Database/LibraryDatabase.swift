@@ -422,6 +422,21 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 7: the revertible file-move log. No FK — the log outlives
+        // purged rows by design (names are snapshotted for labeling).
+        migrator.registerMigration("phase7") { db in
+            try db.create(table: "fileMoveLog") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                t.column("sourceID", .blob).notNull()
+                t.column("fileName", .text).notNull()
+                t.column("fromPath", .text).notNull()
+                t.column("toPath", .text).notNull()
+                t.column("movedAt", .datetime).notNull()
+                t.column("revertedAt", .datetime)
+            }
+        }
+
         return migrator
     }
 

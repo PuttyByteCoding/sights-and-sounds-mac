@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 6: duplicates and compare
+## Status — Phase 7a: moves and organization
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -117,7 +117,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     fingerprint capture (fpcalc; a missing tool is a note with install
     guidance, not a failure), and prefiltered fingerprint matching.
   - Compare view, quality scoring and decide-and-merge landed as 6b.
-- ✅ **Phase 6b** (this): compare and decide.
+- ✅ **Phase 6b** (merged): compare and decide.
   - QualityScore ported: scaled composition (missing signal analysis is
     a non-special case), tier tables intact, blockiness deliberately an
     unscored annotation until a real calibration exists.
@@ -129,6 +129,23 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Review UI: candidate queue with source/confidence, side-by-side
     compare with thumbnails, metadata, score breakdowns, tag carry-over
     toggles, Keep/Not Duplicates. Toolbar badge shows pending count.
+- ✅ **Phase 7a** (this): revertible moves and staging.
+  - Every file move goes through the FileAccess boundary with a paper
+    trail: never overwrites (timestamp suffix on collision), retries
+    transient IO, updates the item's path triplet, and logs a
+    revertible fileMoveLog row that outlives purged items.
+  - Staging ports MarkAndMove: mark-for-deletion / playback-issue flag
+    the row AND move the file under _ToDelete / _PlaybackIssue;
+    embedded clips, already-staged and missing files flag only; the
+    decision always commits before the move is attempted. decide() now
+    stages the loser physically (the 6b placeholder, filled).
+  - Purge: files then rows, flagged rows only, offline sources skipped
+    whole, failures keep their rows — reported honestly. Confirmed in
+    plain words by the user.
+  - Moved/staged files never re-import as duplicates — the DB path
+    moves with the file.
+  - UI: Maintenance menu with Move History (per-entry Revert) and the
+    purge flow; player W/D keys now stage physically.
 
 ### Demo library
 

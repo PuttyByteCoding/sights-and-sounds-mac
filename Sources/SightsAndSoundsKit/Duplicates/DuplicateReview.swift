@@ -7,6 +7,10 @@ public struct DecideOutcome: Sendable, Equatable {
     /// Single-value-category tags that could NOT merge because the keeper's
     /// existing pick wins — one human-readable line each.
     public let skippedSingleValue: [String]
+    /// Set when the decision committed but the physical staging move
+    /// failed — the old ordering guarantee: a filesystem failure never
+    /// costs the user their curated decision.
+    public var stagingWarning: String?
 }
 
 public enum DecideError: Error, CustomStringConvertible, Equatable {
@@ -73,10 +77,11 @@ extension LibraryDatabase {
     @discardableResult
     public func decide(
         keeper keeperID: UUID, loser loserID: UUID,
-        candidateID: UUID?, mergeTagIDs: Set<UUID>
+        candidateID: UUID?, mergeTagIDs: Set<UUID>,
+        fileAccess: any FileAccess = LiveFileAccess()
     ) throws -> DecideOutcome {
         guard keeperID != loserID else { throw DecideError.samePair }
-        return try writer.write { db in
+        var outcome = try writer.write { db in
             guard let keeper = try MediaItem.fetchOne(db, key: keeperID),
                   try MediaItem.fetchOne(db, key: loserID) != nil
             else { throw DecideError.notFound }
@@ -123,6 +128,16 @@ extension LibraryDatabase {
 
             return DecideOutcome(tagsMerged: merged, skippedSingleValue: skipped)
         }
+        // Two-phase on purpose (ported ordering): the decision above is
+        // committed; the physical _ToDelete staging happens after, and a
+        // move failure surfaces as a warning on the intact outcome.
+        do {
+            try stage(.toDelete, itemID: loserID, fileAccess: fileAccess)
+        } catch {
+            outcome.stagingWarning =
+                "Decision saved, but the file could not be staged: \(error). It remains where it was."
+        }
+        return outcome
     }
 
     /// The mergeable set: loser tags the keeper can take, honoring
