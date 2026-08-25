@@ -158,7 +158,7 @@ import Testing
 
     @Test func analysisRulesPersistWithOrderIntact() throws {
         let library = try LibraryDatabase.openInMemory()
-        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4"])
+        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5"])
 
         let rules = [
             AnalysisRule(

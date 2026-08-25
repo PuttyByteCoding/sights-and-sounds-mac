@@ -30,11 +30,16 @@ final class BrowseModel {
     var errorMessage: String?
 
     private let fileAccess: any FileAccess = LiveFileAccess()
+    private let jobRunner: JobRunner
+
+    /// Sources with an import in flight, and their progress line.
+    private(set) var importStatus: [UUID: String] = [:]
 
     init(libraryID: UUID, library: LibraryDatabase) {
         self.libraryID = libraryID
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
+        self.jobRunner = JobRunner(library: library)
         refreshAll()
     }
 
@@ -84,6 +89,61 @@ final class BrowseModel {
             refreshAll()
         } catch {
             errorMessage = "\(error)"
+        }
+    }
+
+    // MARK: - Sources & import
+
+    func addSource(at url: URL) {
+        do {
+            let source = Source(name: url.lastPathComponent, rootPath: url.path)
+            try library.writer.write { try source.insert($0) }
+            refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
+    /// Scan a source for new files. Serialized by the job runner; progress
+    /// surfaces beside the source row; the grid refreshes when done.
+    func importSource(_ source: Source) {
+        guard importStatus[source.id] == nil else { return }
+        importStatus[source.id] = "queued…"
+        Task {
+            do {
+                await jobRunner.register(ImportJob.self)
+                let record = try await ImportJob.enqueue(on: jobRunner, sourceID: source.id)
+                let drain = Task { try await jobRunner.runPending() }
+
+                // Poll the job row for progress until it settles.
+                var settled = false
+                while !settled {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard let row = try await library.writer.read({
+                        try JobRecord.fetchOne($0, key: record.id)
+                    }) else { break }
+                    switch row.state {
+                    case .queued:
+                        importStatus[source.id] = "queued…"
+                    case .running:
+                        if let total = row.progressTotal, total > 0 {
+                            importStatus[source.id] = "\(row.progressCurrent)/\(total)"
+                        } else {
+                            importStatus[source.id] = "scanning…"
+                        }
+                    case .succeeded, .failed, .cancelled:
+                        settled = true
+                        if row.state == .failed, let error = row.error {
+                            errorMessage = "Import failed: \(error)"
+                        }
+                    }
+                }
+                _ = try? await drain.value
+            } catch {
+                errorMessage = "\(error)"
+            }
+            importStatus[source.id] = nil
+            refreshAll()
         }
     }
 

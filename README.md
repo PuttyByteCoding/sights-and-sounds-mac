@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 4a: tagging core
+## Status — Phase 5a: ingest
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -66,7 +66,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     either edge), lastWatchedAt, watch tally + completed on 90% crossing.
   - Privacy guard in CI: library databases and snapshot exports can
     never be tracked (`scripts/check-no-private-data.sh`).
-- ✅ **Phase 4a** (this): tagging core.
+- ✅ **Phase 4a** (merged): tagging core.
   - Tag panel beside the player (T): checkbox categories as checkbox
     lists with ⌥1–9 toggles, pill + autocomplete for the rest,
     default-focus category takes the keyboard.
@@ -80,6 +80,20 @@ follow. Full context, locked decisions and the 11-phase plan live in
     advance-on-apply for triage; editor sheet included.
   - Category manager: full category configuration plus per-tag rename /
     hide / delete with cascades.
+- ✅ **Phase 5a** (this): directory scan and import.
+  - `ImportJob` — the first real `Job` conformance: recursive scan,
+    AVFoundation probing (duration, dimensions, codecs, streams),
+    idempotent by the unique source-relative path, serialized by the
+    runner (the old import-queue guarantee), offline/disabled sources
+    refuse with clear messages, files never deleted (validation's
+    business, Phase 8). Sidecar JSON/text files are noted-but-untouched
+    for the future metadata pipeline.
+  - Jobs gained a one-line completion summary ("38 new, 2 skipped").
+  - App: Add Source… folder picker; per-source Import New Files with
+    live progress beside the source row.
+  - Note: the rule-engine port (old Phase 4b) is replaced by a
+    claims-based metadata pipeline, deliberately sequenced after
+    Phase 8.
 
 ### Demo library
 

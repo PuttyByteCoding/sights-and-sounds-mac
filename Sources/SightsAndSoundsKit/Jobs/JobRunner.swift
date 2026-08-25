@@ -93,6 +93,9 @@ public actor JobRunner {
                 },
                 cancellationCheck: { [weak self] in
                     await self?.isCancelRequested(jobID) ?? true
+                },
+                summaryHandler: { [weak self] text in
+                    try? await self?.recordSummary(jobID: jobID, text: text)
                 }
             )
 
@@ -122,6 +125,14 @@ public actor JobRunner {
 
     private func isCancelRequested(_ jobID: UUID) -> Bool {
         cancelRequested.contains(jobID)
+    }
+
+    private func recordSummary(jobID: UUID, text: String) throws {
+        try library.writer.write { db in
+            try db.execute(
+                sql: "UPDATE job SET summary = ? WHERE id = ?",
+                arguments: [text, jobID])
+        }
     }
 
     private func recordProgress(jobID: UUID, current: Int, total: Int?) throws {

@@ -19,6 +19,10 @@ public protocol FileAccess: Sendable {
     /// Immediate children of a directory.
     func contentsOfDirectory(at url: URL) throws -> [URL]
 
+    /// Every regular file under a directory, recursively, hidden files
+    /// skipped. Order is unspecified; callers sort.
+    func allFiles(under url: URL) throws -> [URL]
+
     /// Size of the file in bytes.
     func fileSize(at url: URL) throws -> Int64
 }
@@ -34,6 +38,19 @@ public struct LiveFileAccess: FileAccess {
     public func contentsOfDirectory(at url: URL) throws -> [URL] {
         try FileManager.default.contentsOfDirectory(
             at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+    }
+
+    public func allFiles(under url: URL) throws -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles])
+        else { return [] }
+        var files: [URL] = []
+        for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+            if values?.isRegularFile == true { files.append(fileURL) }
+        }
+        return files
     }
 
     public func fileSize(at url: URL) throws -> Int64 {
