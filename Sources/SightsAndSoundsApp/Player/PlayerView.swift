@@ -79,6 +79,12 @@ struct PlayerView: View {
             return false
         }
 
+        // Ctrl+{ / Ctrl+}: clip in/out points (the old map's clip keys).
+        if press.modifiers.contains(.control) {
+            if character == "{" { model.setClipIn(); return true }
+            if character == "}" { model.setClipOut(); return true }
+        }
+
         // T: tag panel (fixed key, matching the old map).
         if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
            character.lowercased() == "t" {
@@ -185,6 +191,9 @@ private struct TransportBar: View {
     var body: some View {
         @Bindable var model = model
         VStack(spacing: 6) {
+            if model.pendingClipStart != nil || model.pendingClipEnd != nil {
+                ClipAuthoringBar()
+            }
             ScrubberView()
             HStack(spacing: 14) {
                 Button {
@@ -440,5 +449,44 @@ extension CGFloat {
     var clamped01: CGFloat { Swift.min(1, Swift.max(0, self)) }
     func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
         Swift.min(range.upperBound, Swift.max(range.lowerBound, self))
+    }
+}
+
+
+/// The in-progress clip range: shown while either point is set, saved
+/// once both are (⌃{ sets in, ⌃} sets out).
+private struct ClipAuthoringBar: View {
+    @Environment(PlayerModel.self) private var model
+    @State private var name = ""
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "scissors")
+            Text(rangeText).font(.callout.monospacedDigit())
+            if model.pendingClipReady {
+                TextField("Clip name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 180)
+                Button("Save Clip") {
+                    model.savePendingClip(named: name)
+                    name = ""
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+            } else {
+                Text("set the other point (⌃{ / ⌃})")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Cancel") { model.cancelPendingClip() }
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var rangeText: String {
+        let start = model.pendingClipStart.map(TransportBarTime.format) ?? "—"
+        let end = model.pendingClipEnd.map(TransportBarTime.format) ?? "—"
+        return "\(start) → \(end)"
     }
 }

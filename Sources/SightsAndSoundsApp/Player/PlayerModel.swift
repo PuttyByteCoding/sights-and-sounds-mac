@@ -70,16 +70,13 @@ final class PlayerModel {
                 loadError = "The item no longer exists."
                 return
             }
-            guard let source = try library.sources().first(where: { $0.id == loaded.sourceID }),
-                  source.enabled, source.isOnline(using: fileAccess)
-            else {
+            // Embedded clips resolve to the PARENT's file.
+            guard let url = try library.resolvedFileURL(for: loaded, fileAccess: fileAccess) else {
                 item = loaded
                 loadError = "The item's source is offline."
                 return
             }
             item = loaded
-            let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-                .appendingPathComponent(loaded.relativePath)
             fileURL = url
             durationSeconds = loaded.durationSeconds ?? 0
 
@@ -236,6 +233,39 @@ final class PlayerModel {
             loadError = "\(error)"
         }
         return true
+    }
+
+    // MARK: - Clip authoring
+
+    var pendingClipStart: Double?
+    var pendingClipEnd: Double?
+
+    func setClipIn() { pendingClipStart = currentSeconds }
+    func setClipOut() { pendingClipEnd = currentSeconds }
+    func cancelPendingClip() {
+        pendingClipStart = nil
+        pendingClipEnd = nil
+    }
+
+    var pendingClipReady: Bool {
+        if let start = pendingClipStart, let end = pendingClipEnd { return end > start }
+        return false
+    }
+
+    /// Save the pending range as an embedded clip on the current item
+    /// (authoring on a clip targets its parent).
+    func savePendingClip(named name: String) {
+        guard let item, let start = pendingClipStart, let end = pendingClipEnd else { return }
+        do {
+            let parentID = item.parentMediaItemID ?? item.id
+            _ = try library.createEmbeddedClip(
+                parentID: parentID,
+                name: name.isEmpty ? "clip" : name,
+                startSeconds: start, endSeconds: end)
+            cancelPendingClip()
+        } catch {
+            loadError = "\(error)"
+        }
     }
 
     // MARK: - Playlist walking
