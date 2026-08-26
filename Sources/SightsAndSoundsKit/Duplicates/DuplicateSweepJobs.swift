@@ -11,7 +11,7 @@ public struct HashDuplicateSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        let groups = try await library.writer.read { db -> [Row] in
+        let groups = try library.writer.read { db -> [Row] in
             try Row.fetchAll(
                 db,
                 sql: """

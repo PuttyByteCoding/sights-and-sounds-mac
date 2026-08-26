@@ -1,9 +1,9 @@
 import AVFoundation
 import Foundation
 
-/// Shared passthrough-export plumbing for the operation jobs. The session
-/// is non-Sendable, so it lives and dies inside one call; only primitives
-/// cross back (the ScrubPreviewProvider lesson, applied from the start).
+/// Shared passthrough-export plumbing for the operation jobs, on the
+/// modern throwing export API. The session lives and dies inside one
+/// call; only primitives cross back.
 enum AVExport {
     struct ExportFailure: Error, CustomStringConvertible {
         let message: String
@@ -25,26 +25,17 @@ enum AVExport {
             asset: asset, presetName: AVAssetExportPresetPassthrough)
         else { throw ExportFailure(message: "passthrough export unavailable for this container") }
 
-        session.outputURL = outputURL
-        session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = optimizeForNetworkUse
         if let timeRange { session.timeRange = timeRange }
 
-        let failure: String? = await withCheckedContinuation { continuation in
-            session.exportAsynchronously {
-                switch session.status {
-                case .completed:
-                    continuation.resume(returning: nil)
-                case .cancelled:
-                    continuation.resume(returning: "export cancelled")
-                default:
-                    continuation.resume(returning: session.error.map(String.init(describing:)) ?? "export failed")
-                }
-            }
+        do {
+            try await session.export(to: outputURL, as: .mp4)
+        } catch {
+            throw ExportFailure(message: "\(error)")
         }
-        if let failure { throw ExportFailure(message: failure) }
 
-        let size = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int64) ?? 0
-        guard size ?? 0 > 0 else { throw ExportFailure(message: "export produced an empty file") }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: outputURL.path)
+        let size = (attributes?[.size] as? Int64) ?? 0
+        guard size > 0 else { throw ExportFailure(message: "export produced an empty file") }
     }
 }
