@@ -204,6 +204,22 @@ final class BrowseModel {
         }
     }
 
+    func encode(_ item: MediaItem, preset: EncodeJob.Preset) {
+        runOperation { runner in
+            _ = try await EncodeJob.enqueue(on: runner, itemID: item.id, preset: preset)
+        }
+    }
+
+    func removeBlocks(_ item: MediaItem) {
+        runOperation { runner in
+            _ = try await BlockRemovalJob.enqueue(on: runner, itemID: item.id)
+        }
+    }
+
+    func hasHideBlocks(_ item: MediaItem) -> Bool {
+        ((try? library.blocks(of: item.id)) ?? []).contains { $0.kind == .hide }
+    }
+
     func remux(_ item: MediaItem, mode: RemuxJob.Mode) {
         runOperation { runner in
             _ = try await RemuxJob.enqueue(on: runner, itemID: item.id, mode: mode)

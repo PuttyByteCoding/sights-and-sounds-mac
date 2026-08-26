@@ -501,6 +501,19 @@ public final class LibraryDatabase: Sendable {
             try db.execute(sql: "CREATE UNIQUE INDEX mediaItem_sourceID_relativePath_files ON mediaItem(sourceID, relativePath) WHERE parentMediaItemID IS NULL")
         }
 
+        // Phase 7c: marked time ranges (hide blocks skip live and drive
+        // the removal edit; clip-kind blocks are informational).
+        migrator.registerMigration("phase7c") { db in
+            try db.create(table: "videoBlock") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("startSeconds", .double).notNull()
+                t.column("endSeconds", .double).notNull()
+                t.column("kind", .text).notNull().defaults(to: "hide")
+            }
+        }
+
         return migrator
     }
 
