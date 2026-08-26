@@ -3,13 +3,15 @@ import AVKit
 import SwiftUI
 import SightsAndSoundsKit
 
-/// The playback window: custom transport (system controls can't host
-/// scrub previews), the ported keyboard map, waveform timelines for
-/// audio, and resume/watch-state recording.
+/// The playback surface, embedded in the library window it was opened
+/// from: custom transport (system controls can't host scrub previews),
+/// the ported keyboard map, waveform timelines for audio, and
+/// resume/watch-state recording. `onClose` hands the window back to
+/// the browse grid (Back button, or Esc).
 struct PlayerView: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     let request: PlayerRequest
+    let onClose: () -> Void
 
     @State private var model: PlayerModel?
     @State private var openError: String?
@@ -27,6 +29,12 @@ struct PlayerView: View {
                     description: Text(openError))
             } else {
                 ProgressView()
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button("Back", systemImage: "chevron.left") { onClose() }
+                    .help("Back to the library (Esc)")
             }
         }
         .frame(minWidth: 720, minHeight: 460)
@@ -59,13 +67,19 @@ struct PlayerView: View {
     ]
 
     private func handle(_ press: KeyPress) -> Bool {
+        // Esc leaves the player even when the item failed to open.
+        if press.key == .escape {
+            if let model, model.showTagPanel {
+                model.showTagPanel = false
+            } else {
+                onClose()
+            }
+            return true
+        }
         guard let model else { return false }
         switch press.key {
         case .leftArrow: model.goPrevious(); return true
         case .rightArrow: model.goNext(); return true
-        case .escape:
-            if model.showTagPanel { model.showTagPanel = false } else { dismiss() }
-            return true
         default: break
         }
 

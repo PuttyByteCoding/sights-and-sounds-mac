@@ -49,8 +49,22 @@ struct BrowseView: View {
     @State private var showValidation = false
 
     var body: some View {
+        // Playback happens in place: the player takes over the window and
+        // Back (or Esc) returns to the grid exactly as it was left.
+        if let request = model.playerRequest {
+            PlayerView(request: request) {
+                model.playerRequest = nil
+                model.refreshAll()
+            }
+            .id(request)  // a new request rebuilds the player from scratch
+        } else {
+            browseBody
+        }
+    }
+
+    private var browseBody: some View {
         @Bindable var model = model
-        NavigationSplitView {
+        return NavigationSplitView {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {

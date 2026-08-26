@@ -40,13 +40,6 @@ struct SightsAndSoundsApp: App {
             }
         }
 
-        WindowGroup(id: "player", for: PlayerRequest.self) { $request in
-            if let request {
-                PlayerView(request: request)
-                    .environment(model)
-            }
-        }
-
         // One dashboard across every library (workers run once and
         // service them all).
         Window("Background Tasks", id: "tasks") {
@@ -196,8 +189,9 @@ final class AppModel {
     }
 }
 
-/// Identifies one item to play, across window boundaries, plus the
-/// filtered listing it came from so the player's arrows can walk it.
+/// Identifies one item to play, plus the filtered listing it came from
+/// so the player's arrows can walk it. Setting one on a BrowseModel
+/// swaps that library window over to the embedded player.
 struct PlayerRequest: Codable, Hashable {
     var libraryID: UUID
     var itemID: UUID

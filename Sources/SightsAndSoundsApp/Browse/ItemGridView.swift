@@ -35,7 +35,6 @@ struct ItemGridView: View {
 
 private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     let item: MediaItem
     @State private var thumbnail: NSImage?
 
@@ -179,9 +178,9 @@ private struct ItemCell: View {
 
     private func play() {
         guard model.isOnline(item) else { return }
-        openWindow(id: "player", value: PlayerRequest(
+        model.playerRequest = PlayerRequest(
             libraryID: model.libraryID, itemID: item.id,
-            playlist: model.items.map(\.id)))
+            playlist: model.items.map(\.id))
     }
 
     static func format(duration: Double) -> String {
