@@ -43,19 +43,26 @@ public struct MediaFilter: Hashable, Sendable {
     public var required: [FilterTerm]
     public var optional: [FilterTerm]
     public var excluded: [FilterTerm]
+    /// Free-text search, separate from the three-way slots (the old app's
+    /// SearchQuery): matches file name, path, notes, and recognized
+    /// on-screen text (OCR).
+    public var searchText: String
 
     public init(
         required: [FilterTerm] = [],
         optional: [FilterTerm] = [],
-        excluded: [FilterTerm] = []
+        excluded: [FilterTerm] = [],
+        searchText: String = ""
     ) {
         self.required = required
         self.optional = optional
         self.excluded = excluded
+        self.searchText = searchText
     }
 
     public var isEmpty: Bool {
         required.isEmpty && optional.isEmpty && excluded.isEmpty
+            && searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     /// Tag ids referenced anywhere in the filter. A hidden-by-default tag
@@ -67,4 +74,18 @@ public struct MediaFilter: Hashable, Sendable {
         }
         return ids
     }
+}
+
+/// How a listing is ordered. Typed — never raw SQL from callers.
+///
+/// `.fieldValue` is the Phase 1 requirement the old app could not express:
+/// its browse sorts stopped at file properties, so ordering a Learning
+/// course by a Lesson Number field was impossible. Number fields sort by
+/// `numericValue` ("10" after "2"); everything else sorts as NOCASE text.
+/// Items without a value for the field sort last; `relativePath` breaks
+/// ties so ordering is total and stable.
+public enum MediaOrdering: Hashable, Sendable {
+    case relativePath
+    case fileName
+    case fieldValue(UUID, ascending: Bool = true)
 }

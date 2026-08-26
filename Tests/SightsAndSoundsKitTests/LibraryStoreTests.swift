@@ -20,13 +20,13 @@ import Testing
         let url = dir.appendingPathComponent("Concerts.sqlite")
 
         let first = try LibraryDatabase.open(at: url)
-        #expect(try first.appliedMigrations() == ["phase0"])
+        #expect(try first.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b"])
         let category = TagCategory(name: "Band")
         try first.writer.write { try category.insert($0) }
 
         // Reopen the same file: migrations recognized, data intact.
         let second = try LibraryDatabase.open(at: url)
-        #expect(try second.appliedMigrations() == ["phase0"])
+        #expect(try second.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b"])
         let reread = try second.writer.read { try TagCategory.fetchOne($0) }
         #expect(reread == category)
     }
@@ -41,14 +41,18 @@ import Testing
         // Distinct vocabularies, written while both are open.
         let bandCat = TagCategory(name: "Band")
         let subjectCat = TagCategory(name: "Subject")
-        let concert = MediaItem(kind: .video, relativePath: "shows/x.mp4")
-        let lesson = MediaItem(kind: .video, relativePath: "swift/lesson-01.mp4")
+        let concertSource = Source(name: "Shows", rootPath: "/Volumes/Media/Shows")
+        let courseSource = Source(name: "Courses", rootPath: "/Volumes/Media/Courses")
+        let concert = MediaItem(sourceID: concertSource.id, kind: .video, relativePath: "shows/x.mp4")
+        let lesson = MediaItem(sourceID: courseSource.id, kind: .video, relativePath: "swift/lesson-01.mp4")
         try concerts.writer.write { db in
             try bandCat.insert(db)
+            try concertSource.insert(db)
             try concert.insert(db)
         }
         try learning.writer.write { db in
             try subjectCat.insert(db)
+            try courseSource.insert(db)
             try lesson.insert(db)
         }
 
@@ -66,7 +70,7 @@ import Testing
     }
 
     @Test func mediaPathTripletStaysInLockstep() throws {
-        var item = MediaItem(kind: .video, relativePath: "a\\b//c.mp4")
+        var item = MediaItem(sourceID: UUID(), kind: .video, relativePath: "a\\b//c.mp4")
         #expect(item.relativePath == "a/b/c.mp4")
         #expect(item.folderPath == "a/b")
         #expect(item.fileName == "c.mp4")

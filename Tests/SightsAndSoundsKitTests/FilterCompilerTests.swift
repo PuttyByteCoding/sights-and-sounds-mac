@@ -23,6 +23,7 @@ import Testing
         // The baseline predicates every listing carries.
         #expect(compiled.sql.contains("mediaItem.kind = ?"))
         #expect(compiled.sql.contains("mediaItem.clipExported = 0"))
+        #expect(compiled.sql.contains("source.enabled"))
         // Term shapes.
         #expect(compiled.sql.contains("EXISTS (SELECT 1 FROM mediaItemTag"))
         #expect(compiled.sql.contains("mediaItem.folderPath = ?"))

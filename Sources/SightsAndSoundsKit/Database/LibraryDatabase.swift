@@ -30,6 +30,19 @@ public final class LibraryDatabase: Sendable {
         return try LibraryDatabase(writer: pool, fileURL: url)
     }
 
+    /// Checkpoint and close. GRDB pools keep a persistent WAL sidecar, so
+    /// the truncate checkpoint here is what folds every commit into the
+    /// main file — the step that makes a library portable as *one* file.
+    /// Copy or move a library only after closing it.
+    public func close() throws {
+        if writer is DatabasePool {
+            _ = try writer.writeWithoutTransaction { db in
+                try db.checkpoint(.truncate)
+            }
+        }
+        try writer.close()
+    }
+
     /// A fresh in-memory library. Test-only convenience; identical schema.
     public static func openInMemory() throws -> LibraryDatabase {
         var config = Configuration()
@@ -38,34 +51,55 @@ public final class LibraryDatabase: Sendable {
         return try LibraryDatabase(writer: queue, fileURL: nil)
     }
 
+    // MARK: - Identity
+
+    /// This library's identity row, if it has been stamped.
+    public func info() throws -> LibraryInfo? {
+        try writer.read { try LibraryInfo.fetchOne($0) }
+    }
+
+    /// Stamp the library's identity on first use; later calls return the
+    /// existing row untouched (a library is named once — renames are an
+    /// explicit update, not a side effect of opening).
+    @discardableResult
+    public func ensureInfo(name: String) throws -> LibraryInfo {
+        try writer.write { db in
+            if let existing = try LibraryInfo.fetchOne(db) { return existing }
+            try LibraryInfo(name: name).insert(db)
+            // Return the stored row, not the in-memory one — storage
+            // truncates Date to millisecond precision and the canonical
+            // value is what every later read sees.
+            return try LibraryInfo.fetchOne(db)!
+        }
+    }
+
     // MARK: - Migrations
 
-    /// Registered migrations, oldest first. The mechanism is the deliverable
-    /// in Phase 0: every future schema change lands as a new registration,
-    /// and the dev-fixture migration loop re-runs against them all.
+    /// Registered migrations, oldest first. Append-only: every schema change
+    /// lands as a new registration, and the dev-fixture migration loop
+    /// (delete the library file, re-run the migrator against a frozen v8
+    /// snapshot) re-exercises them all.
     static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
         migrator.registerMigration("phase0") { db in
-            try db.create(table: TagCategory.databaseTableName) { t in
+            try db.create(table: "tagCategory") { t in
                 t.primaryKey("id", .blob)
                 t.column("name", .text).notNull()
                 t.column("sortOrder", .integer).notNull().defaults(to: 0)
             }
 
-            try db.create(table: Tag.databaseTableName) { t in
+            try db.create(table: "tag") { t in
                 t.primaryKey("id", .blob)
                 t.column("tagCategoryID", .blob).notNull().indexed()
-                    .references(TagCategory.databaseTableName, onDelete: .cascade)
+                    .references("tagCategory", onDelete: .cascade)
                 t.column("name", .text).notNull()
                 t.column("hiddenByDefault", .boolean).notNull().defaults(to: false)
             }
 
-            try db.create(table: MediaItem.databaseTableName) { t in
+            try db.create(table: "mediaItem") { t in
                 t.primaryKey("id", .blob)
                 t.column("kind", .integer).notNull()
-                // NOCASE so folder equality and subtree prefix match the old
-                // app's OrdinalIgnoreCase path semantics in pure SQL.
                 t.column("relativePath", .text).notNull().collate(.nocase)
                 t.column("folderPath", .text).notNull().collate(.nocase).indexed()
                 t.column("fileName", .text).notNull()
@@ -73,33 +107,470 @@ public final class LibraryDatabase: Sendable {
                 t.column("playbackIssue", .boolean).notNull().defaults(to: false)
                 t.column("markedForDeletion", .boolean).notNull().defaults(to: false)
                 t.column("isFavorite", .boolean).notNull().defaults(to: false)
-                t.column("parentMediaItemID", .blob)
-                    .references(MediaItem.databaseTableName)
+                t.column("parentMediaItemID", .blob).references("mediaItem")
                 t.column("isClip", .boolean).notNull().defaults(to: false)
                 t.column("isExportedClip", .boolean).notNull().defaults(to: false)
                 t.column("isEdited", .boolean).notNull().defaults(to: false)
                 t.column("clipExported", .boolean).notNull().defaults(to: false)
             }
-            // Every listing query hard-filters by kind (the two-dimension
-            // scoping lesson), so give that predicate an index from day one.
             try db.create(
-                index: "mediaItem_kind", on: MediaItem.databaseTableName,
-                columns: ["kind"])
+                index: "mediaItem_kind", on: "mediaItem", columns: ["kind"])
 
-            try db.create(table: MediaItemTag.databaseTableName) { t in
+            try db.create(table: "mediaItemTag") { t in
                 t.column("mediaItemID", .blob).notNull()
-                    .references(MediaItem.databaseTableName, onDelete: .cascade)
+                    .references("mediaItem", onDelete: .cascade)
                 t.column("tagID", .blob).notNull()
-                    .references(Tag.databaseTableName, onDelete: .cascade)
+                    .references("tag", onDelete: .cascade)
                 t.primaryKey(["mediaItemID", "tagID"])
             }
-            // Covering index in tag→item direction: the filter's EXISTS
-            // probes are (mediaItemID, tagID) via the primary key; tag
-            // deletion and per-tag counts walk this one.
             try db.create(
                 index: "mediaItemTag_tagID_mediaItemID",
-                on: MediaItemTag.databaseTableName,
+                on: "mediaItemTag",
                 columns: ["tagID", "mediaItemID"], options: .unique)
+        }
+
+        // Phase 1: the schema that holds the whole product — identity,
+        // sources with real ownership, full vocabulary configuration,
+        // sortable field values, per-feature state tables, jobs.
+        //
+        // The phase0 entity tables are dropped and rebuilt rather than
+        // altered: Phase 0 shipped no real libraries (scratch and test data
+        // only), and every real library enters through the Phase 2 migrator
+        // against this schema. Append-only discipline holds from here on.
+        migrator.registerMigration("phase1") { db in
+            try db.drop(table: "mediaItemTag")
+            try db.drop(table: "mediaItem")
+            try db.drop(table: "tag")
+            try db.drop(table: "tagCategory")
+
+            // -- Identity ------------------------------------------------
+            try db.create(table: "libraryInfo") { t in
+                // CHECK-pinned single row.
+                t.primaryKey("id", .integer).check { $0 == 1 }
+                t.column("libraryID", .blob).notNull()
+                t.column("name", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+
+            // -- Sources -------------------------------------------------
+            try db.create(table: "source") { t in
+                t.primaryKey("id", .blob)
+                t.column("name", .text).notNull()
+                t.column("rootPath", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("enabled", .boolean).notNull().defaults(to: true)
+                t.column("lastSeenAt", .datetime)
+            }
+
+            // -- Vocabulary ----------------------------------------------
+            try db.create(table: "tagCategory") { t in
+                t.primaryKey("id", .blob)
+                t.column("name", .text).notNull().collate(.nocase)
+                t.column("allowMultiple", .boolean).notNull().defaults(to: true)
+                t.column("displayAsCheckboxes", .boolean).notNull().defaults(to: false)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("hiddenFromBrowse", .boolean).notNull().defaults(to: false)
+                t.column("sectionLabel", .text)
+                t.column("isDefaultFocus", .boolean).notNull().defaults(to: false)
+                t.column("textFormat", .integer).notNull().defaults(to: 0)
+                t.column("separatorsToSpaces", .boolean).notNull().defaults(to: false)
+                t.column("writebackEnabled", .boolean).notNull().defaults(to: true)
+                t.column("writebackField", .text)
+                t.uniqueKey(["name"])
+            }
+
+            try db.create(table: "tag") { t in
+                t.primaryKey("id", .blob)
+                t.column("tagCategoryID", .blob).notNull().indexed()
+                    .references("tagCategory", onDelete: .cascade)
+                t.column("name", .text).notNull().collate(.nocase)
+                t.column("hiddenByDefault", .boolean).notNull().defaults(to: false)
+                t.column("isFavorite", .boolean).notNull().defaults(to: false)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.uniqueKey(["tagCategoryID", "name"])
+            }
+
+            try db.create(table: "tagAlias") { t in
+                t.column("tagID", .blob).notNull()
+                    .references("tag", onDelete: .cascade)
+                t.column("alias", .text).notNull().collate(.nocase)
+                t.primaryKey(["tagID", "alias"])
+            }
+            try db.create(
+                index: "tagAlias_alias", on: "tagAlias", columns: ["alias"])
+
+            // -- Fields --------------------------------------------------
+            try db.create(table: "fieldDefinition") { t in
+                t.primaryKey("id", .blob)
+                t.column("name", .text).notNull().collate(.nocase)
+                t.column("dataType", .text).notNull()
+                t.column("scope", .text).notNull()
+                t.column("tagCategoryID", .blob)
+                    .references("tagCategory", onDelete: .cascade)
+                t.column("required", .boolean).notNull().defaults(to: false)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text).notNull().defaults(to: "")
+                // Scope 'tag' has a category; scope 'mediaItem' must not.
+                t.check(sql: "(scope = 'tag') = (tagCategoryID IS NOT NULL)")
+            }
+
+            // -- Media items ---------------------------------------------
+            try db.create(table: "mediaItem") { t in
+                t.primaryKey("id", .blob)
+                // RESTRICT: removing a source with items is an explicit
+                // app-level operation, never a cascade.
+                t.column("sourceID", .blob).notNull().indexed()
+                    .references("source", onDelete: .restrict)
+                t.column("kind", .integer).notNull()
+                t.column("relativePath", .text).notNull().collate(.nocase)
+                t.column("folderPath", .text).notNull().collate(.nocase).indexed()
+                t.column("fileName", .text).notNull()
+                t.column("fileSize", .integer).notNull().defaults(to: 0)
+                t.column("durationSeconds", .double)
+                t.column("width", .integer)
+                t.column("height", .integer)
+                t.column("videoCodec", .text)
+                t.column("audioCodec", .text)
+                t.column("pixelFormat", .text)
+                t.column("frameRate", .double)
+                t.column("bitrate", .integer)
+                t.column("videoStreamCount", .integer)
+                t.column("audioStreamCount", .integer)
+                t.column("sampleRate", .integer)
+                t.column("bitDepth", .integer)
+                t.column("audioChannels", .integer)
+                t.column("contentCreatedAt", .datetime)
+                // Non-unique: duplicate hashes are review data, not errors.
+                t.column("contentHash", .text).indexed()
+                t.column("ingestDate", .datetime).notNull()
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("watchCount", .integer).notNull().defaults(to: 0)
+                t.column("resumePositionSeconds", .double)
+                t.column("completed", .boolean).notNull().defaults(to: false)
+                t.column("lastWatchedAt", .datetime)
+                t.column("needsReview", .boolean).notNull().defaults(to: true)
+                t.column("playbackIssue", .boolean).notNull().defaults(to: false)
+                t.column("markedForDeletion", .boolean).notNull().defaults(to: false)
+                t.column("isFavorite", .boolean).notNull().defaults(to: false)
+                t.column("parentMediaItemID", .blob).references("mediaItem")
+                t.column("clipStartSeconds", .double)
+                t.column("clipEndSeconds", .double)
+                t.column("isClip", .boolean).notNull().defaults(to: false)
+                t.column("isExportedClip", .boolean).notNull().defaults(to: false)
+                t.column("isEdited", .boolean).notNull().defaults(to: false)
+                t.column("clipExported", .boolean).notNull().defaults(to: false)
+                // Soft reference by design (breadcrumb semantics) — no FK.
+                t.column("exportedToMediaItemID", .blob)
+                // One row per file within a source.
+                t.uniqueKey(["sourceID", "relativePath"])
+            }
+            try db.create(
+                index: "mediaItem_kind_phase1", on: "mediaItem", columns: ["kind"])
+
+            try db.create(table: "mediaItemTag") { t in
+                t.column("mediaItemID", .blob).notNull()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("tagID", .blob).notNull()
+                    .references("tag", onDelete: .cascade)
+                t.primaryKey(["mediaItemID", "tagID"])
+            }
+            try db.create(
+                index: "mediaItemTag_tagID_mediaItemID_phase1",
+                on: "mediaItemTag",
+                columns: ["tagID", "mediaItemID"], options: .unique)
+
+            // -- Field values --------------------------------------------
+            try db.create(table: "tagFieldValue") { t in
+                t.column("tagID", .blob).notNull()
+                    .references("tag", onDelete: .cascade)
+                t.column("fieldDefinitionID", .blob).notNull()
+                    .references("fieldDefinition", onDelete: .cascade)
+                t.column("value", .text).notNull()
+                t.column("numericValue", .double)
+                t.primaryKey(["tagID", "fieldDefinitionID"])
+            }
+            try db.create(
+                index: "tagFieldValue_definition_sort",
+                on: "tagFieldValue",
+                columns: ["fieldDefinitionID", "numericValue", "value"])
+
+            try db.create(table: "mediaItemFieldValue") { t in
+                t.column("mediaItemID", .blob).notNull()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("fieldDefinitionID", .blob).notNull()
+                    .references("fieldDefinition", onDelete: .cascade)
+                t.column("value", .text).notNull()
+                t.column("numericValue", .double)
+                t.primaryKey(["mediaItemID", "fieldDefinitionID"])
+            }
+            // The Learning lesson-ordering index: sort by a field without
+            // touching the value rows of any other field.
+            try db.create(
+                index: "mediaItemFieldValue_definition_sort",
+                on: "mediaItemFieldValue",
+                columns: ["fieldDefinitionID", "numericValue", "value"])
+
+            // -- Per-feature state ---------------------------------------
+            try db.create(table: "contentHashFailure") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("message", .text).notNull()
+                t.column("occurredAt", .datetime).notNull()
+            }
+
+            try db.create(table: "thumbnailState") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("generated", .boolean).notNull().defaults(to: false)
+                t.column("failureMessage", .text)
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "ocrProgress") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("scannedThroughSeconds", .double).notNull()
+            }
+
+            // -- Jobs ----------------------------------------------------
+            try db.create(table: "job") { t in
+                t.primaryKey("id", .blob)
+                t.column("kind", .text).notNull()
+                t.column("state", .text).notNull().defaults(to: "queued")
+                    .check { ["queued", "running", "succeeded", "failed", "cancelled"].contains($0) }
+                t.column("payload", .blob)
+                t.column("error", .text)
+                t.column("progressCurrent", .integer).notNull().defaults(to: 0)
+                t.column("progressTotal", .integer)
+                t.column("createdAt", .datetime).notNull()
+                t.column("startedAt", .datetime)
+                t.column("finishedAt", .datetime)
+            }
+            try db.create(
+                index: "job_state_createdAt", on: "job", columns: ["state", "createdAt"])
+        }
+
+        // Phase 2: persisted tag-analysis rules. Storage only — the engine
+        // ports in Phase 4 — but the table exists now so the migrator can
+        // carry the rules (authored data, the one thing the old snapshot
+        // gates call out as not self-healing).
+        migrator.registerMigration("phase2") { db in
+            try db.create(table: "analysisRule") { t in
+                t.primaryKey("id", .blob)
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("matchJSON", .text).notNull()
+                t.column("actionsJSON", .text).notNull()
+            }
+        }
+
+        // Phase 4: user key -> tag bindings, library-owned (the old app
+        // kept them in browser localStorage; the brief moves them into the
+        // library, which owns everything that names its tags).
+        migrator.registerMigration("phase4") { db in
+            try db.create(table: "tagKeyBinding") { t in
+                t.primaryKey("key", .text)
+                t.column("tagID", .blob).notNull().indexed()
+                    .references("tag", onDelete: .cascade)
+                t.column("advance", .boolean).notNull().defaults(to: false)
+            }
+        }
+
+        // Phase 5: jobs gain a human-readable completion summary ("38 new,
+        // 2 skipped") so the dashboard can say what happened without
+        // re-deriving it.
+        migrator.registerMigration("phase5") { db in
+            try db.alter(table: "job") { t in
+                t.add(column: "summary", .text)
+            }
+        }
+
+        // Phase 6: duplicate candidates and audio fingerprints. Candidate
+        // pairs are order-normalized with a unique index — one row per
+        // pair, ever, which is how a rejected pair stays rejected.
+        migrator.registerMigration("phase6") { db in
+            try db.create(table: "duplicateCandidate") { t in
+                t.primaryKey("id", .blob)
+                t.column("itemAID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("itemBID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("source", .text).notNull()
+                t.column("confidence", .double)
+                t.column("offsetSeconds", .double)
+                t.column("matchKind", .text)
+                t.column("createdAt", .datetime).notNull()
+                t.uniqueKey(["itemAID", "itemBID"])
+            }
+
+            try db.create(table: "audioFingerprint") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("durationSeconds", .double).notNull()
+                t.column("fingerprint", .blob).notNull()
+                t.column("toolVersion", .text).notNull()
+                t.column("computedAt", .datetime).notNull()
+            }
+
+            try db.create(table: "fingerprintFailure") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("message", .text).notNull()
+                t.column("occurredAt", .datetime).notNull()
+            }
+        }
+
+        // Phase 7: the revertible file-move log. No FK — the log outlives
+        // purged rows by design (names are snapshotted for labeling).
+        migrator.registerMigration("phase7") { db in
+            try db.create(table: "fileMoveLog") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                t.column("sourceID", .blob).notNull()
+                t.column("fileName", .text).notNull()
+                t.column("fromPath", .text).notNull()
+                t.column("toPath", .text).notNull()
+                t.column("movedAt", .datetime).notNull()
+                t.column("revertedAt", .datetime)
+            }
+        }
+
+        // Phase 7b: embedded clips carry their PARENT's relativePath (their
+        // file IS the parent's file), so path uniqueness applies only to
+        // rows that own a real file. The original uniqueness was a
+        // table-level constraint (an auto-index DROP INDEX can't touch),
+        // so this is the standard SQLite rebuild: new table without the
+        // constraint, copy, swap, re-index — plus the partial unique index.
+        migrator.registerMigration("phase7b") { db in
+            try db.create(table: "mediaItem_new") { t in
+                t.primaryKey("id", .blob)
+                t.column("sourceID", .blob).notNull()
+                    .references("source", onDelete: .restrict)
+                t.column("kind", .integer).notNull()
+                t.column("relativePath", .text).notNull().collate(.nocase)
+                t.column("folderPath", .text).notNull().collate(.nocase)
+                t.column("fileName", .text).notNull()
+                t.column("fileSize", .integer).notNull().defaults(to: 0)
+                t.column("durationSeconds", .double)
+                t.column("width", .integer)
+                t.column("height", .integer)
+                t.column("videoCodec", .text)
+                t.column("audioCodec", .text)
+                t.column("pixelFormat", .text)
+                t.column("frameRate", .double)
+                t.column("bitrate", .integer)
+                t.column("videoStreamCount", .integer)
+                t.column("audioStreamCount", .integer)
+                t.column("sampleRate", .integer)
+                t.column("bitDepth", .integer)
+                t.column("audioChannels", .integer)
+                t.column("contentCreatedAt", .datetime)
+                t.column("contentHash", .text)
+                t.column("ingestDate", .datetime).notNull()
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("watchCount", .integer).notNull().defaults(to: 0)
+                t.column("resumePositionSeconds", .double)
+                t.column("completed", .boolean).notNull().defaults(to: false)
+                t.column("lastWatchedAt", .datetime)
+                t.column("needsReview", .boolean).notNull().defaults(to: true)
+                t.column("playbackIssue", .boolean).notNull().defaults(to: false)
+                t.column("markedForDeletion", .boolean).notNull().defaults(to: false)
+                t.column("isFavorite", .boolean).notNull().defaults(to: false)
+                t.column("parentMediaItemID", .blob).references("mediaItem")
+                t.column("clipStartSeconds", .double)
+                t.column("clipEndSeconds", .double)
+                t.column("isClip", .boolean).notNull().defaults(to: false)
+                t.column("isExportedClip", .boolean).notNull().defaults(to: false)
+                t.column("isEdited", .boolean).notNull().defaults(to: false)
+                t.column("clipExported", .boolean).notNull().defaults(to: false)
+                t.column("exportedToMediaItemID", .blob)
+            }
+            // Explicit column lists on both sides: SELECT * order is an
+            // accident of history, this is not.
+            let columns = "id, sourceID, kind, relativePath, folderPath, fileName, fileSize, durationSeconds, width, height, videoCodec, audioCodec, pixelFormat, frameRate, bitrate, videoStreamCount, audioStreamCount, sampleRate, bitDepth, audioChannels, contentCreatedAt, contentHash, ingestDate, notes, watchCount, resumePositionSeconds, completed, lastWatchedAt, needsReview, playbackIssue, markedForDeletion, isFavorite, parentMediaItemID, clipStartSeconds, clipEndSeconds, isClip, isExportedClip, isEdited, clipExported, exportedToMediaItemID"
+            try db.execute(sql: "INSERT INTO mediaItem_new (" + columns + ") SELECT " + columns + " FROM mediaItem")
+            try db.drop(table: "mediaItem")
+            try db.execute(sql: "ALTER TABLE mediaItem_new RENAME TO mediaItem")
+
+            try db.execute(sql: "CREATE INDEX mediaItem_sourceID_7b ON mediaItem(sourceID)")
+            try db.execute(sql: "CREATE INDEX mediaItem_folderPath_7b ON mediaItem(folderPath)")
+            try db.execute(sql: "CREATE INDEX mediaItem_kind_7b ON mediaItem(kind)")
+            try db.execute(sql: "CREATE INDEX mediaItem_contentHash_7b ON mediaItem(contentHash)")
+            try db.execute(sql: "CREATE UNIQUE INDEX mediaItem_sourceID_relativePath_files ON mediaItem(sourceID, relativePath) WHERE parentMediaItemID IS NULL")
+        }
+
+        // Phase 7c: marked time ranges (hide blocks skip live and drive
+        // the removal edit; clip-kind blocks are informational).
+        migrator.registerMigration("phase7c") { db in
+            try db.create(table: "videoBlock") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("startSeconds", .double).notNull()
+                t.column("endSeconds", .double).notNull()
+                t.column("kind", .text).notNull().defaults(to: "hide")
+            }
+        }
+
+        // Phase 7d: recognized on-screen text. One row per frame that
+        // produced text; scan reach lives in ocrProgress (a frame with no
+        // text leaves no row, but the scan still advanced past it).
+        migrator.registerMigration("phase7d") { db in
+            try db.create(table: "ocrTextLine") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("timeSeconds", .double).notNull()
+                t.column("text", .text).notNull()
+            }
+        }
+
+        // Phase 8: write-back's paper trail — pre-write/pre-restore tag
+        // snapshots (the recovery path) and per-run/per-file history.
+        migrator.registerMigration("phase8") { db in
+            try db.create(table: "embeddedTagSnapshot") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("capturedAt", .datetime).notNull()
+                t.column("source", .text).notNull()
+                t.column("tagsJSON", .text).notNull()
+            }
+            try db.create(table: "tagWriteRun") { t in
+                t.primaryKey("id", .blob)
+                t.column("startedAt", .datetime).notNull()
+                t.column("finishedAt", .datetime)
+                t.column("scopeDescription", .text).notNull()
+                t.column("totalFiles", .integer).notNull().defaults(to: 0)
+                t.column("writtenCount", .integer).notNull().defaults(to: 0)
+                t.column("failedCount", .integer).notNull().defaults(to: 0)
+            }
+            // No FK on mediaItemID and a denormalized path: run history
+            // outlives moves and deletes (ported).
+            try db.create(table: "tagWriteRunFile") { t in
+                t.primaryKey("id", .blob)
+                t.column("tagWriteRunID", .blob).notNull().indexed()
+                    .references("tagWriteRun", onDelete: .cascade)
+                t.column("mediaItemID", .blob).notNull()
+                t.column("filePath", .text).notNull()
+                t.column("status", .text).notNull()
+                t.column("error", .text)
+                t.column("usedRemuxFallback", .boolean).notNull().defaults(to: false)
+            }
+        }
+
+        // Phase 8b: validation findings — the latest sweep's observations,
+        // recomputed cheaply, never history.
+        migrator.registerMigration("phase8b") { db in
+            try db.create(table: "validationFinding") { t in
+                t.primaryKey("id", .blob)
+                t.column("kind", .text).notNull()
+                t.column("mediaItemID", .blob)
+                t.column("path", .text).notNull()
+                t.column("detail", .text).notNull()
+            }
         }
 
         return migrator
@@ -110,17 +581,56 @@ public final class LibraryDatabase: Sendable {
         try writer.read { try Self.migrator.appliedIdentifiers($0) }
     }
 
+    // MARK: - Browse queries
+
+    /// Visible-item counts per folder, for the sidebar tree. Applies the
+    /// same baseline as every listing: kind, spent clip rows, enabled
+    /// sources.
+    public func folderCounts(kind: MediaKind) throws -> [(path: String, count: Int)] {
+        try writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT mediaItem.folderPath AS path, COUNT(*) AS n FROM mediaItem \
+                WHERE mediaItem.kind = ? AND mediaItem.clipExported = 0 \
+                AND EXISTS (SELECT 1 FROM source \
+                            WHERE source.id = mediaItem.sourceID AND source.enabled) \
+                GROUP BY mediaItem.folderPath
+                """,
+                arguments: [kind.rawValue])
+            return rows.map { ($0["path"] as String, $0["n"] as Int) }
+        }
+    }
+
+    /// The library's vocabulary for the filter panel: categories in sort
+    /// order, each with its tags in sort order.
+    public func vocabulary() throws -> [(category: TagCategory, tags: [Tag])] {
+        try writer.read { db in
+            let categories = try TagCategory.order(sql: "sortOrder, name").fetchAll(db)
+            let tagsByCategory = Dictionary(
+                grouping: try Tag.order(sql: "sortOrder, name").fetchAll(db),
+                by: \.tagCategoryID)
+            return categories.map { ($0, tagsByCategory[$0.id] ?? []) }
+        }
+    }
+
+    /// All sources, sidebar order.
+    public func sources() throws -> [Source] {
+        try writer.read { try Source.order(sql: "name").fetchAll($0) }
+    }
+
     // MARK: - Filtered listing
 
-    /// The visible items for a filter — the Phase 0 spike surface.
+    /// The visible items for a filter — the product's central query.
     ///
     /// `kind` is a required parameter on purpose: the old app's rule that
     /// every listing surface must hard-filter by media kind failed silently
     /// when forgotten, so here it cannot be omitted.
     public func mediaItems(
-        matching filter: MediaFilter, kind: MediaKind
+        matching filter: MediaFilter, kind: MediaKind,
+        orderedBy ordering: MediaOrdering = .relativePath
     ) throws -> [MediaItem] {
-        let compiled = FilterCompiler.compile(filter: filter, kind: kind)
+        let compiled = FilterCompiler.compile(filter: filter, kind: kind, ordering: ordering)
         return try writer.read { db in
             try MediaItem.fetchAll(db, sql: compiled.sql, arguments: compiled.arguments)
         }
