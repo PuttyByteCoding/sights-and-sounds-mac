@@ -239,6 +239,26 @@ final class BrowseModel {
         }
     }
 
+    func writeTags(itemIDs: [UUID], scope: String) {
+        runOperation { runner in
+            _ = try await WritebackJob.enqueue(on: runner, itemIDs: itemIDs, scopeDescription: scope)
+        }
+    }
+
+    func restoreSnapshot(_ snapshotID: UUID) {
+        runOperation { runner in
+            _ = try await RestoreTagsJob.enqueue(on: runner, snapshotID: snapshotID)
+        }
+    }
+
+    func snapshots(of itemID: UUID) -> [EmbeddedTagSnapshot] {
+        (try? library.writer.read { db in
+            try EmbeddedTagSnapshot
+                .filter(sql: "mediaItemID = ?", arguments: [itemID])
+                .order(sql: "capturedAt DESC").limit(10).fetchAll(db)
+        }) ?? []
+    }
+
     func remux(_ item: MediaItem, mode: RemuxJob.Mode) {
         runOperation { runner in
             _ = try await RemuxJob.enqueue(on: runner, itemID: item.id, mode: mode)

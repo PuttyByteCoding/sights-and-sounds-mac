@@ -527,6 +527,40 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 8: write-back's paper trail — pre-write/pre-restore tag
+        // snapshots (the recovery path) and per-run/per-file history.
+        migrator.registerMigration("phase8") { db in
+            try db.create(table: "embeddedTagSnapshot") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("capturedAt", .datetime).notNull()
+                t.column("source", .text).notNull()
+                t.column("tagsJSON", .text).notNull()
+            }
+            try db.create(table: "tagWriteRun") { t in
+                t.primaryKey("id", .blob)
+                t.column("startedAt", .datetime).notNull()
+                t.column("finishedAt", .datetime)
+                t.column("scopeDescription", .text).notNull()
+                t.column("totalFiles", .integer).notNull().defaults(to: 0)
+                t.column("writtenCount", .integer).notNull().defaults(to: 0)
+                t.column("failedCount", .integer).notNull().defaults(to: 0)
+            }
+            // No FK on mediaItemID and a denormalized path: run history
+            // outlives moves and deletes (ported).
+            try db.create(table: "tagWriteRunFile") { t in
+                t.primaryKey("id", .blob)
+                t.column("tagWriteRunID", .blob).notNull().indexed()
+                    .references("tagWriteRun", onDelete: .cascade)
+                t.column("mediaItemID", .blob).notNull()
+                t.column("filePath", .text).notNull()
+                t.column("status", .text).notNull()
+                t.column("error", .text)
+                t.column("usedRemuxFallback", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         return migrator
     }
 

@@ -103,6 +103,8 @@ final class AppModel {
             await runner.register(OcrJob.self)
             await runner.register(JoinJob.self)
             await runner.register(ReorganizeJob.self)
+            await runner.register(WritebackJob.self)
+            await runner.register(RestoreTagsJob.self)
         }
         return runner
     }

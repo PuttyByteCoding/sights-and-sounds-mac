@@ -111,6 +111,8 @@ private struct JobRow: View {
         case OcrJob.kind: "Text scan (OCR)"
         case JoinJob.kind: "Join"
         case ReorganizeJob.kind: "Reorganize"
+        case WritebackJob.kind: "Tag write-back"
+        case RestoreTagsJob.kind: "Tag restore"
         default: job.kind
         }
     }

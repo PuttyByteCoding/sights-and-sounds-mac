@@ -98,6 +98,12 @@ struct BrowseView: View {
                     Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
                         showReorganize = true
                     }
+                    Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
+                        model.writeTags(
+                            itemIDs: model.items.map(\.id),
+                            scope: "filtered (\(model.items.count) files)")
+                    }
+                    .disabled(model.items.isEmpty)
                     PurgeButton()
                 } label: {
                     Label("Maintenance", systemImage: "wrench.adjustable")
