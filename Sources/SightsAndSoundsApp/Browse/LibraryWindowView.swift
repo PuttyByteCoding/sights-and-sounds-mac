@@ -124,6 +124,9 @@ struct BrowseView: View {
                 }
             }
             ToolbarItem {
+                LogWindowButton()
+            }
+            ToolbarItem {
                 TasksWindowButton()
                     .help("Imports, hashing, thumbnails — across all libraries")
             }

@@ -76,6 +76,7 @@ public actor JobRunner {
 
     private func run(_ record: JobRecord) async {
         if cancelRequested.remove(record.id) != nil {
+            AppLog.shared.info("jobs", "\(record.kind): cancelled before start")
             try? transition(record.id) { row in
                 row.state = .cancelled
                 row.finishedAt = Date()
@@ -84,6 +85,7 @@ public actor JobRunner {
         }
 
         guard let type = jobTypes[record.kind] else {
+            AppLog.shared.error("jobs", "\(record.kind): no registered job type")
             try? transition(record.id) { row in
                 row.state = .failed
                 row.error = UnknownJobKindError(kind: record.kind).description
@@ -113,15 +115,23 @@ public actor JobRunner {
                 }
             )
 
+            AppLog.shared.info("jobs", "\(record.kind): started")
             let job = try type.init(payload: record.payload)
             do {
                 try await job.run(context)
+                let summary = try? await library.writer.read { db -> String? in
+                    try String.fetchOne(
+                        db, sql: "SELECT summary FROM job WHERE id = ?", arguments: [jobID])
+                }
+                AppLog.shared.info(
+                    "jobs", "\(record.kind): succeeded\(summary.map { " — \($0)" } ?? "")")
                 try transition(jobID) { row in
                     row.state = .succeeded
                     row.finishedAt = Date()
                 }
             } catch is CancellationError {
                 cancelRequested.remove(jobID)
+                AppLog.shared.info("jobs", "\(record.kind): cancelled")
                 try transition(jobID) { row in
                     row.state = .cancelled
                     row.finishedAt = Date()
@@ -129,6 +139,7 @@ public actor JobRunner {
                 await job.cancelled(context)
             }
         } catch {
+            AppLog.shared.error("jobs", "\(record.kind): failed — \(error)")
             try? transition(record.id) { row in
                 row.state = .failed
                 row.error = String(describing: error)

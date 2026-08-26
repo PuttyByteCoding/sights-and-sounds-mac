@@ -17,7 +17,11 @@ final class PlayerModel {
     private(set) var isPlaying = false
     private(set) var currentSeconds: Double = 0
     private(set) var durationSeconds: Double = 0
-    var loadError: String?
+    var loadError: String? {
+        didSet {
+            if let loadError { AppLog.shared.error("playback", loadError) }
+        }
+    }
 
     var playbackRate: Float = 1.0 {
         didSet { if isPlaying { player.rate = playbackRate } }

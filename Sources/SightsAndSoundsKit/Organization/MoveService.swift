@@ -76,6 +76,7 @@ extension LibraryDatabase {
 
         try Self.moveWithRetries(fileAccess: fileAccess, from: fromURL, to: toURL)
 
+        AppLog.shared.info("moves", "moved \(fromPath) → \(toPath)")
         let log = FileMoveLog(
             mediaItemID: item.id, sourceID: source.id,
             fileName: item.fileName, fromPath: fromPath, toPath: toPath)
@@ -107,6 +108,7 @@ extension LibraryDatabase {
             from: root.appendingPathComponent(log.toPath),
             to: root.appendingPathComponent(log.fromPath))
 
+        AppLog.shared.info("moves", "reverted \(log.toPath) → \(log.fromPath)")
         try writer.write { db in
             try db.execute(
                 sql: "UPDATE fileMoveLog SET revertedAt = ? WHERE id = ?",

@@ -47,6 +47,10 @@ struct SightsAndSoundsApp: App {
             BackgroundTasksView()
                 .environment(model)
         }
+
+        Window("Log", id: "log") {
+            LogView()
+        }
     }
 }
 
@@ -55,7 +59,11 @@ struct SightsAndSoundsApp: App {
 final class AppModel {
     let appDatabase: AppDatabase?
     var libraries: [LibraryRef] = []
-    var loadError: String?
+    var loadError: String? {
+        didSet {
+            if let loadError { AppLog.shared.error("app", loadError) }
+        }
+    }
 
     init() {
         do {
@@ -209,6 +217,7 @@ struct LibraryListView: View {
             AddExistingLibraryButton()
             DemoLibraryButton()
             TasksWindowButton()
+            LogWindowButton()
         }
         .sheet(isPresented: $showingNewLibrary) {
             NewLibraryFlow()
@@ -472,6 +481,17 @@ struct DemoLibraryButton: View {
     }
 }
 
+
+struct LogWindowButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Log", systemImage: "text.alignleft") {
+            openWindow(id: "log")
+        }
+        .help("The app's debug log — what happened, and why")
+    }
+}
 
 struct TasksWindowButton: View {
     @Environment(\.openWindow) private var openWindow
