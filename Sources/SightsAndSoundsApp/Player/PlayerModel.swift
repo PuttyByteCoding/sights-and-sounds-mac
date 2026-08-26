@@ -83,6 +83,7 @@ final class PlayerModel {
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
             installObserver()
             refreshTagging()
+            refreshBlocks()
 
             // Clips start at their in-point; everything else resumes.
             if let start = loaded.clipStartSeconds {
@@ -235,6 +236,42 @@ final class PlayerModel {
         return true
     }
 
+    // MARK: - Blocks
+
+    private(set) var hideBlocks: [VideoBlock] = []
+    var pendingBlockStart: Double?
+
+    func refreshBlocks() {
+        guard let item else { return }
+        let targetID = item.parentMediaItemID ?? item.id
+        hideBlocks = (try? library.blocks(of: targetID).filter { $0.kind == .hide }) ?? []
+    }
+
+    /// The old map's `{`/`}` block taps: first tap opens a block at the
+    /// playhead, second closes and saves it.
+    func blockTap(open: Bool) {
+        guard let item else { return }
+        if open {
+            pendingBlockStart = currentSeconds
+            return
+        }
+        guard let start = pendingBlockStart, currentSeconds > start else { return }
+        let targetID = item.parentMediaItemID ?? item.id
+        do {
+            _ = try library.addBlock(
+                to: targetID, startSeconds: start, endSeconds: currentSeconds, kind: .hide)
+            pendingBlockStart = nil
+            refreshBlocks()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    func deleteBlock(_ blockID: UUID) {
+        try? library.deleteBlock(blockID)
+        refreshBlocks()
+    }
+
     // MARK: - Clip authoring
 
     var pendingClipStart: Double?
@@ -297,6 +334,16 @@ final class PlayerModel {
                 // Clip loop-back at the out-point.
                 if let end = self.item?.clipEndSeconds, time.seconds >= end {
                     self.seek(to: self.item?.clipStartSeconds ?? 0)
+                }
+                // Hide blocks skip live — the same math the removal edit
+                // uses, so what you hear is what the edit keeps. (An open
+                // half-authored block doesn't skip.)
+                if self.isPlaying, self.pendingBlockStart == nil,
+                   let target = SegmentMath.skipTarget(
+                       at: time.seconds,
+                       hidden: self.hideBlocks.map { ($0.startSeconds, $0.endSeconds) },
+                       duration: self.durationSeconds) {
+                    self.seek(to: target)
                 }
                 // One completion tally per session, on first crossing 90%.
                 if !self.completionRecorded, self.durationSeconds > 0,

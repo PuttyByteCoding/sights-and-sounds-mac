@@ -84,6 +84,9 @@ struct PlayerView: View {
             if character == "{" { model.setClipIn(); return true }
             if character == "}" { model.setClipOut(); return true }
         }
+        // Plain { }: hide-block open/close taps, ported.
+        if character == "{" { model.blockTap(open: true); return true }
+        if character == "}" { model.blockTap(open: false); return true }
 
         // T: tag panel (fixed key, matching the old map).
         if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
@@ -222,6 +225,25 @@ private struct TransportBar: View {
                     FlagButtons(item: item)
                 }
 
+                if !model.hideBlocks.isEmpty || model.pendingBlockStart != nil {
+                    Menu {
+                        if let start = model.pendingBlockStart {
+                            Text("Block open at \(TransportBarTime.format(start)) — } closes it")
+                        }
+                        ForEach(model.hideBlocks) { block in
+                            Button(role: .destructive) {
+                                model.deleteBlock(block.id)
+                            } label: {
+                                Text("Remove \(TransportBarTime.format(block.startSeconds)) – \(TransportBarTime.format(block.endSeconds))")
+                            }
+                        }
+                    } label: {
+                        Label("\(model.hideBlocks.count)", systemImage: "eye.slash")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 56)
+                    .help("Hide blocks: { opens at the playhead, } closes. They skip during playback; export an edited copy from the browse grid.")
+                }
                 Menu {
                     ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
                         Button(String(format: "%g×", rate)) {
@@ -364,6 +386,18 @@ private struct ScrubberView: View {
                 context.fill(Path(roundedRect: track, cornerRadius: 2), with: .color(.secondary.opacity(0.3)))
                 let played = CGRect(x: 0, y: size.height / 2 - 2, width: size.width * progress, height: 4)
                 context.fill(Path(roundedRect: played, cornerRadius: 2), with: .color(.accentColor))
+            }
+
+            // Hide blocks: dim shading — these ranges skip live and the
+            // removal edit cuts them.
+            if model.durationSeconds > 0 {
+                for block in model.hideBlocks {
+                    let x0 = size.width * CGFloat((block.startSeconds / model.durationSeconds).clamped01)
+                    let x1 = size.width * CGFloat((block.endSeconds / model.durationSeconds).clamped01)
+                    context.fill(
+                        Path(CGRect(x: x0, y: 0, width: x1 - x0, height: size.height)),
+                        with: .color(.red.opacity(0.18)))
+                }
             }
 
             // Clip range shading.

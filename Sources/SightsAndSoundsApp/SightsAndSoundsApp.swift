@@ -98,6 +98,8 @@ final class AppModel {
             await runner.register(FingerprintMatchSweepJob.self)
             await runner.register(ClipExportJob.self)
             await runner.register(RemuxJob.self)
+            await runner.register(EncodeJob.self)
+            await runner.register(BlockRemovalJob.self)
         }
         return runner
     }

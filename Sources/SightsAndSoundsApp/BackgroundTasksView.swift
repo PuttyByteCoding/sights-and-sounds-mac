@@ -104,6 +104,10 @@ private struct JobRow: View {
         case HashDuplicateSweepJob.kind: "Duplicate check (hashes)"
         case FingerprintCaptureJob.kind: "Audio fingerprinting"
         case FingerprintMatchSweepJob.kind: "Duplicate check (fingerprints)"
+        case ClipExportJob.kind: "Clip export"
+        case RemuxJob.kind: "Remux"
+        case EncodeJob.kind: "Encode"
+        case BlockRemovalJob.kind: "Block removal"
         default: job.kind
         }
     }

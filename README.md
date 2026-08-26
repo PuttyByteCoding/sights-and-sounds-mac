@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 7b: media operations
+## Status — Phase 7c: blocks and encoding
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -146,7 +146,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     moves with the file.
   - UI: Maintenance menu with Move History (per-entry Revert) and the
     purge flow; player W/D keys now stage physically.
-- ✅ **Phase 7b** (this): clips and container operations.
+- ✅ **Phase 7b** (merged): clips and container operations.
   - Clip authoring in the player (⌃{ / ⌃} + save bar): an embedded clip
     is a named range carrying its parent's path — the path-unique index
     became partial (real files only) via a proper table rebuild.
@@ -158,7 +158,19 @@ follow. Full context, locked decisions and the 11-phase plan live in
     original moves to _Replaced, so the original is never at risk.
   - Grid context menu: Export Clip / Optimize / Repair; clips resolve
     to their parent's file everywhere (playback, thumbnails).
-  - Encode presets, join, blocks and OCR follow in the next slices.
+- ✅ **Phase 7c** (this): hide blocks and encoding.
+  - Hide blocks: { opens at the playhead, } closes (the old map's block
+    taps); shaded on the scrubber; skipped LIVE during playback with
+    the same segment math the removal edit uses — what you hear is
+    what the edit keeps.
+  - Block removal: frame-accurate trim+concat re-encode (the ported
+    x264 line) to an "(edited)" copy; additive — the original and its
+    blocks stay untouched.
+  - Encode a Copy: H.264 (the old app's exact default line) or HEVC,
+    beside the original, never in place.
+  - ffmpeg through one boundary with graceful degradation: no ffmpeg
+    is a summary with install guidance, not a failure (CI-proof).
+  - Join, OCR and template reorganization remain for the next slices.
 
 ### Demo library
 

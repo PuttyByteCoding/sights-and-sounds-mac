@@ -101,6 +101,18 @@ private struct ItemCell: View {
                     model.remux(item, mode: .repair)
                 }
                 .disabled(!model.isOnline(item))
+                Menu("Encode a Copy") {
+                    ForEach(EncodeJob.Preset.allCases, id: \.self) { preset in
+                        Button(preset.displayName) { model.encode(item, preset: preset) }
+                    }
+                }
+                .disabled(!model.isOnline(item))
+                if model.hasHideBlocks(item) {
+                    Button("Export Copy Without Hidden Blocks", systemImage: "eye.slash") {
+                        model.removeBlocks(item)
+                    }
+                    .disabled(!model.isOnline(item))
+                }
             }
         }
         .task(id: item.id) {
