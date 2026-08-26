@@ -226,8 +226,14 @@ Requires Xcode 16+ (Swift 6). Open `Package.swift` in Xcode, or:
 ```sh
 swift build          # build kit + app shell
 swift test           # filter semantics, SQL shape, schema integrity, jobs
-swift run            # run the app shell
+swift run            # run the app (dev; keyboard focus handled)
 ./scripts/check-terminology.sh
+```
+
+For a double-clickable app with a dock presence:
+
+```sh
+./scripts/make-app-bundle.sh   # → dist/SightsAndSounds.app
 ```
 
 ## Layout

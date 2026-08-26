@@ -20,8 +20,6 @@ actor ThumbnailProvider {
     private let memory = NSCache<NSString, NSData>()
     private var inFlight: [String: Task<Data?, Never>] = [:]
 
-    // Shared with ThumbnailBatchJob — one definition of "already generated".
-    private let cacheRoot: URL = ThumbnailStore.root
 
     /// Cached JPEG bytes, generating them if needed and possible.
     /// `fileURL` nil (offline source) still serves from cache.
@@ -30,7 +28,7 @@ actor ThumbnailProvider {
         if let cached = memory.object(forKey: key as NSString) { return cached as Data }
 
         if let existing = inFlight[key] { return await existing.value }
-        let task = Task<Data?, Never> { [cacheRoot] in
+        let task = Task<Data?, Never> {
             let diskURL = ThumbnailStore.url(libraryID: libraryID, itemID: itemID)
 
             if let data = try? Data(contentsOf: diskURL) { return data }

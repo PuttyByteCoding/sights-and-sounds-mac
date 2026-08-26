@@ -93,7 +93,7 @@ actor WaveformProvider {
         if let running = inFlight[itemID] { return await running.value }
 
         let task = Task<[Float]?, Never> {
-            guard let coarse = Self.decodePeaks(url: fileURL) else { return nil }
+            guard let coarse = await Self.decodePeaks(url: fileURL) else { return nil }
             let stored = WaveformMath.peaks(samples: coarse, bucketCount: Self.storedBuckets)
             try? FileManager.default.createDirectory(
                 at: diskURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -110,11 +110,11 @@ actor WaveformProvider {
 
     /// Streamed decode: mono Float32 PCM, one peak per 4096-sample block,
     /// so an hours-long recording never holds full samples in memory.
-    private static func decodePeaks(url: URL) -> [Float]? {
+    /// (The decode loop itself stays synchronous — AVAssetReader is —
+    /// which is acceptable for a background task.)
+    private static func decodePeaks(url: URL) async -> [Float]? {
         let asset = AVURLAsset(url: url)
-        // Synchronous track load inside the actor task: acceptable for a
-        // background decode; AVAssetReader itself is synchronous anyway.
-        guard let track = asset.tracks(withMediaType: .audio).first,
+        guard let track = try? await asset.loadTracks(withMediaType: .audio).first,
               let reader = try? AVAssetReader(asset: asset)
         else { return nil }
 

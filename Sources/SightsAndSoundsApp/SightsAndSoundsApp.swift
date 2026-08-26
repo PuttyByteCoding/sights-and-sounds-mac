@@ -7,6 +7,18 @@ import SightsAndSoundsKit
 struct SightsAndSoundsApp: App {
     @State private var model = AppModel()
 
+    init() {
+        // Run as a REGULAR app even when launched as a bare executable
+        // (`swift run`): without a bundle, macOS treats the process as
+        // background — windows draw and clicks land, but keyboard focus
+        // never arrives (it stays with Terminal). Harmless when launched
+        // from a real .app bundle.
+        NSApplication.shared.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             LibraryListView()

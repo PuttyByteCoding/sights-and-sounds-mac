@@ -51,7 +51,7 @@ public enum DemoLibrarySeeder {
         let venueTags = DemoVocabulary.venues.enumerated().map { index, name in
             Tag(tagCategoryID: venueCategory.id, name: name, sortOrder: index)
         }
-        var yearTags: [UUID: Tag] = [:]  // keyed by year value
+        let yearTags: [UUID: Tag] = [:]  // pre-existing year tags (none on a fresh seed)
         try await library.writer.write { db in
             for tag in bandTags + venueTags { try tag.insert(db) }
         }

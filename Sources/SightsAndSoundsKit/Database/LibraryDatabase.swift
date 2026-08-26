@@ -36,7 +36,7 @@ public final class LibraryDatabase: Sendable {
     /// Copy or move a library only after closing it.
     public func close() throws {
         if writer is DatabasePool {
-            try writer.writeWithoutTransaction { db in
+            _ = try writer.writeWithoutTransaction { db in
                 try db.checkpoint(.truncate)
             }
         }

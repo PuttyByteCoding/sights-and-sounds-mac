@@ -33,9 +33,17 @@ final class BrowseModel {
     private let fileAccess: any FileAccess = LiveFileAccess()
     private let jobRunner: JobRunner
     private let onWorkFinished: () -> Void
-    // nonisolated(unsafe): only appended in init and drained in deinit;
-    // NotificationCenter removal is thread-safe.
-    nonisolated(unsafe) private var mountObservers: [any NSObjectProtocol] = []
+    // Observer tokens live in a bag whose own deinit removes them —
+    // sidestepping actor-isolated-deinit rules entirely.
+    private final class ObserverBag: @unchecked Sendable {
+        var tokens: [any NSObjectProtocol] = []
+        deinit {
+            for token in tokens {
+                NSWorkspace.shared.notificationCenter.removeObserver(token)
+            }
+        }
+    }
+    private let mountObservers = ObserverBag()
 
     /// Sources with an import in flight, and their progress line.
     private(set) var importStatus: [UUID: String] = [:]
@@ -55,7 +63,7 @@ final class BrowseModel {
         // workers — the reachability check stays the fallback truth.
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
-            mountObservers.append(center.addObserver(
+            mountObservers.tokens.append(center.addObserver(
                 forName: name, object: nil, queue: .main
             ) { [weak self] _ in
                 Task { @MainActor in
@@ -66,11 +74,7 @@ final class BrowseModel {
         }
     }
 
-    deinit {
-        for observer in mountObservers {
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-        }
-    }
+
 
     func refreshAll() {
         do {
