@@ -194,6 +194,7 @@ struct LibraryListView: View {
         .navigationTitle("Sights and Sounds")
         .toolbar {
             Button("New Library…", systemImage: "plus") { showingNewLibrary = true }
+            AddExistingLibraryButton()
             DemoLibraryButton()
             TasksWindowButton()
         }
@@ -466,6 +467,38 @@ struct TasksWindowButton: View {
     var body: some View {
         Button("Background Tasks", systemImage: "list.bullet.rectangle") {
             openWindow(id: "tasks")
+        }
+    }
+}
+
+
+/// Register a library file that already exists — a migrated library, a
+/// restored backup, or a file from another machine. Verified to open and
+/// migrate before it's registered; reconciliation by the library's own id
+/// means re-adding is never a duplicate.
+struct AddExistingLibraryButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button("Add Existing…", systemImage: "folder.badge.plus") { add() }
+            .help("Register a library file — e.g. one the migrator produced")
+    }
+
+    private func add() {
+        let panel = NSOpenPanel()
+        panel.title = "Add Existing Library"
+        panel.allowedContentTypes = [.init(filenameExtension: "sqlite")].compactMap { $0 }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let library = try LibraryDatabase.open(at: url)
+            // A migrated/created library is already named; a bare file gets
+            // its filename as identity.
+            try library.ensureInfo(name: url.deletingPathExtension().lastPathComponent)
+            guard let appDatabase = model.appDatabase else { return }
+            try appDatabase.register(library)
+            model.refresh()
+        } catch {
+            model.loadError = "Could not add library: \(error)"
         }
     }
 }
