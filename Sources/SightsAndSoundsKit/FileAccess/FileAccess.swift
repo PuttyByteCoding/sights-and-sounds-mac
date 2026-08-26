@@ -29,6 +29,13 @@ public protocol FileAccess: Sendable {
     /// Stream a file's contents in chunks (hashing, checksumming). The
     /// whole file never sits in memory.
     func readFile(at url: URL, chunk: (Data) throws -> Void) throws
+
+    /// Move a file, creating intermediate directories for the destination.
+    /// Never overwrites — the caller resolves collisions first.
+    func moveFile(at url: URL, to destination: URL) throws
+
+    /// Permanently remove a file. The caller owns confirmation.
+    func removeFile(at url: URL) throws
 }
 
 /// The real implementation over `FileManager`.
@@ -68,5 +75,15 @@ public struct LiveFileAccess: FileAccess {
         while let data = try handle.read(upToCount: 1 << 20), !data.isEmpty {
             try chunk(data)
         }
+    }
+
+    public func moveFile(at url: URL, to destination: URL) throws {
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: url, to: destination)
+    }
+
+    public func removeFile(at url: URL) throws {
+        try FileManager.default.removeItem(at: url)
     }
 }

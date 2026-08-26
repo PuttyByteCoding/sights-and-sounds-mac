@@ -156,7 +156,20 @@ final class PlayerModel {
     private func toggle(_ flag: PlayerToggleFlag) {
         guard let item else { return }
         do {
-            _ = try library.toggleFlag(flag, itemID: item.id)
+            // Deletion and playback-issue marks stage the file physically
+            // (and unstage on the way back); the other flags are plain.
+            switch flag {
+            case .markedForDeletion:
+                item.markedForDeletion
+                    ? try library.unstage(.toDelete, itemID: item.id)
+                    : try library.stage(.toDelete, itemID: item.id)
+            case .playbackIssue:
+                item.playbackIssue
+                    ? try library.unstage(.playbackIssue, itemID: item.id)
+                    : try library.stage(.playbackIssue, itemID: item.id)
+            case .favorite, .needsReview:
+                _ = try library.toggleFlag(flag, itemID: item.id)
+            }
             self.item = try library.writer.read { try MediaItem.fetchOne($0, key: item.id) }
         } catch {
             loadError = "\(error)"

@@ -12,7 +12,7 @@ import Testing
 
     @Test func freshLibraryAppliesBothMigrations() throws {
         let library = try LibraryDatabase.openInMemory()
-        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6"])
+        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7"])
     }
 
     @Test func phase0DatabaseUpgradesToPhase1() throws {
@@ -29,7 +29,7 @@ import Testing
         try queue.close()
 
         let upgraded = try LibraryDatabase.open(at: url)
-        #expect(try upgraded.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6"])
+        #expect(try upgraded.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7"])
         // Phase 1 tables exist and are usable.
         try upgraded.writer.write { db in
             try Source(name: "S", rootPath: "/tmp/media").insert(db)
@@ -104,6 +104,8 @@ import Testing
             func allFiles(under url: URL) throws -> [URL] { [] }
             func fileSize(at url: URL) throws -> Int64 { 0 }
             func readFile(at url: URL, chunk: (Data) throws -> Void) throws {}
+            func moveFile(at url: URL, to destination: URL) throws {}
+            func removeFile(at url: URL) throws {}
         }
         let source = Source(name: "Ext", rootPath: "/Volumes/Gone")
         #expect(source.isOnline(using: FakeAccess(reachable: true)))

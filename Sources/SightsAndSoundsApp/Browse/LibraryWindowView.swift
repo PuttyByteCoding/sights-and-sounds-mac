@@ -44,6 +44,7 @@ struct BrowseView: View {
     @Environment(BrowseModel.self) private var model
     @State private var showCategoryManager = false
     @State private var showDuplicates = false
+    @State private var showMoveHistory = false
 
     var body: some View {
         @Bindable var model = model
@@ -84,6 +85,16 @@ struct BrowseView: View {
                     : "No pending duplicate pairs")
             }
             ToolbarItem {
+                Menu {
+                    Button("Move History…", systemImage: "arrow.turn.up.right") {
+                        showMoveHistory = true
+                    }
+                    PurgeButton()
+                } label: {
+                    Label("Maintenance", systemImage: "wrench.adjustable")
+                }
+            }
+            ToolbarItem {
                 TasksWindowButton()
                     .help("Imports, hashing, thumbnails — across all libraries")
             }
@@ -94,6 +105,10 @@ struct BrowseView: View {
         }
         .sheet(isPresented: $showDuplicates) {
             DuplicatesView()
+                .environment(model)
+        }
+        .sheet(isPresented: $showMoveHistory) {
+            MoveHistoryView()
                 .environment(model)
         }
         .frame(minWidth: 900, minHeight: 560)
