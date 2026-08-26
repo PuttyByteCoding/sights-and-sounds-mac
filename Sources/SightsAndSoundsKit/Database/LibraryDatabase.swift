@@ -514,6 +514,19 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 7d: recognized on-screen text. One row per frame that
+        // produced text; scan reach lives in ocrProgress (a frame with no
+        // text leaves no row, but the scan still advanced past it).
+        migrator.registerMigration("phase7d") { db in
+            try db.create(table: "ocrTextLine") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull().indexed()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("timeSeconds", .double).notNull()
+                t.column("text", .text).notNull()
+            }
+        }
+
         return migrator
     }
 

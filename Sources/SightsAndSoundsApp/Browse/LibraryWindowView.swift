@@ -45,6 +45,7 @@ struct BrowseView: View {
     @State private var showCategoryManager = false
     @State private var showDuplicates = false
     @State private var showMoveHistory = false
+    @State private var showReorganize = false
 
     var body: some View {
         @Bindable var model = model
@@ -53,6 +54,11 @@ struct BrowseView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
             ItemGridView()
+                .searchable(
+                    text: Binding(
+                        get: { model.filter.searchText },
+                        set: { model.filter.searchText = $0 }),
+                    prompt: "Name, path, notes, on-screen text")
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -89,6 +95,9 @@ struct BrowseView: View {
                     Button("Move History…", systemImage: "arrow.turn.up.right") {
                         showMoveHistory = true
                     }
+                    Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
+                        showReorganize = true
+                    }
                     PurgeButton()
                 } label: {
                     Label("Maintenance", systemImage: "wrench.adjustable")
@@ -109,6 +118,10 @@ struct BrowseView: View {
         }
         .sheet(isPresented: $showMoveHistory) {
             MoveHistoryView()
+                .environment(model)
+        }
+        .sheet(isPresented: $showReorganize) {
+            ReorganizeView()
                 .environment(model)
         }
         .frame(minWidth: 900, minHeight: 560)

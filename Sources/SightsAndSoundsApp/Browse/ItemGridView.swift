@@ -107,6 +107,14 @@ private struct ItemCell: View {
                     }
                 }
                 .disabled(!model.isOnline(item))
+                Button("Scan On-Screen Text (OCR)", systemImage: "text.viewfinder") {
+                    model.scanText(item)
+                }
+                .disabled(!model.isOnline(item) || item.kind != .video)
+                Button("Join Folder's Files", systemImage: "link") {
+                    model.joinFolder(of: item)
+                }
+                .disabled(!model.isOnline(item))
                 if model.hasHideBlocks(item) {
                     Button("Export Copy Without Hidden Blocks", systemImage: "eye.slash") {
                         model.removeBlocks(item)
