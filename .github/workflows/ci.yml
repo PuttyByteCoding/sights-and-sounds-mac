@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  terminology:
+    name: Terminology guard
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Banned-words check
+        run: ./scripts/check-terminology.sh
+      - name: Private-data check
+        run: ./scripts/check-no-private-data.sh
+
+  test:
+    name: Build & test
+    runs-on: macos-15
+    # A hung test must fail in minutes, not burn six hours of macOS
+    # runner time (learned 2026-08-25: parallel AVAssetWriter sessions
+    # deadlocked the small CI VM).
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
