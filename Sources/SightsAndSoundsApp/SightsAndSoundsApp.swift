@@ -206,6 +206,7 @@ struct LibraryListView: View {
         .navigationTitle("Sights and Sounds")
         .toolbar {
             Button("New Library…", systemImage: "plus") { showingNewLibrary = true }
+                .help("Create a new library from a template")
             AddExistingLibraryButton()
             DemoLibraryButton()
             TasksWindowButton()
@@ -480,6 +481,7 @@ struct TasksWindowButton: View {
         Button("Background Tasks", systemImage: "list.bullet.rectangle") {
             openWindow(id: "tasks")
         }
+        .help("Imports, hashing, thumbnails and operations — across all libraries")
     }
 }
 

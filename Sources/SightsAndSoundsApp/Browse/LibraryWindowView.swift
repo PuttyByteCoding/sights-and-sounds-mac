@@ -68,11 +68,13 @@ struct BrowseView: View {
                     Text("Audio").tag(MediaKind.audio)
                 }
                 .pickerStyle(.segmented)
+                .help("Every listing is one media kind at a time — video or audio")
             }
             ToolbarItem {
                 Text("\(model.items.count) items")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .help("Items visible under the current filter")
             }
             ToolbarItem {
                 Button("Categories", systemImage: "tag.square") {
@@ -122,10 +124,10 @@ struct BrowseView: View {
                 } label: {
                     Label("Maintenance", systemImage: "wrench.adjustable")
                 }
+                .help("Move history, reorganize, validate, back up, write tags, purge")
             }
             ToolbarItem {
                 TasksWindowButton()
-                    .help("Imports, hashing, thumbnails — across all libraries")
             }
         }
         .sheet(isPresented: $showCategoryManager) {
