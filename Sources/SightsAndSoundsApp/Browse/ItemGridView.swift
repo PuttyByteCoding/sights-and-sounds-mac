@@ -91,6 +91,18 @@ private struct ItemCell: View {
                 }
                 .disabled(!model.isOnline(item))
             }
+            if item.markedForDeletion {
+                Button("Restore from Deletion Staging", systemImage: "arrow.uturn.backward") {
+                    try? model.library.unstage(.toDelete, itemID: item.id)
+                    model.refreshAll()
+                }
+            }
+            if item.playbackIssue {
+                Button("Clear Playback Issue", systemImage: "play.circle") {
+                    try? model.library.unstage(.playbackIssue, itemID: item.id)
+                    model.refreshAll()
+                }
+            }
             if item.parentMediaItemID == nil {
                 Divider()
                 Button("Optimize (Faststart)", systemImage: "bolt") {

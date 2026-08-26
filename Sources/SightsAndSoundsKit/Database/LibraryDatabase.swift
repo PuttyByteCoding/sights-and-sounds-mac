@@ -561,6 +561,18 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 8b: validation findings — the latest sweep's observations,
+        // recomputed cheaply, never history.
+        migrator.registerMigration("phase8b") { db in
+            try db.create(table: "validationFinding") { t in
+                t.primaryKey("id", .blob)
+                t.column("kind", .text).notNull()
+                t.column("mediaItemID", .blob)
+                t.column("path", .text).notNull()
+                t.column("detail", .text).notNull()
+            }
+        }
+
         return migrator
     }
 

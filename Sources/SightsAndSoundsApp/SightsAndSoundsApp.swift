@@ -105,8 +105,36 @@ final class AppModel {
             await runner.register(ReorganizeJob.self)
             await runner.register(WritebackJob.self)
             await runner.register(RestoreTagsJob.self)
+            await runner.register(ValidationJob.self)
         }
         return runner
+    }
+
+    /// Restore a library file from a backup: verify the backup opens,
+    /// close the live handle, archive the current file beside the backups
+    /// (never destroyed), copy the backup into place, drop caches so the
+    /// next open is fresh. Caller has confirmed and closed windows.
+    func restoreLibrary(id: UUID, from backupURL: URL) throws {
+        guard let ref = libraries.first(where: { $0.id == id }) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        _ = try LibraryDatabase.verifyBackup(at: backupURL)
+
+        if let open = try? library(for: id) { try? open.close() }
+        runners[id] = nil
+        openHandles[id] = nil
+
+        let currentURL = URL(fileURLWithPath: ref.filePath)
+        let archiveDir = LibraryDatabase.defaultBackupDirectory()
+            .appendingPathComponent(ref.name, isDirectory: true)
+        try FileManager.default.createDirectory(at: archiveDir, withIntermediateDirectories: true)
+        let archive = archiveDir.appendingPathComponent(
+            "\(ref.name) pre-restore \(Date().timeIntervalSince1970).sqlite")
+        if FileManager.default.fileExists(atPath: currentURL.path) {
+            try FileManager.default.moveItem(at: currentURL, to: archive)
+        }
+        try FileManager.default.copyItem(at: backupURL, to: currentURL)
+        refresh()
     }
 
     /// The signal: wake the library's workers. Sleeps-until-woken, never
@@ -301,14 +329,17 @@ struct NewLibraryFlow: View {
 
 
 struct LibraryRow: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     let library: LibraryRef
+    @State private var statusText: String?
+    @State private var confirmRestore: URL?
 
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
                 Text(library.name).font(.headline)
-                Text(library.filePath)
+                Text(statusText ?? library.filePath)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -318,6 +349,45 @@ struct LibraryRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { openWindow(id: "library", value: library.id) }
+        .contextMenu {
+            Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") { backUp() }
+            Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { pickBackup() }
+        }
+        .confirmationDialog(
+            "Replace “\(library.name)” with this backup? The current file is archived first (never deleted). Close this library's windows before restoring.",
+            isPresented: Binding(get: { confirmRestore != nil }, set: { if !$0 { confirmRestore = nil } })
+        ) {
+            Button("Restore", role: .destructive) {
+                guard let url = confirmRestore else { return }
+                do {
+                    try model.restoreLibrary(id: library.id, from: url)
+                    statusText = "Restored from \(url.lastPathComponent)"
+                } catch {
+                    statusText = "Restore failed: \(error)"
+                }
+            }
+            Button("Cancel", role: .cancel) { confirmRestore = nil }
+        }
+    }
+
+    private func backUp() {
+        do {
+            let open = try model.library(for: library.id)
+            let url = try open.backup(into: LibraryDatabase.defaultBackupDirectory())
+            statusText = "Backed up to \(url.path)"
+        } catch {
+            statusText = "Backup failed: \(error)"
+        }
+    }
+
+    private func pickBackup() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a backup to restore"
+        panel.directoryURL = LibraryDatabase.defaultBackupDirectory()
+            .appendingPathComponent(library.name, isDirectory: true)
+        panel.allowedContentTypes = [.init(filenameExtension: "sqlite")].compactMap { $0 }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        confirmRestore = url
     }
 }
 

@@ -113,6 +113,7 @@ private struct JobRow: View {
         case ReorganizeJob.kind: "Reorganize"
         case WritebackJob.kind: "Tag write-back"
         case RestoreTagsJob.kind: "Tag restore"
+        case ValidationJob.kind: "Validation"
         default: job.kind
         }
     }

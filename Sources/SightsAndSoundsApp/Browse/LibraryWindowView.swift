@@ -46,6 +46,7 @@ struct BrowseView: View {
     @State private var showDuplicates = false
     @State private var showMoveHistory = false
     @State private var showReorganize = false
+    @State private var showValidation = false
 
     var body: some View {
         @Bindable var model = model
@@ -98,6 +99,19 @@ struct BrowseView: View {
                     Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
                         showReorganize = true
                     }
+                    Button("Validate Library…", systemImage: "checkmark.seal") {
+                        showValidation = true
+                    }
+                    Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
+                        do {
+                            let url = try model.library.backup(
+                                into: LibraryDatabase.defaultBackupDirectory())
+                            model.errorMessage = nil
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        } catch {
+                            model.errorMessage = "Backup failed: \(error)"
+                        }
+                    }
                     Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
                         model.writeTags(
                             itemIDs: model.items.map(\.id),
@@ -128,6 +142,10 @@ struct BrowseView: View {
         }
         .sheet(isPresented: $showReorganize) {
             ReorganizeView()
+                .environment(model)
+        }
+        .sheet(isPresented: $showValidation) {
+            ValidationView()
                 .environment(model)
         }
         .frame(minWidth: 900, minHeight: 560)
