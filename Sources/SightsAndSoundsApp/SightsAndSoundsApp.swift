@@ -8,6 +8,12 @@ struct SightsAndSoundsApp: App {
     @State private var model = AppModel()
 
     init() {
+        // Tooltips: the macOS default initial delay (~1.5 s) makes every
+        // `.help()` feel unresponsive. Shorter, but deliberately not
+        // instant so tooltips don't flash while mousing across a toolbar.
+        // Registered, not set — an explicit user default still wins.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
+
         // Run as a REGULAR app even when launched as a bare executable
         // (`swift run`): without a bundle, macOS treats the process as
         // background — windows draw and clicks land, but keyboard focus
