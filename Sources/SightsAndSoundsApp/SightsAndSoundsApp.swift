@@ -100,6 +100,9 @@ final class AppModel {
             await runner.register(RemuxJob.self)
             await runner.register(EncodeJob.self)
             await runner.register(BlockRemovalJob.self)
+            await runner.register(OcrJob.self)
+            await runner.register(JoinJob.self)
+            await runner.register(ReorganizeJob.self)
         }
         return runner
     }

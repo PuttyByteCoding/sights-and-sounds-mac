@@ -89,6 +89,22 @@ public enum FilterCompiler {
             clauses.append("(" + parts.joined(separator: " OR ") + ")")
         }
 
+        // Free-text search: filename/path/notes/OCR, one LIKE pattern.
+        let query = filter.searchText.trimmingCharacters(in: .whitespaces)
+        if !query.isEmpty {
+            let pattern = "%" + escapeLike(query) + "%"
+            clauses.append(
+                """
+                (mediaItem.fileName LIKE ? ESCAPE '\\' \
+                OR mediaItem.relativePath LIKE ? ESCAPE '\\' \
+                OR mediaItem.notes LIKE ? ESCAPE '\\' \
+                OR EXISTS (SELECT 1 FROM ocrTextLine \
+                           WHERE ocrTextLine.mediaItemID = mediaItem.id \
+                           AND ocrTextLine.text LIKE ? ESCAPE '\\'))
+                """)
+            whereArgs.append(contentsOf: [pattern, pattern, pattern, pattern])
+        }
+
         // Auto-hide: suppress items carrying a hidden-by-default tag, unless
         // that tag is explicitly referenced by the filter.
         let referenced = filter.referencedTagIDs.sorted { $0.uuidString < $1.uuidString }

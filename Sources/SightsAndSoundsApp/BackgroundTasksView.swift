@@ -108,6 +108,9 @@ private struct JobRow: View {
         case RemuxJob.kind: "Remux"
         case EncodeJob.kind: "Encode"
         case BlockRemovalJob.kind: "Block removal"
+        case OcrJob.kind: "Text scan (OCR)"
+        case JoinJob.kind: "Join"
+        case ReorganizeJob.kind: "Reorganize"
         default: job.kind
         }
     }

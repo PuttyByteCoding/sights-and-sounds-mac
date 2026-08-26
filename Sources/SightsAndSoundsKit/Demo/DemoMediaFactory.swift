@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreText
 import CoreVideo
 import Foundation
 
@@ -21,15 +22,16 @@ public enum DemoMediaFactory {
     /// Write a small MP4. `variant` shifts the palette so files are
     /// visually distinct in the grid.
     public static func writeVideo(
-        to url: URL, seconds: Double = 4, variant: Int = 0
+        to url: URL, seconds: Double = 4, variant: Int = 0, overlayText: String? = nil
     ) async throws {
         try await SerialGate.shared.withTurn {
-            try await writeVideoUnserialized(to: url, seconds: seconds, variant: variant)
+            try await writeVideoUnserialized(
+                to: url, seconds: seconds, variant: variant, overlayText: overlayText)
         }
     }
 
     private static func writeVideoUnserialized(
-        to url: URL, seconds: Double, variant: Int
+        to url: URL, seconds: Double, variant: Int, overlayText: String?
     ) async throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -69,6 +71,9 @@ public enum DemoMediaFactory {
             guard let pixelBuffer else { throw GenerationError(stage: "pixelBuffer") }
 
             fill(pixelBuffer, frame: frame, variant: variant, width: width, height: height)
+            if let overlayText {
+                drawText(overlayText, into: pixelBuffer, width: width, height: height)
+            }
             let time = CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps))
             adaptor.append(pixelBuffer, withPresentationTime: time)
         }
@@ -107,6 +112,37 @@ public enum DemoMediaFactory {
                 pixels[offset + 3] = 255
             }
         }
+    }
+
+    /// Burn text into a BGRA pixel buffer via CoreGraphics — big, white,
+    /// black-boxed: material Vision can actually read at 320x180.
+    private static func drawText(_ text: String, into buffer: CVPixelBuffer, width: Int, height: Int) {
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer),
+              let context = CGContext(
+                data: base, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                    | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: CTFontCreateWithName("Helvetica-Bold" as CFString, 36, nil),
+            .foregroundColor: CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+        ]
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(string: text, attributes: attributes))
+        let bounds = CTLineGetBoundsWithOptions(line, [])
+        let x = (CGFloat(width) - bounds.width) / 2
+        let y = (CGFloat(height) - bounds.height) / 2
+
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(
+            x: x - 10, y: y - 10, width: bounds.width + 20, height: bounds.height + 20))
+        context.textPosition = CGPoint(x: x, y: y)
+        CTLineDraw(line, context)
     }
 
     /// Write a small M4A: a three-note chord with a slow amplitude swell,

@@ -220,6 +220,25 @@ final class BrowseModel {
         ((try? library.blocks(of: item.id)) ?? []).contains { $0.kind == .hide }
     }
 
+    func scanText(_ item: MediaItem) {
+        runOperation { runner in
+            _ = try await OcrJob.enqueue(on: runner, itemID: item.id)
+        }
+    }
+
+    func joinFolder(of item: MediaItem) {
+        runOperation { runner in
+            _ = try await JoinJob.enqueue(
+                on: runner, sourceID: item.sourceID, folderPath: item.folderPath)
+        }
+    }
+
+    func reorganize(template: String, itemIDs: [UUID]) {
+        runOperation { runner in
+            _ = try await ReorganizeJob.enqueue(on: runner, template: template, itemIDs: itemIDs)
+        }
+    }
+
     func remux(_ item: MediaItem, mode: RemuxJob.Mode) {
         runOperation { runner in
             _ = try await RemuxJob.enqueue(on: runner, itemID: item.id, mode: mode)

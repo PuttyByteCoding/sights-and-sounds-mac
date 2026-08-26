@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 7c: blocks and encoding
+## Status — Phase 7: complete
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -158,7 +158,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     original moves to _Replaced, so the original is never at risk.
   - Grid context menu: Export Clip / Optimize / Repair; clips resolve
     to their parent's file everywhere (playback, thumbnails).
-- ✅ **Phase 7c** (this): hide blocks and encoding.
+- ✅ **Phase 7c** (merged): hide blocks and encoding.
   - Hide blocks: { opens at the playhead, } closes (the old map's block
     taps); shaded on the scrubber; skipped LIVE during playback with
     the same segment math the removal edit uses — what you hear is
@@ -170,7 +170,19 @@ follow. Full context, locked decisions and the 11-phase plan live in
     beside the original, never in place.
   - ffmpeg through one boundary with graceful degradation: no ffmpeg
     is a summary with install guidance, not a failure (CI-proof).
-  - Join, OCR and template reorganization remain for the next slices.
+- ✅ **Phase 7d** (this): reorganization, OCR, join, search.
+  - Template reorganization, ported: %Category tokens (underscores for
+    spaces), ordinal multi-value choice with notes, missing-token
+    skips, per-segment sanitization — previewed before anything moves,
+    and every move rides the revertible log. (Standard-field tokens
+    join with Phase 8's write-back port.)
+  - OCR via Vision: resumable frame scanning (interval + reach in
+    ocrProgress, ported shape), recognized lines timestamped.
+  - Free-text search (the old SearchQuery): name, path, notes and
+    OCR text — wildcards escaped, compiled into the same single SQL
+    statement.
+  - Join: ffmpeg concat stream copy of a folder's parts, name order,
+    additive.
 
 ### Demo library
 
