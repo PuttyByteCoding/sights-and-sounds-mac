@@ -51,6 +51,11 @@ struct SightsAndSoundsApp: App {
         Window("Log", id: "log") {
             LogView()
         }
+
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
     }
 }
 
@@ -78,6 +83,9 @@ final class AppModel {
             loadError = "Could not open the app store: \(error)"
         }
         refresh()
+        if let appDatabase {
+            AppSettingsStore.shared.migrateLegacySkip(from: appDatabase)
+        }
     }
 
     func refresh() {

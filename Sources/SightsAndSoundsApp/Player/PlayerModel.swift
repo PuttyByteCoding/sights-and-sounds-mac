@@ -52,11 +52,8 @@ final class PlayerModel {
         self.library = library
         self.libraryID = request.libraryID
         self.playlist = request.playlist
-        if let appDatabase,
-           let raw = try? appDatabase.preference("playbackSkips"),
-           let decoded = try? JSONDecoder().decode(SkipSettings.self, from: Data(raw.utf8)) {
-            skipSettings = decoded
-        }
+        _ = appDatabase  // legacy pref migrates into settings.json at launch
+        skipSettings = AppSettingsStore.shared.current.skip
         load(itemID: request.itemID)
     }
 

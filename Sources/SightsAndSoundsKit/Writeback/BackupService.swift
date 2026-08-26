@@ -51,8 +51,12 @@ extension LibraryDatabase {
         }
     }
 
-    /// The default backups home: Application Support/SightsAndSounds/Backups.
+    /// The backups home: the settings-chosen directory, else Application
+    /// Support/SightsAndSounds/Backups.
     public static func defaultBackupDirectory() -> URL {
+        if let custom = AppSettingsStore.shared.current.backupDirectory {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("SightsAndSounds/Backups", isDirectory: true)
     }

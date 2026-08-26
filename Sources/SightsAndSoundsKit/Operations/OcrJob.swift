@@ -29,8 +29,12 @@ public struct OcrTextLine: Codable, Equatable, Identifiable, Sendable, Fetchable
 public struct OcrJob: Job {
     public static let kind = "operations.ocr"
 
-    public static let sampleIntervalSeconds = 5.0
-    public static let budgetSecondsPerRun = 600.0
+    public static var sampleIntervalSeconds: Double {
+        max(1, AppSettingsStore.shared.current.ocrSampleIntervalSeconds)
+    }
+    public static var budgetSecondsPerRun: Double {
+        max(30, AppSettingsStore.shared.current.ocrBudgetSecondsPerRun)
+    }
 
     public struct Payload: Codable, Sendable {
         public var itemID: UUID

@@ -8,7 +8,10 @@ import GRDB
 /// "already generated" means. Disk state is the source of truth.
 public enum ThumbnailStore {
     public static var root: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        if let custom = AppSettingsStore.shared.current.thumbnailDirectory {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("SightsAndSounds/Thumbnails", isDirectory: true)
     }
 

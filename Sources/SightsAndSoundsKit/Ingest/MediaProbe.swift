@@ -26,13 +26,14 @@ public struct ProbeResult: Sendable, Equatable {
 /// probe empty; their rows still import with size/kind, and an
 /// ffmpeg-backed fallback probe is a later, additive step.
 public enum MediaProbe {
-    /// File extensions the importer claims, lowercase.
-    public static let videoExtensions: Set<String> = [
-        "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
-    ]
-    public static let audioExtensions: Set<String> = [
-        "flac", "mp3", "m4a", "aac", "wav", "aiff", "aif", "ogg", "opus", "shn", "wma",
-    ]
+    /// File extensions the importer claims — settings-backed, defaults in
+    /// `AppSettings`.
+    public static var videoExtensions: Set<String> {
+        Set(AppSettingsStore.shared.current.videoExtensions.map { $0.lowercased() })
+    }
+    public static var audioExtensions: Set<String> {
+        Set(AppSettingsStore.shared.current.audioExtensions.map { $0.lowercased() })
+    }
 
     public static func kind(forExtension ext: String) -> MediaKind? {
         let lower = ext.lowercased()
