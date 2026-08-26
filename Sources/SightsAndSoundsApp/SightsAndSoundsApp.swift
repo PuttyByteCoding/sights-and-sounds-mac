@@ -96,6 +96,8 @@ final class AppModel {
             await runner.register(HashDuplicateSweepJob.self)
             await runner.register(FingerprintCaptureJob.self)
             await runner.register(FingerprintMatchSweepJob.self)
+            await runner.register(ClipExportJob.self)
+            await runner.register(RemuxJob.self)
         }
         return runner
     }

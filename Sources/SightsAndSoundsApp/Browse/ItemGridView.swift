@@ -85,6 +85,23 @@ private struct ItemCell: View {
         .contextMenu {
             Button("Play", systemImage: "play") { play() }
                 .disabled(!model.isOnline(item))
+            if item.parentMediaItemID != nil && !item.isExportedClip {
+                Button("Export Clip to File", systemImage: "scissors") {
+                    model.exportClip(item)
+                }
+                .disabled(!model.isOnline(item))
+            }
+            if item.parentMediaItemID == nil {
+                Divider()
+                Button("Optimize (Faststart)", systemImage: "bolt") {
+                    model.remux(item, mode: .optimize)
+                }
+                .disabled(!model.isOnline(item))
+                Button("Repair Container", systemImage: "bandage") {
+                    model.remux(item, mode: .repair)
+                }
+                .disabled(!model.isOnline(item))
+            }
         }
         .task(id: item.id) {
             let data = await ThumbnailProvider.shared.thumbnailData(

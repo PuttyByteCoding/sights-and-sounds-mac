@@ -437,6 +437,70 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Phase 7b: embedded clips carry their PARENT's relativePath (their
+        // file IS the parent's file), so path uniqueness applies only to
+        // rows that own a real file. The original uniqueness was a
+        // table-level constraint (an auto-index DROP INDEX can't touch),
+        // so this is the standard SQLite rebuild: new table without the
+        // constraint, copy, swap, re-index — plus the partial unique index.
+        migrator.registerMigration("phase7b") { db in
+            try db.create(table: "mediaItem_new") { t in
+                t.primaryKey("id", .blob)
+                t.column("sourceID", .blob).notNull()
+                    .references("source", onDelete: .restrict)
+                t.column("kind", .integer).notNull()
+                t.column("relativePath", .text).notNull().collate(.nocase)
+                t.column("folderPath", .text).notNull().collate(.nocase)
+                t.column("fileName", .text).notNull()
+                t.column("fileSize", .integer).notNull().defaults(to: 0)
+                t.column("durationSeconds", .double)
+                t.column("width", .integer)
+                t.column("height", .integer)
+                t.column("videoCodec", .text)
+                t.column("audioCodec", .text)
+                t.column("pixelFormat", .text)
+                t.column("frameRate", .double)
+                t.column("bitrate", .integer)
+                t.column("videoStreamCount", .integer)
+                t.column("audioStreamCount", .integer)
+                t.column("sampleRate", .integer)
+                t.column("bitDepth", .integer)
+                t.column("audioChannels", .integer)
+                t.column("contentCreatedAt", .datetime)
+                t.column("contentHash", .text)
+                t.column("ingestDate", .datetime).notNull()
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("watchCount", .integer).notNull().defaults(to: 0)
+                t.column("resumePositionSeconds", .double)
+                t.column("completed", .boolean).notNull().defaults(to: false)
+                t.column("lastWatchedAt", .datetime)
+                t.column("needsReview", .boolean).notNull().defaults(to: true)
+                t.column("playbackIssue", .boolean).notNull().defaults(to: false)
+                t.column("markedForDeletion", .boolean).notNull().defaults(to: false)
+                t.column("isFavorite", .boolean).notNull().defaults(to: false)
+                t.column("parentMediaItemID", .blob).references("mediaItem")
+                t.column("clipStartSeconds", .double)
+                t.column("clipEndSeconds", .double)
+                t.column("isClip", .boolean).notNull().defaults(to: false)
+                t.column("isExportedClip", .boolean).notNull().defaults(to: false)
+                t.column("isEdited", .boolean).notNull().defaults(to: false)
+                t.column("clipExported", .boolean).notNull().defaults(to: false)
+                t.column("exportedToMediaItemID", .blob)
+            }
+            // Explicit column lists on both sides: SELECT * order is an
+            // accident of history, this is not.
+            let columns = "id, sourceID, kind, relativePath, folderPath, fileName, fileSize, durationSeconds, width, height, videoCodec, audioCodec, pixelFormat, frameRate, bitrate, videoStreamCount, audioStreamCount, sampleRate, bitDepth, audioChannels, contentCreatedAt, contentHash, ingestDate, notes, watchCount, resumePositionSeconds, completed, lastWatchedAt, needsReview, playbackIssue, markedForDeletion, isFavorite, parentMediaItemID, clipStartSeconds, clipEndSeconds, isClip, isExportedClip, isEdited, clipExported, exportedToMediaItemID"
+            try db.execute(sql: "INSERT INTO mediaItem_new (" + columns + ") SELECT " + columns + " FROM mediaItem")
+            try db.drop(table: "mediaItem")
+            try db.execute(sql: "ALTER TABLE mediaItem_new RENAME TO mediaItem")
+
+            try db.execute(sql: "CREATE INDEX mediaItem_sourceID_7b ON mediaItem(sourceID)")
+            try db.execute(sql: "CREATE INDEX mediaItem_folderPath_7b ON mediaItem(folderPath)")
+            try db.execute(sql: "CREATE INDEX mediaItem_kind_7b ON mediaItem(kind)")
+            try db.execute(sql: "CREATE INDEX mediaItem_contentHash_7b ON mediaItem(contentHash)")
+            try db.execute(sql: "CREATE UNIQUE INDEX mediaItem_sourceID_relativePath_files ON mediaItem(sourceID, relativePath) WHERE parentMediaItemID IS NULL")
+        }
+
         return migrator
     }
 

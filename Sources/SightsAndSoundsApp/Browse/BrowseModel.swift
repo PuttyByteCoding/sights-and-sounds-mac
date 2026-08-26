@@ -190,10 +190,36 @@ final class BrowseModel {
         onlineSourceIDs.contains(item.sourceID)
     }
 
-    /// Absolute file URL, or nil while the item's source is offline.
+    /// Absolute file URL (an embedded clip resolves to its parent's
+    /// file), or nil while the item's source is offline.
     func fileURL(for item: MediaItem) -> URL? {
-        guard isOnline(item), let source = source(for: item) else { return nil }
-        return URL(fileURLWithPath: source.rootPath, isDirectory: true)
-            .appendingPathComponent(item.relativePath)
+        (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil
+    }
+
+    // MARK: - Operations
+
+    func exportClip(_ item: MediaItem) {
+        runOperation { runner in
+            _ = try await ClipExportJob.enqueue(on: runner, clipID: item.id)
+        }
+    }
+
+    func remux(_ item: MediaItem, mode: RemuxJob.Mode) {
+        runOperation { runner in
+            _ = try await RemuxJob.enqueue(on: runner, itemID: item.id, mode: mode)
+        }
+    }
+
+    private func runOperation(_ enqueue: @escaping @Sendable (JobRunner) async throws -> Void) {
+        let runner = jobRunner
+        Task {
+            do {
+                try await enqueue(runner)
+                try await runner.runPending()
+            } catch {
+                errorMessage = "\(error)"
+            }
+            refreshAll()
+        }
     }
 }

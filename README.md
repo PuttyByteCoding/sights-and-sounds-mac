@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 7a: moves and organization
+## Status — Phase 7b: media operations
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -129,7 +129,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
   - Review UI: candidate queue with source/confidence, side-by-side
     compare with thumbnails, metadata, score breakdowns, tag carry-over
     toggles, Keep/Not Duplicates. Toolbar badge shows pending count.
-- ✅ **Phase 7a** (this): revertible moves and staging.
+- ✅ **Phase 7a** (merged): revertible moves and staging.
   - Every file move goes through the FileAccess boundary with a paper
     trail: never overwrites (timestamp suffix on collision), retries
     transient IO, updates the item's path triplet, and logs a
@@ -146,6 +146,19 @@ follow. Full context, locked decisions and the 11-phase plan live in
     moves with the file.
   - UI: Maintenance menu with Move History (per-entry Revert) and the
     purge flow; player W/D keys now stage physically.
+- ✅ **Phase 7b** (this): clips and container operations.
+  - Clip authoring in the player (⌃{ / ⌃} + save bar): an embedded clip
+    is a named range carrying its parent's path — the path-unique index
+    became partial (real files only) via a proper table rebuild.
+  - Clip export: stream-copied to a standalone file; the spent clip row
+    keeps the ported breadcrumb (hidden from listings, pointing at its
+    export).
+  - Optimize (faststart) and Repair: passthrough remux with
+    archive-before-write — the replacement is verified BEFORE the
+    original moves to _Replaced, so the original is never at risk.
+  - Grid context menu: Export Clip / Optimize / Repair; clips resolve
+    to their parent's file everywhere (playback, thumbnails).
+  - Encode presets, join, blocks and OCR follow in the next slices.
 
 ### Demo library
 
