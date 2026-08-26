@@ -107,6 +107,21 @@ private struct ItemCell: View {
                     }
                 }
                 .disabled(!model.isOnline(item))
+                Button("Write Tags to File", systemImage: "square.and.pencil") {
+                    model.writeTags(itemIDs: [item.id], scope: item.fileName)
+                }
+                .disabled(!model.isOnline(item))
+                let snapshots = model.snapshots(of: item.id)
+                if !snapshots.isEmpty {
+                    Menu("Restore Embedded Tags") {
+                        ForEach(snapshots) { snapshot in
+                            Button("\(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened)) (\(snapshot.source.rawValue))") {
+                                model.restoreSnapshot(snapshot.id)
+                            }
+                        }
+                    }
+                    .disabled(!model.isOnline(item))
+                }
                 Button("Scan On-Screen Text (OCR)", systemImage: "text.viewfinder") {
                     model.scanText(item)
                 }

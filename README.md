@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 7: complete
+## Status — Phase 8a: metadata write-back
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -170,7 +170,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     beside the original, never in place.
   - ffmpeg through one boundary with graceful degradation: no ffmpeg
     is a summary with install guidance, not a failure (CI-proof).
-- ✅ **Phase 7d** (this): reorganization, OCR, join, search.
+- ✅ **Phase 7d** (merged): reorganization, OCR, join, search.
   - Template reorganization, ported: %Category tokens (underscores for
     spaces), ordinal multi-value choice with notes, missing-token
     skips, per-segment sanitization — previewed before anything moves,
@@ -183,6 +183,19 @@ follow. Full context, locked decisions and the 11-phase plan live in
     statement.
   - Join: ffmpeg concat stream copy of a folder's parts, name order,
     additive.
+- ✅ **Phase 8a** (this): metadata write-back.
+  - The Picard-derived StandardFields table and the write-back mapping,
+    ported with their merge semantics (collision merge in mapping
+    order, case-sensitive dedupe, ASCII-folded auto field names).
+  - The ported tool ladder: metaflac / AtomicParsley in place when
+    present, ffmpeg stream-copy remux as the universal fallback —
+    essence untouched by construction.
+  - Wipe-and-rewrite is only ever preceded by a pre-write snapshot
+    (ffprobe tag JSON); restore writes a snapshot back after taking a
+    pre-restore snapshot, so undo is itself undoable. Full run/per-file
+    history that outlives moves and deletes.
+  - A fallback remux changes bytes: the content hash clears for the
+    next sweep. Backup/restore and validation follow as 8b.
 
 ### Demo library
 
