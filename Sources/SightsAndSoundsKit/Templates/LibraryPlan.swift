@@ -8,7 +8,7 @@ import Foundation
 /// migrator builds a plan from the old vocabulary). The review screen edits
 /// the plan — rename, exclude, adjust — and `LibraryCreator` executes it.
 /// Built once, used by both flows, exactly as the brief specifies.
-public struct LibraryPlan: Sendable, Equatable {
+public struct LibraryPlan: Sendable, Equatable, Codable {
     public var name: String
     public var categories: [PlannedCategory]
     /// Media-item-scope fields (tag-scope fields live on their category).
@@ -60,7 +60,7 @@ public struct LibraryPlan: Sendable, Equatable {
 
 /// One category in the plan. `originalName` keeps what the template or the
 /// old library called it, so the review screen can show "renamed from …".
-public struct PlannedCategory: Sendable, Equatable, Identifiable {
+public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
     public var id: UUID
     /// Unchecked in review = not created. Nothing is written for an
     /// excluded category — its tags and fields simply don't exist.
@@ -122,7 +122,7 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable {
     }
 }
 
-public struct PlannedTag: Sendable, Equatable {
+public struct PlannedTag: Sendable, Equatable, Codable {
     public var name: String
     public var aliases: [String]
     public var isFavorite: Bool
@@ -143,7 +143,7 @@ public struct PlannedTag: Sendable, Equatable {
     }
 }
 
-public struct PlannedTagField: Sendable, Equatable {
+public struct PlannedTagField: Sendable, Equatable, Codable {
     public var name: String
     public var dataType: FieldDataType
     public var required: Bool
@@ -162,7 +162,7 @@ public struct PlannedTagField: Sendable, Equatable {
     }
 }
 
-public struct PlannedItemField: Sendable, Equatable, Identifiable {
+public struct PlannedItemField: Sendable, Equatable, Identifiable, Codable {
     public var id: UUID
     public var include: Bool
     public var name: String

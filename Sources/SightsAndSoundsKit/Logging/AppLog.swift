@@ -64,6 +64,35 @@ public final class AppLog: @unchecked Sendable {
         case .warning: logger.warning("\(message, privacy: .public)")
         case .error: logger.error("\(message, privacy: .public)")
         }
+        appendToFileIfConfigured(entry)
+    }
+
+    /// Daily file (`sas-YYYY-MM-DD.log`) in the settings-chosen log
+    /// directory, when one is set. Best-effort; the ring buffer and
+    /// os.Logger remain the primary record.
+    private func appendToFileIfConfigured(_ entry: LogEntry) {
+        guard let directory = AppSettingsStore.shared.current.logDirectory else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let url = URL(fileURLWithPath: directory, isDirectory: true)
+            .appendingPathComponent("sas-\(formatter.string(from: entry.date)).log")
+        let line = "\(entry.date.ISO8601Format()) [\(entry.level.label)] \(entry.category): \(entry.message)\n"
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: url.path) {
+                try Data(line.utf8).write(to: url)
+            } else {
+                let handle = try FileHandle(forWritingTo: url)
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: Data(line.utf8))
+            }
+        } catch {
+            // Never recurse into log() from here.
+        }
     }
 
     public func debug(_ category: String, _ message: String) { log(.debug, category, message) }
