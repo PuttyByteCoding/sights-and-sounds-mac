@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 8a: metadata write-back
+## Status — Phase 8: complete (shutdown gate open)
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -183,7 +183,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     statement.
   - Join: ffmpeg concat stream copy of a folder's parts, name order,
     additive.
-- ✅ **Phase 8a** (this): metadata write-back.
+- ✅ **Phase 8a** (merged): metadata write-back.
   - The Picard-derived StandardFields table and the write-back mapping,
     ported with their merge semantics (collision merge in mapping
     order, case-sensitive dedupe, ASCII-folded auto field names).
@@ -195,7 +195,20 @@ follow. Full context, locked decisions and the 11-phase plan live in
     pre-restore snapshot, so undo is itself undoable. Full run/per-file
     history that outlives moves and deletes.
   - A fallback remux changes bytes: the content hash clears for the
-    next sweep. Backup/restore and validation follow as 8b.
+    next sweep.
+- ✅ **Phase 8b** (this): backup, restore, validation, triage.
+  - Per-library backup via GRDB online backup — consistent while live,
+    no closing, later writes never leak in. Backups are verified to
+    open and migrate BEFORE any restore swaps files, and the current
+    file is archived first, never destroyed.
+  - Validation sweep: rows vs disk per online source — missing files,
+    orphans, size mismatches — each with one honest action; offline
+    sources are skipped whole (absence of a drive is not absence of
+    files).
+  - Triage: restore-from-staging and clear-playback-issue on flagged
+    items in the grid.
+  - **The shutdown gate is open**: run the migrator against the real
+    snapshot, verify counts, archive the old repo, stop the containers.
 
 ### Demo library
 

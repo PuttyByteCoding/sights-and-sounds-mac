@@ -259,6 +259,16 @@ final class BrowseModel {
         }) ?? []
     }
 
+    func runValidation() async {
+        do {
+            await jobRunner.register(ValidationJob.self)
+            _ = try await jobRunner.enqueueUnlessPending(ValidationJob.self)
+            try await jobRunner.runPending()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
     func remux(_ item: MediaItem, mode: RemuxJob.Mode) {
         runOperation { runner in
             _ = try await RemuxJob.enqueue(on: runner, itemID: item.id, mode: mode)
