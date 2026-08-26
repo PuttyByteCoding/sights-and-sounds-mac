@@ -28,7 +28,11 @@ final class BrowseModel {
     private(set) var sources: [Source] = []
     private(set) var pendingDuplicateCount = 0
     private(set) var onlineSourceIDs: Set<UUID> = []
-    var errorMessage: String?
+    var errorMessage: String? {
+        didSet {
+            if let errorMessage { AppLog.shared.error("browse", errorMessage) }
+        }
+    }
 
     private let fileAccess: any FileAccess = LiveFileAccess()
     private let jobRunner: JobRunner

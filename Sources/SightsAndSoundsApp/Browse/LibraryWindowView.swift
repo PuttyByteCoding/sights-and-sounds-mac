@@ -127,6 +127,9 @@ struct BrowseView: View {
                 .help("Move history, reorganize, validate, back up, write tags, purge")
             }
             ToolbarItem {
+                LogWindowButton()
+            }
+            ToolbarItem {
                 TasksWindowButton()
             }
         }
