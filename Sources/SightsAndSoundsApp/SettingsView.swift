@@ -149,7 +149,7 @@ private struct PlaybackSettingsPane: View {
                 row("Keys 1 / 3 — short", back: $skip.key1Seconds, forward: $skip.key3Seconds)
                 row("Keys 4 / 6 — medium", back: $skip.key4Seconds, forward: $skip.key6Seconds)
                 row("Keys 7 / 9 — long", back: $skip.key7Seconds, forward: $skip.key9Seconds)
-                Text("1/4/7 seek back, 3/6/9 forward — top row, shifted, or numpad. Applies to the next player window. The rest of the key map is fixed: 5/Space play-pause, 0 start, 8 near end, F/R/D/W flags, T tags, { } blocks, ⌃{ ⌃} clips.")
+                Text("1/4/7 seek back, 3/6/9 forward — top row, shifted, or numpad. Applies to the next item you play. The rest of the key map is fixed: 5/Space play-pause, 0 start, 8 near end, F/R/D/W flags, T tags, { } blocks, ⌃{ ⌃} clips.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

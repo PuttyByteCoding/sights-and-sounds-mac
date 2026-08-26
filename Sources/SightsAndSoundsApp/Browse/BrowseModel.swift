@@ -22,6 +22,11 @@ final class BrowseModel {
     var filter = MediaFilter() { didSet { refreshItems() } }
     var selectedFolderPath: String?
 
+    /// Non-nil while the embedded player has taken over this library's
+    /// window; cleared (with a refresh — flags and tags may have changed)
+    /// when playback closes.
+    var playerRequest: PlayerRequest?
+
     private(set) var items: [MediaItem] = []
     private(set) var folderTree: [FolderNode] = []
     private(set) var vocabulary: [CategoryTags] = []

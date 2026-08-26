@@ -225,7 +225,7 @@ private struct CompareView: View {
 
 private struct ComparePane: View {
     @Environment(BrowseModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
     let item: MediaItem
     let isKeeper: Bool
     let onKeep: () -> Void
@@ -285,8 +285,11 @@ private struct ComparePane: View {
 
             HStack {
                 Button("Play", systemImage: "play") {
-                    openWindow(id: "player", value: PlayerRequest(
-                        libraryID: model.libraryID, itemID: item.id, playlist: [item.id]))
+                    // The player takes over the window, so let the sheet
+                    // go first rather than leaving it presented over it.
+                    dismiss()
+                    model.playerRequest = PlayerRequest(
+                        libraryID: model.libraryID, itemID: item.id, playlist: [item.id])
                 }
                 .disabled(!model.isOnline(item))
                 Spacer()
