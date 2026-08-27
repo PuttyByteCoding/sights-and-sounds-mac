@@ -14,10 +14,32 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
     public var name: String
     public var createdAt: Date
 
-    public init(libraryID: UUID = UUID(), name: String, createdAt: Date = Date()) {
+    /// Per-library import-extension overrides. nil = inherit the
+    /// app-wide lists; a value REPLACES them (dropping extensions
+    /// matters as much as adding). In the library file, so expectations
+    /// about the library's content travel with it.
+    public var videoExtensionsOverride: [String]?
+    public var audioExtensionsOverride: [String]?
+
+    public init(
+        libraryID: UUID = UUID(), name: String, createdAt: Date = Date(),
+        videoExtensionsOverride: [String]? = nil,
+        audioExtensionsOverride: [String]? = nil
+    ) {
         self.id = 1
         self.libraryID = libraryID
         self.name = name
         self.createdAt = createdAt
+        self.videoExtensionsOverride = videoExtensionsOverride
+        self.audioExtensionsOverride = audioExtensionsOverride
+    }
+
+    /// The effective import sets for this library.
+    public func effectiveVideoExtensions(appWide: [String]) -> Set<String> {
+        Set((videoExtensionsOverride ?? appWide).map { $0.lowercased() })
+    }
+
+    public func effectiveAudioExtensions(appWide: [String]) -> Set<String> {
+        Set((audioExtensionsOverride ?? appWide).map { $0.lowercased() })
     }
 }

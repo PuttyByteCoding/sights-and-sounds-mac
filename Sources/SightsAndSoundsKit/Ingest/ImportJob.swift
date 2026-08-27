@@ -57,11 +57,22 @@ public struct ImportJob: Job {
             throw ImportError.sourceOffline(source.name)
         }
 
+        // Effective extension sets: the library's override replaces the
+        // app-wide lists; absent, it inherits them. Resolved once per run.
+        let info = try await library.writer.read { try LibraryInfo.fetchOne($0) }
+        let appSettings = AppSettingsStore.shared.current
+        let videoSet = info?.effectiveVideoExtensions(appWide: appSettings.videoExtensions)
+            ?? MediaProbe.videoExtensions
+        let audioSet = info?.effectiveAudioExtensions(appWide: appSettings.audioExtensions)
+            ?? MediaProbe.audioExtensions
+
         // Discover media files, source-relative, stable order.
         let rootPath = root.standardizedFileURL.path
         let candidates = try fileAccess.allFiles(under: root)
             .compactMap { url -> (relative: String, url: URL, kind: MediaKind)? in
-                guard let kind = MediaProbe.kind(forExtension: url.pathExtension) else { return nil }
+                guard let kind = MediaProbe.kind(
+                    forExtension: url.pathExtension, video: videoSet, audio: audioSet)
+                else { return nil }
                 let full = url.standardizedFileURL.path
                 guard full.hasPrefix(rootPath + "/") else { return nil }
                 let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))

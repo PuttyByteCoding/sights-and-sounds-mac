@@ -20,6 +20,8 @@ struct SettingsView: View {
                 .tabItem { Label("Jobs", systemImage: "gearshape.2") }
             VocabularySettingsPane()
                 .tabItem { Label("Tag Category Configuration", systemImage: "tag") }
+            LibraryImportSettingsPane()
+                .tabItem { Label("Library Import", systemImage: "square.and.arrow.down.on.square") }
         }
         // A minimum, not a fixed width — the Settings window resizes
         // like any other (#73); grouped forms stretch sanely.
@@ -145,7 +147,7 @@ private struct ImportSettingsPane: View {
                     }
                     Spacer()
                 }
-                Text("Comma-separated, case-insensitive. Applies to the next import; existing items are untouched.")
+                Text("Comma-separated, case-insensitive. Applies to the next import; existing items are untouched. A library can override these lists in the Library Import tab.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -492,6 +494,95 @@ private struct ConfigurationSheet: View {
             snapshot = loaded
         } catch {
             errorText = "\(error)"
+        }
+    }
+}
+
+/// Per-library import-extension override (#69). Inherit is the strong
+/// default; the override toggle makes replace-vs-inherit a visible
+/// choice, never an empty-field ambiguity. The override REPLACES the
+/// app-wide list — a lossless-audio library can DROP extensions.
+private struct LibraryImportSettingsPane: View {
+    @Environment(AppModel.self) private var model
+    @State private var selectedLibraryID: UUID?
+    @State private var overrideEnabled = false
+    @State private var video = ""
+    @State private var audio = ""
+    @State private var statusText: String?
+
+    var body: some View {
+        Form {
+            ScopeHeader(scope: .library)
+            Section("Imported file extensions") {
+                Picker("Library", selection: $selectedLibraryID) {
+                    Text("Choose…").tag(UUID?.none)
+                    ForEach(model.libraries) { library in
+                        Text(library.name).tag(UUID?.some(library.id))
+                    }
+                }
+                Toggle("Override for this library", isOn: $overrideEnabled)
+                    .disabled(selectedLibraryID == nil)
+                if overrideEnabled {
+                    TextField("Video extensions", text: $video)
+                    TextField("Audio extensions", text: $audio)
+                } else {
+                    Text("Using the app-wide lists from the Import tab.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Save") { save() }
+                        .disabled(selectedLibraryID == nil)
+                    if let statusText {
+                        Text(statusText).font(.callout).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                Text("The override replaces the app-wide lists — it can drop extensions, not just add. Comma-separated, case-insensitive; applies to the next import. Stored in the library file, so it travels with the library.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onChange(of: selectedLibraryID) { loadCurrent() }
+    }
+
+    private func loadCurrent() {
+        statusText = nil
+        guard let id = selectedLibraryID,
+              let library = try? model.library(for: id),
+              let info = try? library.info()
+        else {
+            overrideEnabled = false
+            video = ""
+            audio = ""
+            return
+        }
+        overrideEnabled = info.videoExtensionsOverride != nil
+            || info.audioExtensionsOverride != nil
+        video = (info.videoExtensionsOverride
+            ?? AppSettingsStore.shared.current.videoExtensions).joined(separator: ", ")
+        audio = (info.audioExtensionsOverride
+            ?? AppSettingsStore.shared.current.audioExtensions).joined(separator: ", ")
+    }
+
+    private func save() {
+        guard let id = selectedLibraryID, let library = try? model.library(for: id) else { return }
+        func parse(_ raw: String) -> [String] {
+            raw.split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                .filter { !$0.isEmpty }
+        }
+        do {
+            if overrideEnabled {
+                try library.setExtensionOverrides(video: parse(video), audio: parse(audio))
+                statusText = "Override saved."
+            } else {
+                try library.setExtensionOverrides(video: nil, audio: nil)
+                statusText = "Inheriting the app-wide lists."
+            }
+        } catch {
+            statusText = "Save failed: \(error)"
         }
     }
 }
