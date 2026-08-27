@@ -37,9 +37,10 @@ struct PlayerView: View {
                     .help("Back to the library (Esc)")
             }
         }
-        // 640, not 720: the player now shares the window with the
-        // sidebar column (min 220) inside the 900-wide minimum.
-        .frame(minWidth: 640, minHeight: 460)
+        // Low mins: the video's 150 pt floor is enforced by the panel
+        // clamps (#85), not by a wide hard minimum — a big minimum here
+        // would stop the sidebar's drag long before the floor.
+        .frame(minWidth: 320, minHeight: 300)
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -165,16 +166,50 @@ private struct PlayerContent: View {
     @State private var layout = AppSettingsStore.shared.current.playerLayout
     @State private var dragBase: CGFloat?
 
+    // ONE rule limits every panel: expansion stops only when the video
+    // area would drop below its 150×150 floor (#85). Ceilings are
+    // DYNAMIC — measured content size minus the other occupants — and
+    // stored sizes are clamped at APPLY time, so a layout saved on a
+    // big window squeezes on a small one and re-expands when room
+    // returns, without rewriting what the user chose.
+    private static let videoFloor: CGFloat = 150
+    private static let handleThickness: CGFloat = 5  // 1 pt line + 2×2 padding
+    @State private var contentSize: CGSize = .zero
+    @State private var chromeHeight: CGFloat = 0  // info bar + transport
+
+    private var tagPanelCeiling: CGFloat {
+        max(0, contentSize.width - Self.videoFloor - Self.handleThickness
+            - (showTextPanel ? 300 : 0))
+    }
+
+    private var queueCeiling: CGFloat {
+        max(0, contentSize.height - Self.videoFloor - chromeHeight - Self.handleThickness)
+    }
+
+    private var effectiveTagPanelWidth: CGFloat {
+        guard contentSize.width > 0 else { return CGFloat(layout.tagPanelWidth) }
+        return min(CGFloat(layout.tagPanelWidth), tagPanelCeiling)
+    }
+
+    private var effectiveQueueHeight: CGFloat {
+        guard contentSize.height > 0, chromeHeight > 0 else {
+            return CGFloat(layout.queueHeight)
+        }
+        return min(CGFloat(layout.queueHeight), queueCeiling)
+    }
+
     private func dragTagPanel(_ translation: CGFloat) {
-        let base = dragBase ?? CGFloat(layout.tagPanelWidth)
+        let base = dragBase ?? effectiveTagPanelWidth
         dragBase = base
-        layout.tagPanelWidth = Double(min(560, max(220, base - translation)))
+        layout.tagPanelWidth = Double(
+            min(max(220, base - translation), max(220, tagPanelCeiling)))
     }
 
     private func dragQueue(_ translation: CGFloat) {
-        let base = dragBase ?? CGFloat(layout.queueHeight)
+        let base = dragBase ?? effectiveQueueHeight
         dragBase = base
-        layout.queueHeight = Double(min(240, max(64, base - translation)))
+        layout.queueHeight = Double(
+            min(max(64, base - translation), max(64, queueCeiling)))
     }
 
     private func endPanelDrag() {
@@ -247,26 +282,34 @@ private struct PlayerContent: View {
                         }
                     }
                 }
-                InfoBar()
-                TransportBar(queueShown: queueShown)
-                    .padding(10)
-                    .background(.bar)
+                VStack(spacing: 0) {
+                    InfoBar()
+                    TransportBar(queueShown: queueShown)
+                        .padding(10)
+                        .background(.bar)
+                }
+                // The fixed strips' height comes out of the vertical
+                // budget before the video floor is measured.
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+                    chromeHeight = $0
+                }
                 if layout.showsQueue, !model.playlist.isEmpty {
                     HorizontalResizeHandle(
                         onDrag: { dragQueue($0) }, onEnd: { endPanelDrag() })
-                    QueuePanel(height: CGFloat(layout.queueHeight))
+                    QueuePanel(height: effectiveQueueHeight)
                 }
             }
             .simultaneousGesture(TapGesture().onEnded { refocus() })
             if model.showTagPanel {
                 VerticalResizeHandle(
                     onDrag: { dragTagPanel($0) }, onEnd: { endPanelDrag() })
-                TagPanelView(width: CGFloat(layout.tagPanelWidth))
+                TagPanelView(width: effectiveTagPanelWidth)
             }
             if showTextPanel {
                 OcrLinesPanel()
             }
         }
+        .onGeometryChange(for: CGSize.self, of: { $0.size }) { contentSize = $0 }
         .toolbar {
             Button("Tags", systemImage: "tag") {
                 model.showTagPanel.toggle()

@@ -44,6 +44,16 @@ struct BrowseView: View {
     @Environment(BrowseModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @State private var showViewOptions = false
+    @State private var windowWidth: CGFloat = 0
+
+    /// The sidebar's expansion stops where the video's 150 pt floor
+    /// begins (#85) — the detail keeps 160 (floor + handle margin); the
+    /// player's own dynamic clamps squeeze its right/bottom panels
+    /// first, so the video is the last thing standing.
+    private var sidebarMax: CGFloat {
+        guard windowWidth > 0 else { return 10_000 }
+        return max(221, windowWidth - 160)
+    }
 
     /// The former sheets open as WINDOWS (#73) — draggable, resizable,
     /// usable beside the grid.
@@ -60,7 +70,7 @@ struct BrowseView: View {
         @Bindable var model = model
         NavigationSplitView {
             SidebarView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: sidebarMax)
         } detail: {
             // Playback happens in place, in the DETAIL column — the
             // sidebar stays open and usable beside the player. Back (or
@@ -193,6 +203,7 @@ struct BrowseView: View {
             }
         }
         .task { await model.watchThumbnailQueue() }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { windowWidth = $0 }
         .frame(minWidth: 900, minHeight: 560)
     }
 }
