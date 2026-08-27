@@ -121,6 +121,14 @@ struct PlayerView: View {
             return true
         }
 
+        // M: mute toggle — after the binding check, so a tag bound to M
+        // keeps winning.
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
+           character.lowercased() == "m" {
+            model.toggleMute()
+            return true
+        }
+
         return model.handle(
             character: character,
             shift: press.modifiers.contains(.shift),
@@ -246,6 +254,13 @@ private struct TransportBar: View {
                     model.goNext()
                 } label: { Image(systemName: "forward.end.fill") }
                     .help("Next item (→)")
+                Button {
+                    model.toggleMute()
+                } label: {
+                    Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .frame(width: 20)
+                }
+                .help(model.isMuted ? "Unmute (M)" : "Mute (M)")
 
                 Text(timeText)
                     .font(.callout.monospacedDigit())

@@ -82,6 +82,10 @@ final class PlayerModel {
             durationSeconds = loaded.durationSeconds ?? 0
 
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            // Each item is a fresh start: videos follow the setting,
+            // audio never begins muted (it would just be silence).
+            isMuted = loaded.kind == .video && AppSettingsStore.shared.current.startVideosMuted
+            player.isMuted = isMuted
             installObserver()
             refreshTagging()
             refreshBlocks()
@@ -115,6 +119,15 @@ final class PlayerModel {
     }
 
     func togglePlayPause() { isPlaying ? pause() : play() }
+
+    /// Session-scoped: flipping it never outlives the current item —
+    /// the next load re-applies the start-muted setting.
+    private(set) var isMuted = false
+
+    func toggleMute() {
+        isMuted.toggle()
+        player.isMuted = isMuted
+    }
 
     func seek(to seconds: Double) {
         let clamped = max(0, durationSeconds > 0 ? min(seconds, durationSeconds) : seconds)
