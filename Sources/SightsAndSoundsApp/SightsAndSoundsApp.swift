@@ -112,11 +112,27 @@ final class AppModel {
     // cancellation only works against the runner that owns the job.
     private var runners: [UUID: JobRunner] = [:]
 
+    /// App-wide background-task pause, session-only. Runners created
+    /// while paused start paused; resuming kicks each runner's drain so
+    /// held queues empty without waiting for the next signal.
+    private(set) var tasksPaused = false
+
+    func setTasksPaused(_ paused: Bool) {
+        tasksPaused = paused
+        for runner in runners.values {
+            Task {
+                await runner.setPaused(paused)
+                if !paused { try? await runner.runPending() }
+            }
+        }
+    }
+
     func runner(for libraryID: UUID) throws -> JobRunner {
         if let existing = runners[libraryID] { return existing }
         let runner = JobRunner(library: try library(for: libraryID))
         runners[libraryID] = runner
         Task {
+            await runner.setPaused(tasksPaused)
             await runner.register(ImportJob.self)
             await runner.register(ContentHashJob.self)
             await runner.register(ThumbnailBatchJob.self)

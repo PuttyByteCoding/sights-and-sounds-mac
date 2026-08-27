@@ -36,6 +36,32 @@ struct BackgroundTasksView: View {
             }
         }
         .frame(minWidth: 560, minHeight: 360)
+        .toolbar {
+            Button(
+                app.tasksPaused ? "Resume" : "Pause",
+                systemImage: app.tasksPaused ? "play.fill" : "pause.fill"
+            ) {
+                app.setTasksPaused(!app.tasksPaused)
+            }
+            .help(app.tasksPaused
+                ? "Resume queued background work"
+                : "Hold the queues — the running job finishes, nothing new starts")
+        }
+        // Paused must be VISIBLE state, not just a toggled button.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if app.tasksPaused {
+                HStack(spacing: 6) {
+                    Image(systemName: "pause.circle.fill")
+                    Text("Background tasks are paused — queued work waits, the running job finishes.")
+                    Spacer()
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.bar)
+            }
+        }
         .task {
             while !Task.isCancelled {
                 await refresh()

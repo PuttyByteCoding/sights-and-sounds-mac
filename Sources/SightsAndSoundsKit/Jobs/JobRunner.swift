@@ -49,12 +49,22 @@ public actor JobRunner {
         cancelRequested.insert(jobID)
     }
 
+    /// Pause is not cancel: no new job starts while paused, the one
+    /// already running finishes, queued jobs wait, and enqueues still
+    /// land. Session-only — resuming needs a runPending() kick to drain
+    /// what accumulated.
+    public private(set) var isPaused = false
+
+    public func setPaused(_ paused: Bool) {
+        isPaused = paused
+    }
+
     /// Drain the queue: run every queued job, oldest first, serially.
-    /// Returns the ids it settled, in order.
+    /// Returns the ids it settled, in order; stops early when paused.
     @discardableResult
     public func runPending() async throws -> [UUID] {
         var settled: [UUID] = []
-        while let next = try nextQueued() {
+        while !isPaused, let next = try nextQueued() {
             await run(next)
             settled.append(next.id)
         }
