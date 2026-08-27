@@ -585,19 +585,25 @@ public final class LibraryDatabase: Sendable {
 
     /// Visible-item counts per folder, for the sidebar tree. Applies the
     /// same baseline as every listing: kind, spent clip rows, enabled
-    /// sources.
-    public func folderCounts(kind: MediaKind) throws -> [(path: String, count: Int)] {
+    /// sources. Pass a sourceID to scope the tree to one source — the
+    /// sidebar nests a tree under each source row.
+    public func folderCounts(
+        kind: MediaKind, sourceID: UUID? = nil
+    ) throws -> [(path: String, count: Int)] {
         try writer.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
+            var sql = """
                 SELECT mediaItem.folderPath AS path, COUNT(*) AS n FROM mediaItem \
                 WHERE mediaItem.kind = ? AND mediaItem.clipExported = 0 \
                 AND EXISTS (SELECT 1 FROM source \
-                            WHERE source.id = mediaItem.sourceID AND source.enabled) \
-                GROUP BY mediaItem.folderPath
-                """,
-                arguments: [kind.rawValue])
+                            WHERE source.id = mediaItem.sourceID AND source.enabled)
+                """
+            var arguments: [any DatabaseValueConvertible] = [kind.rawValue]
+            if let sourceID {
+                sql += " AND mediaItem.sourceID = ?"
+                arguments.append(sourceID)
+            }
+            sql += " GROUP BY mediaItem.folderPath"
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
             return rows.map { ($0["path"] as String, $0["n"] as Int) }
         }
     }

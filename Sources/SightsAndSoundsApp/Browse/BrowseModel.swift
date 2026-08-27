@@ -28,7 +28,12 @@ final class BrowseModel {
     var playerRequest: PlayerRequest?
 
     private(set) var items: [MediaItem] = []
-    private(set) var folderTree: [FolderNode] = []
+    /// One folder tree per enabled source — the sidebar nests each under
+    /// its source row.
+    private(set) var folderTrees: [UUID: [FolderNode]] = [:]
+    /// Alias strings per tag, for the sidebar's per-category tag filter
+    /// (typing "SBD" should find "Soundboard").
+    private(set) var tagAliases: [UUID: [String]] = [:]
     private(set) var vocabulary: [CategoryTags] = []
     private(set) var sources: [Source] = []
     private(set) var pendingDuplicateCount = 0
@@ -138,7 +143,16 @@ final class BrowseModel {
             vocabulary = try library.vocabulary()
                 .filter { !$0.category.hiddenFromBrowse }
                 .map { CategoryTags(category: $0.category, tags: $0.tags) }
-            folderTree = FolderTreeBuilder.build(from: try library.folderCounts(kind: kind))
+            tagAliases = Dictionary(
+                grouping: try library.writer.read { try TagAlias.fetchAll($0) },
+                by: \.tagID
+            ).mapValues { $0.map(\.alias) }
+            var trees: [UUID: [FolderNode]] = [:]
+            for source in sources where source.enabled {
+                trees[source.id] = FolderTreeBuilder.build(
+                    from: try library.folderCounts(kind: kind, sourceID: source.id))
+            }
+            folderTrees = trees
             pendingDuplicateCount = try library.pendingCandidates().count
             refreshItems()
         } catch {
