@@ -25,6 +25,12 @@ struct CategoryManagerView: View {
                         onTagAction: { reloadTags() },
                         library: model.library,
                         errorText: $errorText)
+                        // Identity must come from the PARENT's selection:
+                        // the detail copies the category into @State, and
+                        // @State only reseeds on an identity change. An
+                        // .id inside the detail read its own stale state —
+                        // every category showed (and EDITED) the first one.
+                        .id(category.id)
                 } else {
                     ContentUnavailableView(
                         "No Category Selected", systemImage: "tag",
@@ -240,7 +246,6 @@ private struct CategoryDetail: View {
             }
         }
         .listStyle(.inset)
-        .id(category.id)
     }
 
     private func bound<T>(_ keyPath: WritableKeyPath<TagCategory, T>) -> Binding<T> {
