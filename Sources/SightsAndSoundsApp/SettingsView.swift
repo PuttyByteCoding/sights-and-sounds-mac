@@ -142,9 +142,16 @@ private struct ImportSettingsPane: View {
 
 private struct PlaybackSettingsPane: View {
     @State private var skip = AppSettingsStore.shared.current.skip
+    @State private var startVideosMuted = AppSettingsStore.shared.current.startVideosMuted
 
     var body: some View {
         Form {
+            Section("Sound") {
+                Toggle("Start videos muted", isOn: $startVideosMuted)
+                Text("Audio items are never muted. Applies to the next item you play; M or the speaker button unmutes during playback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Seek distances (seconds)") {
                 row("Keys 1 / 3 — short", back: $skip.key1Seconds, forward: $skip.key3Seconds)
                 row("Keys 4 / 6 — medium", back: $skip.key4Seconds, forward: $skip.key6Seconds)
@@ -157,6 +164,9 @@ private struct PlaybackSettingsPane: View {
         .formStyle(.grouped)
         .onChange(of: skip) {
             AppSettingsStore.shared.update { $0.skip = skip }
+        }
+        .onChange(of: startVideosMuted) {
+            AppSettingsStore.shared.update { $0.startVideosMuted = startVideosMuted }
         }
     }
 

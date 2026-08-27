@@ -57,6 +57,51 @@ final class BrowseModel {
     /// Sources with an import in flight, and their progress line.
     private(set) var importStatus: [UUID: String] = [:]
 
+    /// The thumbnail sweep's live progress for this library — non-nil
+    /// only while a sweep is queued or running. Read by the footer bar
+    /// under the grid; counts come from the job row and thumbnailState,
+    /// the sweep's own progress bookkeeping, never re-derived from disk.
+    struct ThumbnailQueueStatus: Equatable {
+        var current: Int
+        var total: Int?
+        var failed: Int
+    }
+    private(set) var thumbnailQueue: ThumbnailQueueStatus?
+
+    /// Poll while the browse UI is on screen — the view owns the task,
+    /// so nothing runs while the player has the window or after close.
+    /// Same one-second cadence as the tasks dashboard; two cheap reads.
+    func watchThumbnailQueue() async {
+        while !Task.isCancelled {
+            thumbnailQueue = await Self.thumbnailQueueStatus(in: library)
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    private static func thumbnailQueueStatus(
+        in library: LibraryDatabase
+    ) async -> ThumbnailQueueStatus? {
+        do {
+            return try await library.writer.read { db in
+                guard
+                    let row = try JobRecord.fetchOne(
+                        db,
+                        sql: "SELECT * FROM job WHERE kind = ? ORDER BY createdAt DESC LIMIT 1",
+                        arguments: [ThumbnailBatchJob.kind]),
+                    row.state == .queued || row.state == .running
+                else { return nil }
+                let failed = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM thumbnailState WHERE failureMessage IS NOT NULL"
+                ) ?? 0
+                return ThumbnailQueueStatus(
+                    current: row.progressCurrent, total: row.progressTotal, failed: failed)
+            }
+        } catch {
+            return nil
+        }
+    }
+
     init(
         libraryID: UUID, library: LibraryDatabase, runner: JobRunner,
         onWorkFinished: @escaping () -> Void = {}
@@ -101,12 +146,52 @@ final class BrowseModel {
         }
     }
 
+    /// The search field's live text — always in sync with keystrokes.
+    /// Pushed into the filter (and thus the query) only after a pause,
+    /// so typing never waits on a table scan.
+    private(set) var searchDisplayText: String = ""
+    private var searchDebounce: Task<Void, Never>?
+
+    func setSearchText(_ text: String) {
+        searchDisplayText = text
+        searchDebounce?.cancel()
+        // Clearing (the field's ✕, or deleting the last character) skips
+        // the pause — restoring the full grid should feel instant.
+        if text.isEmpty {
+            if filter.searchText != "" { filter.searchText = "" }
+            return
+        }
+        searchDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            if self.filter.searchText != text { self.filter.searchText = text }
+        }
+    }
+
+    /// Queries run off the main actor; the generation counter drops any
+    /// result a newer refresh has since superseded, so typing fast can
+    /// never publish stale rows over fresh ones.
+    private var refreshGeneration = 0
+
     func refreshItems() {
-        do {
-            items = try library.mediaItems(matching: filter, kind: kind)
-            errorMessage = nil
-        } catch {
-            errorMessage = "\(error)"
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let library = library, filter = filter, kind = kind
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome: Result<[MediaItem], Error>
+            do { outcome = .success(try library.mediaItems(matching: filter, kind: kind)) } catch {
+                outcome = .failure(error)
+            }
+            await MainActor.run { [weak self] in
+                guard let self, self.refreshGeneration == generation else { return }
+                switch outcome {
+                case .success(let rows):
+                    self.items = rows
+                    self.errorMessage = nil
+                case .failure(let error):
+                    self.errorMessage = "\(error)"
+                }
+            }
         }
     }
 
@@ -119,6 +204,8 @@ final class BrowseModel {
 
     func clearFilter() {
         selectedFolderPath = nil
+        searchDebounce?.cancel()
+        searchDisplayText = ""
         filter = MediaFilter()
     }
 

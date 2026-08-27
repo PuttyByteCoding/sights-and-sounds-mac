@@ -121,6 +121,14 @@ struct PlayerView: View {
             return true
         }
 
+        // M: mute toggle — after the binding check, so a tag bound to M
+        // keeps winning.
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
+           character.lowercased() == "m" {
+            model.toggleMute()
+            return true
+        }
+
         return model.handle(
             character: character,
             shift: press.modifiers.contains(.shift),
@@ -130,7 +138,22 @@ struct PlayerView: View {
 
 private struct PlayerContent: View {
     @Environment(PlayerModel.self) private var model
+    @Environment(\.displayScale) private var displayScale
     @State private var showBindingsEditor = false
+
+    /// Upscaling stops at 2× the video's native PIXEL size — in points,
+    /// so a Retina backing scale doesn't quietly double it again. Nil
+    /// (dimensions unknown) means no cap.
+    private var videoSizeCap: CGSize? {
+        guard let item = model.item,
+              let width = item.width, let height = item.height,
+              width > 0, height > 0
+        else { return nil }
+        let scale = max(displayScale, 1)
+        return CGSize(
+            width: CGFloat(width) * 2 / scale,
+            height: CGFloat(height) * 2 / scale)
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -148,6 +171,9 @@ private struct PlayerContent: View {
                             .foregroundStyle(.secondary)
                     } else {
                         PlayerSurface(player: model.player)
+                            .frame(
+                                maxWidth: videoSizeCap?.width ?? .infinity,
+                                maxHeight: videoSizeCap?.height ?? .infinity)
                     }
                 }
                 TransportBar()
@@ -228,6 +254,13 @@ private struct TransportBar: View {
                     model.goNext()
                 } label: { Image(systemName: "forward.end.fill") }
                     .help("Next item (→)")
+                Button {
+                    model.toggleMute()
+                } label: {
+                    Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .frame(width: 20)
+                }
+                .help(model.isMuted ? "Unmute (M)" : "Mute (M)")
 
                 Text(timeText)
                     .font(.callout.monospacedDigit())
