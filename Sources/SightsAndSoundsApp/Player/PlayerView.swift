@@ -121,12 +121,17 @@ struct PlayerView: View {
             return true
         }
 
-        // M: mute toggle — after the binding check, so a tag bound to M
-        // keeps winning.
-        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
-           character.lowercased() == "m" {
-            model.toggleMute()
-            return true
+        // M/L: mute and loop toggles — after the binding check, so a
+        // tag bound to either keeps winning.
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control]) {
+            if character.lowercased() == "m" {
+                model.toggleMute()
+                return true
+            }
+            if character.lowercased() == "l" {
+                model.toggleLoop()
+                return true
+            }
         }
 
         return model.handle(
@@ -141,39 +146,49 @@ private struct PlayerContent: View {
     @Environment(\.displayScale) private var displayScale
     @State private var showBindingsEditor = false
 
-    /// Upscaling stops at 2× the video's native PIXEL size — in points,
-    /// so a Retina backing scale doesn't quietly double it again. Nil
-    /// (dimensions unknown) means no cap.
-    private var videoSizeCap: CGSize? {
+    /// The exact rendered size: aspect-fit into the available area, but
+    /// upscaling stops at 2× the video's native PIXEL size (in points,
+    /// so a Retina backing scale doesn't quietly double it again). An
+    /// exact frame — not a max — because the surface must hug the
+    /// top-left corner, and AVPlayerLayer centers inside its own bounds.
+    /// Nil (dimensions unknown) means fill the area as before.
+    private func fittedVideoSize(in available: CGSize) -> CGSize? {
         guard let item = model.item,
               let width = item.width, let height = item.height,
-              width > 0, height > 0
+              width > 0, height > 0, available.width > 0, available.height > 0
         else { return nil }
-        let scale = max(displayScale, 1)
-        return CGSize(
-            width: CGFloat(width) * 2 / scale,
-            height: CGFloat(height) * 2 / scale)
+        let capPointsPerPixel = 2 / max(displayScale, 1)
+        let scale = min(
+            available.width / CGFloat(width),
+            available.height / CGFloat(height),
+            capPointsPerPixel)
+        return CGSize(width: CGFloat(width) * scale, height: CGFloat(height) * scale)
     }
 
     var body: some View {
         @Bindable var model = model
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                ZStack {
+                // Video hugs the top-left; black fills right and below.
+                // Placeholder and error states stay centered.
+                ZStack(alignment: .topLeading) {
                     Color.black
                     if let error = model.loadError {
                         ContentUnavailableView(
                             "Cannot Play", systemImage: "play.slash",
                             description: Text(error))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if model.isAudio {
                         Image(systemName: "waveform")
                             .font(.system(size: 64))
                             .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        PlayerSurface(player: model.player)
-                            .frame(
-                                maxWidth: videoSizeCap?.width ?? .infinity,
-                                maxHeight: videoSizeCap?.height ?? .infinity)
+                        GeometryReader { geometry in
+                            let fitted = fittedVideoSize(in: geometry.size)
+                            PlayerSurface(player: model.player)
+                                .frame(width: fitted?.width, height: fitted?.height)
+                        }
                     }
                 }
                 TransportBar()
@@ -261,6 +276,14 @@ private struct TransportBar: View {
                         .frame(width: 20)
                 }
                 .help(model.isMuted ? "Unmute (M)" : "Mute (M)")
+                Button {
+                    model.toggleLoop()
+                } label: {
+                    Image(systemName: "repeat")
+                        .foregroundStyle(model.isLooping ? Color.accentColor : Color.secondary)
+                        .frame(width: 20)
+                }
+                .help(model.isLooping ? "Looping — click to play once (L)" : "Loop (L)")
 
                 Text(timeText)
                     .font(.callout.monospacedDigit())

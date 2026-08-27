@@ -143,12 +143,19 @@ private struct ImportSettingsPane: View {
 private struct PlaybackSettingsPane: View {
     @State private var skip = AppSettingsStore.shared.current.skip
     @State private var startVideosMuted = AppSettingsStore.shared.current.startVideosMuted
+    @State private var loopVideos = AppSettingsStore.shared.current.loopVideos
 
     var body: some View {
         Form {
             Section("Sound") {
                 Toggle("Start videos muted", isOn: $startVideosMuted)
                 Text("Audio items are never muted. Applies to the next item you play; M or the speaker button unmutes during playback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Looping") {
+                Toggle("Loop videos", isOn: $loopVideos)
+                Text("Restart from the beginning at the end of the item. Applies to the next item you play; L or the repeat button toggles it during playback.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -167,6 +174,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: startVideosMuted) {
             AppSettingsStore.shared.update { $0.startVideosMuted = startVideosMuted }
+        }
+        .onChange(of: loopVideos) {
+            AppSettingsStore.shared.update { $0.loopVideos = loopVideos }
         }
     }
 

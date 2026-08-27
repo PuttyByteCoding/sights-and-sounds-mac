@@ -21,6 +21,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// Videos begin playback muted (audio items never do).
     public var startVideosMuted: Bool
 
+    /// Playback restarts from the beginning at the end of the item.
+    public var loopVideos: Bool
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -39,6 +42,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         audioExtensions: [String] = AppSettings.defaultAudioExtensions,
         skip: SkipSettings = SkipSettings(),
         startVideosMuted: Bool = true,
+        loopVideos: Bool = true,
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600
     ) {
@@ -49,6 +53,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.audioExtensions = audioExtensions
         self.skip = skip
         self.startVideosMuted = startVideosMuted
+        self.loopVideos = loopVideos
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
     }
@@ -66,6 +71,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         skip = try container.decodeIfPresent(SkipSettings.self, forKey: .skip) ?? defaults.skip
         startVideosMuted = try container.decodeIfPresent(Bool.self, forKey: .startVideosMuted)
             ?? defaults.startVideosMuted
+        loopVideos = try container.decodeIfPresent(Bool.self, forKey: .loopVideos)
+            ?? defaults.loopVideos
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
