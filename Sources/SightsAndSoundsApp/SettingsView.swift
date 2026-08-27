@@ -144,6 +144,7 @@ private struct PlaybackSettingsPane: View {
     @State private var skip = AppSettingsStore.shared.current.skip
     @State private var startVideosMuted = AppSettingsStore.shared.current.startVideosMuted
     @State private var loopVideos = AppSettingsStore.shared.current.loopVideos
+    @State private var infoBar = AppSettingsStore.shared.current.infoBar
 
     var body: some View {
         Form {
@@ -156,6 +157,15 @@ private struct PlaybackSettingsPane: View {
             Section("Looping") {
                 Toggle("Loop videos", isOn: $loopVideos)
                 Text("Restart from the beginning at the end of the item. Applies to the next item you play; L or the repeat button toggles it during playback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Info bar under the video") {
+                Toggle("Position (\u{201C}x of y\u{201D})", isOn: $infoBar.showsPosition)
+                Toggle("Tags", isOn: $infoBar.showsTags)
+                Toggle("Favorite star", isOn: $infoBar.showsFavorite)
+                Toggle("Save a Copy button", isOn: $infoBar.showsDownload)
+                Text("The bar hides entirely when everything is off. Applies to the next item you play.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -177,6 +187,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: loopVideos) {
             AppSettingsStore.shared.update { $0.loopVideos = loopVideos }
+        }
+        .onChange(of: infoBar) {
+            AppSettingsStore.shared.update { $0.infoBar = infoBar }
         }
     }
 

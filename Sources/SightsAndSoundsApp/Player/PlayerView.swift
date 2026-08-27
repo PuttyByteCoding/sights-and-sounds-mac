@@ -203,6 +203,7 @@ private struct PlayerContent: View {
                         }
                     }
                 }
+                InfoBar()
                 TransportBar()
                     .padding(10)
                     .background(.bar)
@@ -224,6 +225,134 @@ private struct PlayerContent: View {
             KeyBindingsEditor()
                 .environment(model)
         }
+    }
+}
+
+/// The info strip between the video and the transport: position in the
+/// filtered listing, tag pills (right-click to edit), favorite star,
+/// and Save a Copy. Which elements show is a Playback setting, read per
+/// render — like every setting, changes apply without relaunch.
+private struct InfoBar: View {
+    @Environment(PlayerModel.self) private var model
+    @State private var editingTag: Tag?
+
+    var body: some View {
+        let settings = AppSettingsStore.shared.current.infoBar
+        if settings.showsAnything, let item = model.item {
+            HStack(spacing: 12) {
+                if settings.showsPosition, !model.playlist.isEmpty,
+                   let index = model.playlist.firstIndex(of: item.id) {
+                    Text("\(index + 1) of \(model.playlist.count)")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .help("Position in the filtered listing this item was opened from")
+                }
+                if settings.showsFavorite {
+                    Button {
+                        model.perform(.toggleFavorite)
+                    } label: {
+                        Image(systemName: item.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.isFavorite ? "Favorite — click to remove (F)" : "Mark favorite (F)")
+                }
+                if settings.showsTags {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(model.itemTags.flatMap(\.tags)) { tag in
+                                Text(tag.name)
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(.quaternary, in: Capsule())
+                                    .contextMenu {
+                                        Button("Edit…") { editingTag = tag }
+                                    }
+                            }
+                        }
+                    }
+                }
+                Spacer()
+                if settings.showsDownload {
+                    Button("Save a Copy…", systemImage: "square.and.arrow.down") {
+                        saveCopy(of: item)
+                    }
+                    .disabled(model.fileURL == nil)
+                    .help("Copy the media file to a location you choose")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.bar)
+            .sheet(item: $editingTag) { tag in
+                RenameTagSheet(tag: tag) { newName in
+                    model.renameTag(tag.id, to: newName)
+                }
+            }
+        }
+    }
+
+    /// "Download" in a local app: export a copy where the user says.
+    /// The copy runs off the main actor — media files are large. An
+    /// embedded clip resolves to its PARENT's file, so the copy is the
+    /// whole parent; exporting just the range stays the clip-export job.
+    private func saveCopy(of item: MediaItem) {
+        guard let sourceURL = model.fileURL else { return }
+        let panel = NSSavePanel()
+        panel.title = "Save a Copy"
+        panel.nameFieldStringValue = item.fileName
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        let model = model
+        Task.detached(priority: .userInitiated) {
+            do {
+                // The panel already confirmed replacement.
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: destination)
+            } catch {
+                await MainActor.run { model.loadError = "Save failed: \(error)" }
+            }
+        }
+    }
+}
+
+/// One-field rename, saving through the kit's normalized write path.
+private struct RenameTagSheet: View {
+    let tag: Tag
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+
+    init(tag: Tag, onSave: @escaping (String) -> Void) {
+        self.tag = tag
+        self.onSave = onSave
+        _name = State(initialValue: tag.name)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rename Tag").font(.headline)
+            TextField("Name", text: $name)
+                .onSubmit { save() }
+            HStack {
+                Button("Cancel") { dismiss() }
+                Spacer()
+                Button("Save") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+    }
+
+    private func save() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        onSave(trimmed)
+        dismiss()
     }
 }
 
