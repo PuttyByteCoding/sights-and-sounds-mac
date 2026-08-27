@@ -12,6 +12,13 @@ struct TagPanelView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // An empty vocabulary used to render the panel as a bare
+                // strip that read as "nothing happened" — say why instead.
+                if model.panelVocabulary.isEmpty {
+                    Text("No tag categories in this library yet — create them from the browse toolbar's Categories button.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(model.panelVocabulary) { entry in
                     if let label = entry.category.sectionLabel {
                         if label.isEmpty { Divider() } else {

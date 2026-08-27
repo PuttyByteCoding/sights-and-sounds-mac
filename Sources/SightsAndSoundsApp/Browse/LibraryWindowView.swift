@@ -49,102 +49,104 @@ struct BrowseView: View {
     @State private var showValidation = false
 
     var body: some View {
-        // Playback happens in place: the player takes over the window and
-        // Back (or Esc) returns to the grid exactly as it was left.
-        if let request = model.playerRequest {
-            PlayerView(request: request) {
-                model.playerRequest = nil
-                model.refreshAll()
-            }
-            .id(request)  // a new request rebuilds the player from scratch
-        } else {
-            browseBody
-        }
-    }
-
-    private var browseBody: some View {
         @Bindable var model = model
-        return NavigationSplitView {
+        NavigationSplitView {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         } detail: {
-            ItemGridView()
-                .searchable(
-                    text: Binding(
-                        get: { model.searchDisplayText },
-                        set: { model.setSearchText($0) }),
-                    prompt: "Name, path, notes, on-screen text")
+            // Playback happens in place, in the DETAIL column — the
+            // sidebar stays open and usable beside the player. Back (or
+            // Esc) returns to the grid exactly as it was left.
+            if let request = model.playerRequest {
+                PlayerView(request: request) {
+                    model.playerRequest = nil
+                    model.refreshAll()
+                }
+                .id(request)  // a new request rebuilds the player from scratch
+            } else {
+                ItemGridView()
+                    .searchable(
+                        text: Binding(
+                            get: { model.searchDisplayText },
+                            set: { model.setSearchText($0) }),
+                        prompt: "Name, path, notes, on-screen text")
+            }
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Kind", selection: $model.kind) {
-                    Text("Video").tag(MediaKind.video)
-                    Text("Audio").tag(MediaKind.audio)
-                }
-                .pickerStyle(.segmented)
-                .help("Every listing is one media kind at a time — video or audio")
-            }
-            ToolbarItem {
-                Text("\(model.items.count) items")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .help("Items visible under the current filter")
-            }
-            ToolbarItem {
-                Button("Categories", systemImage: "tag.square") {
-                    showCategoryManager = true
-                }
-                .help("Edit this library's categories and tags")
-            }
-            ToolbarItem {
-                Button {
-                    showDuplicates = true
-                } label: {
-                    Label("Duplicates", systemImage: "rectangle.on.rectangle")
-                        .badge(model.pendingDuplicateCount)
-                }
-                .help(model.pendingDuplicateCount > 0
-                    ? "\(model.pendingDuplicateCount) duplicate pairs awaiting review"
-                    : "No pending duplicate pairs")
-            }
-            ToolbarItem {
-                Menu {
-                    Button("Move History…", systemImage: "arrow.turn.up.right") {
-                        showMoveHistory = true
+            // The player contributes its own toolbar while it owns the
+            // detail column; hiding the browse set keeps the top bar
+            // from doubling up.
+            if model.playerRequest == nil {
+                ToolbarItem(placement: .principal) {
+                    Picker("Kind", selection: $model.kind) {
+                        Text("Video").tag(MediaKind.video)
+                        Text("Audio").tag(MediaKind.audio)
                     }
-                    Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
-                        showReorganize = true
+                    .pickerStyle(.segmented)
+                    .help("Every listing is one media kind at a time — video or audio")
+                }
+                ToolbarItem {
+                    Text("\(model.items.count) items")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .help("Items visible under the current filter")
+                }
+                ToolbarItem {
+                    Button("Categories", systemImage: "tag.square") {
+                        showCategoryManager = true
                     }
-                    Button("Validate Library…", systemImage: "checkmark.seal") {
-                        showValidation = true
+                    .help("Edit this library's categories and tags")
+                }
+                ToolbarItem {
+                    Button {
+                        showDuplicates = true
+                    } label: {
+                        Label("Duplicates", systemImage: "rectangle.on.rectangle")
+                            .badge(model.pendingDuplicateCount)
                     }
-                    Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
-                        do {
-                            let url = try model.library.backup(
-                                into: LibraryDatabase.defaultBackupDirectory())
-                            model.errorMessage = nil
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        } catch {
-                            model.errorMessage = "Backup failed: \(error)"
+                    .help(model.pendingDuplicateCount > 0
+                        ? "\(model.pendingDuplicateCount) duplicate pairs awaiting review"
+                        : "No pending duplicate pairs")
+                }
+                ToolbarItem {
+                    Menu {
+                        Button("Move History…", systemImage: "arrow.turn.up.right") {
+                            showMoveHistory = true
                         }
+                        Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
+                            showReorganize = true
+                        }
+                        Button("Validate Library…", systemImage: "checkmark.seal") {
+                            showValidation = true
+                        }
+                        Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
+                            do {
+                                let url = try model.library.backup(
+                                    into: LibraryDatabase.defaultBackupDirectory())
+                                model.errorMessage = nil
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            } catch {
+                                model.errorMessage = "Backup failed: \(error)"
+                            }
+                        }
+                        Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
+                            model.writeTags(
+                                itemIDs: model.items.map(\.id),
+                                scope: "filtered (\(model.items.count) files)")
+                        }
+                        .disabled(model.items.isEmpty)
+                        PurgeButton()
+                    } label: {
+                        Label("Maintenance", systemImage: "wrench.adjustable")
                     }
-                    Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
-                        model.writeTags(
-                            itemIDs: model.items.map(\.id),
-                            scope: "filtered (\(model.items.count) files)")
-                    }
-                    .disabled(model.items.isEmpty)
-                    PurgeButton()
-                } label: {
-                    Label("Maintenance", systemImage: "wrench.adjustable")
+                    .help("Move history, reorganize, validate, back up, write tags, purge")
                 }
-                .help("Move history, reorganize, validate, back up, write tags, purge")
-            }
-            ToolbarItem {
-                LogWindowButton()
-            }
-            ToolbarItem {
-                TasksWindowButton()
+                ToolbarItem {
+                    LogWindowButton()
+                }
+                ToolbarItem {
+                    TasksWindowButton()
+                }
             }
         }
         .sheet(isPresented: $showCategoryManager) {
