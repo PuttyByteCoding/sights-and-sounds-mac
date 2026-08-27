@@ -29,6 +29,7 @@ final class PlayerModel {
 
     private var skipSettings = SkipSettings()
     private var timeObserver: Any?
+    private var endObserver: (any NSObjectProtocol)?
     private var completionRecorded = false
     private let fileAccess: any FileAccess = LiveFileAccess()
 
@@ -86,6 +87,7 @@ final class PlayerModel {
             // audio never begins muted (it would just be silence).
             isMuted = loaded.kind == .video && AppSettingsStore.shared.current.startVideosMuted
             player.isMuted = isMuted
+            isLooping = AppSettingsStore.shared.current.loopVideos
             installObserver()
             refreshTagging()
             refreshBlocks()
@@ -127,6 +129,23 @@ final class PlayerModel {
     func toggleMute() {
         isMuted.toggle()
         player.isMuted = isMuted
+    }
+
+    /// Session-scoped like mute: each load re-reads the setting.
+    private(set) var isLooping = false
+
+    func toggleLoop() { isLooping.toggle() }
+
+    /// Natural end of the file. Looping restarts (clips at their
+    /// in-point); otherwise just reflect the stop — no progress write,
+    /// so a finished item doesn't resume at its final frame.
+    private func playbackDidEnd() {
+        if isLooping {
+            seek(to: item?.clipStartSeconds ?? 0)
+            play()
+        } else {
+            isPlaying = false
+        }
     }
 
     func seek(to seconds: Double) {
@@ -334,6 +353,12 @@ final class PlayerModel {
     // MARK: - Progress
 
     private func installObserver() {
+        endObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
+            object: player.currentItem, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.playbackDidEnd() }
+        }
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
         ) { [weak self] time in
@@ -374,6 +399,8 @@ final class PlayerModel {
     private func removeObserver() {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
     }
 
     /// Write resume position + last-watched. Called on pause, item switch
