@@ -26,7 +26,7 @@ struct PausedFrameTextOverlay: View {
         .task(id: key) {
             analysis = nil
             guard let fileURL, ImageAnalyzer.isSupported else { return }
-            analysis = await Self.analyze(url: fileURL, seconds: seconds)
+            analysis = await Self.analyze(url: fileURL, seconds: seconds).analysis
         }
     }
 
@@ -36,20 +36,29 @@ struct PausedFrameTextOverlay: View {
         "\(fileURL?.path ?? "-")@\((seconds * 10).rounded())"
     }
 
-    // MainActor: ImageAnalysis is non-Sendable to the CI toolchain, so
-    // the analysis never leaves the actor — both framework calls are
-    // async and offload their real work internally.
-    @MainActor
-    private static func analyze(url: URL, seconds: Double) async -> ImageAnalysis? {
+    /// The CI toolchain's SDK predates ImageAnalysis's Sendable
+    /// annotation, and awaiting the nonisolated framework call from the
+    /// main actor is itself the crossing it rejects. The analysis is
+    /// immutable once produced, so ferrying it across in an @unchecked
+    /// box is safe — and the entire pipeline stays in one nonisolated
+    /// context, where the call is legal on both toolchains.
+    private struct AnalysisBox: @unchecked Sendable {
+        let analysis: ImageAnalysis?
+    }
+
+    private nonisolated static func analyze(url: URL, seconds: Double) async -> AnalysisBox {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
         let time = CMTime(seconds: seconds, preferredTimescale: 600)
-        guard let frame = try? await generator.image(at: time).image else { return nil }
+        guard let frame = try? await generator.image(at: time).image else {
+            return AnalysisBox(analysis: nil)
+        }
         let analyzer = ImageAnalyzer()
-        return try? await analyzer.analyze(
+        let result = try? await analyzer.analyze(
             frame, orientation: .up, configuration: ImageAnalyzer.Configuration([.text]))
+        return AnalysisBox(analysis: result)
     }
 }
 
