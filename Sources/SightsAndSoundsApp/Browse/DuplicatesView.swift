@@ -88,21 +88,33 @@ struct DuplicatesView: View {
         }
     }
 
+    /// The candidate/item fetch runs off the main actor — the sheet's
+    /// open used to block on it.
     private func reload() {
-        do {
-            candidates = try model.library.pendingCandidates()
-            let ids = Set(candidates.flatMap { [$0.itemAID, $0.itemBID] })
-            itemsByID = try model.library.writer.read { db in
-                Dictionary(uniqueKeysWithValues: try MediaItem.fetchAll(db, keys: Array(ids)).map { ($0.id, $0) })
+        let library = model.library
+        Task {
+            do {
+                let (fetched, items) = try await Task.detached(priority: .userInitiated) {
+                    let fetched = try library.pendingCandidates()
+                    let ids = Set(fetched.flatMap { [$0.itemAID, $0.itemBID] })
+                    let items = try await library.writer.read { db in
+                        Dictionary(
+                            uniqueKeysWithValues: try MediaItem.fetchAll(db, keys: Array(ids))
+                                .map { ($0.id, $0) })
+                    }
+                    return (fetched, items)
+                }.value
+                candidates = fetched
+                itemsByID = items
+                if let selectedID, !candidates.contains(where: { $0.id == selectedID }) {
+                    self.selectedID = candidates.first?.id
+                } else if selectedID == nil {
+                    selectedID = candidates.first?.id
+                }
+                model.refreshAll()
+            } catch {
+                errorText = "\(error)"
             }
-            if let selectedID, !candidates.contains(where: { $0.id == selectedID }) {
-                self.selectedID = candidates.first?.id
-            } else if selectedID == nil {
-                selectedID = candidates.first?.id
-            }
-            model.refreshAll()
-        } catch {
-            errorText = "\(error)"
         }
     }
 }

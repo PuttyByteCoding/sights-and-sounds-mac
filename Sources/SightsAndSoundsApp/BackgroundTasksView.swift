@@ -38,17 +38,21 @@ struct BackgroundTasksView: View {
         .frame(minWidth: 560, minHeight: 360)
         .task {
             while !Task.isCancelled {
-                refresh()
+                await refresh()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
     }
 
-    private func refresh() {
+    /// The per-library job reads await off the main actor — polling every
+    /// registered library once a second must not stutter the app when one
+    /// library sits on a sleeping disk. (Opening a not-yet-open handle
+    /// still happens on the main actor; handles are cached after that.)
+    private func refresh() async {
         var result: [LibrarySection] = []
         for ref in app.libraries {
             guard let library = try? app.library(for: ref.id) else { continue }
-            let jobs = (try? library.writer.read { db in
+            let jobs = (try? await library.writer.read { db in
                 try JobRecord.order(sql: "createdAt DESC").limit(30).fetchAll(db)
             }) ?? []
             result.append(LibrarySection(id: ref.id, name: ref.name, jobs: jobs))

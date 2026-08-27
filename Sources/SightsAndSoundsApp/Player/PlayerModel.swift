@@ -60,48 +60,74 @@ final class PlayerModel {
 
     // MARK: - Loading
 
+    /// Loads race under fast ←/→ — the counter lets only the newest
+    /// apply, and the fetch + file resolution run off the main actor
+    /// (resolvedFileURL touches the filesystem; a slow volume used to
+    /// hitch the UI on every item switch).
+    private var loadGeneration = 0
+
     func load(itemID: UUID) {
         persistProgress()
         removeObserver()
         completionRecorded = false
         loadError = nil
+        loadGeneration += 1
+        let generation = loadGeneration
+        let library = library, fileAccess = fileAccess
 
-        do {
-            guard let loaded = try library.writer.read({ try MediaItem.fetchOne($0, key: itemID) })
-            else {
-                loadError = "The item no longer exists."
-                return
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome: Result<(MediaItem?, URL?), Error>
+            do {
+                let loaded = try await library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                // Embedded clips resolve to the PARENT's file.
+                let url = try loaded.flatMap {
+                    try library.resolvedFileURL(for: $0, fileAccess: fileAccess)
+                }
+                outcome = .success((loaded, url))
+            } catch {
+                outcome = .failure(error)
             }
-            // Embedded clips resolve to the PARENT's file.
-            guard let url = try library.resolvedFileURL(for: loaded, fileAccess: fileAccess) else {
-                item = loaded
-                loadError = "The item's source is offline."
-                return
+            await MainActor.run { [weak self] in
+                guard let self, self.loadGeneration == generation else { return }
+                switch outcome {
+                case .success(let (loaded, url)): self.apply(loaded: loaded, url: url)
+                case .failure(let error): self.loadError = "\(error)"
+                }
             }
-            item = loaded
-            fileURL = url
-            durationSeconds = loaded.durationSeconds ?? 0
-
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
-            // Each item is a fresh start: videos follow the setting,
-            // audio never begins muted (it would just be silence).
-            isMuted = loaded.kind == .video && AppSettingsStore.shared.current.startVideosMuted
-            player.isMuted = isMuted
-            isLooping = AppSettingsStore.shared.current.loopVideos
-            installObserver()
-            refreshTagging()
-            refreshBlocks()
-
-            // Clips start at their in-point; everything else resumes.
-            if let start = loaded.clipStartSeconds {
-                seek(to: start)
-            } else if let resume = loaded.resumePositionSeconds {
-                seek(to: resume)
-            }
-            play()
-        } catch {
-            loadError = "\(error)"
         }
+    }
+
+    private func apply(loaded: MediaItem?, url: URL?) {
+        guard let loaded else {
+            loadError = "The item no longer exists."
+            return
+        }
+        guard let url else {
+            item = loaded
+            loadError = "The item's source is offline."
+            return
+        }
+        item = loaded
+        fileURL = url
+        durationSeconds = loaded.durationSeconds ?? 0
+
+        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        // Each item is a fresh start: videos follow the setting,
+        // audio never begins muted (it would just be silence).
+        isMuted = loaded.kind == .video && AppSettingsStore.shared.current.startVideosMuted
+        player.isMuted = isMuted
+        isLooping = AppSettingsStore.shared.current.loopVideos
+        installObserver()
+        refreshTagging()
+        refreshBlocks()
+
+        // Clips start at their in-point; everything else resumes.
+        if let start = loaded.clipStartSeconds {
+            seek(to: start)
+        } else if let resume = loaded.resumePositionSeconds {
+            seek(to: resume)
+        }
+        play()
     }
 
     private(set) var fileURL: URL?

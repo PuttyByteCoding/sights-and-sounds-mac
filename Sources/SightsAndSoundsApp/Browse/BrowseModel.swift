@@ -135,28 +135,50 @@ final class BrowseModel {
 
 
 
+    /// Everything here runs off the main actor — the source reachability
+    /// checks touch the FILESYSTEM, and an offline network volume used to
+    /// block the UI for the length of its timeout. Same generation-guard
+    /// shape as refreshItems; the last refresh requested wins.
+    private var refreshAllGeneration = 0
+
     func refreshAll() {
-        do {
-            sources = try library.sources()
-            onlineSourceIDs = Set(
-                sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
-            vocabulary = try library.vocabulary()
-                .filter { !$0.category.hiddenFromBrowse }
-                .map { CategoryTags(category: $0.category, tags: $0.tags) }
-            tagAliases = Dictionary(
-                grouping: try library.writer.read { try TagAlias.fetchAll($0) },
-                by: \.tagID
-            ).mapValues { $0.map(\.alias) }
-            var trees: [UUID: [FolderNode]] = [:]
-            for source in sources where source.enabled {
-                trees[source.id] = FolderTreeBuilder.build(
-                    from: try library.folderCounts(kind: kind, sourceID: source.id))
+        refreshAllGeneration += 1
+        let generation = refreshAllGeneration
+        let library = library, kind = kind, fileAccess = fileAccess
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let sources = try library.sources()
+                let onlineIDs = Set(
+                    sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
+                let vocabulary = try library.vocabulary()
+                    .filter { !$0.category.hiddenFromBrowse }
+                    .map { CategoryTags(category: $0.category, tags: $0.tags) }
+                let aliases = Dictionary(
+                    grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
+                    by: \.tagID
+                ).mapValues { $0.map(\.alias) }
+                var trees: [UUID: [FolderNode]] = [:]
+                for source in sources where source.enabled {
+                    trees[source.id] = FolderTreeBuilder.build(
+                        from: try library.folderCounts(kind: kind, sourceID: source.id))
+                }
+                let pending = try library.pendingCandidates().count
+                await MainActor.run { [weak self] in
+                    guard let self, self.refreshAllGeneration == generation else { return }
+                    self.sources = sources
+                    self.onlineSourceIDs = onlineIDs
+                    self.vocabulary = vocabulary
+                    self.tagAliases = aliases
+                    self.folderTrees = trees
+                    self.pendingDuplicateCount = pending
+                    self.refreshItems()
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    guard let self, self.refreshAllGeneration == generation else { return }
+                    self.errorMessage = "\(error)"
+                }
             }
-            folderTrees = trees
-            pendingDuplicateCount = try library.pendingCandidates().count
-            refreshItems()
-        } catch {
-            errorMessage = "\(error)"
         }
     }
 
