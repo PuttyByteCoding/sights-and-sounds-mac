@@ -36,6 +36,10 @@ struct PausedFrameTextOverlay: View {
         "\(fileURL?.path ?? "-")@\((seconds * 10).rounded())"
     }
 
+    // MainActor: ImageAnalysis is non-Sendable to the CI toolchain, so
+    // the analysis never leaves the actor — both framework calls are
+    // async and offload their real work internally.
+    @MainActor
     private static func analyze(url: URL, seconds: Double) async -> ImageAnalysis? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
