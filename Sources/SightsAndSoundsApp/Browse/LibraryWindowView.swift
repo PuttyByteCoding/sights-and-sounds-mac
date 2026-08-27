@@ -167,6 +167,44 @@ struct BrowseView: View {
             ValidationView()
                 .environment(model)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let status = model.thumbnailQueue {
+                ThumbnailQueueBar(status: status)
+            }
+        }
+        .task { await model.watchThumbnailQueue() }
         .frame(minWidth: 900, minHeight: 560)
+    }
+}
+
+/// The footer under the grid while a thumbnail sweep runs: this
+/// library's at-a-glance progress. The Background Tasks window stays
+/// the cross-library view.
+private struct ThumbnailQueueBar: View {
+    let status: BrowseModel.ThumbnailQueueStatus
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let total = status.total, total > 0 {
+                ProgressView(value: Double(status.current), total: Double(total))
+                    .frame(width: 160)
+                Text("Generating thumbnails: \(status.current) of \(total)")
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Thumbnail sweep queued…")
+            }
+            if status.failed > 0 {
+                Text("\(status.failed) failed")
+                    .foregroundStyle(.orange)
+            }
+            Spacer()
+        }
+        .font(.caption)
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
     }
 }
