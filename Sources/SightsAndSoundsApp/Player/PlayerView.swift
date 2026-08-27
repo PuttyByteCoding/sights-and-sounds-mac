@@ -20,7 +20,7 @@ struct PlayerView: View {
     var body: some View {
         Group {
             if let model {
-                PlayerContent()
+                PlayerContent(refocus: { focused = true })
                     .environment(model)
                     .navigationTitle(model.title)
             } else if let openError {
@@ -37,10 +37,18 @@ struct PlayerView: View {
                     .help("Back to the library (Esc)")
             }
         }
-        .frame(minWidth: 720, minHeight: 460)
+        // 640, not 720: the player now shares the window with the
+        // sidebar column (min 220) inside the 900-wide minimum.
+        .frame(minWidth: 640, minHeight: 460)
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
+        // With the sidebar alive beside the player, any click out there
+        // takes keyboard focus with it — and the key map dies silently.
+        // Closing the tag panel is the moment tagging hands control back.
+        .onChange(of: model?.showTagPanel ?? false) { _, showing in
+            if !showing { focused = true }
+        }
         .onKeyPress(phases: [.down, .repeat]) { press in
             handle(press) ? .handled : .ignored
         }
@@ -144,6 +152,10 @@ struct PlayerView: View {
 private struct PlayerContent: View {
     @Environment(PlayerModel.self) private var model
     @Environment(\.displayScale) private var displayScale
+    /// Re-claims the player's keyboard focus. Wired to clicks on the
+    /// video/transport area only — never the tag panel, whose text
+    /// fields need to keep the focus they take.
+    let refocus: () -> Void
     @State private var showBindingsEditor = false
 
     /// The exact rendered size: aspect-fit into the available area, but
@@ -195,6 +207,7 @@ private struct PlayerContent: View {
                     .padding(10)
                     .background(.bar)
             }
+            .simultaneousGesture(TapGesture().onEnded { refocus() })
             if model.showTagPanel {
                 TagPanelView()
             }
