@@ -573,7 +573,27 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Per-library import-extension overrides (#69): nullable JSON
+        // arrays on the identity row — nil inherits the app-wide lists.
+        migrator.registerMigration("extensionOverrides") { db in
+            try db.alter(table: "libraryInfo") { t in
+                t.add(column: "videoExtensionsOverride", .text)
+                t.add(column: "audioExtensionsOverride", .text)
+            }
+        }
+
         return migrator
+    }
+
+    /// Set (or clear, with nils) this library's import-extension
+    /// overrides. The override REPLACES the app-wide list.
+    public func setExtensionOverrides(video: [String]?, audio: [String]?) throws {
+        try writer.write { db in
+            guard var info = try LibraryInfo.fetchOne(db) else { return }
+            info.videoExtensionsOverride = video
+            info.audioExtensionsOverride = audio
+            try info.update(db)
+        }
     }
 
     /// Identifiers of migrations already applied to this database.

@@ -36,9 +36,18 @@ public enum MediaProbe {
     }
 
     public static func kind(forExtension ext: String) -> MediaKind? {
+        kind(forExtension: ext, video: videoExtensions, audio: audioExtensions)
+    }
+
+    /// The per-library form: callers resolve the EFFECTIVE sets first
+    /// (library override ?? app-wide) and pass them in — the import scan
+    /// must not consult the app-wide statics behind a library's back.
+    public static func kind(
+        forExtension ext: String, video: Set<String>, audio: Set<String>
+    ) -> MediaKind? {
         let lower = ext.lowercased()
-        if videoExtensions.contains(lower) { return .video }
-        if audioExtensions.contains(lower) { return .audio }
+        if video.contains(lower) { return .video }
+        if audio.contains(lower) { return .audio }
         return nil
     }
 

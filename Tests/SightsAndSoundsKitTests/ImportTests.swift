@@ -161,3 +161,40 @@ import Testing
         #expect(MediaProbe.kind(forExtension: "") == nil)
     }
 }
+
+/// Per-library import-extension overrides (#69): stored in the library
+/// file, REPLACING the app-wide lists; nil inherits.
+@Suite struct ExtensionOverrideTests {
+
+    @Test func overridesRoundTripAndClear() throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Audio Only")
+
+        try library.setExtensionOverrides(video: [], audio: ["flac", "shn"])
+        let info = try library.info()!
+        #expect(info.videoExtensionsOverride == [])
+        #expect(info.audioExtensionsOverride == ["flac", "shn"])
+
+        try library.setExtensionOverrides(video: nil, audio: nil)
+        let cleared = try library.info()!
+        #expect(cleared.videoExtensionsOverride == nil)
+        #expect(cleared.audioExtensionsOverride == nil)
+    }
+
+    @Test func effectiveSetsReplaceNotMerge() throws {
+        let overridden = LibraryInfo(
+            name: "L", videoExtensionsOverride: [],
+            audioExtensionsOverride: ["FLAC", "shn"])
+        // Replace: the app-wide video list vanishes entirely.
+        #expect(overridden.effectiveVideoExtensions(appWide: ["mp4", "mkv"]).isEmpty)
+        // Case-normalized, and the app-wide audio list is ignored.
+        #expect(overridden.effectiveAudioExtensions(appWide: ["mp3"]) == ["flac", "shn"])
+
+        let inheriting = LibraryInfo(name: "M")
+        #expect(inheriting.effectiveVideoExtensions(appWide: ["mp4"]) == ["mp4"])
+
+        // The parameterized probe honors whatever sets it is handed.
+        #expect(MediaProbe.kind(forExtension: "SHN", video: [], audio: ["shn"]) == .audio)
+        #expect(MediaProbe.kind(forExtension: "mp4", video: [], audio: ["shn"]) == nil)
+    }
+}
