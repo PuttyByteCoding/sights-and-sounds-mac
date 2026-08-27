@@ -70,6 +70,19 @@ final class BrowseModel {
     }
     private let mountObservers = ObserverBag()
 
+    // Cross-WINDOW reconciliation: the auxiliary workspace windows (the
+    // former sheets) each host their own BrowseModel over the same
+    // library. Whichever model refreshes broadcasts; the others follow
+    // quietly. The sender token breaks the loop.
+    private final class DefaultCenterBag: @unchecked Sendable {
+        var tokens: [any NSObjectProtocol] = []
+        deinit {
+            for token in tokens { NotificationCenter.default.removeObserver(token) }
+        }
+    }
+    private let changeObservers = DefaultCenterBag()
+    private let changeToken = UUID()
+
     /// Sources with an import in flight, and their progress line.
     private(set) var importStatus: [UUID: String] = [:]
 
@@ -129,6 +142,18 @@ final class BrowseModel {
         self.onWorkFinished = onWorkFinished
         refreshAll()
 
+        changeObservers.tokens.append(NotificationCenter.default.addObserver(
+            forName: .sasLibraryDataChanged, object: nil, queue: .main
+        ) { [weak self] note in
+            let libraryID = note.userInfo?["libraryID"] as? UUID
+            let sender = note.userInfo?["sender"] as? UUID
+            Task { @MainActor in
+                guard let self, libraryID == self.libraryID, sender != self.changeToken
+                else { return }
+                self.refreshAll(broadcast: false)
+            }
+        })
+
         // Mount/unmount drives online-state transitions and wakes the
         // workers — the reachability check stays the fallback truth.
         let center = NSWorkspace.shared.notificationCenter
@@ -152,7 +177,7 @@ final class BrowseModel {
     /// shape as refreshItems; the last refresh requested wins.
     private var refreshAllGeneration = 0
 
-    func refreshAll() {
+    func refreshAll(broadcast: Bool = true) {
         refreshAllGeneration += 1
         let generation = refreshAllGeneration
         let library = library, kind = kind, fileAccess = fileAccess
@@ -183,6 +208,13 @@ final class BrowseModel {
                     self.folderTrees = trees
                     self.pendingDuplicateCount = pending
                     self.refreshItems()
+                    if broadcast {
+                        NotificationCenter.default.post(
+                            name: .sasLibraryDataChanged, object: nil,
+                            userInfo: [
+                                "libraryID": self.libraryID, "sender": self.changeToken,
+                            ])
+                    }
                 }
             } catch {
                 await MainActor.run { [weak self] in
@@ -488,4 +520,11 @@ final class BrowseModel {
             refreshAll()
         }
     }
+}
+
+extension Notification.Name {
+    /// Posted (with libraryID + sender in userInfo) after a BrowseModel
+    /// publishes a refresh — how windows over the same library stay in
+    /// agreement without sharing a model.
+    static let sasLibraryDataChanged = Notification.Name("sasLibraryDataChanged")
 }

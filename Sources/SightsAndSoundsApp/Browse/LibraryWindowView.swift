@@ -42,12 +42,14 @@ struct LibraryWindowView: View {
 
 struct BrowseView: View {
     @Environment(BrowseModel.self) private var model
-    @State private var showCategoryManager = false
-    @State private var showDuplicates = false
-    @State private var showMoveHistory = false
-    @State private var showReorganize = false
-    @State private var showValidation = false
+    @Environment(\.openWindow) private var openWindow
     @State private var showViewOptions = false
+
+    /// The former sheets open as WINDOWS (#73) — draggable, resizable,
+    /// usable beside the grid.
+    private func openAux(_ kind: AuxWindowRequest.Kind) {
+        openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
+    }
 
     private var isShuffled: Bool {
         if case .random = model.ordering { return true }
@@ -125,13 +127,13 @@ struct BrowseView: View {
                 }
                 ToolbarItem {
                     Button("Categories", systemImage: "tag.square") {
-                        showCategoryManager = true
+                        openAux(.categories)
                     }
                     .help("Edit this library's categories and tags")
                 }
                 ToolbarItem {
                     Button {
-                        showDuplicates = true
+                        openAux(.duplicates)
                     } label: {
                         Label("Duplicates", systemImage: "rectangle.on.rectangle")
                             .badge(model.pendingDuplicateCount)
@@ -143,13 +145,13 @@ struct BrowseView: View {
                 ToolbarItem {
                     Menu {
                         Button("Move History…", systemImage: "arrow.turn.up.right") {
-                            showMoveHistory = true
+                            openAux(.moveHistory)
                         }
                         Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
-                            showReorganize = true
+                            openAux(.reorganize)
                         }
                         Button("Validate Library…", systemImage: "checkmark.seal") {
-                            showValidation = true
+                            openAux(.validation)
                         }
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             do {
@@ -180,26 +182,6 @@ struct BrowseView: View {
                     TasksWindowButton()
                 }
             }
-        }
-        .sheet(isPresented: $showCategoryManager) {
-            CategoryManagerView()
-                .environment(model)
-        }
-        .sheet(isPresented: $showDuplicates) {
-            DuplicatesView()
-                .environment(model)
-        }
-        .sheet(isPresented: $showMoveHistory) {
-            MoveHistoryView()
-                .environment(model)
-        }
-        .sheet(isPresented: $showReorganize) {
-            ReorganizeView()
-                .environment(model)
-        }
-        .sheet(isPresented: $showValidation) {
-            ValidationView()
-                .environment(model)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let status = model.thumbnailQueue {

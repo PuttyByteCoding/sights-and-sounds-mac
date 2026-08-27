@@ -40,6 +40,17 @@ struct SightsAndSoundsApp: App {
             }
         }
 
+        // Auxiliary workspaces — Categories, Duplicates, Move History,
+        // Reorganize, Validation — one window per (library, surface).
+        // Windows, not sheets: draggable, resizable, usable beside the
+        // grid.
+        WindowGroup(id: "aux", for: AuxWindowRequest.self) { $request in
+            if let request {
+                AuxiliaryWindowView(request: request)
+                    .environment(model)
+            }
+        }
+
         // One dashboard across every library (workers run once and
         // service them all).
         Window("Background Tasks", id: "tasks") {
