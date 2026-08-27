@@ -205,11 +205,18 @@ private struct PlayerContent: View {
             min(max(220, base - translation), max(220, tagPanelCeiling)))
     }
 
+    /// The smallest queue that shows a whole cell: minimum thumbnail
+    /// (24) + the metadata reserve for the enabled fields + chrome.
+    private var queueMinHeight: CGFloat {
+        QueueCell.metadataHeight(for: AppSettingsStore.shared.current.grid) + 42
+    }
+
     private func dragQueue(_ translation: CGFloat) {
         let base = dragBase ?? effectiveQueueHeight
         dragBase = base
+        let floor = queueMinHeight
         layout.queueHeight = Double(
-            min(max(64, base - translation), max(64, queueCeiling)))
+            min(max(floor, base - translation), max(floor, queueCeiling)))
     }
 
     private func endPanelDrag() {
@@ -888,23 +895,29 @@ private struct HorizontalResizeHandle: View {
                     .onEnded { _ in onEnd() })
     }
 }
-
-/// The play queue: the playlist as a horizontal thumbnail strip. Its
-/// height IS the thumbnail scale — drag the top edge taller for bigger
-/// thumbs. The queue reflects the playlist SNAPSHOT the player opened
-/// with, consistent with "x of y" and the arrows.
+/// The play queue: ONE fully-visible row of grid-style cells —
+/// letterboxed thumbnail on top, the grid's enabled metadata fields
+/// beneath — scrolling horizontally, current item ringed and kept
+/// centered. Cell math is deterministic: the metadata reserve is
+/// computed from the enabled fields and the thumbnail takes the rest,
+/// so nothing can clip at any divider height. The queue reflects the
+/// playlist SNAPSHOT the player opened with.
 private struct QueuePanel: View {
     @Environment(PlayerModel.self) private var model
     let height: CGFloat
 
     var body: some View {
+        let grid = AppSettingsStore.shared.current.grid
+        let metadataHeight = QueueCell.metadataHeight(for: grid)
+        let thumbHeight = max(24, height - 18 - metadataHeight)
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: true) {
+                LazyHStack(alignment: .top, spacing: 8) {
                     ForEach(model.queueItems) { item in
                         QueueCell(
                             item: item,
-                            thumbHeight: height - 12,
+                            thumbHeight: thumbHeight,
+                            grid: grid,
                             isCurrent: item.id == model.item?.id)
                             .id(item.id)
                             .onTapGesture { model.load(itemID: item.id) }
@@ -923,7 +936,9 @@ private struct QueuePanel: View {
                 }
             }
         }
-        .frame(height: height)
+        // Natural content height — never taller than its cells, never
+        // clipping them.
+        .frame(height: thumbHeight + metadataHeight + 18)
         .background(.bar)
     }
 }
@@ -932,26 +947,71 @@ private struct QueueCell: View {
     @Environment(PlayerModel.self) private var model
     let item: MediaItem
     let thumbHeight: CGFloat
+    let grid: GridSettings
     let isCurrent: Bool
     @State private var thumbnail: NSImage?
 
+    /// Deterministic reserve for the text under the thumbnail; the
+    /// estimates match the fonts used below. The panel divides its
+    /// height into thumbnail + this, so cells always fit whole.
+    static func metadataHeight(for grid: GridSettings) -> CGFloat {
+        var height: CGFloat = 0
+        if grid.showsFileName { height += 18 }
+        if grid.showsPath { height += 14 }
+        if hasMetaRow(grid) { height += 16 }
+        return height == 0 ? 0 : height + 4
+    }
+
+    private static func hasMetaRow(_ grid: GridSettings) -> Bool {
+        grid.showsDuration || grid.showsFileSize || grid.showsDimensions
+            || grid.showsImportDate || grid.showsViewCount || grid.showsFavorite
+            || grid.showsReviewed || grid.showsDeleted || grid.showsClip
+    }
+
+    private var cellWidth: CGFloat { thumbHeight * 16 / 9 }
+
     var body: some View {
-        ZStack {
-            Color.black
-            if let thumbnail {
-                Image(nsImage: thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            } else {
-                Image(systemName: item.kind == .audio ? "waveform" : "film")
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+            // Letterboxed like the grid (#68): the ENTIRE frame visible,
+            // portrait pillarboxed on black.
+            ZStack {
+                Color.black
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: item.kind == .audio ? "waveform" : "film")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: cellWidth, height: thumbHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            if grid.showsFileName {
+                Text(item.fileName)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            if grid.showsPath {
+                Text(item.relativePath)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            if Self.hasMetaRow(grid) {
+                metaRow
             }
         }
-        .frame(width: thumbHeight * 16 / 9, height: thumbHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .frame(width: cellWidth)
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isCurrent ? Color.accentColor.opacity(0.15) : Color.clear))
         .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(isCurrent ? Color.accentColor : .clear, lineWidth: 2))
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 2))
         .help(item.fileName)
         .task(id: item.id) {
             let data = await ThumbnailProvider.shared.thumbnailData(
@@ -960,5 +1020,42 @@ private struct QueueCell: View {
                 durationSeconds: item.durationSeconds)
             thumbnail = data.flatMap(NSImage.init(data:))
         }
+    }
+
+    private var metaRow: some View {
+        HStack(spacing: 6) {
+            if grid.showsDuration, let duration = item.durationSeconds {
+                Text(TransportBarTime.format(duration))
+            }
+            if grid.showsFileSize {
+                Text(ByteCountFormatter.string(fromByteCount: item.fileSize, countStyle: .file))
+            }
+            if grid.showsDimensions, let width = item.width, let height = item.height {
+                Text("\(width)×\(height)")
+            }
+            if grid.showsImportDate {
+                Text(item.ingestDate.formatted(date: .abbreviated, time: .omitted))
+            }
+            if grid.showsViewCount, item.watchCount > 0 {
+                Text("▶ \(item.watchCount)")
+            }
+            Spacer(minLength: 0)
+            if grid.showsFavorite, item.isFavorite {
+                Image(systemName: "star.fill").foregroundStyle(.yellow)
+            }
+            if grid.showsReviewed, item.needsReview {
+                Image(systemName: "eye.trianglebadge.exclamationmark")
+                    .foregroundStyle(.orange)
+            }
+            if grid.showsDeleted, item.markedForDeletion {
+                Image(systemName: "trash").foregroundStyle(.red)
+            }
+            if grid.showsClip, item.isClip {
+                Image(systemName: "scissors")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 }
