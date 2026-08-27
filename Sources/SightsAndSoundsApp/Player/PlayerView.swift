@@ -130,7 +130,22 @@ struct PlayerView: View {
 
 private struct PlayerContent: View {
     @Environment(PlayerModel.self) private var model
+    @Environment(\.displayScale) private var displayScale
     @State private var showBindingsEditor = false
+
+    /// Upscaling stops at 2× the video's native PIXEL size — in points,
+    /// so a Retina backing scale doesn't quietly double it again. Nil
+    /// (dimensions unknown) means no cap.
+    private var videoSizeCap: CGSize? {
+        guard let item = model.item,
+              let width = item.width, let height = item.height,
+              width > 0, height > 0
+        else { return nil }
+        let scale = max(displayScale, 1)
+        return CGSize(
+            width: CGFloat(width) * 2 / scale,
+            height: CGFloat(height) * 2 / scale)
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -148,6 +163,9 @@ private struct PlayerContent: View {
                             .foregroundStyle(.secondary)
                     } else {
                         PlayerSurface(player: model.player)
+                            .frame(
+                                maxWidth: videoSizeCap?.width ?? .infinity,
+                                maxHeight: videoSizeCap?.height ?? .infinity)
                     }
                 }
                 TransportBar()
