@@ -157,6 +157,7 @@ private struct PlayerContent: View {
     /// fields need to keep the focus they take.
     let refocus: () -> Void
     @State private var showBindingsEditor = false
+    @State private var showTextPanel = false
 
     /// Panel sizes: draggable, clamped so the video always keeps a
     /// floor, persisted so they survive item switches (the .id(request)
@@ -232,6 +233,17 @@ private struct PlayerContent: View {
                             let fitted = fittedVideoSize(in: geometry.size)
                             PlayerSurface(player: model.player)
                                 .frame(width: fitted?.width, height: fitted?.height)
+                                // Live Text rides the PAUSED frame only —
+                                // resume, seek or item switch tears it
+                                // down with the condition. The overlay
+                                // shares the surface's exact fitted rect.
+                                .overlay {
+                                    if !model.isPlaying, !model.isAudio {
+                                        PausedFrameTextOverlay(
+                                            fileURL: model.fileURL,
+                                            seconds: model.currentSeconds)
+                                    }
+                                }
                         }
                     }
                 }
@@ -251,12 +263,19 @@ private struct PlayerContent: View {
                     onDrag: { dragTagPanel($0) }, onEnd: { endPanelDrag() })
                 TagPanelView(width: CGFloat(layout.tagPanelWidth))
             }
+            if showTextPanel {
+                OcrLinesPanel()
+            }
         }
         .toolbar {
             Button("Tags", systemImage: "tag") {
                 model.showTagPanel.toggle()
             }
             .help("Tag panel (T)")
+            Button("On-Screen Text", systemImage: "text.viewfinder") {
+                showTextPanel.toggle()
+            }
+            .help("Scanned on-screen text — timestamped, copyable, click to seek. Pause the video to select text on the frame itself.")
             Button("Key Bindings", systemImage: "keyboard") { showBindingsEditor = true }
                 .help("Bind keys to tags")
         }
