@@ -27,6 +27,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// Which elements the player's info bar shows.
     public var infoBar: InfoBarSettings
 
+    /// The browse grid's display: thumbnail size, and which fields show
+    /// under each thumbnail.
+    public var grid: GridSettings
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -47,6 +51,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         startVideosMuted: Bool = true,
         loopVideos: Bool = true,
         infoBar: InfoBarSettings = InfoBarSettings(),
+        grid: GridSettings = GridSettings(),
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600
     ) {
@@ -59,6 +64,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.startVideosMuted = startVideosMuted
         self.loopVideos = loopVideos
         self.infoBar = infoBar
+        self.grid = grid
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
     }
@@ -80,6 +86,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.loopVideos
         infoBar = try container.decodeIfPresent(InfoBarSettings.self, forKey: .infoBar)
             ?? defaults.infoBar
+        grid = try container.decodeIfPresent(GridSettings.self, forKey: .grid)
+            ?? defaults.grid
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
@@ -111,6 +119,66 @@ public struct InfoBarSettings: Codable, Equatable, Sendable {
     public var showsAnything: Bool {
         showsPosition || showsTags || showsFavorite || showsDownload
     }
+}
+
+/// The browse grid's display configuration. Defaults reproduce the
+/// pre-configurable grid exactly: filename, duration, file size,
+/// favorite star, needs-review glyph, 200 pt cells.
+public struct GridSettings: Codable, Equatable, Sendable {
+    /// Adaptive column minimum, in points (the maximum tracks at 1.4x).
+    public var thumbnailSize: Double
+    public var showsFileName: Bool
+    public var showsPath: Bool
+    public var showsTags: Bool
+    public var showsMissingCategories: Bool
+    public var showsImportDate: Bool
+    public var showsViewCount: Bool
+    public var showsDeleted: Bool
+    public var showsDuplicate: Bool
+    public var showsClip: Bool
+    public var showsDuration: Bool
+    public var showsFileSize: Bool
+    public var showsFavorite: Bool
+    public var showsDimensions: Bool
+    public var showsReviewed: Bool
+
+    public init(
+        thumbnailSize: Double = 200,
+        showsFileName: Bool = true,
+        showsPath: Bool = false,
+        showsTags: Bool = false,
+        showsMissingCategories: Bool = false,
+        showsImportDate: Bool = false,
+        showsViewCount: Bool = false,
+        showsDeleted: Bool = false,
+        showsDuplicate: Bool = false,
+        showsClip: Bool = false,
+        showsDuration: Bool = true,
+        showsFileSize: Bool = true,
+        showsFavorite: Bool = true,
+        showsDimensions: Bool = false,
+        showsReviewed: Bool = true
+    ) {
+        self.thumbnailSize = thumbnailSize
+        self.showsFileName = showsFileName
+        self.showsPath = showsPath
+        self.showsTags = showsTags
+        self.showsMissingCategories = showsMissingCategories
+        self.showsImportDate = showsImportDate
+        self.showsViewCount = showsViewCount
+        self.showsDeleted = showsDeleted
+        self.showsDuplicate = showsDuplicate
+        self.showsClip = showsClip
+        self.showsDuration = showsDuration
+        self.showsFileSize = showsFileSize
+        self.showsFavorite = showsFavorite
+        self.showsDimensions = showsDimensions
+        self.showsReviewed = showsReviewed
+    }
+
+    /// True when a field needing the per-item tag join is enabled — the
+    /// grid's batch queries run only then.
+    public var needsTagData: Bool { showsTags || showsMissingCategories }
 }
 
 /// The store: loads `settings.json` once, hands out the current value,

@@ -4,7 +4,12 @@ import SightsAndSoundsKit
 struct ItemGridView: View {
     @Environment(BrowseModel.self) private var model
 
-    private let columns = [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 12)]
+    // Cell size is a view option; the adaptive maximum tracks the
+    // chosen minimum so cells stay near the picked size.
+    private var columns: [GridItem] {
+        let size = AppSettingsStore.shared.current.grid.thumbnailSize
+        return [GridItem(.adaptive(minimum: size, maximum: size * 1.4), spacing: 12)]
+    }
 
     var body: some View {
         Group {
@@ -39,17 +44,17 @@ private struct ItemCell: View {
     @State private var thumbnail: NSImage?
 
     var body: some View {
+        let grid = AppSettingsStore.shared.current.grid
         VStack(alignment: .leading, spacing: 4) {
+            // Every thumbnail occupies the SAME 16:9 cell — portrait
+            // videos letterbox (pillarbox) on black instead of inflating
+            // their cell and making rows ragged.
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(.quaternary)
-                    .aspectRatio(16 / 9, contentMode: .fit)
+                Color.black
                 if let thumbnail {
                     Image(nsImage: thumbnail)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .aspectRatio(contentMode: .fit)
                 } else {
                     Image(systemName: item.kind == .audio ? "waveform" : "film")
                         .font(.largeTitle)
@@ -57,23 +62,75 @@ private struct ItemCell: View {
                 }
                 overlayBadges
             }
-            Text(item.fileName)
-                .font(.callout)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            if grid.showsFileName {
+                Text(item.fileName)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            if grid.showsPath {
+                Text(item.relativePath)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            if grid.showsTags, let names = model.itemTagNames[item.id], !names.isEmpty {
+                Text(names.joined(separator: " · "))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            if grid.showsMissingCategories,
+               let missing = model.itemMissingCategories[item.id], !missing.isEmpty {
+                Text("Missing: \(missing.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+                    .help("Categories this item has no tag in yet")
+            }
             HStack(spacing: 6) {
-                if let duration = item.durationSeconds {
+                if grid.showsDuration, let duration = item.durationSeconds {
                     Text(Self.format(duration: duration))
                 }
-                Text(Self.format(bytes: item.fileSize))
+                if grid.showsFileSize {
+                    Text(Self.format(bytes: item.fileSize))
+                }
+                if grid.showsDimensions, let w = item.width, let h = item.height {
+                    Text("\(w)×\(h)")
+                }
+                if grid.showsImportDate {
+                    Text(item.ingestDate.formatted(date: .abbreviated, time: .omitted))
+                        .help("Import date")
+                }
+                if grid.showsViewCount, item.watchCount > 0 {
+                    Text("▶ \(item.watchCount)")
+                        .help("Watched \(item.watchCount)×")
+                }
                 Spacer()
-                if item.isFavorite {
+                if grid.showsFavorite, item.isFavorite {
                     Image(systemName: "star.fill").foregroundStyle(.yellow)
                 }
-                if item.needsReview {
+                if grid.showsReviewed, item.needsReview {
                     Image(systemName: "eye.trianglebadge.exclamationmark")
                         .foregroundStyle(.orange)
                         .help("Needs review")
+                }
+                if grid.showsDeleted, item.markedForDeletion {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                        .help("Staged for deletion")
+                }
+                if grid.showsClip, item.isClip {
+                    Image(systemName: "scissors")
+                        .help(item.isExportedClip ? "Exported clip" : "Embedded clip")
+                }
+                if grid.showsDuplicate, model.duplicateFlaggedIDs.contains(item.id) {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .foregroundStyle(.orange)
+                        .help("In a pending duplicate pair")
                 }
             }
             .font(.caption)
@@ -83,6 +140,12 @@ private struct ItemCell: View {
         .onTapGesture(count: 2) { play() }
         .contextMenu {
             Button("Play", systemImage: "play") { play() }
+                .disabled(!model.isOnline(item))
+            Divider()
+            // File-location actions, not media operations.
+            Button("Show in Finder", systemImage: "folder") { revealInFinder() }
+                .disabled(!model.isOnline(item))
+            Button("Open Terminal at Folder", systemImage: "terminal") { openTerminal() }
                 .disabled(!model.isOnline(item))
             if item.parentMediaItemID != nil && !item.isExportedClip {
                 Button("Export Clip to File", systemImage: "scissors") {
@@ -183,6 +246,34 @@ private struct ItemCell: View {
             playlist: model.items.map(\.id))
     }
 
+    // An embedded clip resolves to its parent's file — the file on disk.
+    private func revealInFinder() {
+        guard let url = model.fileURL(for: item) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func openTerminal() {
+        guard let url = model.fileURL(for: item) else { return }
+        guard let terminal = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.Terminal")
+        else {
+            model.errorMessage = "Terminal.app could not be found."
+            return
+        }
+        // Opening a DIRECTORY with Terminal starts a shell there.
+        let model = model
+        NSWorkspace.shared.open(
+            [url.deletingLastPathComponent()], withApplicationAt: terminal,
+            configuration: NSWorkspace.OpenConfiguration()
+        ) { _, error in
+            if let error {
+                Task { @MainActor in
+                    model.errorMessage = "Open Terminal failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     static func format(duration: Double) -> String {
         let total = Int(duration.rounded())
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
@@ -191,5 +282,49 @@ private struct ItemCell: View {
 
     static func format(bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+/// The toolbar popover: thumbnail size plus which fields show under
+/// each thumbnail — what shows and how big, in one place. Writes
+/// through AppSettings and pokes a refresh so join-backed fields load.
+struct GridViewOptions: View {
+    let onChange: () -> Void
+    @State private var grid = AppSettingsStore.shared.current.grid
+
+    var body: some View {
+        Form {
+            Section("Thumbnail size") {
+                Slider(value: $grid.thumbnailSize, in: 120...400) {
+                    Text("Size")
+                } minimumValueLabel: {
+                    Image(systemName: "square.grid.3x3")
+                } maximumValueLabel: {
+                    Image(systemName: "square")
+                }
+            }
+            Section("Fields") {
+                Toggle("Filename", isOn: $grid.showsFileName)
+                Toggle("Path", isOn: $grid.showsPath)
+                Toggle("Tags", isOn: $grid.showsTags)
+                Toggle("Missing category tags", isOn: $grid.showsMissingCategories)
+                Toggle("Import date", isOn: $grid.showsImportDate)
+                Toggle("View count", isOn: $grid.showsViewCount)
+                Toggle("Duration", isOn: $grid.showsDuration)
+                Toggle("File size", isOn: $grid.showsFileSize)
+                Toggle("Dimensions", isOn: $grid.showsDimensions)
+                Toggle("Favorite", isOn: $grid.showsFavorite)
+                Toggle("Needs review", isOn: $grid.showsReviewed)
+                Toggle("Staged for deletion", isOn: $grid.showsDeleted)
+                Toggle("Pending duplicate", isOn: $grid.showsDuplicate)
+                Toggle("Clip", isOn: $grid.showsClip)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 280, height: 520)
+        .onChange(of: grid) {
+            AppSettingsStore.shared.update { $0.grid = grid }
+            onChange()
+        }
     }
 }

@@ -107,3 +107,57 @@ import Testing
         #expect(t.numericValue == nil)
     }
 }
+
+/// The listing orders the browse toolbar exposes (#78): size, duration,
+/// full path, and the seeded shuffle.
+@Suite struct ListingOrderingTests {
+
+    @Test func fileSizeAndDurationOrderings() throws {
+        let f = try FilterFixture()
+        let bySize = try f.library.mediaItems(
+            matching: MediaFilter(), kind: .video, orderedBy: .fileSize(ascending: false))
+        let sizes = bySize.map(\.fileSize)
+        #expect(sizes == sizes.sorted(by: >))
+
+        let byDuration = try f.library.mediaItems(
+            matching: MediaFilter(), kind: .video, orderedBy: .duration(ascending: true))
+        // Items without a duration sort last, whatever the direction.
+        let durations = byDuration.map(\.durationSeconds)
+        let known = durations.compactMap { $0 }
+        #expect(known == known.sorted())
+        if let firstNil = durations.firstIndex(where: { $0 == nil }) {
+            #expect(durations[firstNil...].allSatisfy { $0 == nil })
+        }
+    }
+
+    @Test func fullPathOrderingGroupsBySourceAndKeepsEveryRow() throws {
+        let f = try FilterFixture()
+        let baseline = try f.library.mediaItems(matching: MediaFilter(), kind: .video)
+        let byFullPath = try f.library.mediaItems(
+            matching: MediaFilter(), kind: .video, orderedBy: .fullPath)
+        #expect(Set(byFullPath.map(\.id)) == Set(baseline.map(\.id)))
+        // One source in the fixture — full path degrades to path order.
+        #expect(byFullPath.map(\.id) == baseline.map(\.id))
+    }
+
+    @Test func shuffleIsStablePerSeedAndReDealsWithANewOne() throws {
+        let f = try FilterFixture()
+        let deal1 = try f.library.mediaItems(
+            matching: MediaFilter(), kind: .video, orderedBy: .random(seed: 41))
+        let deal1Again = try f.library.mediaItems(
+            matching: MediaFilter(), kind: .video, orderedBy: .random(seed: 41))
+        #expect(deal1.map(\.id) == deal1Again.map(\.id))  // same seed, same deal
+
+        let baseline = try f.library.mediaItems(matching: MediaFilter(), kind: .video)
+        #expect(Set(deal1.map(\.id)) == Set(baseline.map(\.id)))  // nothing lost
+
+        // A different seed deals differently for at least one of a few
+        // tries (tiny fixtures can collide on a single seed by chance).
+        let reDealt = (1...5).contains { seed in
+            (try? f.library.mediaItems(
+                matching: MediaFilter(), kind: .video, orderedBy: .random(seed: seed)))?
+                .map(\.id) != deal1.map(\.id)
+        }
+        #expect(reDealt)
+    }
+}

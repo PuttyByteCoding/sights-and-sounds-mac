@@ -29,14 +29,34 @@ public enum FilterCompiler {
         var clauses: [String] = []
         var whereArgs: [any DatabaseValueConvertible] = []
 
-        // Ordering may need a join; joins bind before WHERE.
+        // Ordering may need a join (binds before WHERE) or its own
+        // arguments (bind after WHERE — placeholder order is textual).
         var join = ""
+        var orderArgs: [any DatabaseValueConvertible] = []
         let orderBy: String
         switch ordering {
         case .relativePath:
             orderBy = "mediaItem.relativePath"
         case .fileName:
             orderBy = "mediaItem.fileName, mediaItem.relativePath"
+        case .fileSize(let ascending):
+            orderBy = "mediaItem.fileSize \(ascending ? "ASC" : "DESC"), mediaItem.relativePath"
+        case .duration(let ascending):
+            // Unprobed items (no duration) sort last, per the enum's rule.
+            orderBy = """
+            mediaItem.durationSeconds IS NULL, \
+            mediaItem.durationSeconds \(ascending ? "ASC" : "DESC"), \
+            mediaItem.relativePath
+            """
+        case .fullPath:
+            join = " JOIN source AS orderSource ON orderSource.id = mediaItem.sourceID"
+            orderBy = "orderSource.name COLLATE NOCASE, mediaItem.relativePath"
+        case .random(let seed):
+            // Deterministic per (row, seed): a keyed linear hash of the
+            // rowid. Coefficients keep the product inside Int64 for any
+            // realistic library; quality only needs to look shuffled.
+            orderBy = "((mediaItem.rowid + ?) * 2654435761) % 1000000007, mediaItem.relativePath"
+            orderArgs.append(seed)
         case .fieldValue(let definitionID, let ascending):
             join = """
              LEFT JOIN mediaItemFieldValue AS sortValue \
@@ -127,7 +147,7 @@ public enum FilterCompiler {
         WHERE \(clauses.joined(separator: " AND ")) \
         ORDER BY \(orderBy)
         """
-        return Compiled(sql: sql, arguments: StatementArguments(joinArgs + whereArgs))
+        return Compiled(sql: sql, arguments: StatementArguments(joinArgs + whereArgs + orderArgs))
     }
 
     // MARK: - Term translation
