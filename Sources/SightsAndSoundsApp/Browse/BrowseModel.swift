@@ -253,7 +253,9 @@ final class BrowseModel {
                     for entry in vocabulary {
                         for tag in entry.tags { tagInfo[tag.id] = (tag.name, entry.category.id) }
                     }
-                    let links = try await library.writer.read { db in
+                    // Explicit return type — the async `read` overload's
+                    // inference is ambiguous to the CI toolchain (Xcode 16).
+                    let links: [Row] = try await library.writer.read { db -> [Row] in
                         try Row.fetchAll(db, sql: "SELECT mediaItemID, tagID FROM mediaItemTag")
                     }
                     var tagsByItem: [UUID: [UUID]] = [:]
