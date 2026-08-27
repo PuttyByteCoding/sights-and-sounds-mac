@@ -71,8 +71,8 @@ struct BrowseView: View {
             ItemGridView()
                 .searchable(
                     text: Binding(
-                        get: { model.filter.searchText },
-                        set: { model.filter.searchText = $0 }),
+                        get: { model.searchDisplayText },
+                        set: { model.setSearchText($0) }),
                     prompt: "Name, path, notes, on-screen text")
         }
         .toolbar {
