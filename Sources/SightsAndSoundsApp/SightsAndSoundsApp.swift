@@ -51,6 +51,14 @@ struct SightsAndSoundsApp: App {
             }
         }
 
+        // Get Info for one library — facts, coverage, jump-offs.
+        WindowGroup(id: "properties", for: LibraryRef.ID.self) { $libraryID in
+            if let libraryID {
+                LibraryPropertiesView(libraryID: libraryID)
+                    .environment(model)
+            }
+        }
+
         // One dashboard across every library (workers run once and
         // service them all).
         Window("Background Tasks", id: "tasks") {
@@ -425,6 +433,10 @@ struct LibraryRow: View {
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { openWindow(id: "library", value: library.id) }
         .contextMenu {
+            Button("Properties…", systemImage: "info.circle") {
+                openWindow(id: "properties", value: library.id)
+            }
+            Divider()
             Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") { backUp() }
             Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { pickBackup() }
             Divider()
