@@ -88,4 +88,12 @@ public enum MediaOrdering: Hashable, Sendable {
     case relativePath
     case fileName
     case fieldValue(UUID, ascending: Bool = true)
+    case fileSize(ascending: Bool = true)
+    case duration(ascending: Bool = true)
+    /// Source name, then path — groups by source like the sidebar does.
+    case fullPath
+    /// Deterministic shuffle: the same seed always deals the same order,
+    /// so refreshes don't silently reorder and the player's ←/→ walk a
+    /// stable queue. A new seed is a new deal.
+    case random(seed: Int)
 }

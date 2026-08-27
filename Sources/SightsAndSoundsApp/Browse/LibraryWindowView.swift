@@ -47,6 +47,12 @@ struct BrowseView: View {
     @State private var showMoveHistory = false
     @State private var showReorganize = false
     @State private var showValidation = false
+    @State private var showViewOptions = false
+
+    private var isShuffled: Bool {
+        if case .random = model.ordering { return true }
+        return false
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -90,6 +96,32 @@ struct BrowseView: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                         .help("Items visible under the current filter")
+                }
+                ToolbarItem {
+                    Menu {
+                        Picker("Order", selection: $model.ordering) {
+                            Text("Name").tag(MediaOrdering.fileName)
+                            Text("Path").tag(MediaOrdering.relativePath)
+                            Text("Full Path (source + path)").tag(MediaOrdering.fullPath)
+                            Text("File Size (largest first)").tag(MediaOrdering.fileSize(ascending: false))
+                            Text("Duration (longest first)").tag(MediaOrdering.duration(ascending: false))
+                        }
+                        .pickerStyle(.inline)
+                        Divider()
+                        Button(isShuffled ? "Reshuffle" : "Shuffle") { model.shuffle() }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down")
+                    }
+                    .help("Order the listing — the play queue follows it")
+                }
+                ToolbarItem {
+                    Button("View Options", systemImage: "slider.horizontal.3") {
+                        showViewOptions = true
+                    }
+                    .help("Thumbnail size, and the fields under each thumbnail")
+                    .popover(isPresented: $showViewOptions) {
+                        GridViewOptions(onChange: { model.refreshItems() })
+                    }
                 }
                 ToolbarItem {
                     Button("Categories", systemImage: "tag.square") {

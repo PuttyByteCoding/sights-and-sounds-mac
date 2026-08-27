@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import SwiftUI
 import SightsAndSoundsKit
 
@@ -21,6 +22,16 @@ final class BrowseModel {
     var kind: MediaKind = .video { didSet { refreshAll() } }
     var filter = MediaFilter() { didSet { refreshItems() } }
     var selectedFolderPath: String?
+
+    /// The listing's sort. One control orders both the grid and the play
+    /// queue — the playlist is a snapshot of `items`.
+    var ordering: MediaOrdering = .relativePath { didSet { refreshItems() } }
+
+    /// Shuffle deals with a seed so the order is stable across refreshes;
+    /// calling again is a new deal.
+    func shuffle() {
+        ordering = .random(seed: Int.random(in: 0..<1_000_000_000))
+    }
 
     /// Non-nil while the embedded player has taken over this library's
     /// window; cleared (with a refresh — flags and tags may have changed)
@@ -209,20 +220,72 @@ final class BrowseModel {
     /// never publish stale rows over fresh ones.
     private var refreshGeneration = 0
 
+    /// Per-item display data for grid fields that need joins — batched
+    /// alongside the item fetch, never per cell (per-cell queries are an
+    /// N+1 disaster at library size). Populated only while a field that
+    /// needs them is enabled.
+    private(set) var itemTagNames: [UUID: [String]] = [:]
+    private(set) var itemMissingCategories: [UUID: [String]] = [:]
+    private(set) var duplicateFlaggedIDs: Set<UUID> = []
+
+    private struct ListingPayload: Sendable {
+        var items: [MediaItem]
+        var tagNames: [UUID: [String]]
+        var missingCategories: [UUID: [String]]
+        var duplicateIDs: Set<UUID>
+    }
+
     func refreshItems() {
         refreshGeneration += 1
         let generation = refreshGeneration
-        let library = library, filter = filter, kind = kind
+        let library = library, filter = filter, kind = kind, ordering = ordering
+        let grid = AppSettingsStore.shared.current.grid
         Task.detached(priority: .userInitiated) { [weak self] in
-            let outcome: Result<[MediaItem], Error>
-            do { outcome = .success(try library.mediaItems(matching: filter, kind: kind)) } catch {
+            let outcome: Result<ListingPayload, Error>
+            do {
+                let rows = try library.mediaItems(matching: filter, kind: kind, orderedBy: ordering)
+                var payload = ListingPayload(
+                    items: rows, tagNames: [:], missingCategories: [:], duplicateIDs: [])
+                if grid.needsTagData {
+                    let vocabulary = try library.vocabulary()
+                        .filter { !$0.category.hiddenFromBrowse }
+                    var tagInfo: [UUID: (name: String, categoryID: UUID)] = [:]
+                    for entry in vocabulary {
+                        for tag in entry.tags { tagInfo[tag.id] = (tag.name, entry.category.id) }
+                    }
+                    let links = try await library.writer.read { db in
+                        try Row.fetchAll(db, sql: "SELECT mediaItemID, tagID FROM mediaItemTag")
+                    }
+                    var tagsByItem: [UUID: [UUID]] = [:]
+                    for link in links {
+                        tagsByItem[link["mediaItemID"] as UUID, default: []]
+                            .append(link["tagID"] as UUID)
+                    }
+                    for item in rows {
+                        let tagIDs = tagsByItem[item.id] ?? []
+                        payload.tagNames[item.id] = tagIDs.compactMap { tagInfo[$0]?.name }.sorted()
+                        let covered = Set(tagIDs.compactMap { tagInfo[$0]?.categoryID })
+                        payload.missingCategories[item.id] = vocabulary
+                            .filter { !covered.contains($0.category.id) }
+                            .map(\.category.name)
+                    }
+                }
+                if grid.showsDuplicate {
+                    payload.duplicateIDs = Set(
+                        try library.pendingCandidates().flatMap { [$0.itemAID, $0.itemBID] })
+                }
+                outcome = .success(payload)
+            } catch {
                 outcome = .failure(error)
             }
             await MainActor.run { [weak self] in
                 guard let self, self.refreshGeneration == generation else { return }
                 switch outcome {
-                case .success(let rows):
-                    self.items = rows
+                case .success(let payload):
+                    self.items = payload.items
+                    self.itemTagNames = payload.tagNames
+                    self.itemMissingCategories = payload.missingCategories
+                    self.duplicateFlaggedIDs = payload.duplicateIDs
                     self.errorMessage = nil
                 case .failure(let error):
                     self.errorMessage = "\(error)"
