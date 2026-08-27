@@ -44,6 +44,33 @@ import Testing
         #expect(throws: (any Error).self) { try app.register(library) }
     }
 
+    @Test func unregisterForgetsTheEntryAndReAddingIsNoDuplicate() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-app-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let app = try AppDatabase.openInMemory()
+        let url = dir.appendingPathComponent("Concerts.sqlite")
+        let library = try LibraryDatabase.open(at: url)
+        let info = try library.ensureInfo(name: "Concerts")
+        try app.register(library)
+
+        try app.unregister(info.libraryID)
+        #expect(try app.libraries().isEmpty)
+        // The FILE is untouched — remove is forget, never delete.
+        #expect(FileManager.default.fileExists(atPath: url.path))
+
+        // Re-adding restores the same identity, not a duplicate.
+        let ref = try app.register(library)
+        #expect(ref.id == info.libraryID)
+        #expect(try app.libraries().count == 1)
+
+        // Unregistering an unknown id is a harmless no-op.
+        try app.unregister(UUID())
+        #expect(try app.libraries().count == 1)
+    }
+
     @Test func preferencesUpsert() throws {
         let app = try AppDatabase.openInMemory()
         #expect(try app.preference("theme") == nil)

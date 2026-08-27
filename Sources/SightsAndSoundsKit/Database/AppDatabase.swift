@@ -95,6 +95,15 @@ public final class AppDatabase: Sendable {
         try writer.read { try LibraryRef.order(sql: "addedAt, name").fetchAll($0) }
     }
 
+    /// Remove a library from the registry. The library FILE is untouched
+    /// — this forgets the entry, nothing more; Add Existing re-registers
+    /// it (reconciled by the library's own id, never a duplicate).
+    public func unregister(_ libraryID: UUID) throws {
+        try writer.write { db in
+            try db.execute(sql: "DELETE FROM libraryRef WHERE id = ?", arguments: [libraryID])
+        }
+    }
+
     public func touchLastOpened(_ libraryID: UUID, at date: Date = Date()) throws {
         try writer.write { db in
             try db.execute(
