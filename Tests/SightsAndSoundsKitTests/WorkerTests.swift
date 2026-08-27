@@ -52,6 +52,26 @@ import Testing
         }
     }
 
+    // MARK: Pause
+
+    @Test func pausedRunnerHoldsTheQueueAndResumingDrainsIt() async throws {
+        let f = try await WorkerFixture()
+        defer { f.tearDown() }
+
+        await f.runner.setPaused(true)
+        let job = try await ImportJob.enqueue(on: f.runner, sourceID: f.source.id)
+        let settled = try await f.runner.runPending()
+        #expect(settled.isEmpty)
+        let held = try await f.library.writer.read { try JobRecord.fetchOne($0, key: job.id)! }
+        #expect(held.state == .queued)  // pause is not cancel — the job waits
+
+        await f.runner.setPaused(false)
+        let drained = try await f.runner.runPending()
+        #expect(drained == [job.id])
+        let done = try await f.library.writer.read { try JobRecord.fetchOne($0, key: job.id)! }
+        #expect(done.state == .succeeded)
+    }
+
     // MARK: Content hashing
 
     @Test func hashSweepComputesRealMD5AndSkipsHashed() async throws {
