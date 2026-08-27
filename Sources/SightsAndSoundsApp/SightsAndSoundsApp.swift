@@ -180,6 +180,22 @@ final class AppModel {
         refresh()
     }
 
+    /// Forget a library: close its open handle, drop its runner, delete
+    /// the registry row. The library FILE on disk is untouched — Add
+    /// Existing… re-registers it, reconciled by the library's own id.
+    /// Caller has confirmed and closed the library's windows.
+    func removeLibrary(id: UUID) {
+        if let open = openHandles[id] { try? open.close() }
+        runners[id] = nil
+        openHandles[id] = nil
+        do {
+            try appDatabase?.unregister(id)
+        } catch {
+            loadError = "Could not remove the library from the list: \(error)"
+        }
+        refresh()
+    }
+
     /// The signal: wake the library's workers. Sleeps-until-woken, never
     /// polls — imports finishing and volumes mounting call this. Work is
     /// decided from disk/db state inside the jobs; duplicate signals
@@ -381,6 +397,7 @@ struct LibraryRow: View {
     let library: LibraryRef
     @State private var statusText: String?
     @State private var confirmRestore: URL?
+    @State private var confirmRemove = false
 
     var body: some View {
         HStack {
@@ -399,6 +416,17 @@ struct LibraryRow: View {
         .contextMenu {
             Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") { backUp() }
             Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { pickBackup() }
+            Divider()
+            Button("Remove from List…", systemImage: "minus.circle") { confirmRemove = true }
+        }
+        .confirmationDialog(
+            "Remove “\(library.name)” from this list? The library file on disk is NOT deleted — Add Existing… brings it back, never as a duplicate. Close this library's windows before removing.",
+            isPresented: $confirmRemove
+        ) {
+            Button("Remove from List", role: .destructive) {
+                model.removeLibrary(id: library.id)
+            }
+            Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
             "Replace “\(library.name)” with this backup? The current file is archived first (never deleted). Close this library's windows before restoring.",
