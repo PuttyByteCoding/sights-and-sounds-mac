@@ -4,6 +4,11 @@ import SightsAndSoundsKit
 struct SidebarView: View {
     @Environment(BrowseModel.self) private var model
 
+    // Tag categories start collapsed — the sidebar shows names, the user
+    // opens what they filter by. Keyed by category id so vocabulary
+    // refreshes don't reset what's open; resets with the window.
+    @State private var expandedCategories: Set<UUID> = []
+
     var body: some View {
         List {
             if !model.filter.isEmpty {
@@ -39,9 +44,27 @@ struct SidebarView: View {
                             .textCase(.uppercase)
                     }
                 }
-                Section(entry.category.name) {
+                Section(isExpanded: isExpanded(entry.category.id)) {
                     ForEach(entry.tags) { tag in
                         TagFilterRow(tag: tag)
+                    }
+                } header: {
+                    HStack {
+                        Text(entry.category.name)
+                        Spacer()
+                        // A collapsed category must still signal live
+                        // selections — a filter can't hide invisibly.
+                        if !expandedCategories.contains(entry.category.id) {
+                            let active = entry.tags.count { model.filter.slot(of: $0.id) != nil }
+                            if active > 0 {
+                                Text("\(active)")
+                                    .font(.caption2)
+                                    .monospacedDigit()
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(.tint.opacity(0.2), in: Capsule())
+                            }
+                        }
                     }
                 }
             }
@@ -53,6 +76,14 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+    }
+
+    private func isExpanded(_ id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expandedCategories.contains(id) },
+            set: { open in
+                if open { expandedCategories.insert(id) } else { expandedCategories.remove(id) }
+            })
     }
 }
 
