@@ -69,7 +69,9 @@ final class PlayerModel {
         guard !playlist.isEmpty else { return }
         let library = library, playlist = playlist
         Task.detached(priority: .userInitiated) { [weak self] in
-            let rows = (try? await library.writer.read { db in
+            // Explicit return type — the async `read` overload's
+            // inference is ambiguous to the CI toolchain (Xcode 16).
+            let rows: [MediaItem] = (try? await library.writer.read { db -> [MediaItem] in
                 try MediaItem.fetchAll(db, keys: playlist)
             }) ?? []
             let position = Dictionary(
