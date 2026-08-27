@@ -158,6 +158,38 @@ private struct PlayerContent: View {
     let refocus: () -> Void
     @State private var showBindingsEditor = false
 
+    /// Panel sizes: draggable, clamped so the video always keeps a
+    /// floor, persisted so they survive item switches (the .id(request)
+    /// rebuild) and launches.
+    @State private var layout = AppSettingsStore.shared.current.playerLayout
+    @State private var dragBase: CGFloat?
+
+    private func dragTagPanel(_ translation: CGFloat) {
+        let base = dragBase ?? CGFloat(layout.tagPanelWidth)
+        dragBase = base
+        layout.tagPanelWidth = Double(min(560, max(220, base - translation)))
+    }
+
+    private func dragQueue(_ translation: CGFloat) {
+        let base = dragBase ?? CGFloat(layout.queueHeight)
+        dragBase = base
+        layout.queueHeight = Double(min(240, max(64, base - translation)))
+    }
+
+    private func endPanelDrag() {
+        dragBase = nil
+        AppSettingsStore.shared.update { $0.playerLayout = layout }
+    }
+
+    private var queueShown: Binding<Bool> {
+        Binding(
+            get: { layout.showsQueue },
+            set: { shown in
+                layout.showsQueue = shown
+                AppSettingsStore.shared.update { $0.playerLayout = layout }
+            })
+    }
+
     /// The exact rendered size: aspect-fit into the available area, but
     /// upscaling stops at 2× the video's native PIXEL size (in points,
     /// so a Retina backing scale doesn't quietly double it again). An
@@ -204,13 +236,20 @@ private struct PlayerContent: View {
                     }
                 }
                 InfoBar()
-                TransportBar()
+                TransportBar(queueShown: queueShown)
                     .padding(10)
                     .background(.bar)
+                if layout.showsQueue, !model.playlist.isEmpty {
+                    HorizontalResizeHandle(
+                        onDrag: { dragQueue($0) }, onEnd: { endPanelDrag() })
+                    QueuePanel(height: CGFloat(layout.queueHeight))
+                }
             }
             .simultaneousGesture(TapGesture().onEnded { refocus() })
             if model.showTagPanel {
-                TagPanelView()
+                VerticalResizeHandle(
+                    onDrag: { dragTagPanel($0) }, onEnd: { endPanelDrag() })
+                TagPanelView(width: CGFloat(layout.tagPanelWidth))
             }
         }
         .toolbar {
@@ -387,6 +426,7 @@ private struct PlayerSurface: NSViewRepresentable {
 
 private struct TransportBar: View {
     @Environment(PlayerModel.self) private var model
+    @Binding var queueShown: Bool
 
     var body: some View {
         @Bindable var model = model
@@ -426,6 +466,14 @@ private struct TransportBar: View {
                         .frame(width: 20)
                 }
                 .help(model.isLooping ? "Looping — click to play once (L)" : "Loop (L)")
+                Button {
+                    queueShown.toggle()
+                } label: {
+                    Image(systemName: "rectangle.bottomthird.inset.filled")
+                        .foregroundStyle(queueShown ? Color.accentColor : Color.secondary)
+                        .frame(width: 20)
+                }
+                .help(queueShown ? "Hide the play queue" : "Show the play queue")
 
                 Text(timeText)
                     .font(.callout.monospacedDigit())
@@ -734,5 +782,121 @@ private struct ClipAuthoringBar: View {
         let start = model.pendingClipStart.map(TransportBarTime.format) ?? "—"
         let end = model.pendingClipEnd.map(TransportBarTime.format) ?? "—"
         return "\(start) → \(end)"
+    }
+}
+
+/// Edge-drag handles, sidebar-style. They sit on the PANEL side of the
+/// tap-to-refocus boundary so resizing never fights the focus gesture.
+private struct VerticalResizeHandle: View {
+    let onDrag: (CGFloat) -> Void
+    let onEnd: () -> Void
+
+    var body: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .frame(width: 1)
+            .padding(.horizontal, 2)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { onDrag($0.translation.width) }
+                    .onEnded { _ in onEnd() })
+    }
+}
+
+private struct HorizontalResizeHandle: View {
+    let onDrag: (CGFloat) -> Void
+    let onEnd: () -> Void
+
+    var body: some View {
+        Rectangle()
+            .fill(.quaternary)
+            .frame(height: 1)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { onDrag($0.translation.height) }
+                    .onEnded { _ in onEnd() })
+    }
+}
+
+/// The play queue: the playlist as a horizontal thumbnail strip. Its
+/// height IS the thumbnail scale — drag the top edge taller for bigger
+/// thumbs. The queue reflects the playlist SNAPSHOT the player opened
+/// with, consistent with "x of y" and the arrows.
+private struct QueuePanel: View {
+    @Environment(PlayerModel.self) private var model
+    let height: CGFloat
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 6) {
+                    ForEach(model.queueItems) { item in
+                        QueueCell(
+                            item: item,
+                            thumbHeight: height - 12,
+                            isCurrent: item.id == model.item?.id)
+                            .id(item.id)
+                            .onTapGesture { model.load(itemID: item.id) }
+                    }
+                }
+                .padding(6)
+            }
+            .onChange(of: model.item?.id) { _, current in
+                if let current {
+                    withAnimation { proxy.scrollTo(current, anchor: .center) }
+                }
+            }
+            .onAppear {
+                if let current = model.item?.id {
+                    proxy.scrollTo(current, anchor: .center)
+                }
+            }
+        }
+        .frame(height: height)
+        .background(.bar)
+    }
+}
+
+private struct QueueCell: View {
+    @Environment(PlayerModel.self) private var model
+    let item: MediaItem
+    let thumbHeight: CGFloat
+    let isCurrent: Bool
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if let thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: item.kind == .audio ? "waveform" : "film")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: thumbHeight * 16 / 9, height: thumbHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(isCurrent ? Color.accentColor : .clear, lineWidth: 2))
+        .help(item.fileName)
+        .task(id: item.id) {
+            let data = await ThumbnailProvider.shared.thumbnailData(
+                itemID: item.id, libraryID: model.libraryID,
+                fileURL: model.queueFileURL(for: item),
+                durationSeconds: item.durationSeconds)
+            thumbnail = data.flatMap(NSImage.init(data:))
+        }
     }
 }

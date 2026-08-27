@@ -8,6 +8,8 @@ import SightsAndSoundsKit
 /// when the panel opens or the item changes.
 struct TagPanelView: View {
     @Environment(PlayerModel.self) private var model
+    /// Width is owned by the player's layout (draggable, persisted).
+    var width: CGFloat = 300
 
     var body: some View {
         ScrollView {
@@ -39,7 +41,7 @@ struct TagPanelView: View {
             }
             .padding(12)
         }
-        .frame(width: 300)
+        .frame(width: width)
         .background(.background.secondary)
     }
 }

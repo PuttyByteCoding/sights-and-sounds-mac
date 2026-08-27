@@ -56,6 +56,35 @@ final class PlayerModel {
         _ = appDatabase  // legacy pref migrates into settings.json at launch
         skipSettings = AppSettingsStore.shared.current.skip
         load(itemID: request.itemID)
+        loadQueueItems()
+    }
+
+    // MARK: - Play queue
+
+    /// The playlist's rows, in playlist order — the queue strip's data.
+    /// One fetch per player open, off the main actor.
+    private(set) var queueItems: [MediaItem] = []
+
+    private func loadQueueItems() {
+        guard !playlist.isEmpty else { return }
+        let library = library, playlist = playlist
+        Task.detached(priority: .userInitiated) { [weak self] in
+            // Explicit return type — the async `read` overload's
+            // inference is ambiguous to the CI toolchain (Xcode 16).
+            let rows: [MediaItem] = (try? await library.writer.read { db -> [MediaItem] in
+                try MediaItem.fetchAll(db, keys: playlist)
+            }) ?? []
+            let position = Dictionary(
+                uniqueKeysWithValues: playlist.enumerated().map { ($1, $0) })
+            let ordered = rows.sorted { (position[$0.id] ?? 0) < (position[$1.id] ?? 0) }
+            await MainActor.run { [weak self] in self?.queueItems = ordered }
+        }
+    }
+
+    /// Resolved file URL for a QUEUE row (nil while its source is
+    /// offline) — cached thumbnails render regardless.
+    func queueFileURL(for item: MediaItem) -> URL? {
+        (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil
     }
 
     // MARK: - Loading
