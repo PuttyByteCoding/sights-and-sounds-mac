@@ -21,7 +21,9 @@ struct SettingsView: View {
             VocabularySettingsPane()
                 .tabItem { Label("Tag Category Configuration", systemImage: "tag") }
         }
-        .frame(width: 560)
+        // A minimum, not a fixed width — the Settings window resizes
+        // like any other (#73); grouped forms stretch sanely.
+        .frame(minWidth: 560, minHeight: 420)
         .padding(.bottom, 8)
     }
 }

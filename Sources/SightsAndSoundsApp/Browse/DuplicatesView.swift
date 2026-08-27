@@ -297,9 +297,10 @@ private struct ComparePane: View {
 
             HStack {
                 Button("Play", systemImage: "play") {
-                    // The player takes over the window, so let the sheet
-                    // go first rather than leaving it presented over it.
-                    dismiss()
+                    // The Duplicates window swaps to the player in place
+                    // (AuxiliaryWindowView), same pattern as the library
+                    // window — no dismissal needed now that this is a
+                    // window, not a sheet.
                     model.playerRequest = PlayerRequest(
                         libraryID: model.libraryID, itemID: item.id, playlist: [item.id])
                 }
