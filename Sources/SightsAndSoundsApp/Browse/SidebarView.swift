@@ -36,7 +36,13 @@ struct SidebarView: View {
                                 count: node.subtreeCount, depth: 0)
                         }
                     } label: {
+                        // Sidebar convention: clicking a collapsible
+                        // header's name toggles it — the chevron is a
+                        // small target. Right-click (context menu) is
+                        // untouched by the tap gesture.
                         SourceRow(source: source)
+                            .contentShape(Rectangle())
+                            .onTapGesture { toggle(source.id, in: &expandedSources) }
                     }
                 }
                 Button("Add Source…", systemImage: "plus") { addSource() }
@@ -80,6 +86,11 @@ struct SidebarView: View {
                             }
                         }
                     }
+                    // Sidebar convention: clicking a collapsible header's
+                    // name toggles it — the whole header row, not just
+                    // the chevron.
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggle(entry.category.id, in: &expandedCategories) }
                 }
             }
 
@@ -90,6 +101,10 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+    }
+
+    private func toggle(_ id: UUID, in set: inout Set<UUID>) {
+        if set.contains(id) { set.remove(id) } else { set.insert(id) }
     }
 
     private func isExpanded(_ id: UUID) -> Binding<Bool> {
