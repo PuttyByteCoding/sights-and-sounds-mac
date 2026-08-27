@@ -93,7 +93,7 @@ struct OcrLinesPanel: View {
         scanQueued = true
         Task {
             _ = try? await OcrJob.enqueue(on: runner, itemID: itemID)
-            try? await runner.runPending()
+            _ = try? await runner.runPending()
             await reload()
         }
     }

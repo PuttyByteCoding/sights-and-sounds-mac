@@ -141,7 +141,7 @@ final class AppModel {
         for runner in runners.values {
             Task {
                 await runner.setPaused(paused)
-                if !paused { try? await runner.runPending() }
+                if !paused { _ = try? await runner.runPending() }
             }
         }
     }
