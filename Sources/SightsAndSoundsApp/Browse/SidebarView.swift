@@ -8,6 +8,11 @@ struct SidebarView: View {
     // opens what they filter by. Keyed by category id so vocabulary
     // refreshes don't reset what's open; resets with the window.
     @State private var expandedCategories: Set<UUID> = []
+    // Folder trees, nested under their source rows, start collapsed too.
+    @State private var expandedSources: Set<UUID> = []
+    // Per-category tag-narrowing queries (view-only — never the media
+    // filter). Keyed by category id, same lifetime as the sets above.
+    @State private var tagQueries: [UUID: String] = [:]
 
     var body: some View {
         List {
@@ -18,19 +23,25 @@ struct SidebarView: View {
             }
 
             Section("Sources") {
+                FolderRow(name: "All Items", path: nil, count: nil, depth: 0)
                 ForEach(model.sources) { source in
-                    SourceRow(source: source)
+                    // Each source discloses its own folder tree, closed
+                    // by default — the sidebar opens showing just rows.
+                    DisclosureGroup(isExpanded: isExpandedSource(source.id)) {
+                        OutlineGroup(
+                            model.folderTrees[source.id] ?? [], children: \.childrenOrNil
+                        ) { node in
+                            FolderRow(
+                                name: node.name, path: node.path,
+                                count: node.subtreeCount, depth: 0)
+                        }
+                    } label: {
+                        SourceRow(source: source)
+                    }
                 }
                 Button("Add Source…", systemImage: "plus") { addSource() }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Folders") {
-                FolderRow(name: "All Items", path: nil, count: nil, depth: 0)
-                OutlineGroup(model.folderTree, children: \.childrenOrNil) { node in
-                    FolderRow(name: node.name, path: node.path, count: node.subtreeCount, depth: 0)
-                }
             }
 
             ForEach(model.vocabulary) { entry in
@@ -45,7 +56,10 @@ struct SidebarView: View {
                     }
                 }
                 Section(isExpanded: isExpanded(entry.category.id)) {
-                    ForEach(entry.tags) { tag in
+                    if entry.tags.count > 8 {
+                        TagQueryField(text: query(for: entry.category.id))
+                    }
+                    ForEach(visibleTags(of: entry)) { tag in
                         TagFilterRow(tag: tag)
                     }
                 } header: {
@@ -84,6 +98,62 @@ struct SidebarView: View {
             set: { open in
                 if open { expandedCategories.insert(id) } else { expandedCategories.remove(id) }
             })
+    }
+
+    private func isExpandedSource(_ id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expandedSources.contains(id) },
+            set: { open in
+                if open { expandedSources.insert(id) } else { expandedSources.remove(id) }
+            })
+    }
+
+    private func query(for id: UUID) -> Binding<String> {
+        Binding(
+            get: { tagQueries[id, default: ""] },
+            set: { tagQueries[id] = $0 })
+    }
+
+    /// The category's tags under its narrowing query. Name and alias
+    /// match case-insensitively; a tag with an ACTIVE filter slot always
+    /// stays visible, so a selection can never hide behind the query.
+    private func visibleTags(of entry: CategoryTags) -> [Tag] {
+        let query = tagQueries[entry.category.id, default: ""]
+            .trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return entry.tags }
+        return entry.tags.filter { tag in
+            model.filter.slot(of: tag.id) != nil
+                || tag.name.localizedCaseInsensitiveContains(query)
+                || (model.tagAliases[tag.id] ?? [])
+                    .contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+}
+
+/// The narrowing field at the top of an expanded category — filters
+/// which tag rows are SHOWN, never the media query itself.
+private struct TagQueryField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            TextField("Filter tags", text: $text)
+                .textFieldStyle(.plain)
+                .font(.callout)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 

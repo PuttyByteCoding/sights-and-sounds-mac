@@ -56,6 +56,17 @@ import Testing
         #expect(try f.library.folderCounts(kind: .video).isEmpty)
     }
 
+    @Test func folderCountsScopeToOneSource() throws {
+        let f = try FilterFixture()
+        // Scoped to the fixture's source: identical to the unscoped tree.
+        let all = try f.library.folderCounts(kind: .video).map { "\($0.path):\($0.count)" }.sorted()
+        let scoped = try f.library.folderCounts(kind: .video, sourceID: f.mainSource.id)
+            .map { "\($0.path):\($0.count)" }.sorted()
+        #expect(scoped == all)
+        // Another source's id sees nothing.
+        #expect(try f.library.folderCounts(kind: .video, sourceID: UUID()).isEmpty)
+    }
+
     // MARK: Vocabulary
 
     @Test func vocabularyOrdersCategoriesAndTags() throws {
