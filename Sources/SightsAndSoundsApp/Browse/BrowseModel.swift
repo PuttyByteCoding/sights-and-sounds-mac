@@ -285,9 +285,11 @@ final class BrowseModel {
                     for entry in vocabulary {
                         for tag in entry.tags { tagInfo[tag.id] = (tag.name, entry.category.id) }
                     }
-                    // Explicit return type — the async `read` overload's
-                    // inference is ambiguous to the CI toolchain (Xcode 16).
-                    let links: [Row] = try await library.writer.read { db -> [Row] in
+                    // Deliberately the SYNCHRONOUS read: we're already on
+                    // a detached task (like the item fetch above), and the
+                    // explicit closure type sidesteps the async overload's
+                    // inference ambiguity on the CI toolchain (Xcode 16).
+                    let links: [Row] = try library.writer.read { db -> [Row] in
                         try Row.fetchAll(db, sql: "SELECT mediaItemID, tagID FROM mediaItemTag")
                     }
                     var tagsByItem: [UUID: [UUID]] = [:]
