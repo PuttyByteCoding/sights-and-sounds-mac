@@ -74,32 +74,74 @@ struct CategoryManagerView: View {
         return parts.joined(separator: " · ")
     }
 
+    // Fetches run off the main actor; the generations drop any result a
+    // newer request has superseded (the PR #38 pattern), so fast clicks
+    // through big categories never publish stale rows or block the UI.
+    @State private var categoryGeneration = 0
+    @State private var tagGeneration = 0
+
     private func reload() {
-        do {
-            categories = try model.library.writer.read {
-                try TagCategory.order(sql: "sortOrder, name").fetchAll($0)
-            }
-            if selectedID == nil { selectedID = categories.first?.id }
-            reloadTags()
-        } catch { errorText = "\(error)" }
+        categoryGeneration += 1
+        let generation = categoryGeneration
+        let library = model.library
+        Task {
+            do {
+                let fetched = try await library.writer.read {
+                    try TagCategory.order(sql: "sortOrder, name").fetchAll($0)
+                }
+                guard generation == categoryGeneration else { return }
+                categories = fetched
+                if selectedID == nil { selectedID = categories.first?.id }
+                reloadTags()
+            } catch { errorText = "\(error)" }
+        }
     }
 
     private func reloadTags() {
         guard let selectedID else { return }
-        do {
-            tags = try model.library.writer.read {
-                try Tag.filter(sql: "tagCategoryID = ?", arguments: [selectedID])
-                    .order(sql: "sortOrder, name").fetchAll($0)
-            }
-        } catch { errorText = "\(error)" }
+        tagGeneration += 1
+        let generation = tagGeneration
+        let library = model.library
+        Task {
+            do {
+                let fetched = try await library.writer.read {
+                    try Tag.filter(sql: "tagCategoryID = ?", arguments: [selectedID])
+                        .order(sql: "sortOrder, name").fetchAll($0)
+                }
+                guard generation == tagGeneration else { return }
+                tags = fetched
+            } catch { errorText = "\(error)" }
+        }
     }
 
     private func save(_ category: TagCategory) {
         do {
             try model.library.updateCategory(category)
             errorText = nil
-            reload()
+            // Narrow update: patch the edited row in place so the click
+            // settles instantly, then refresh the (small) category table
+            // in the background — the focus-exclusivity cascade may have
+            // touched siblings. Tags are untouched by a config edit.
+            if let index = categories.firstIndex(where: { $0.id == category.id }) {
+                categories[index] = category
+            }
+            reloadCategoriesOnly()
         } catch { errorText = "\(error)" }
+    }
+
+    private func reloadCategoriesOnly() {
+        categoryGeneration += 1
+        let generation = categoryGeneration
+        let library = model.library
+        Task {
+            do {
+                let fetched = try await library.writer.read {
+                    try TagCategory.order(sql: "sortOrder, name").fetchAll($0)
+                }
+                guard generation == categoryGeneration else { return }
+                categories = fetched
+            } catch { errorText = "\(error)" }
+        }
     }
 
     private func createCategory() {
@@ -123,9 +165,20 @@ private struct CategoryDetail: View {
 
     @State private var newTagName = ""
     @State private var confirmDelete = false
+    /// Narrows the visible tag rows only — managing a thousand-tag
+    /// category needs a filter as much as browsing by one does.
+    @State private var tagQuery = ""
+
+    private var visibleTags: [Tag] {
+        let query = tagQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return tags }
+        return tags.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
-        Form {
+        // A List, not a Form: rows are virtualized, so a migrated
+        // category with thousands of tags builds only what's on screen.
+        List {
             Section("Configuration") {
                 TextField("Name", text: $category.name)
                     .onSubmit { onChange(category) }
@@ -143,7 +196,26 @@ private struct CategoryDetail: View {
             }
 
             Section("Tags (\(tags.count))") {
-                ForEach(tags) { tag in
+                if tags.count > 8 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        TextField("Filter tags", text: $tagQuery)
+                            .textFieldStyle(.plain)
+                        if !tagQuery.isEmpty {
+                            Button {
+                                tagQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                ForEach(visibleTags) { tag in
                     TagRow(tag: tag, library: library, errorText: $errorText, onAction: onTagAction)
                 }
                 HStack {
@@ -167,7 +239,7 @@ private struct CategoryDetail: View {
                     }
             }
         }
-        .formStyle(.grouped)
+        .listStyle(.inset)
         .id(category.id)
     }
 
