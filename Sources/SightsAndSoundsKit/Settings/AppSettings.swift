@@ -31,6 +31,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// under each thumbnail.
     public var grid: GridSettings
 
+    /// The player's panel layout — sizes survive item switches and
+    /// launches; the video is the flexible center and shrinks to fit.
+    public var playerLayout: PlayerLayoutSettings
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -52,6 +56,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         loopVideos: Bool = true,
         infoBar: InfoBarSettings = InfoBarSettings(),
         grid: GridSettings = GridSettings(),
+        playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600
     ) {
@@ -65,6 +70,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.loopVideos = loopVideos
         self.infoBar = infoBar
         self.grid = grid
+        self.playerLayout = playerLayout
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
     }
@@ -88,6 +94,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.infoBar
         grid = try container.decodeIfPresent(GridSettings.self, forKey: .grid)
             ?? defaults.grid
+        playerLayout = try container.decodeIfPresent(
+            PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
@@ -179,6 +187,26 @@ public struct GridSettings: Codable, Equatable, Sendable {
     /// True when a field needing the per-item tag join is enabled — the
     /// grid's batch queries run only then.
     public var needsTagData: Bool { showsTags || showsMissingCategories }
+}
+
+/// The player's resizable-panel layout. Clamps live at the drag sites;
+/// these are the remembered sizes.
+public struct PlayerLayoutSettings: Codable, Equatable, Sendable {
+    /// Tag panel width, points.
+    public var tagPanelWidth: Double
+    /// Play-queue strip height, points — also the thumbnail scale.
+    public var queueHeight: Double
+    public var showsQueue: Bool
+
+    public init(
+        tagPanelWidth: Double = 300,
+        queueHeight: Double = 120,
+        showsQueue: Bool = true
+    ) {
+        self.tagPanelWidth = tagPanelWidth
+        self.queueHeight = queueHeight
+        self.showsQueue = showsQueue
+    }
 }
 
 /// The store: loads `settings.json` once, hands out the current value,
