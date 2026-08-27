@@ -24,6 +24,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// Playback restarts from the beginning at the end of the item.
     public var loopVideos: Bool
 
+    /// Which elements the player's info bar shows.
+    public var infoBar: InfoBarSettings
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -43,6 +46,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         skip: SkipSettings = SkipSettings(),
         startVideosMuted: Bool = true,
         loopVideos: Bool = true,
+        infoBar: InfoBarSettings = InfoBarSettings(),
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600
     ) {
@@ -54,6 +58,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.skip = skip
         self.startVideosMuted = startVideosMuted
         self.loopVideos = loopVideos
+        self.infoBar = infoBar
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
     }
@@ -73,10 +78,38 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.startVideosMuted
         loopVideos = try container.decodeIfPresent(Bool.self, forKey: .loopVideos)
             ?? defaults.loopVideos
+        infoBar = try container.decodeIfPresent(InfoBarSettings.self, forKey: .infoBar)
+            ?? defaults.infoBar
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
             Double.self, forKey: .ocrBudgetSecondsPerRun) ?? defaults.ocrBudgetSecondsPerRun
+    }
+}
+
+/// Which elements the player shows in the info bar under the video.
+/// All on by default; the bar hides entirely when every element is off.
+public struct InfoBarSettings: Codable, Equatable, Sendable {
+    /// "x of y" — position in the filtered listing playback opened from.
+    public var showsPosition: Bool
+    public var showsTags: Bool
+    public var showsFavorite: Bool
+    public var showsDownload: Bool
+
+    public init(
+        showsPosition: Bool = true,
+        showsTags: Bool = true,
+        showsFavorite: Bool = true,
+        showsDownload: Bool = true
+    ) {
+        self.showsPosition = showsPosition
+        self.showsTags = showsTags
+        self.showsFavorite = showsFavorite
+        self.showsDownload = showsDownload
+    }
+
+    public var showsAnything: Bool {
+        showsPosition || showsTags || showsFavorite || showsDownload
     }
 }
 

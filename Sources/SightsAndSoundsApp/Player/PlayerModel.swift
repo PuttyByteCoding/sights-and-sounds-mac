@@ -261,6 +261,17 @@ final class PlayerModel {
         }
     }
 
+    /// Rename through the kit's single write path (normalization,
+    /// per-category uniqueness) — the info bar's pill menu calls this.
+    func renameTag(_ tagID: UUID, to name: String) {
+        do {
+            try library.renameTag(tagID, to: name)
+            refreshTagging()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
     /// Autocomplete-create: normalize, find-or-create, assign.
     func addTag(named raw: String, categoryID: UUID) {
         guard let item else { return }
