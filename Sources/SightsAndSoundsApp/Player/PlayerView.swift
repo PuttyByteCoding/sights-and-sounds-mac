@@ -202,7 +202,7 @@ private struct PlayerContent: View {
         let base = dragBase ?? effectiveTagPanelWidth
         dragBase = base
         layout.tagPanelWidth = Double(
-            min(max(220, base - translation), max(220, tagPanelCeiling)))
+            min(max(220, base - translation), max(220, tagPanelCeiling)).rounded())
     }
 
     /// The smallest queue that shows a whole cell: minimum thumbnail
@@ -216,7 +216,7 @@ private struct PlayerContent: View {
         dragBase = base
         let floor = queueMinHeight
         layout.queueHeight = Double(
-            min(max(floor, base - translation), max(floor, queueCeiling)))
+            min(max(floor, base - translation), max(floor, queueCeiling)).rounded())
     }
 
     private func endPanelDrag() {
@@ -485,6 +485,12 @@ private struct PlayerSurface: NSViewRepresentable {
             super.init(frame: frame)
             wantsLayer = true
             playerLayer.videoGravity = .resizeAspect
+            // A live panel drag resizes this layer every frame; implicit
+            // animations would smear each step toward the next. Track
+            // the drag exactly instead.
+            playerLayer.actions = [
+                "bounds": NSNull(), "position": NSNull(), "frame": NSNull(),
+            ]
             layer = playerLayer
         }
 
@@ -870,7 +876,12 @@ private struct VerticalResizeHandle: View {
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // Global space: the handle itself moves as the panel
+                // resizes, so LOCAL translation is measured against a
+                // moving origin — width oscillates every frame and the
+                // drag flickers. (AppKit's sidebar divider tracks in
+                // window coordinates for the same reason.)
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { onDrag($0.translation.width) }
                     .onEnded { _ in onEnd() })
     }
@@ -890,7 +901,9 @@ private struct HorizontalResizeHandle: View {
                 if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // Global space — same moving-origin flicker as the
+                // vertical handle.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { onDrag($0.translation.height) }
                     .onEnded { _ in onEnd() })
     }
