@@ -144,6 +144,10 @@ struct BrowseView: View {
                 }
                 ToolbarItem {
                     Menu {
+                        Button("Library Properties…", systemImage: "info.circle") {
+                            openWindow(id: "properties", value: model.libraryID)
+                        }
+                        Divider()
                         Button("Move History…", systemImage: "arrow.turn.up.right") {
                             openAux(.moveHistory)
                         }
