@@ -86,6 +86,23 @@ struct PlayerView: View {
             return true
         }
         guard let model else { return false }
+
+        // While a text input owns the keyboard, the single-key map is
+        // suspended — "d" spells a tag name, it doesn't delete (#105).
+        // Every SwiftUI text field types through an AppKit field editor
+        // (an NSTextView), so checking the first responder covers them
+        // all without threading focus state through each field. Esc
+        // (above) stays live, and so do F-key bindings — function keys
+        // never insert text.
+        if NSApp.keyWindow?.firstResponder is NSTextView {
+            if let scalar = press.key.character.unicodeScalars.first,
+               (0xF704...0xF70C).contains(scalar.value) {
+                let index = Int(scalar.value - 0xF704) + 1
+                return model.handleBoundKey("F\(index)")
+            }
+            return false
+        }
+
         switch press.key {
         case .leftArrow: model.goPrevious(); return true
         case .rightArrow: model.goNext(); return true
