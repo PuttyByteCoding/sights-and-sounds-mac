@@ -104,9 +104,15 @@ struct BrowseView: View {
                     .help("Every listing is one media kind at a time — video or audio")
                 }
                 ToolbarItem {
+                    // The toolbar draws a capsule behind this item sized to
+                    // its content; without the padding and fixedSize the
+                    // text spills past the capsule at 4+ digit counts (#102).
                     Text("\(model.items.count) items")
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                        .fixedSize()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
                         .help("Items visible under the current filter")
                 }
                 ToolbarItem {
