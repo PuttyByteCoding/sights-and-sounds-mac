@@ -234,7 +234,7 @@ private struct PlayerContent: View {
     /// The smallest queue that shows a whole cell: minimum thumbnail
     /// (24) + the metadata reserve for the enabled fields + chrome.
     private var queueMinHeight: CGFloat {
-        QueueCell.metadataHeight(for: AppSettingsStore.shared.current.grid) + 42
+        QueueCell.metadataHeight(for: GridDisplaySettings.shared.grid) + 42
     }
 
     private func dragQueue(_ translation: CGFloat) {
@@ -964,7 +964,7 @@ private struct QueuePanel: View {
     let height: CGFloat
 
     var body: some View {
-        let grid = AppSettingsStore.shared.current.grid
+        let grid = GridDisplaySettings.shared.grid
         let metadataHeight = QueueCell.metadataHeight(for: grid)
         let thumbHeight = max(24, height - 18 - metadataHeight)
         ScrollViewReader { proxy in

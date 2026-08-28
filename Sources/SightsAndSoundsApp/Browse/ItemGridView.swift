@@ -7,7 +7,8 @@ struct ItemGridView: View {
     // Cell size is a view option; the adaptive maximum tracks the
     // chosen minimum so cells stay near the picked size.
     private var columns: [GridItem] {
-        let size = AppSettingsStore.shared.current.grid.thumbnailSize
+        // Observable read — the View Options slider resizes cells LIVE.
+        let size = GridDisplaySettings.shared.grid.thumbnailSize
         return [GridItem(.adaptive(minimum: size, maximum: size * 1.4), spacing: 12)]
     }
 
@@ -44,7 +45,7 @@ private struct ItemCell: View {
     @State private var thumbnail: NSImage?
 
     var body: some View {
-        let grid = AppSettingsStore.shared.current.grid
+        let grid = GridDisplaySettings.shared.grid
         VStack(alignment: .leading, spacing: 4) {
             // Every thumbnail occupies the SAME 16:9 cell — portrait
             // videos letterbox (pillarbox) on black instead of inflating
@@ -286,45 +287,59 @@ private struct ItemCell: View {
 }
 
 /// The toolbar popover: thumbnail size plus which fields show under
-/// each thumbnail — what shows and how big, in one place. Writes
-/// through AppSettings and pokes a refresh so join-backed fields load.
+/// each thumbnail — what shows and how big, in one place. Drives the
+/// live observable; persists on settle; refetches ONLY when a
+/// join-backed field toggles (#91).
 struct GridViewOptions: View {
-    let onChange: () -> Void
-    @State private var grid = AppSettingsStore.shared.current.grid
+    /// Fired only for tags / missing-categories / duplicate toggles —
+    /// the fields whose data comes from batch queries.
+    let onJoinFieldsChange: () -> Void
 
     var body: some View {
+        @Bindable var display = GridDisplaySettings.shared
         Form {
             Section("Thumbnail size") {
-                Slider(value: $grid.thumbnailSize, in: 120...400) {
+                Slider(value: $display.grid.thumbnailSize, in: 120...400) {
                     Text("Size")
                 } minimumValueLabel: {
                     Image(systemName: "square.grid.3x3")
                 } maximumValueLabel: {
                     Image(systemName: "square")
+                } onEditingChanged: { editing in
+                    // Live while dragging; settings.json only on settle.
+                    if !editing { display.persist() }
                 }
             }
             Section("Fields") {
-                Toggle("Filename", isOn: $grid.showsFileName)
-                Toggle("Path", isOn: $grid.showsPath)
-                Toggle("Tags", isOn: $grid.showsTags)
-                Toggle("Missing category tags", isOn: $grid.showsMissingCategories)
-                Toggle("Import date", isOn: $grid.showsImportDate)
-                Toggle("View count", isOn: $grid.showsViewCount)
-                Toggle("Duration", isOn: $grid.showsDuration)
-                Toggle("File size", isOn: $grid.showsFileSize)
-                Toggle("Dimensions", isOn: $grid.showsDimensions)
-                Toggle("Favorite", isOn: $grid.showsFavorite)
-                Toggle("Needs review", isOn: $grid.showsReviewed)
-                Toggle("Staged for deletion", isOn: $grid.showsDeleted)
-                Toggle("Pending duplicate", isOn: $grid.showsDuplicate)
-                Toggle("Clip", isOn: $grid.showsClip)
+                Toggle("Filename", isOn: $display.grid.showsFileName)
+                Toggle("Path", isOn: $display.grid.showsPath)
+                Toggle("Tags", isOn: $display.grid.showsTags)
+                Toggle("Missing category tags", isOn: $display.grid.showsMissingCategories)
+                Toggle("Import date", isOn: $display.grid.showsImportDate)
+                Toggle("View count", isOn: $display.grid.showsViewCount)
+                Toggle("Duration", isOn: $display.grid.showsDuration)
+                Toggle("File size", isOn: $display.grid.showsFileSize)
+                Toggle("Dimensions", isOn: $display.grid.showsDimensions)
+                Toggle("Favorite", isOn: $display.grid.showsFavorite)
+                Toggle("Needs review", isOn: $display.grid.showsReviewed)
+                Toggle("Staged for deletion", isOn: $display.grid.showsDeleted)
+                Toggle("Pending duplicate", isOn: $display.grid.showsDuplicate)
+                Toggle("Clip", isOn: $display.grid.showsClip)
             }
         }
         .formStyle(.grouped)
         .frame(width: 280, height: 520)
-        .onChange(of: grid) {
-            AppSettingsStore.shared.update { $0.grid = grid }
-            onChange()
+        .onChange(of: GridDisplaySettings.shared.grid) { old, new in
+            // Toggles persist immediately (cheap, discrete); the slider
+            // persists via onEditingChanged instead.
+            if old.thumbnailSize == new.thumbnailSize {
+                GridDisplaySettings.shared.persist()
+            }
+            if old.showsTags != new.showsTags
+                || old.showsMissingCategories != new.showsMissingCategories
+                || old.showsDuplicate != new.showsDuplicate {
+                onJoinFieldsChange()
+            }
         }
     }
 }

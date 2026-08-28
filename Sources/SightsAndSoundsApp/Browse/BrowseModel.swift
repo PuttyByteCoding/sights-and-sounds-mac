@@ -48,6 +48,10 @@ final class BrowseModel {
     private(set) var vocabulary: [CategoryTags] = []
     private(set) var sources: [Source] = []
     private(set) var pendingDuplicateCount = 0
+    /// Items per tag under the listing baseline (kind, enabled sources,
+    /// spent clips) — the sidebar's per-tag counts (#96). One grouped
+    /// query in refreshAll, never per row.
+    private(set) var tagItemCounts: [UUID: Int] = [:]
     private(set) var onlineSourceIDs: Set<UUID> = []
     var errorMessage: String? {
         didSet {
@@ -199,6 +203,25 @@ final class BrowseModel {
                         from: try library.folderCounts(kind: kind, sourceID: source.id))
                 }
                 let pending = try library.pendingCandidates().count
+                // One grouped query for every tag's item count (#96) —
+                // explicit closure type for the CI toolchain, sync read
+                // on this already-detached task.
+                let countRows: [Row] = try library.writer.read { db -> [Row] in
+                    try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT mediaItemTag.tagID AS tagID, COUNT(*) AS n \
+                        FROM mediaItemTag \
+                        JOIN mediaItem ON mediaItem.id = mediaItemTag.mediaItemID \
+                        WHERE mediaItem.kind = ? AND mediaItem.clipExported = 0 \
+                        AND EXISTS (SELECT 1 FROM source \
+                                    WHERE source.id = mediaItem.sourceID AND source.enabled) \
+                        GROUP BY mediaItemTag.tagID
+                        """,
+                        arguments: [kind.rawValue])
+                }
+                let tagCounts = Dictionary(
+                    uniqueKeysWithValues: countRows.map { ($0["tagID"] as UUID, $0["n"] as Int) })
                 await MainActor.run { [weak self] in
                     guard let self, self.refreshAllGeneration == generation else { return }
                     self.sources = sources
@@ -206,6 +229,7 @@ final class BrowseModel {
                     self.vocabulary = vocabulary
                     self.tagAliases = aliases
                     self.folderTrees = trees
+                    self.tagItemCounts = tagCounts
                     self.pendingDuplicateCount = pending
                     self.refreshItems()
                     if broadcast {
@@ -271,7 +295,7 @@ final class BrowseModel {
         refreshGeneration += 1
         let generation = refreshGeneration
         let library = library, filter = filter, kind = kind, ordering = ordering
-        let grid = AppSettingsStore.shared.current.grid
+        let grid = GridDisplaySettings.shared.grid
         Task.detached(priority: .userInitiated) { [weak self] in
             let outcome: Result<ListingPayload, Error>
             do {
