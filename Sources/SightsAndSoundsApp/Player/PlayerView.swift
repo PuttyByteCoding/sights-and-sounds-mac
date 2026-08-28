@@ -177,18 +177,33 @@ private struct PlayerContent: View {
     @State private var contentSize: CGSize = .zero
     @State private var chromeHeight: CGFloat = 0  // info bar + transport
 
-    private var tagPanelCeiling: CGFloat {
-        max(0, contentSize.width - Self.videoFloor - Self.handleThickness
-            - (showTextPanel ? 300 : 0))
+    // Convention: a panel beside the video is draggable, persisted, and
+    // clamped by the video floor — never fixed-width (#94). The two
+    // right-side panels resolve JOINTLY: when both together exceed the
+    // available width, both scale down proportionally rather than one
+    // pushing the video below its floor.
+    private var rightPanelWidths: (tag: CGFloat, text: CGFloat) {
+        let tagShown = model.showTagPanel, textShown = showTextPanel
+        var tag = tagShown ? CGFloat(layout.tagPanelWidth) : 0
+        var text = textShown ? CGFloat(layout.textPanelWidth) : 0
+        guard contentSize.width > 0 else { return (tag, text) }
+        let available = max(0, contentSize.width - Self.videoFloor
+            - (tagShown ? Self.handleThickness : 0)
+            - (textShown ? Self.handleThickness : 0))
+        let total = tag + text
+        if total > available, total > 0 {
+            let scale = available / total
+            tag = (tag * scale).rounded()
+            text = (text * scale).rounded()
+        }
+        return (tag, text)
     }
+
+    private var effectiveTagPanelWidth: CGFloat { rightPanelWidths.tag }
+    private var effectiveTextPanelWidth: CGFloat { rightPanelWidths.text }
 
     private var queueCeiling: CGFloat {
         max(0, contentSize.height - Self.videoFloor - chromeHeight - Self.handleThickness)
-    }
-
-    private var effectiveTagPanelWidth: CGFloat {
-        guard contentSize.width > 0 else { return CGFloat(layout.tagPanelWidth) }
-        return min(CGFloat(layout.tagPanelWidth), tagPanelCeiling)
     }
 
     private var effectiveQueueHeight: CGFloat {
@@ -201,8 +216,19 @@ private struct PlayerContent: View {
     private func dragTagPanel(_ translation: CGFloat) {
         let base = dragBase ?? effectiveTagPanelWidth
         dragBase = base
+        let ceiling = max(0, contentSize.width - Self.videoFloor
+            - Self.handleThickness - (showTextPanel ? effectiveTextPanelWidth + Self.handleThickness : 0))
         layout.tagPanelWidth = Double(
-            min(max(220, base - translation), max(220, tagPanelCeiling)).rounded())
+            min(max(220, base - translation), max(220, ceiling)).rounded())
+    }
+
+    private func dragTextPanel(_ translation: CGFloat) {
+        let base = dragBase ?? effectiveTextPanelWidth
+        dragBase = base
+        let ceiling = max(0, contentSize.width - Self.videoFloor
+            - Self.handleThickness - (model.showTagPanel ? effectiveTagPanelWidth + Self.handleThickness : 0))
+        layout.textPanelWidth = Double(
+            min(max(240, base - translation), max(240, ceiling)).rounded())
     }
 
     /// The smallest queue that shows a whole cell: minimum thumbnail
@@ -278,17 +304,33 @@ private struct PlayerContent: View {
                                 // Live Text rides the PAUSED frame only —
                                 // resume, seek or item switch tears it
                                 // down with the condition. The overlay
-                                // shares the surface's exact fitted rect.
+                                // shares the surface's exact fitted rect,
+                                // so it follows the anchor for free. A
+                                // plain click on EMPTY (non-text) area
+                                // resumes; text clicks and drags belong
+                                // to the selection (#93).
                                 .overlay {
                                     if !model.isPlaying, !model.isAudio {
                                         PausedFrameTextOverlay(
                                             fileURL: model.fileURL,
-                                            seconds: model.currentSeconds)
+                                            seconds: model.currentSeconds,
+                                            onEmptyClick: { model.play() })
                                     }
                                 }
+                                // The anchor setting (#92): placement
+                                // only — the fitted-size math is
+                                // untouched.
+                                .frame(
+                                    maxWidth: .infinity, maxHeight: .infinity,
+                                    alignment: AppSettingsStore.shared.current.videoAnchor.alignment)
                         }
                     }
                 }
+                // Click the video to pause/resume (#93) — same action as
+                // Space. While the Live Text overlay is up it consumes
+                // its own clicks (text/selection); only empty-area
+                // clicks reach back here via onEmptyClick.
+                .onTapGesture { model.togglePlayPause() }
                 VStack(spacing: 0) {
                     InfoBar()
                     TransportBar(queueShown: queueShown)
@@ -313,7 +355,9 @@ private struct PlayerContent: View {
                 TagPanelView(width: effectiveTagPanelWidth)
             }
             if showTextPanel {
-                OcrLinesPanel()
+                VerticalResizeHandle(
+                    onDrag: { dragTextPanel($0) }, onEnd: { endPanelDrag() })
+                OcrLinesPanel(width: effectiveTextPanelWidth)
             }
         }
         .onGeometryChange(for: CGSize.self, of: { $0.size }) { contentSize = $0 }
@@ -1070,5 +1114,21 @@ private struct QueueCell: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .lineLimit(1)
+    }
+}
+
+extension VideoAnchor {
+    /// The setting's placement as a SwiftUI alignment — the app-side
+    /// mapping for the kit-side enum.
+    var alignment: Alignment {
+        switch self {
+        case .topLeft: .topLeading
+        case .topCenter: .top
+        case .topRight: .topTrailing
+        case .bottomLeft: .bottomLeading
+        case .bottomCenter: .bottom
+        case .bottomRight: .bottomTrailing
+        case .center: .center
+        }
     }
 }

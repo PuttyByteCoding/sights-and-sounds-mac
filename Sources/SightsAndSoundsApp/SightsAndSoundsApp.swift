@@ -74,6 +74,9 @@ struct SightsAndSoundsApp: App {
             SettingsView()
                 .environment(model)
         }
+        // Minimums are a floor, not the size — without this the Settings
+        // window tracks its content's ideal size and can't be resized.
+        .windowResizability(.contentMinSize)
     }
 }
 
