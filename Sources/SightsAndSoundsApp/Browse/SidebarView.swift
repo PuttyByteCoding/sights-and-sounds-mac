@@ -70,7 +70,7 @@ struct SidebarView: View {
                     }
                 } header: {
                     HStack {
-                        Text(entry.category.name)
+                        Text("\(entry.category.name) (\(entry.tags.count))")
                         Spacer()
                         // A collapsed category must still signal live
                         // selections — a filter can't hide invisibly.
@@ -257,6 +257,14 @@ private struct TagFilterRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                // Items carrying the tag, under the listing baseline —
+                // zero renders dimmed, not hidden: "exists but unused
+                // for this kind" is exactly the information (#96).
+                let count = model.tagItemCounts[tag.id] ?? 0
+                Text("\(count)")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(count == 0 ? .tertiary : .secondary)
             }
         }
         .buttonStyle(.plain)

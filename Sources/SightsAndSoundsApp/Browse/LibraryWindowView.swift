@@ -132,7 +132,7 @@ struct BrowseView: View {
                     }
                     .help("Thumbnail size, and the fields under each thumbnail")
                     .popover(isPresented: $showViewOptions) {
-                        GridViewOptions(onChange: { model.refreshItems() })
+                        GridViewOptions(onJoinFieldsChange: { model.refreshItems() })
                     }
                 }
                 ToolbarItem {
