@@ -12,6 +12,7 @@ struct AuxWindowRequest: Codable, Hashable {
         case moveHistory
         case reorganize
         case validation
+        case importMedia
 
         var title: String {
             switch self {
@@ -20,6 +21,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .moveHistory: "Move History"
             case .reorganize: "Reorganize"
             case .validation: "Validation"
+            case .importMedia: "Import"
             }
         }
     }
@@ -86,6 +88,7 @@ struct AuxiliaryWindowView: View {
             case .moveHistory: MoveHistoryView()
             case .reorganize: ReorganizeView()
             case .validation: ValidationView()
+            case .importMedia: ImportView()
             }
         }
     }

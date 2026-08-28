@@ -142,6 +142,12 @@ struct BrowseView: View {
                     }
                 }
                 ToolbarItem {
+                    Button("Import", systemImage: "square.and.arrow.down") {
+                        openAux(.importMedia)
+                    }
+                    .help("Add source folders and scan them for new files")
+                }
+                ToolbarItem {
                     Button("Categories", systemImage: "tag.square") {
                         openAux(.categories)
                     }

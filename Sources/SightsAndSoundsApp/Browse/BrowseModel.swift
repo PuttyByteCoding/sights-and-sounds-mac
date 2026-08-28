@@ -383,13 +383,16 @@ final class BrowseModel {
 
     // MARK: - Sources & import
 
-    func addSource(at url: URL) {
+    @discardableResult
+    func addSource(at url: URL) -> Source? {
         do {
             let source = Source(name: url.lastPathComponent, rootPath: url.path)
             try library.writer.write { try source.insert($0) }
             refreshAll()
+            return source
         } catch {
             errorMessage = "\(error)"
+            return nil
         }
     }
 
