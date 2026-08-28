@@ -61,30 +61,35 @@ private struct ItemCell: View {
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
                 }
+                ThumbnailCornerOverlays(
+                    item: item, grid: grid,
+                    tagNames: model.itemTagNames[item.id],
+                    missingCategories: model.itemMissingCategories[item.id],
+                    isDuplicate: model.duplicateFlaggedIDs.contains(item.id))
                 overlayBadges
             }
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 6))
-            if grid.showsFileName {
+            if grid.fileName == .under {
                 Text(item.fileName)
                     .font(.callout)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            if grid.showsPath {
+            if grid.path == .under {
                 Text(item.relativePath)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            if grid.showsTags, let names = model.itemTagNames[item.id], !names.isEmpty {
+            if grid.tags == .under, let names = model.itemTagNames[item.id], !names.isEmpty {
                 Text(names.joined(separator: " · "))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            if grid.showsMissingCategories,
+            if grid.missingCategories == .under,
                let missing = model.itemMissingCategories[item.id], !missing.isEmpty {
                 Text("Missing: \(missing.joined(separator: ", "))")
                     .font(.caption2)
@@ -93,42 +98,42 @@ private struct ItemCell: View {
                     .help("Categories this item has no tag in yet")
             }
             HStack(spacing: 6) {
-                if grid.showsDuration, let duration = item.durationSeconds {
+                if grid.duration == .under, let duration = item.durationSeconds {
                     Text(Self.format(duration: duration))
                 }
-                if grid.showsFileSize {
+                if grid.fileSize == .under {
                     Text(Self.format(bytes: item.fileSize))
                 }
-                if grid.showsDimensions, let w = item.width, let h = item.height {
+                if grid.dimensions == .under, let w = item.width, let h = item.height {
                     Text("\(w)×\(h)")
                 }
-                if grid.showsImportDate {
+                if grid.importDate == .under {
                     Text(item.ingestDate.formatted(date: .abbreviated, time: .omitted))
                         .help("Import date")
                 }
-                if grid.showsViewCount, item.watchCount > 0 {
+                if grid.viewCount == .under, item.watchCount > 0 {
                     Text("▶ \(item.watchCount)")
                         .help("Watched \(item.watchCount)×")
                 }
                 Spacer()
-                if grid.showsFavorite, item.isFavorite {
+                if grid.favorite == .under, item.isFavorite {
                     Image(systemName: "star.fill").foregroundStyle(.yellow)
                 }
-                if grid.showsReviewed, item.needsReview {
+                if grid.reviewed == .under, item.needsReview {
                     Image(systemName: "eye.trianglebadge.exclamationmark")
                         .foregroundStyle(.orange)
                         .help("Needs review")
                 }
-                if grid.showsDeleted, item.markedForDeletion {
+                if grid.deleted == .under, item.markedForDeletion {
                     Image(systemName: "trash")
                         .foregroundStyle(.red)
                         .help("Staged for deletion")
                 }
-                if grid.showsClip, item.isClip {
+                if grid.clip == .under, item.isClip {
                     Image(systemName: "scissors")
                         .help(item.isExportedClip ? "Exported clip" : "Embedded clip")
                 }
-                if grid.showsDuplicate, model.duplicateFlaggedIDs.contains(item.id) {
+                if grid.duplicate == .under, model.duplicateFlaggedIDs.contains(item.id) {
                     Image(systemName: "rectangle.on.rectangle")
                         .foregroundStyle(.orange)
                         .help("In a pending duplicate pair")
@@ -310,21 +315,24 @@ struct GridViewOptions: View {
                     if !editing { display.persist() }
                 }
             }
-            Section("Fields") {
-                Toggle("Filename", isOn: $display.grid.showsFileName)
-                Toggle("Path", isOn: $display.grid.showsPath)
-                Toggle("Tags", isOn: $display.grid.showsTags)
-                Toggle("Missing category tags", isOn: $display.grid.showsMissingCategories)
-                Toggle("Import date", isOn: $display.grid.showsImportDate)
-                Toggle("View count", isOn: $display.grid.showsViewCount)
-                Toggle("Duration", isOn: $display.grid.showsDuration)
-                Toggle("File size", isOn: $display.grid.showsFileSize)
-                Toggle("Dimensions", isOn: $display.grid.showsDimensions)
-                Toggle("Favorite", isOn: $display.grid.showsFavorite)
-                Toggle("Needs review", isOn: $display.grid.showsReviewed)
-                Toggle("Staged for deletion", isOn: $display.grid.showsDeleted)
-                Toggle("Pending duplicate", isOn: $display.grid.showsDuplicate)
-                Toggle("Clip", isOn: $display.grid.showsClip)
+            Section("Fields — where each one shows") {
+                placementPicker("Filename", $display.grid.fileName)
+                placementPicker("Path", $display.grid.path)
+                placementPicker("Tags", $display.grid.tags)
+                placementPicker("Missing category tags", $display.grid.missingCategories)
+                placementPicker("Import date", $display.grid.importDate)
+                placementPicker("View count", $display.grid.viewCount)
+                placementPicker("Duration", $display.grid.duration)
+                placementPicker("File size", $display.grid.fileSize)
+                placementPicker("Dimensions", $display.grid.dimensions)
+                placementPicker("Favorite", $display.grid.favorite)
+                placementPicker("Needs review", $display.grid.reviewed)
+                placementPicker("Staged for deletion", $display.grid.deleted)
+                placementPicker("Pending duplicate", $display.grid.duplicate)
+                placementPicker("Clip", $display.grid.clip)
+                Text("Corner-placed info overlays the thumbnail on a dark backing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -335,11 +343,125 @@ struct GridViewOptions: View {
             if old.thumbnailSize == new.thumbnailSize {
                 GridDisplaySettings.shared.persist()
             }
-            if old.showsTags != new.showsTags
-                || old.showsMissingCategories != new.showsMissingCategories
-                || old.showsDuplicate != new.showsDuplicate {
+            if (old.tags == .hidden) != (new.tags == .hidden)
+                || (old.missingCategories == .hidden) != (new.missingCategories == .hidden)
+                || (old.duplicate == .hidden) != (new.duplicate == .hidden) {
                 onJoinFieldsChange()
             }
         }
+    }
+
+    private func placementPicker(
+        _ label: String, _ selection: Binding<FieldPlacement>
+    ) -> some View {
+        Picker(label, selection: selection) {
+            ForEach(FieldPlacement.allCases, id: \.self) { placement in
+                Text(placement.displayName).tag(placement)
+            }
+        }
+    }
+}
+
+/// The corner-overlaid metadata clusters (#99): each populated corner
+/// renders its fields on a dark translucent backing so text stays
+/// readable over any frame. Shared by grid cells and queue cells; the
+/// join-backed extras are optional — the queue omits them.
+struct ThumbnailCornerOverlays: View {
+    let item: MediaItem
+    let grid: GridSettings
+    var tagNames: [String]? = nil
+    var missingCategories: [String]? = nil
+    var isDuplicate = false
+
+    var body: some View {
+        corner(.topLeft, .topLeading)
+        corner(.topRight, .topTrailing)
+        corner(.bottomLeft, .bottomLeading)
+        corner(.bottomRight, .bottomTrailing)
+    }
+
+    @ViewBuilder
+    private func corner(_ placement: FieldPlacement, _ alignment: Alignment) -> some View {
+        let lines = texts(at: placement)
+        let icons = glyphs(at: placement)
+        if !lines.isEmpty || !icons.isEmpty {
+            VStack(
+                alignment: alignment.horizontal == .trailing ? .trailing : .leading,
+                spacing: 1
+            ) {
+                ForEach(lines, id: \.self) { line in
+                    Text(line).lineLimit(1).truncationMode(.middle)
+                }
+                if !icons.isEmpty {
+                    HStack(spacing: 3) {
+                        ForEach(icons, id: \.symbol) { icon in
+                            Image(systemName: icon.symbol).foregroundStyle(icon.color)
+                        }
+                    }
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 4))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+            .padding(4)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func texts(at placement: FieldPlacement) -> [String] {
+        var lines: [String] = []
+        if grid.fileName == placement { lines.append(item.fileName) }
+        if grid.path == placement { lines.append(item.relativePath) }
+        if grid.tags == placement, let tagNames, !tagNames.isEmpty {
+            lines.append(tagNames.joined(separator: " · "))
+        }
+        if grid.missingCategories == placement,
+           let missingCategories, !missingCategories.isEmpty {
+            lines.append("Missing: " + missingCategories.joined(separator: ", "))
+        }
+        if grid.duration == placement, let duration = item.durationSeconds {
+            lines.append(ItemCell.format(duration: duration))
+        }
+        if grid.fileSize == placement {
+            lines.append(ItemCell.format(bytes: item.fileSize))
+        }
+        if grid.dimensions == placement, let width = item.width, let height = item.height {
+            lines.append("\(width)×\(height)")
+        }
+        if grid.importDate == placement {
+            lines.append(item.ingestDate.formatted(date: .abbreviated, time: .omitted))
+        }
+        if grid.viewCount == placement, item.watchCount > 0 {
+            lines.append("▶ \(item.watchCount)")
+        }
+        return lines
+    }
+
+    private struct Glyph {
+        var symbol: String
+        var color: Color
+    }
+
+    private func glyphs(at placement: FieldPlacement) -> [Glyph] {
+        var icons: [Glyph] = []
+        if grid.favorite == placement, item.isFavorite {
+            icons.append(Glyph(symbol: "star.fill", color: .yellow))
+        }
+        if grid.reviewed == placement, item.needsReview {
+            icons.append(Glyph(symbol: "eye.trianglebadge.exclamationmark", color: .orange))
+        }
+        if grid.deleted == placement, item.markedForDeletion {
+            icons.append(Glyph(symbol: "trash", color: .red))
+        }
+        if grid.clip == placement, item.isClip {
+            icons.append(Glyph(symbol: "scissors", color: .white))
+        }
+        if grid.duplicate == placement, isDuplicate {
+            icons.append(Glyph(symbol: "rectangle.on.rectangle", color: .orange))
+        }
+        return icons
     }
 }

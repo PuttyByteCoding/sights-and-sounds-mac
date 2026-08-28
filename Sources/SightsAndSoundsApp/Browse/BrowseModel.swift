@@ -330,7 +330,7 @@ final class BrowseModel {
                             .map(\.category.name)
                     }
                 }
-                if grid.showsDuplicate {
+                if grid.duplicate != .hidden {
                     payload.duplicateIDs = Set(
                         try library.pendingCandidates().flatMap { [$0.itemAID, $0.itemBID] })
                 }
