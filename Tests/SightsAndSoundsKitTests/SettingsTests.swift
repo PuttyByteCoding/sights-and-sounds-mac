@@ -121,3 +121,35 @@ import Testing
         #expect(store.current.skip.key1Seconds == 9)
     }
 }
+
+/// #99: per-field placements, decoding the previous boolean format.
+@Suite struct FieldPlacementTests {
+
+    @Test func legacyBooleansMapToUnderAndHidden() throws {
+        let json = """
+        {"thumbnailSize": 250, "showsFileName": false, "showsDuration": true,
+         "showsPath": true, "showsDuplicate": false}
+        """
+        let grid = try JSONDecoder().decode(GridSettings.self, from: Data(json.utf8))
+        #expect(grid.thumbnailSize == 250)
+        #expect(grid.fileName == .hidden)   // explicit false
+        #expect(grid.duration == .under)    // explicit true
+        #expect(grid.path == .under)
+        #expect(grid.duplicate == .hidden)
+        #expect(grid.fileSize == .under)    // untouched keys keep defaults
+        #expect(grid.dimensions == .hidden)
+    }
+
+    @Test func placementsRoundTrip() throws {
+        var grid = GridSettings()
+        grid.fileName = .bottomLeft
+        grid.favorite = .topRight
+        grid.duration = .hidden
+        let data = try JSONEncoder().encode(grid)
+        let decoded = try JSONDecoder().decode(GridSettings.self, from: data)
+        #expect(decoded == grid)
+        #expect(decoded.needsTagData == false)
+        grid.missingCategories = .topLeft
+        #expect(grid.needsTagData)
+    }
+}

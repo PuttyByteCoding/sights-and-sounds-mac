@@ -136,64 +136,129 @@ public struct InfoBarSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// Where one thumbnail-metadata field renders (#99): not at all,
+/// under the thumbnail, or overlaid in a corner of it.
+public enum FieldPlacement: String, Codable, Sendable, CaseIterable {
+    case hidden, under, topLeft, topRight, bottomLeft, bottomRight
+
+    public var displayName: String {
+        switch self {
+        case .hidden: "Hidden"
+        case .under: "Under"
+        case .topLeft: "Top Left"
+        case .topRight: "Top Right"
+        case .bottomLeft: "Bottom Left"
+        case .bottomRight: "Bottom Right"
+        }
+    }
+
+    public var isCorner: Bool { self != .hidden && self != .under }
+}
+
 /// The browse grid's display configuration. Defaults reproduce the
-/// pre-configurable grid exactly: filename, duration, file size,
-/// favorite star, needs-review glyph, 200 pt cells.
+/// original grid: filename, duration, file size, favorite star and the
+/// needs-review glyph under the thumbnail, 200 pt cells. Decode maps
+/// the previous per-field BOOLEANS (showsFileName …) to under/hidden so
+/// nobody's configuration resets.
 public struct GridSettings: Codable, Equatable, Sendable {
     /// Adaptive column minimum, in points (the maximum tracks at 1.4x).
     public var thumbnailSize: Double
-    public var showsFileName: Bool
-    public var showsPath: Bool
-    public var showsTags: Bool
-    public var showsMissingCategories: Bool
-    public var showsImportDate: Bool
-    public var showsViewCount: Bool
-    public var showsDeleted: Bool
-    public var showsDuplicate: Bool
-    public var showsClip: Bool
-    public var showsDuration: Bool
-    public var showsFileSize: Bool
-    public var showsFavorite: Bool
-    public var showsDimensions: Bool
-    public var showsReviewed: Bool
+    public var fileName: FieldPlacement
+    public var path: FieldPlacement
+    public var tags: FieldPlacement
+    public var missingCategories: FieldPlacement
+    public var importDate: FieldPlacement
+    public var viewCount: FieldPlacement
+    public var deleted: FieldPlacement
+    public var duplicate: FieldPlacement
+    public var clip: FieldPlacement
+    public var duration: FieldPlacement
+    public var fileSize: FieldPlacement
+    public var favorite: FieldPlacement
+    public var dimensions: FieldPlacement
+    public var reviewed: FieldPlacement
 
     public init(
         thumbnailSize: Double = 200,
-        showsFileName: Bool = true,
-        showsPath: Bool = false,
-        showsTags: Bool = false,
-        showsMissingCategories: Bool = false,
-        showsImportDate: Bool = false,
-        showsViewCount: Bool = false,
-        showsDeleted: Bool = false,
-        showsDuplicate: Bool = false,
-        showsClip: Bool = false,
-        showsDuration: Bool = true,
-        showsFileSize: Bool = true,
-        showsFavorite: Bool = true,
-        showsDimensions: Bool = false,
-        showsReviewed: Bool = true
+        fileName: FieldPlacement = .under,
+        path: FieldPlacement = .hidden,
+        tags: FieldPlacement = .hidden,
+        missingCategories: FieldPlacement = .hidden,
+        importDate: FieldPlacement = .hidden,
+        viewCount: FieldPlacement = .hidden,
+        deleted: FieldPlacement = .hidden,
+        duplicate: FieldPlacement = .hidden,
+        clip: FieldPlacement = .hidden,
+        duration: FieldPlacement = .under,
+        fileSize: FieldPlacement = .under,
+        favorite: FieldPlacement = .under,
+        dimensions: FieldPlacement = .hidden,
+        reviewed: FieldPlacement = .under
     ) {
         self.thumbnailSize = thumbnailSize
-        self.showsFileName = showsFileName
-        self.showsPath = showsPath
-        self.showsTags = showsTags
-        self.showsMissingCategories = showsMissingCategories
-        self.showsImportDate = showsImportDate
-        self.showsViewCount = showsViewCount
-        self.showsDeleted = showsDeleted
-        self.showsDuplicate = showsDuplicate
-        self.showsClip = showsClip
-        self.showsDuration = showsDuration
-        self.showsFileSize = showsFileSize
-        self.showsFavorite = showsFavorite
-        self.showsDimensions = showsDimensions
-        self.showsReviewed = showsReviewed
+        self.fileName = fileName
+        self.path = path
+        self.tags = tags
+        self.missingCategories = missingCategories
+        self.importDate = importDate
+        self.viewCount = viewCount
+        self.deleted = deleted
+        self.duplicate = duplicate
+        self.clip = clip
+        self.duration = duration
+        self.fileSize = fileSize
+        self.favorite = favorite
+        self.dimensions = dimensions
+        self.reviewed = reviewed
     }
 
-    /// True when a field needing the per-item tag join is enabled — the
-    /// grid's batch queries run only then.
-    public var needsTagData: Bool { showsTags || showsMissingCategories }
+    private enum LegacyKeys: String, CodingKey {
+        case showsFileName, showsPath, showsTags, showsMissingCategories
+        case showsImportDate, showsViewCount, showsDeleted, showsDuplicate
+        case showsClip, showsDuration, showsFileSize, showsFavorite
+        case showsDimensions, showsReviewed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        let defaults = GridSettings()
+        thumbnailSize = try container.decodeIfPresent(Double.self, forKey: .thumbnailSize)
+            ?? defaults.thumbnailSize
+
+        func placement(
+            _ key: CodingKeys, _ legacyKey: LegacyKeys, _ fallback: FieldPlacement
+        ) -> FieldPlacement {
+            if let stored = (try? container.decodeIfPresent(FieldPlacement.self, forKey: key))
+                ?? nil {
+                return stored
+            }
+            if let old = (try? legacy.decodeIfPresent(Bool.self, forKey: legacyKey)) ?? nil {
+                return old ? .under : .hidden
+            }
+            return fallback
+        }
+
+        fileName = placement(.fileName, .showsFileName, defaults.fileName)
+        path = placement(.path, .showsPath, defaults.path)
+        tags = placement(.tags, .showsTags, defaults.tags)
+        missingCategories = placement(
+            .missingCategories, .showsMissingCategories, defaults.missingCategories)
+        importDate = placement(.importDate, .showsImportDate, defaults.importDate)
+        viewCount = placement(.viewCount, .showsViewCount, defaults.viewCount)
+        deleted = placement(.deleted, .showsDeleted, defaults.deleted)
+        duplicate = placement(.duplicate, .showsDuplicate, defaults.duplicate)
+        clip = placement(.clip, .showsClip, defaults.clip)
+        duration = placement(.duration, .showsDuration, defaults.duration)
+        fileSize = placement(.fileSize, .showsFileSize, defaults.fileSize)
+        favorite = placement(.favorite, .showsFavorite, defaults.favorite)
+        dimensions = placement(.dimensions, .showsDimensions, defaults.dimensions)
+        reviewed = placement(.reviewed, .showsReviewed, defaults.reviewed)
+    }
+
+    /// True when a field needing the per-item tag join is visible
+    /// anywhere — the grid's batch queries run only then.
+    public var needsTagData: Bool { tags != .hidden || missingCategories != .hidden }
 }
 
 /// The player's resizable-panel layout. Clamps live at the drag sites;

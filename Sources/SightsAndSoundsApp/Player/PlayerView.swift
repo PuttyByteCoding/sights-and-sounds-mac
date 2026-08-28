@@ -1013,16 +1013,16 @@ private struct QueueCell: View {
     /// height into thumbnail + this, so cells always fit whole.
     static func metadataHeight(for grid: GridSettings) -> CGFloat {
         var height: CGFloat = 0
-        if grid.showsFileName { height += 18 }
-        if grid.showsPath { height += 14 }
+        if grid.fileName == .under { height += 18 }
+        if grid.path == .under { height += 14 }
         if hasMetaRow(grid) { height += 16 }
         return height == 0 ? 0 : height + 4
     }
 
     private static func hasMetaRow(_ grid: GridSettings) -> Bool {
-        grid.showsDuration || grid.showsFileSize || grid.showsDimensions
-            || grid.showsImportDate || grid.showsViewCount || grid.showsFavorite
-            || grid.showsReviewed || grid.showsDeleted || grid.showsClip
+        [grid.duration, grid.fileSize, grid.dimensions, grid.importDate,
+         grid.viewCount, grid.favorite, grid.reviewed, grid.deleted, grid.clip]
+            .contains(.under)
     }
 
     private var cellWidth: CGFloat { thumbHeight * 16 / 9 }
@@ -1042,15 +1042,18 @@ private struct QueueCell: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .overlay {
+                ThumbnailCornerOverlays(item: item, grid: grid)
+            }
             .frame(width: cellWidth, height: thumbHeight)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-            if grid.showsFileName {
+            if grid.fileName == .under {
                 Text(item.fileName)
                     .font(.callout)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            if grid.showsPath {
+            if grid.path == .under {
                 Text(item.relativePath)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -1081,33 +1084,33 @@ private struct QueueCell: View {
 
     private var metaRow: some View {
         HStack(spacing: 6) {
-            if grid.showsDuration, let duration = item.durationSeconds {
+            if grid.duration == .under, let duration = item.durationSeconds {
                 Text(TransportBarTime.format(duration))
             }
-            if grid.showsFileSize {
+            if grid.fileSize == .under {
                 Text(ByteCountFormatter.string(fromByteCount: item.fileSize, countStyle: .file))
             }
-            if grid.showsDimensions, let width = item.width, let height = item.height {
+            if grid.dimensions == .under, let width = item.width, let height = item.height {
                 Text("\(width)×\(height)")
             }
-            if grid.showsImportDate {
+            if grid.importDate == .under {
                 Text(item.ingestDate.formatted(date: .abbreviated, time: .omitted))
             }
-            if grid.showsViewCount, item.watchCount > 0 {
+            if grid.viewCount == .under, item.watchCount > 0 {
                 Text("▶ \(item.watchCount)")
             }
             Spacer(minLength: 0)
-            if grid.showsFavorite, item.isFavorite {
+            if grid.favorite == .under, item.isFavorite {
                 Image(systemName: "star.fill").foregroundStyle(.yellow)
             }
-            if grid.showsReviewed, item.needsReview {
+            if grid.reviewed == .under, item.needsReview {
                 Image(systemName: "eye.trianglebadge.exclamationmark")
                     .foregroundStyle(.orange)
             }
-            if grid.showsDeleted, item.markedForDeletion {
+            if grid.deleted == .under, item.markedForDeletion {
                 Image(systemName: "trash").foregroundStyle(.red)
             }
-            if grid.showsClip, item.isClip {
+            if grid.clip == .under, item.isClip {
                 Image(systemName: "scissors")
             }
         }
