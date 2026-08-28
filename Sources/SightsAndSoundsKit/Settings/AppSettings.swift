@@ -35,6 +35,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// launches; the video is the flexible center and shrinks to fit.
     public var playerLayout: PlayerLayoutSettings
 
+    /// Where the fitted video sits inside the player area.
+    public var videoAnchor: VideoAnchor
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -57,6 +60,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         infoBar: InfoBarSettings = InfoBarSettings(),
         grid: GridSettings = GridSettings(),
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
+        videoAnchor: VideoAnchor = .topLeft,
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600
     ) {
@@ -71,6 +75,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.infoBar = infoBar
         self.grid = grid
         self.playerLayout = playerLayout
+        self.videoAnchor = videoAnchor
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
     }
@@ -96,6 +101,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.grid
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
+        videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)
+            ?? defaults.videoAnchor
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
@@ -194,18 +201,58 @@ public struct GridSettings: Codable, Equatable, Sendable {
 public struct PlayerLayoutSettings: Codable, Equatable, Sendable {
     /// Tag panel width, points.
     public var tagPanelWidth: Double
+    /// On-Screen Text panel width, points.
+    public var textPanelWidth: Double
     /// Play-queue strip height, points — also the thumbnail scale.
     public var queueHeight: Double
     public var showsQueue: Bool
 
     public init(
         tagPanelWidth: Double = 300,
+        textPanelWidth: Double = 300,
         queueHeight: Double = 120,
         showsQueue: Bool = true
     ) {
         self.tagPanelWidth = tagPanelWidth
+        self.textPanelWidth = textPanelWidth
         self.queueHeight = queueHeight
         self.showsQueue = showsQueue
+    }
+
+    /// Per-key tolerant, like AppSettings itself — a stored layout from
+    /// before a field existed must not throw the whole file back to
+    /// defaults.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PlayerLayoutSettings()
+        tagPanelWidth = try container.decodeIfPresent(Double.self, forKey: .tagPanelWidth)
+            ?? defaults.tagPanelWidth
+        textPanelWidth = try container.decodeIfPresent(Double.self, forKey: .textPanelWidth)
+            ?? defaults.textPanelWidth
+        queueHeight = try container.decodeIfPresent(Double.self, forKey: .queueHeight)
+            ?? defaults.queueHeight
+        showsQueue = try container.decodeIfPresent(Bool.self, forKey: .showsQueue)
+            ?? defaults.showsQueue
+    }
+}
+
+/// The seven anchor positions for the fitted video (#92). Raw strings —
+/// settings.json stays hand-editable.
+public enum VideoAnchor: String, Codable, Sendable, CaseIterable {
+    case topLeft, topCenter, topRight
+    case bottomLeft, bottomCenter, bottomRight
+    case center
+
+    public var displayName: String {
+        switch self {
+        case .topLeft: "Top Left"
+        case .topCenter: "Top Center"
+        case .topRight: "Top Right"
+        case .bottomLeft: "Bottom Left"
+        case .bottomCenter: "Bottom Center"
+        case .bottomRight: "Bottom Right"
+        case .center: "Centered"
+        }
     }
 }
 

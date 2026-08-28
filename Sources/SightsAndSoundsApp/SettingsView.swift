@@ -173,6 +173,7 @@ private struct PlaybackSettingsPane: View {
     @State private var startVideosMuted = AppSettingsStore.shared.current.startVideosMuted
     @State private var loopVideos = AppSettingsStore.shared.current.loopVideos
     @State private var infoBar = AppSettingsStore.shared.current.infoBar
+    @State private var videoAnchor = AppSettingsStore.shared.current.videoAnchor
 
     var body: some View {
         Form {
@@ -180,6 +181,16 @@ private struct PlaybackSettingsPane: View {
             Section("Sound") {
                 Toggle("Start videos muted", isOn: $startVideosMuted)
                 Text("Audio items are never muted. Applies to the next item you play; M or the speaker button unmutes during playback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Video position") {
+                Picker("Anchor", selection: $videoAnchor) {
+                    ForEach(VideoAnchor.allCases, id: \.self) { anchor in
+                        Text(anchor.displayName).tag(anchor)
+                    }
+                }
+                Text("Where the video sits when it doesn't fill the player area. Applies immediately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -226,6 +237,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: infoBar) {
             AppSettingsStore.shared.update { $0.infoBar = infoBar }
+        }
+        .onChange(of: videoAnchor) {
+            AppSettingsStore.shared.update { $0.videoAnchor = videoAnchor }
         }
     }
 
