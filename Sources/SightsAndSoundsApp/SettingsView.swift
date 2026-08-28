@@ -24,9 +24,31 @@ struct SettingsView: View {
                 .tabItem { Label("Library Import", systemImage: "square.and.arrow.down.on.square") }
         }
         // A minimum, not a fixed width — the Settings window resizes
-        // like any other (#73); grouped forms stretch sanely.
-        .frame(minWidth: 560, minHeight: 420)
+        // like any other (#73). The infinity maximums matter: the
+        // Settings scene sizes its window to the content's ideal size,
+        // and rigid content leaves nothing to grow into (#101).
+        .frame(minWidth: 560, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
         .padding(.bottom, 8)
+        .background(SettingsWindowConfigurator())
+    }
+}
+
+/// The Settings scene doesn't reliably honor `windowResizability` —
+/// AppKit can leave `.resizable` out of the panel's style mask even
+/// with flexible content (#101). This reaches the hosting NSWindow
+/// once attached, forces the resizable bit, and names a frame
+/// autosave so the chosen size and position persist across opens.
+private struct SettingsWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { AttachView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class AttachView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            window.styleMask.insert(.resizable)
+            window.setFrameAutosaveName("SASSettingsWindow")
+        }
     }
 }
 
