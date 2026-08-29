@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button{font-family:inherit}
+  input:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:900px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Library Properties</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Get Info for a library — facts on one tab, the settings only this library can own on the other.</div>
+  </div>
+
+  <div style="width:900px;height:786px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">{{ libName }}</div>
+    </div>
+
+    <div style="flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;justify-content:center;gap:2px;padding:8px 12px">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+        <div onClick="{{ t.click }}" style="{{ t.style }}">
+          <span style="{{ t.iconStyle }}">{{ t.icon }}</span>
+          <span style="{{ t.labelStyle }}">{{ t.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;min-height:0">
+
+      <sc-if value="{{ isInfo }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:20px 24px 26px;display:flex;flex-direction:column;gap:22px">
+          <sc-for list="{{ infoSections }}" as="sc" hint-placeholder-count="4">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:9px">{{ sc.title }}</div>
+              <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden;background:#151209">
+                <sc-for list="{{ sc.rows }}" as="rw" hint-placeholder-count="4">
+                  <div style="{{ rw.rowStyle }}">
+                    <span style="flex:1;min-width:0;font-size:12.5px;color:#A79E90">{{ rw.label }}</span>
+                    <div style="{{ rw.barTrackStyle }}">
+                      <div style="{{ rw.barStyle }}"></div>
+                    </div>
+                    <span style="{{ rw.valStyle }}">{{ rw.value }}</span>
+                    <div style="display:flex;justify-content:flex-end;min-width:0">
+                      <sc-if value="{{ rw.hasAction }}" hint-placeholder-val="{{ false }}">
+                        <button onClick="{{ rw.action }}" style="white-space:nowrap;background:transparent;border:1px solid #332D24;border-radius:5px;padding:3px 10px;font-size:11px;color:#8C8478;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">{{ rw.actionLabel }}</button>
+                      </sc-if>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ sc.hasNote }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:11.5px;color:#6E6659;margin-top:7px;line-height:1.45;text-wrap:pretty">{{ sc.note }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isConfig }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:20px 24px 26px;display:flex;flex-direction:column;gap:24px">
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">NAME</div>
+            <div style="display:flex;gap:9px">
+              <input value="{{ draftName }}" onChange="{{ onName }}" style="flex:1;min-width:0;background:#0F0C07;border:1px solid #332D24;border-radius:7px;padding:8px 11px;color:#F2EDE4;font-size:13.5px" style-focus="border-color:#7A6A4A" />
+              <button onClick="{{ rename }}" style="{{ renameStyle }}">Rename</button>
+            </div>
+            <div style="font-size:11.5px;color:#6E6659;margin-top:7px;line-height:1.45;text-wrap:pretty">The file on disk keeps its current name — this is the label shown in the library picker and window titles.</div>
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">SEPARATOR CHARACTERS</div>
+            <div style="font-size:12px;color:#8C8478;margin-bottom:9px;line-height:1.5;text-wrap:pretty">Converted to spaces before a category's name formatting runs, and used when mining tags out of file names. One set for the whole library — a category chooses whether to apply it, never which characters.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+              <sc-for list="{{ sepChips }}" as="sp" hint-placeholder-count="3">
+                <button onClick="{{ sp.remove }}" style="{{ sp.style }}">{{ sp.label }}<span style="opacity:0.5;margin-left:7px">×</span></button>
+              </sc-for>
+              <input value="{{ sepDraft }}" onChange="{{ onSepDraft }}" onKeyDown="{{ onSepKey }}" placeholder="+ add" style="width:74px;background:transparent;border:1px dashed #3A3328;border-radius:6px;padding:5px 10px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:12px" style-focus="border-color:#7A6A4A;border-style:solid" />
+            </div>
+            <div style="margin-top:11px;padding:11px 12px;border:1px solid #2A251E;border-radius:8px;background:#151209">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#5E5749">PREVIEW</div>
+                <div style="flex:1"></div>
+                <sc-if value="{{ sepCustom }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ resetSample }}" style="background:none;border:none;padding:0;font-size:11px;color:#8C8478;cursor:pointer" style-hover="color:#E9A23B">Use the example</button>
+                </sc-if>
+              </div>
+              <input value="{{ sepSample }}" onChange="{{ onSepSample }}" placeholder="Type a file name to test" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:7px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:12px" style-focus="border-color:#7A6A4A" />
+              <div style="display:flex;align-items:baseline;gap:9px;margin-top:9px">
+                <span style="flex:none;font-size:14px;color:#4A4238">→</span>
+                <span style="{{ sepResultStyle }}">{{ sepPreview }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">FILE EXTENSIONS</div>
+            <div style="font-size:12px;color:#8C8478;margin-bottom:11px;line-height:1.5;text-wrap:pretty">What the importer treats as media in this library. Inherited from Settings unless this library overrides them — an override replaces the app-wide list rather than adding to it.</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <sc-for list="{{ extGroups }}" as="eg" hint-placeholder-count="2">
+                <div style="border:1px solid #2A251E;border-radius:9px;background:#151209;padding:12px 13px">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+                    <span style="font-size:12.5px;font-weight:600">{{ eg.title }}</span>
+                    <div style="flex:1"></div>
+                    <span style="{{ eg.stateStyle }}">{{ eg.state }}</span>
+                    <button onClick="{{ eg.toggle }}" style="{{ eg.btnStyle }}">{{ eg.btnLabel }}</button>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+                    <sc-for list="{{ eg.chips }}" as="ec" hint-placeholder-count="6">
+                      <button onClick="{{ ec.remove }}" style="{{ ec.style }}">{{ ec.label }}<span style="{{ ec.xStyle }}">×</span></button>
+                    </sc-for>
+                    <sc-if value="{{ eg.overridden }}" hint-placeholder-val="{{ false }}">
+                      <input value="{{ eg.draft }}" onChange="{{ eg.onDraft }}" onKeyDown="{{ eg.onKey }}" placeholder="+ add" style="width:70px;background:transparent;border:1px dashed #3A3328;border-radius:5px;padding:3px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:11px" style-focus="border-color:#7A6A4A;border-style:solid" />
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ eg.changed }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:11px;color:#C9884A;margin-top:9px;line-height:1.45;text-wrap:pretty">{{ eg.changedNote }}</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:9px">EDITED ELSEWHERE</div>
+            <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden;background:#151209">
+              <sc-for list="{{ jumpOffs }}" as="jo" hint-placeholder-count="3">
+                <div onClick="{{ jo.click }}" style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-bottom:1px solid #1F1B15;cursor:pointer" style-hover="background:#1B1710">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12.5px">{{ jo.label }}</div>
+                    <div style="font-size:11px;color:#6E6659;margin-top:2px">{{ jo.detail }}</div>
+                  </div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8478">{{ jo.value }}</span>
+                  <span style="color:#4A4238;font-size:12px">›</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:900px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:270px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:980,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  state = {
+    tab:'info', name:'Concerts', draftName:'Concerts',
+    seps:['-','.','_'], sepDraft:'', sepSample:null,
+    videoOverride:false, audioOverride:false,
+    videoExt:['mp4','mkv','mov','avi','webm','m4v'],
+    audioExt:['flac','wav','m4a','mp3','aiff'],
+    drafts:{video:'',audio:''}, toast:null
+  };
+
+  appVideo(){ return ['mp4','mkv','mov','avi','webm','m4v']; }
+  appAudio(){ return ['flac','wav','m4a','mp3','aiff']; }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2200); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  renderVals(){
+    const st=this.state, self=this;
+    // Coverage rows share one column grid — a fixed track and a fixed value
+    // width — so the bars line up whether or not a row has one.
+    // Every row is a grid so the value and action columns are fixed from the
+    // right — a row with a button no longer drags the columns above it left.
+    // Bar-bearing sections add a track column; a display:none track leaves
+    // the grid entirely, so the other sections stay three-column.
+    const ROW='display:grid;align-items:center;gap:12px;padding:9px 13px;border-bottom:1px solid #1F1B15;grid-template-columns:';
+    const TRACK='width:120px;height:5px;border-radius:3px;background:#241F19;overflow:hidden';
+    const COVVAL="font-family:'JetBrains Mono',monospace;font-size:12px;color:#CFC6B8;text-align:right;white-space:nowrap";
+    const COVROW=ROW+'minmax(0,1fr) 120px 112px 76px';
+    const bar=(n,total,color)=>({barTrackStyle:TRACK,valStyle:COVVAL,rowStyle:COVROW,
+      barStyle:'height:100%;width:'+Math.round(n/total*100)+'%;background:'+(color||'#6FB86F')});
+    const noBar=()=>({barTrackStyle:'width:120px',barStyle:'display:none',valStyle:COVVAL,rowStyle:COVROW});
+    const row=(label,value,extra)=>Object.assign({label,value,
+      hasAction:false,barTrackStyle:'display:none',barStyle:'display:none',
+      rowStyle:ROW+'minmax(0,1fr) minmax(0,auto) 76px',
+      valStyle:"font-family:'JetBrains Mono',monospace;font-size:12px;color:#CFC6B8;text-align:right;white-space:nowrap"},extra||{});
+
+    const infoSections=[
+      {title:'IDENTITY',rows:[
+        row('Name',st.name),
+        row('Library ID','9F2C4A1E-88D3-4B77-9E02-5A61C7F3D0B4',{valStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8478;text-align:right"}),
+        row('Created','24 August 2026 at 09:14'),
+        row('File','~/Library/Application Support/Sights and Sounds/Concerts.sasl',
+          {valStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8478;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+           hasAction:true,actionLabel:'Reveal',action:()=>self.flash('Reveals the library file in the Finder')}),
+        row('Database size','48.2 MB'),
+        row('Schema migrations applied','14')]},
+      {title:'CONTENTS',rows:[
+        row('Video items','9,412'),
+        row('Audio items','435'),
+        row('Segments','1,284 songs · 306 clips'),
+        row('Media on disk','41.7 TB'),
+        row('Concerts SSD','6,204 items',{valStyle:"font-family:'JetBrains Mono',monospace;font-size:12px;color:#8FCF8F;text-align:right"}),
+        row('Road Drive','2,891 items · offline',{valStyle:"font-family:'JetBrains Mono',monospace;font-size:12px;color:#D9924A;text-align:right"}),
+        row('Archive NAS','752 items',{valStyle:"font-family:'JetBrains Mono',monospace;font-size:12px;color:#8FCF8F;text-align:right"})]},
+      {title:'COVERAGE',hasNote:true,
+       note:'All of it recomputes from disk. A gap here is work the background jobs have not reached yet, not damage.',
+       rows:[
+        row('Content hashes','9,120 / 9,847',bar(9120,9847)),
+        row('Thumbnails on disk','9,533 · 14 failed',bar(9533,9847)),
+        row('Audio fingerprints','8,904 / 9,847',bar(8904,9847)),
+        row('Items with scanned text','2,140',bar(2140,9847,'#6B96D6')),
+        row('Pending duplicate pairs','37',Object.assign(noBar(),{valStyle:COVVAL.replace('#CFC6B8','#C58BB8'),
+          hasAction:true,actionLabel:'Review',action:()=>self.flash('Opens the Review window')}))]},
+      {title:'HISTORY',rows:[
+        row('Last opened','Today at 08:52'),
+        row('Last backup','27 August 2026',{hasAction:true,actionLabel:'Back up now',action:()=>self.flash('Backing up the library file…')}),
+        row('Operations logged','1,206',{hasAction:true,actionLabel:'Open log',action:()=>self.flash('Opens the operation log')})]}
+    ];
+
+    const EXAMPLE='dave-matthews.band_live_2024-06-14';
+    const sample=st.sepSample==null?EXAMPLE:st.sepSample;
+    const applied=(()=>{ let s=sample; st.seps.forEach(c=>{ s=s.split(c).join(' '); }); return s.replace(/\s+/g,' ').trim(); })();
+
+    const extGroup=(key,title,list,appList,overridden)=>{
+      const changed=overridden&&list.join(',')!==appList.join(',');
+      return {title, overridden, changed,
+        state: overridden?'this library':'from Settings',
+        stateStyle:'font-size:10.5px;padding:2px 8px;border-radius:4px;'+(overridden?'background:#3A2E16;color:#E9A23B':'background:#241F19;color:#7C7466'),
+        btnLabel: overridden?'Use app defaults':'Override here',
+        btnStyle:'flex:none;border-radius:6px;padding:4px 11px;font-size:11.5px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#A79E90',
+        toggle:()=>{
+          if(overridden) self.setState({[key+'Override']:false,[key+'Ext']:appList.slice()});
+          else self.setState({[key+'Override']:true});
+        },
+        chips:list.map(e=>({label:e,
+          style:'display:inline-flex;align-items:center;border-radius:999px;padding:3px 10px;font-family:\'JetBrains Mono\',monospace;font-size:11px;'+
+            (overridden?'cursor:pointer;background:#221D16;color:#CFC6B8;border:1px solid #332D24':'cursor:default;background:#191610;color:#7C7466;border:1px solid #241F19'),
+          xStyle:'margin-left:7px;opacity:0.55;'+(overridden?'':'display:none'),
+          remove:()=>{ if(!overridden) return;
+            self.setState(s=>({[key+'Ext']:s[key+'Ext'].filter(x=>x!==e)})); }})),
+        draft: st.drafts[key],
+        onDraft:ev=>{const v=ev.target.value;self.setState(s=>({drafts:Object.assign({},s.drafts,{[key]:v})}));},
+        onKey:ev=>{ if(ev.key!=='Enter') return; ev.preventDefault();
+          const v=(st.drafts[key]||'').trim().replace(/^\./,'').toLowerCase();
+          if(!v) return;
+          self.setState(s=>({[key+'Ext']:s[key+'Ext'].indexOf(v)<0?s[key+'Ext'].concat([v]):s[key+'Ext'],
+            drafts:Object.assign({},s.drafts,{[key]:''})}));
+        },
+        changedNote:'Differs from the app-wide list. Existing items are untouched — this changes what the next scan picks up.'};
+    };
+
+    return {
+      libName: st.name,
+      tabs:[['info','Info','ⓘ'],['config','Configuration','⚙']].map(([v,label,icon])=>{
+        const on=st.tab===v;
+        return {label,icon,
+          iconStyle:'font-size:15px;line-height:1;color:'+(on?'#E9A23B':'#6E6659'),
+          labelStyle:'font-size:10.5px;white-space:nowrap;color:'+(on?'#F2EDE4':'#8C8478'),
+          style:'display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 20px;border-radius:7px;cursor:pointer;'+(on?'background:#2A2118':''),
+          click:()=>self.setState({tab:v})};
+      }),
+      isInfo: st.tab==='info', isConfig: st.tab==='config',
+      infoSections,
+
+      draftName: st.draftName,
+      onName:e=>self.setState({draftName:e.target.value}),
+      renameStyle:'flex:none;border:none;border-radius:7px;padding:8px 16px;font-size:12.5px;font-weight:600;'+
+        ((st.draftName.trim()&&st.draftName!==st.name)?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      rename:()=>{ const v=st.draftName.trim();
+        if(!v||v===st.name) return;
+        self.setState({name:v}); self.flash('Renamed to “'+v+'”'); },
+
+      sepChips: st.seps.map(c=>({label:c,
+        style:'display:inline-flex;align-items:center;border-radius:6px;padding:5px 11px;font-family:\'JetBrains Mono\',monospace;font-size:13px;cursor:pointer;background:#221D16;color:#E9A23B;border:1px solid #4A3C24',
+        remove:()=>self.setState(s=>({seps:s.seps.filter(x=>x!==c)}))})),
+      sepDraft: st.sepDraft,
+      onSepDraft:e=>self.setState({sepDraft:e.target.value}),
+      onSepKey:e=>{ if(e.key!=='Enter') return; e.preventDefault();
+        const v=st.sepDraft.trim().slice(0,1);
+        if(!v) return;
+        self.setState(s=>({seps:s.seps.indexOf(v)<0?s.seps.concat([v]):s.seps,sepDraft:''})); },
+      sepSample: sample,
+      sepCustom: st.sepSample!=null&&st.sepSample!==EXAMPLE,
+      onSepSample:e=>self.setState({sepSample:e.target.value}),
+      resetSample:()=>self.setState({sepSample:null}),
+      sepPreview: !sample.trim()
+        ? 'Type something above to see how it is read.'
+        : st.seps.length
+          ? applied
+          : sample+'   (no separators set — read exactly as written)',
+      sepResultStyle:"font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;word-break:break-word;color:"+
+        (!sample.trim()?'#5E5749':st.seps.length&&applied!==sample?'#E9A23B':'#8C8478'),
+
+      extGroups:[
+        extGroup('video','Video',st.videoExt,self.appVideo(),st.videoOverride),
+        extGroup('audio','Audio',st.audioExt,self.appAudio(),st.audioOverride)
+      ],
+
+      jumpOffs:[
+        {label:'Tag categories, tags and fields',detail:'Categories & Fields',value:'6 · 693 · 7',
+         click:()=>self.flash('Opens Categories & Fields')},
+        {label:'Sources and their folders',detail:'Import window',value:'3 sources',
+         click:()=>self.flash('Opens the Import window')},
+        {label:'Repair recipes and external tools',detail:'Settings · Repair — app-wide',value:'7 recipes',
+         click:()=>self.flash('Opens Settings · Repair')}
+      ],
+
+      toast: st.toast,
+
+      notes:[
+        {title:'FACTS AND SETTINGS, KEPT APART',body:'The Info tab is Get Info — read-only counts, coverage and jump-offs. Configuration holds only what this library alone can own. The original view was facts-only because nothing was per-library yet; separators and extension overrides are, and app Settings cannot hold a per-library value.'},
+        {title:'AN OVERRIDE REPLACES, NEVER EXTENDS',body:'Extensions inherit from Settings until this library overrides them, and then the app-wide list stops applying entirely. Shown as a state on the group rather than a checkbox per extension, so which list is in force is never ambiguous.'},
+        {title:'ONE SEPARATOR SET PER LIBRARY',body:'A category chooses whether to apply separators, never which characters they are — you would never want a hyphen to split Band names but not Venue names. The preview takes a real file name of your own, because the character that matters is usually one you have in the wild and did not think to add.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

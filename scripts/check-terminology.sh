@@ -61,10 +61,15 @@ CREATE[[:space:]]+TABLE[[:space:]]+videos\b'
 
 # This script and the reference docs name every banned term by design;
 # exclude them from their own scan.
+# The design handoff's index states the rule itself ("never TagGroup or
+# Property"), so it names a banned term for the same reason the ledger
+# does. Only the index — the sixteen specs stay under the guard, where a
+# real slip would be caught.
 filter_own() {
   grep -v '/check-terminology\.sh:' \
     | grep -v '/terminology\.md:' \
-    | grep -v '/replatform-brief\.'
+    | grep -v '/replatform-brief\.' \
+    | grep -v '/docs/design/README\.md:'
 }
 
 fail=0

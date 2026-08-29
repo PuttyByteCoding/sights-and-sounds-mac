@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button,textarea{font-family:inherit}
+  input:focus,textarea:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1280px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">New Library</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">One review screen, two ways in — a fresh library from a template, or the web app's snapshot carried over. Nothing is written until the last step.</div>
+  </div>
+
+  <div style="width:1280px;height:884px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">{{ windowTitle }}</div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:250px;flex:none;background:#17130E;border-right:1px solid #2A251E;display:flex;flex-direction:column;padding:16px 14px">
+        <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px;margin-bottom:18px">
+          <sc-for list="{{ modeTabs }}" as="mt" hint-placeholder-count="2">
+            <button onClick="{{ mt.pick }}" style="{{ mt.style }}">{{ mt.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
+            <div onClick="{{ s.pick }}" style="{{ s.rowStyle }}">
+              <span style="{{ s.numStyle }}">{{ s.num }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="{{ s.titleStyle }}">{{ s.title }}</div>
+                <div style="font-size:11px;color:#5E5749;margin-top:2px;line-height:1.4">{{ s.sub }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:1"></div>
+        <div style="border-top:1px solid #241F19;padding-top:12px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">WILL CREATE</div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <sc-for list="{{ summary }}" as="sm" hint-placeholder-count="3">
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B;min-width:38px;text-align:right">{{ sm.n }}</span>
+                <span style="font-size:11.5px;color:#8C8478">{{ sm.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+        <sc-if value="{{ isStep0 }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;overflow-y:auto;padding:26px 30px">
+            <div style="max-width:560px">
+              <div style="font-size:19px;font-weight:700;margin-bottom:6px">{{ step0Title }}</div>
+              <div style="font-size:13px;color:#8C8478;line-height:1.55;margin-bottom:22px;text-wrap:pretty">{{ step0Blurb }}</div>
+
+              <div style="margin-bottom:18px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">LIBRARY NAME</div>
+                <input value="{{ name }}" onChange="{{ onName }}" placeholder="Concerts" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:7px;padding:9px 11px;color:#F2EDE4;font-size:14px" style-focus="border-color:#7A6A4A" />
+              </div>
+
+              <div style="margin-bottom:18px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">LOCATION</div>
+                <div style="display:flex;gap:8px">
+                  <div style="flex:1;min-width:0;background:#0F0C07;border:1px solid #332D24;border-radius:7px;padding:9px 11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A79E90;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ location }}</div>
+                  <button onClick="{{ chooseLocation }}" style="flex:none;background:transparent;border:1px solid #3A3328;border-radius:7px;padding:9px 14px;font-size:12.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Choose…</button>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5E5749;margin-top:7px">{{ fileName }}</div>
+              </div>
+
+              <sc-if value="{{ isMigrate }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-bottom:4px">
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">SNAPSHOT</div>
+                  <div style="display:flex;gap:8px">
+                    <div style="flex:1;min-width:0;background:#0F0C07;border:1px solid #332D24;border-radius:7px;padding:9px 11px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A79E90;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ snapshotPath }}</div>
+                    <button onClick="{{ chooseSnapshot }}" style="flex:none;background:transparent;border:1px solid #3A3328;border-radius:7px;padding:9px 14px;font-size:12.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Choose…</button>
+                  </div>
+                  <div style="display:flex;gap:16px;margin-top:9px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659">
+                    <span>v8 · 19 tables</span><span>9,847 media items</span><span>693 tags</span><span>exported 2026-08-24</span>
+                  </div>
+                  <div style="font-size:12px;color:#8C8478;margin-top:12px;line-height:1.5;text-wrap:pretty">The snapshot has no concept of a library — this step invents the one that was always implicit, which is why you name it before seeing the vocabulary.</div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isStep1 }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;overflow-y:auto;padding:26px 30px">
+            <div style="font-size:19px;font-weight:700;margin-bottom:6px">{{ step1Title }}</div>
+            <div style="font-size:13px;color:#8C8478;line-height:1.55;margin-bottom:20px;max-width:640px;text-wrap:pretty">{{ step1Blurb }}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:760px">
+              <sc-for list="{{ templates }}" as="tp" hint-placeholder-count="4">
+                <div onClick="{{ tp.pick }}" style="{{ tp.style }}">
+                  <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
+                    <span style="{{ tp.dotStyle }}"></span>
+                    <span style="font-size:14px;font-weight:600">{{ tp.name }}</span>
+                    <div style="flex:1"></div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ tp.count }}</span>
+                  </div>
+                  <div style="font-size:12.5px;color:#8C8478;line-height:1.5;text-wrap:pretty">{{ tp.summary }}</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:9px">
+                    <sc-for list="{{ tp.chips }}" as="ch" hint-placeholder-count="3">
+                      <span style="{{ ch.style }}">{{ ch.label }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isStep2 }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+            <div style="flex:none;padding:22px 30px 14px">
+              <div style="font-size:19px;font-weight:700;margin-bottom:6px">Review the vocabulary</div>
+              <div style="font-size:13px;color:#8C8478;line-height:1.55;max-width:660px;text-wrap:pretty">{{ step2Blurb }}</div>
+              <div style="font-size:12px;color:#6E6659;margin-top:7px">Categories appear in the tag editor in this order — the first one takes the cursor.</div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:0 30px 20px">
+              <sc-for list="{{ planRows }}" as="pc" hint-placeholder-count="5">
+                <div onDragOver="{{ pc.dragOver }}" onDrop="{{ pc.drop }}" style="{{ pc.cardStyle }}">
+                  <div style="display:flex;align-items:flex-start;gap:11px">
+                    <span draggable="true" onDragStart="{{ pc.dragStart }}" onDragEnd="{{ pc.dragEnd }}" style="{{ pc.handleStyle }}" title="Drag to reorder">⠿</span>
+                    <span onClick="{{ pc.toggleInclude }}" style="{{ pc.boxStyle }}">{{ pc.mark }}</span>
+                    <div style="flex:1;min-width:0">
+                      <div style="display:flex;align-items:center;gap:9px">
+                        <input value="{{ pc.name }}" onChange="{{ pc.rename }}" style="{{ pc.nameStyle }}" />
+                        <sc-if value="{{ pc.renamed }}" hint-placeholder-val="{{ false }}">
+                          <span style="flex:none;font-size:10.5px;color:#6E6659;white-space:nowrap">{{ pc.renamedFrom }}</span>
+                        </sc-if>
+                      </div>
+                      <div style="margin-top:11px;display:flex;flex-direction:column;gap:10px">
+                        <sc-for list="{{ pc.configRows }}" as="cr" hint-placeholder-count="4">
+                          <div style="display:flex;align-items:flex-start;gap:12px">
+                            <span style="flex:none;width:104px;padding-top:5px;font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749">{{ cr.label }}</span>
+                            <div style="flex:1;min-width:0">
+                              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                                <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:6px;padding:2px;gap:2px">
+                                  <sc-for list="{{ cr.opts }}" as="op" hint-placeholder-count="2">
+                                    <button onClick="{{ op.click }}" style="{{ op.style }}">{{ op.label }}</button>
+                                  </sc-for>
+                                </div>
+                                <sc-if value="{{ cr.hasExtra }}" hint-placeholder-val="{{ false }}">
+                                  <button onClick="{{ cr.extraClick }}" style="{{ cr.extraStyle }}">{{ cr.extraLabel }}</button>
+                                </sc-if>
+                                <sc-if value="{{ cr.hasInput }}" hint-placeholder-val="{{ false }}">
+                                  <input value="{{ cr.inputValue }}" onChange="{{ cr.onInput }}" placeholder="{{ cr.placeholder }}" style="width:132px;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:4px 8px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:11px" style-focus="border-color:#7A6A4A" />
+                                </sc-if>
+                              </div>
+                              <div style="{{ cr.descStyle }}">{{ cr.desc }}</div>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+                      <div style="margin-top:12px;padding-top:11px;border-top:1px solid #241F19">
+                        <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:7px">
+                          <div style="font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749">TAGS</div>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ pc.tagCount }}</span>
+                        </div>
+                        <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+                          <sc-for list="{{ pc.tags }}" as="tg" hint-placeholder-count="3">
+                            <button onClick="{{ tg.edit }}" style="{{ tg.style }}">{{ tg.label }}</button>
+                          </sc-for>
+                          <sc-if value="{{ pc.moreTags }}" hint-placeholder-val="{{ false }}">
+                            <span style="font-size:11px;color:#6E6659">{{ pc.moreLabel }}</span>
+                          </sc-if>
+                          <input value="{{ pc.draft }}" onChange="{{ pc.onDraft }}" onKeyDown="{{ pc.onDraftKey }}" placeholder="+ add tag" style="width:118px;background:transparent;border:1px dashed #3A3328;border-radius:999px;padding:3px 10px;color:#F2EDE4;font-size:11px" style-focus="border-color:#7A6A4A;border-style:solid" />
+                        </div>
+
+                        <sc-if value="{{ pc.editing }}" hint-placeholder-val="{{ false }}">
+                          <div style="margin-top:10px;padding:12px 13px;border:1px solid #4A3C24;border-radius:8px;background:#1C1710">
+                            <div style="display:flex;gap:10px;margin-bottom:9px">
+                              <div style="flex:1;min-width:0">
+                                <div style="font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749;margin-bottom:4px">NAME</div>
+                                <input value="{{ pc.editName }}" onChange="{{ pc.onEditName }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+                              </div>
+                              <div style="flex:1;min-width:0">
+                                <div style="font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749;margin-bottom:4px">ALIASES</div>
+                                <input value="{{ pc.editAliases }}" onChange="{{ pc.onEditAliases }}" placeholder="SBD, Board" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+                              </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                              <sc-for list="{{ pc.editToggles }}" as="et" hint-placeholder-count="2">
+                                <button onClick="{{ et.click }}" style="{{ et.style }}">{{ et.label }}</button>
+                              </sc-for>
+                              <div style="flex:1"></div>
+                              <button onClick="{{ pc.deleteTag }}" style="background:transparent;border:1px solid #4A2A24;border-radius:6px;padding:4px 11px;font-size:11.5px;color:#C97A6A;cursor:pointer">Delete</button>
+                              <button onClick="{{ pc.closeEdit }}" style="background:#2A241C;border:1px solid #4A4238;border-radius:6px;padding:4px 13px;font-size:11.5px;color:#F2EDE4;cursor:pointer">Done</button>
+                            </div>
+                            <div style="font-size:11px;color:#6E6659;margin-top:9px;line-height:1.45;text-wrap:pretty">{{ pc.editNote }}</div>
+                          </div>
+                        </sc-if>
+
+                        <div style="margin-top:12px">
+                          <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:6px">
+                            <div style="font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749">TAG FIELDS</div>
+                            <span style="font-size:10.5px;color:#5E5749">{{ pc.fieldsHint }}</span>
+                          </div>
+                          <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+                            <sc-for list="{{ pc.fields }}" as="fd" hint-placeholder-count="1">
+                              <button onClick="{{ fd.edit }}" style="{{ fd.style }}">{{ fd.label }}</button>
+                            </sc-for>
+                            <input value="{{ pc.fieldDraft }}" onChange="{{ pc.onFieldDraft }}" onKeyDown="{{ pc.onFieldDraftKey }}" placeholder="+ add field" style="width:118px;background:transparent;border:1px dashed #3A3328;border-radius:5px;padding:3px 9px;color:#F2EDE4;font-size:11px" style-focus="border-color:#7A6A4A;border-style:solid" />
+                          </div>
+                          <sc-if value="{{ pc.editingField }}" hint-placeholder-val="{{ false }}">
+                            <div style="margin-top:10px;padding:12px 13px;border:1px solid #4A3C24;border-radius:8px;background:#1C1710">
+                              <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:9px">
+                                <div style="flex:1;min-width:0">
+                                  <div style="font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749;margin-bottom:4px">FIELD NAME</div>
+                                  <input value="{{ pc.fieldName }}" onChange="{{ pc.onFieldName }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+                                </div>
+                                <button onClick="{{ pc.toggleRequired }}" style="{{ pc.requiredStyle }}">Required</button>
+                              </div>
+                              <div style="font-size:10px;font-weight:700;letter-spacing:0.09em;color:#5E5749;margin-bottom:5px">HOLDS</div>
+                              <div style="display:flex;flex-wrap:wrap;gap:4px">
+                                <sc-for list="{{ pc.fieldTypes }}" as="ft" hint-placeholder-count="6">
+                                  <button onClick="{{ ft.click }}" style="{{ ft.style }}">{{ ft.label }}</button>
+                                </sc-for>
+                              </div>
+                              <div style="display:flex;align-items:center;gap:9px;margin-top:11px">
+                                <div style="flex:1;font-size:11px;color:#6E6659;line-height:1.45;text-wrap:pretty">{{ pc.fieldNote }}</div>
+                                <button onClick="{{ pc.deleteField }}" style="background:transparent;border:1px solid #4A2A24;border-radius:6px;padding:4px 11px;font-size:11.5px;color:#C97A6A;cursor:pointer">Delete</button>
+                                <button onClick="{{ pc.closeFieldEdit }}" style="background:#2A241C;border:1px solid #4A4238;border-radius:6px;padding:4px 13px;font-size:11.5px;color:#F2EDE4;cursor:pointer">Done</button>
+                              </div>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+
+              <div style="margin-top:18px;padding-top:15px;border-top:1px solid #241F19">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:9px">MEDIA ITEM FIELDS</div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <sc-for list="{{ fieldRows }}" as="fr" hint-placeholder-count="3">
+                    <div style="{{ fr.rowStyle }}">
+                      <span onClick="{{ fr.toggle }}" style="{{ fr.boxStyle }}">{{ fr.mark }}</span>
+                      <span style="flex:1;font-size:12.5px">{{ fr.name }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749">{{ fr.type }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isStep3 }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;overflow-y:auto;padding:26px 30px">
+            <div style="max-width:640px">
+              <div style="font-size:19px;font-weight:700;margin-bottom:6px">{{ step3Title }}</div>
+              <div style="font-size:13px;color:#8C8478;line-height:1.55;margin-bottom:20px;text-wrap:pretty">{{ step3Blurb }}</div>
+
+              <sc-if value="{{ isMigrate }}" hint-placeholder-val="{{ false }}">
+                <div>
+                  <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden;margin-bottom:18px">
+                    <div style="display:grid;grid-template-columns:1fr 110px 110px 74px;padding:8px 13px;background:#141109;border-bottom:1px solid #2A251E">
+                      <span style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">CHECK</span>
+                      <span style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">SNAPSHOT</span>
+                      <span style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">LIBRARY</span>
+                      <span style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">OK</span>
+                    </div>
+                    <sc-for list="{{ verifyRows }}" as="vr" hint-placeholder-count="5">
+                      <div style="display:grid;grid-template-columns:1fr 110px 110px 74px;padding:9px 13px;border-bottom:1px solid #1F1B15;align-items:center">
+                        <span style="font-size:12.5px;color:#CFC6B8">{{ vr.label }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A79E90;text-align:right">{{ vr.from }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#A79E90;text-align:right">{{ vr.to }}</span>
+                        <span style="{{ vr.okStyle }}">{{ vr.ok }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">NOT CARRIED OVER</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+                    <sc-for list="{{ skipped }}" as="sk" hint-placeholder-count="4">
+                      <span style="font-size:11px;padding:3px 9px;border-radius:5px;background:#1D1913;color:#8C8478;border:1px solid #2A251E">{{ sk.label }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:12px;color:#7C7466;line-height:1.5;text-wrap:pretty">All of it recomputes from disk on first run. Analysis rules are authored rather than derived, so those do migrate.</div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isNew }}" hint-placeholder-val="{{ true }}">
+                <div>
+                  <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:14px">
+                    <sc-for list="{{ sourceRows }}" as="sr" hint-placeholder-count="1">
+                      <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid #2A251E;border-radius:8px;background:#151209">
+                        <span style="width:7px;height:7px;border-radius:50%;background:#5CB05C;flex:none"></span>
+                        <div style="flex:1;min-width:0">
+                          <div style="font-size:13px;font-weight:500">{{ sr.name }}</div>
+                          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sr.path }}</div>
+                        </div>
+                        <span onClick="{{ sr.remove }}" style="color:#5E5749;cursor:pointer;font-size:14px">×</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <button onClick="{{ addSource }}" style="background:transparent;border:1px dashed #4A4238;border-radius:8px;padding:11px 16px;font-size:12.5px;color:#A79E90;cursor:pointer;width:100%" style-hover="border-color:#7A6A4A;color:#F2EDE4">+ Add a source folder…</button>
+                  <div style="font-size:12px;color:#7C7466;margin-top:14px;line-height:1.5;text-wrap:pretty">Adding a source registers the folder and runs a scan. Nothing enters the library until you confirm the import, so you can add these later without committing to anything.</div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="flex:none;border-top:1px solid #2A251E;background:#1A1610;padding:12px 20px;display:flex;align-items:center;gap:12px">
+          <sc-if value="{{ hasErrors }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0">
+              <span style="width:7px;height:7px;border-radius:50%;background:#D07A6A;flex:none"></span>
+              <span style="font-size:12.5px;color:#D9A090;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ firstError }}</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noErrors }}" hint-placeholder-val="{{ true }}">
+            <div style="font-size:12px;color:#6E6659">{{ footerHint }}</div>
+          </sc-if>
+          <div style="flex:1"></div>
+          <button onClick="{{ back }}" style="{{ backStyle }}">Back</button>
+          <button onClick="{{ next }}" style="{{ nextStyle }}">{{ nextLabel }}</button>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closePicker }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.7);z-index:78;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ stop }}" style="width:884px;background:#232323;border:1px solid #3C3C3C;border-radius:10px;box-shadow:0 40px 90px rgba(0,0,0,0.75);overflow:hidden;display:flex;flex-direction:column">
+          <div style="height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px;background:#2C2C2C;border-bottom:1px solid #3C3C3C">
+            <div style="display:flex;gap:7px">
+              <div style="width:11px;height:11px;border-radius:50%;background:#E05A50"></div>
+              <div style="width:11px;height:11px;border-radius:50%;background:#3C3C3C"></div>
+              <div style="width:11px;height:11px;border-radius:50%;background:#3C3C3C"></div>
+            </div>
+            <div style="flex:1;text-align:center;font-size:13px;font-weight:600;color:#E8E8E8">{{ pickerTitle }}</div>
+            <div style="width:52px"></div>
+          </div>
+
+          <div style="flex:1;display:flex;min-height:0;height:320px">
+            <div style="width:172px;flex:none;background:#282828;border-right:1px solid #3C3C3C;overflow-y:auto;padding:9px 8px">
+              <sc-for list="{{ sidebarGroups }}" as="sg" hint-placeholder-count="2">
+                <div style="margin-bottom:11px">
+                  <div style="font-size:10.5px;font-weight:600;color:#8A8A8A;padding:0 6px 5px">{{ sg.label }}</div>
+                  <sc-for list="{{ sg.items }}" as="si" hint-placeholder-count="3">
+                    <div onClick="{{ si.click }}" style="{{ si.style }}">
+                      <span style="{{ si.iconStyle }}">{{ si.icon }}</span>
+                      <span style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ si.name }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </div>
+
+            <div ref="{{ colHostRef }}" style="flex:1;display:flex;min-width:0;overflow-x:auto;background:#1E1E1E">
+              <sc-for list="{{ columns }}" as="col" hint-placeholder-count="2">
+                <div style="flex:none;width:190px;border-right:1px solid #333;overflow-y:auto;padding:5px 5px">
+                  <sc-for list="{{ col.items }}" as="it" hint-placeholder-count="4">
+                    <div onClick="{{ it.click }}" style="{{ it.style }}">
+                      <span style="{{ it.iconStyle }}">{{ it.icon }}</span>
+                      <span style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ it.name }}</span>
+                      <sc-if value="{{ it.hasChildren }}" hint-placeholder-val="{{ false }}">
+                        <span style="{{ it.chevStyle }}">›</span>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:40px 12px;text-align:center;font-size:11.5px;color:#666">No subfolders</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="flex:none;padding:11px 14px;background:#2C2C2C;border-top:1px solid #3C3C3C;display:flex;align-items:center;gap:10px">
+            <div style="flex:1;min-width:0;font-size:11.5px;color:#9A9A9A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ pickerPath }}</div>
+            <button onClick="{{ closePicker }}" style="background:#3A3A3A;border:1px solid #4A4A4A;border-radius:6px;padding:5px 15px;font-size:12.5px;color:#E8E8E8;cursor:pointer">Cancel</button>
+            <button onClick="{{ confirmPicker }}" style="{{ pickerGoStyle }}">{{ pickerGoLabel }}</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ done }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(8,7,5,0.76);z-index:80;display:flex;align-items:center;justify-content:center">
+        <div style="width:460px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:22px">
+          <div style="font-size:15px;font-weight:600;margin-bottom:11px">{{ doneTitle }}</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ summary }}" as="sm" hint-placeholder-count="3">
+              <div style="display:flex;align-items:baseline;gap:10px;font-size:12.5px;color:#CFC6B8">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;min-width:44px;text-align:right">{{ sm.n }}</span>
+                <span>{{ sm.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:11.5px;color:#8C8478;margin-top:14px;line-height:1.5;text-wrap:pretty">{{ doneNote }}</div>
+          <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+            <button onClick="{{ reset }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Start over</button>
+            <button onClick="{{ reset }}" style="background:#E9A23B;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#1A1409;cursor:pointer">Open library</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1280px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="4">
+      <div style="flex:1;min-width:270px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1360,&quot;height&quot;:1120}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    return {mode:'new', step:0, name:'Concerts', template:'concerts',
+      dragIndex:null, editTag:null, drafts:{}, editField:null, fieldDrafts:{}, picker:null,
+      location:'~/Library/Application Support/Sights and Sounds',
+      snapshot:'~/Desktop/videoorganizer-v8-2026-08-24.json',
+      plan:this.planFor('concerts'), open:null, sources:[], done:false};
+  }
+
+  cat(name,o){
+    const c=Object.assign({id:name,include:true,name,originalName:name,allowMultiple:true,
+      display:'search',format:0,separators:false,writeback:null,notes:'',tags:[],fields:[]},o||{});
+    if(c.writebackOn===undefined) c.writebackOn=!!c.writeback;
+    // `carried` counts tags that exist but are not listed individually (a
+    // migrated category's 412 bands). Storing the UNLISTED count rather than
+    // a total keeps every tally correct once tags become editable.
+    if(c.carried===undefined) c.carried=0;
+    // Templates declare tags as [name, aliases] pairs; the editor needs the
+    // full record, so normalize once here rather than at every use.
+    c.tags=(c.tags||[]).map(t=>Array.isArray(t)
+      ?{name:t[0],aliases:t[1]||'',fav:false,hidden:false}:t);
+    return c;
+  }
+
+  planFor(t){
+    const F=['As typed','Title Case','lowercase','UPPERCASE'];
+    if(t==='empty') return {categories:[],itemFields:[]};
+    if(t==='concerts') return {
+      categories:[
+        this.cat('Band',{format:1,separators:true,writeback:'ARTIST',
+          notes:'Bands and solo artists performing in the recording.',
+          fields:[{name:'Origin Country',type:'text'}]}),
+        this.cat('Recording Type',{allowMultiple:false,display:'radio',
+          notes:'Source quality. One per recording — radio buttons, since picking a new one replaces the old. ⌥1…9 still toggles.',
+          tags:[['Soundboard','SBD'],['Audience','AUD'],['FM Broadcast','FM · Radio Broadcast'],['Pro-shot','Professional · Multi-cam'],['Matrix',null]]}),
+        this.cat('Venue',{allowMultiple:false,notes:'Grouped under a “Show Info” section label in the browse panel.',
+          fields:[{name:'City',type:'text'},{name:'Capacity',type:'number'}]}),
+        this.cat('Year',{allowMultiple:false,writeback:'DATE',notes:'Writes back to the container’s DATE tag.'})
+      ],
+      itemFields:[{name:'Show Date',type:'date',include:true},{name:'Source URL',type:'url',include:true},{name:'Setlist Notes',type:'longText',include:true}]};
+    if(t==='learning') return {
+      categories:[
+        this.cat('Subject',{allowMultiple:false,notes:'Broad area — Swift, Photography, Music Theory.'}),
+        this.cat('Course',{allowMultiple:false,fields:[{name:'Course URL',type:'url'}],notes:'Lessons order by the Lesson Number field, not by name.'}),
+        this.cat('Instructor',{format:1,writeback:'PERFORMER'}),
+        this.cat('Watched',{allowMultiple:false,display:'radio',tags:[['Not started',null],['In progress',null],['Finished',null]],
+          notes:'A two-or-three-value category standing in for a workflow flag.'})
+      ],
+      itemFields:[{name:'Lesson Number',type:'number',include:true},{name:'Notes',type:'longText',include:true}]};
+    if(t==='homeVideos') return {
+      categories:[
+        this.cat('People',{display:'checkboxes',tags:[['Mum',null],['Dad',null],['Sam',null],['Ellie',null]],
+          notes:'Multi-select over a small stable set — checkboxes beat autocomplete here.'}),
+        this.cat('Occasion',{allowMultiple:false,tags:[['Birthday',null],['Holiday',null],['Trip',null]]}),
+        this.cat('Location',{allowMultiple:false,writeback:'LOCATION'}),
+        this.cat('Year',{allowMultiple:false,writeback:'DATE'})
+      ],
+      itemFields:[{name:'Taken On',type:'date',include:true}]};
+    // Migration: the vocabulary the snapshot already contains.
+    return {
+      categories:[
+        this.cat('Band',{format:1,separators:true,writeback:'ARTIST',carried:412,notes:'Carried from the snapshot with their aliases.'}),
+        this.cat('Recording Type',{allowMultiple:false,display:'radio',
+          tags:[['Soundboard','SBD'],['Audience','AUD'],['FM Broadcast','FM'],['Pro-shot','Multi-cam'],['Matrix',null]]}),
+        this.cat('Venue',{allowMultiple:false,carried:186,fields:[{name:'City',type:'text'}]}),
+        this.cat('Year',{allowMultiple:false,writeback:'DATE',carried:24}),
+        this.cat('Taper',{carried:63,fields:[{name:'Equipment',type:'text'}],notes:'Person who recorded the show.'}),
+        this.cat('Flags',{display:'checkboxes',tags:[['Full Concert',null],['Setlist Verified','Setlist'],['Incomplete','Partial']],
+          notes:'Was a checkbox pseudo-category in the old app. It maps cleanly, but per-feature flags now live in their own tables — exclude it if you would rather use the built-in flags.'})
+      ],
+      itemFields:[{name:'Show Date',type:'date',include:true},{name:'Source URL',type:'url',include:true},
+                  {name:'Setlist Notes',type:'longText',include:true},{name:'City',type:'text',include:true}]};
+  }
+
+  /// The four configuration decisions, one row each, every one carrying a
+  /// worked example rather than a restatement of its own label.
+  configRows(c){
+    const self=this;
+    const seg=(cur,v,label,click)=>({label,click,
+      style:'border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;'+
+        (cur===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#7C7466')});
+    const desc='font-size:11px;color:#6E6659;margin-top:5px;line-height:1.45';
+    const sample=c.separators?'dave-matthews-band':'dave matthews band';
+    const formatted=c.format===1?'Dave Matthews Band':c.format===2?'dave matthews band'
+      :c.format===3?'DAVE MATTHEWS BAND':(c.separators?'dave matthews band':sample);
+
+    return [
+      {label:'TAGS PER ITEM', descStyle:desc,
+        desc: c.allowMultiple
+          ? 'An item can carry several — a bill with three bands gets three tags.'
+          : 'Picking a new one replaces the old. Right for Year, Venue, a recording source.',
+        opts:[[true,'Multiple'],[false,'Just one']].map(([v,label])=>
+          // Radio and "multiple" contradict each other, so switching to
+          // multiple moves the control rather than leaving both on screen.
+          seg(c.allowMultiple,v,label,()=>self.patch(c.id,n=>{n.allowMultiple=v; if(v&&n.display==='radio') n.display='checkboxes';})))},
+
+      {label:'DISPLAY AS', descStyle:desc,
+        desc: c.display==='search'
+          ? 'A text field with suggestions. The only option that scales — 400 bands cannot be a list of checkboxes.'
+          : c.display==='checkboxes'
+            ? 'Every tag shown at once, several tickable. Small fixed sets only; ⌥1…9 toggles the first nine.'
+            : 'Every tag shown at once, one selectable. Small fixed sets only; ⌥1…9 selects.',
+        opts:[['search','Autocomplete'],['checkboxes','Checkboxes'],['radio','Radio']].map(([v,label])=>
+          seg(c.display,v,label,()=>self.patch(c.id,n=>{n.display=v; if(v==='radio') n.allowMultiple=false;})))},
+
+      {label:'TEXT FORMATTING', descStyle:desc,
+        desc:'“'+sample+'” is saved as “'+formatted+'”.'+
+          (c.separators?'  Separator characters are set for the whole library in Library Properties.':''),
+        opts:[[0,'As typed'],[1,'Title Case'],[2,'lowercase'],[3,'UPPERCASE']].map(([v,label])=>
+          seg(c.format,v,label,()=>self.patch(c.id,n=>{n.format=v;}))),
+        hasExtra:true, extraLabel:'- . _  →  spaces',
+        extraStyle:'border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;border:1px solid '+(c.separators?'#5A4A28':'#2A251E')+
+          ';background:'+(c.separators?'#2E2616':'transparent')+';color:'+(c.separators?'#E9A23B':'#7C7466'),
+        extraClick:()=>self.patch(c.id,n=>{n.separators=!n.separators;})},
+
+      {label:'WRITE BACK', descStyle:desc,
+        desc: !c.writebackOn
+          ? 'Tags stay in the library and are never written into the files themselves.'
+          : c.writeback
+            ? 'Written to the container’s standard '+c.writeback+' tag, so other players see it.'
+            // Same derivation as the write-back window: uppercase, no spaces.
+            : 'Written as a custom field named '+(c.name.trim().toUpperCase().split(' ').join('')||'CATEGORY')+'.',
+        opts:[[false,'Library only'],[true,'Into the file']].map(([v,label])=>
+          seg(!!c.writebackOn,v,label,()=>self.patch(c.id,n=>{n.writebackOn=v;}))),
+        hasInput: !!c.writebackOn, inputValue: c.writeback||'', placeholder:'auto',
+        onInput:e=>{const v=e.target.value;self.patch(c.id,n=>{n.writeback=v||null;});}}
+    ];
+  }
+
+  /// A column browser's contract is "click, a new column appears" — so the
+  /// host follows the deepest column. Only on a depth change, so it never
+  /// fights a scroll the user made themselves.
+  componentDidUpdate(){
+    const depth=this.state.picker?this.state.picker.path.length:-1;
+    if(depth===this._depth) return;
+    this._depth=depth;
+    const host=this._colHost;
+    if(host) host.scrollLeft=host.scrollWidth;
+  }
+
+  /// A stand-in for the system open panel, so the flow can be walked end to
+  /// end. The real one is NSOpenPanel with canChooseDirectories.
+  disk(){
+    return {name:'This Mac',kind:'root',children:[
+      {name:'ConcertsSSD',kind:'volume',meta:'external · 3.4 TB',children:[
+        {name:'Shows',kind:'folder',meta:'248 media',children:[
+          {name:'2024 Shows',kind:'folder',meta:'96 media'},
+          {name:'2023 Shows',kind:'folder',meta:'112 media'},
+          {name:'2022 Archive',kind:'folder',meta:'40 media'}]},
+        {name:'Audio',kind:'folder',meta:'62 media'},
+        {name:'_incoming',kind:'folder',meta:'empty'}]},
+      {name:'RoadDrive',kind:'volume',meta:'external · offline',children:[
+        {name:'Taped 2024',kind:'folder',meta:'58 media'},
+        {name:'Taped 2023',kind:'folder',meta:'38 media'}]},
+      {name:'Home',kind:'home',meta:'~',children:[
+        {name:'Movies',kind:'folder',children:[
+          {name:'Concerts',kind:'folder',meta:'12 media'},
+          {name:'Home Videos',kind:'folder',meta:'340 media'}]},
+        {name:'Music',kind:'folder',meta:'1,204 media'},
+        {name:'Desktop',kind:'folder'}]}
+    ]};
+  }
+
+  pathString(p){
+    if(!p.length) return '';
+    if(p[0]==='Home') return p.length===1?'~':'~/'+p.slice(1).join('/');
+    return '/Volumes/'+p.join('/');
+  }
+
+  nodeAt(path){
+    let n=this.disk();
+    for(const seg of path){
+      const next=(n.children||[]).find(c=>c.name===seg);
+      if(!next) return n;
+      n=next;
+    }
+    return n;
+  }
+
+  errors(){
+    const st=this.state, p=st.plan;
+    const out=[];
+    if(!st.name.trim()) out.push('The library needs a name.');
+    const inc=p.categories.filter(c=>c.include);
+    const seen={};
+    inc.forEach(c=>{
+      const k=c.name.trim().toLowerCase();
+      if(!k) out.push('A category has an empty name.');
+      else if(seen[k]) out.push('Duplicate category name “'+c.name.trim()+'”.');
+      else seen[k]=1;
+    });
+    return out;
+  }
+
+  patch(id,fn){
+    this.setState(s=>({plan:Object.assign({},s.plan,{
+      categories:s.plan.categories.map(c=>{ if(c.id!==id) return c; const n=Object.assign({},c); fn(n); return n; })})}));
+  }
+
+  renderVals(){
+    const st=this.state, self=this, p=st.plan;
+    const errs=this.errors();
+    const inc=p.categories.filter(c=>c.include);
+    const firstIncluded=inc.length?inc[0].id:null;
+    const isMigrate=st.mode==='migrate';
+    const F=['As typed','Title Case','lowercase','UPPERCASE'];
+    const STEPS=isMigrate
+      ? [['Snapshot','name the library it becomes'],['Source','map the old root'],['Review','categories and fields'],['Verify','counts against the snapshot']]
+      : [['Name','and where it lives'],['Template','a starting vocabulary'],['Review','categories and fields'],['Sources','add one, or defer']];
+
+    const tagCount=c=>c.tags.length+(c.carried||0);
+    const totalTags=inc.reduce((a,c)=>a+tagCount(c),0);
+
+    const chip=(label,on,click)=>({label,click,
+      style:'border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;border:1px solid '+(on?'#5A4A28':'#2A251E')+';background:'+(on?'#2E2616':'transparent')+';color:'+(on?'#E9A23B':'#7C7466')});
+
+    return {
+      windowTitle: isMigrate?'Migrate Library':'New Library',
+      modeTabs:[['new','New'],['migrate','Migrate']].map(([v,label])=>({label,
+        style:'flex:1;border:none;border-radius:5px;padding:6px 8px;font-size:12px;cursor:pointer;'+(st.mode===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({mode:v,step:0,plan:self.planFor(v==='migrate'?'migrate':st.template),open:null})})),
+
+      steps: STEPS.map(([title,sub],i)=>({num:String(i+1),title,sub,
+        numStyle:'flex:none;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;'+
+          (i===st.step?'background:#E9A23B;color:#1A1409':i<st.step?'background:#2F4A2F;color:#8FCF8F':'background:#241F19;color:#6E6659'),
+        titleStyle:'font-size:12.5px;font-weight:'+(i===st.step?'600':'400')+';color:'+(i===st.step?'#F2EDE4':i<st.step?'#A79E90':'#6E6659'),
+        rowStyle:'display:flex;align-items:flex-start;gap:10px;padding:9px 9px;border-radius:7px;cursor:pointer;'+(i===st.step?'background:#231E17':''),
+        pick:()=>self.setState({step:i})})),
+
+      summary:[{n:inc.length,label:'tag categories'},{n:totalTags,label:'tags'},
+               {n:p.itemFields.filter(f=>f.include).length+inc.reduce((a,c)=>a+c.fields.length,0),label:'field definitions'}],
+
+      isStep0: st.step===0, isStep1: st.step===1, isStep2: st.step===2, isStep3: st.step===3,
+      isMigrate, isNew: !isMigrate,
+
+      step0Title: isMigrate?'Name the library the snapshot becomes':'Name the library',
+      step0Blurb: isMigrate
+        ? 'One SQLite file, its own vocabulary, never shared with another library.'
+        : 'Each library is one file with its own categories, tags and sources. Cross-library leakage is structurally impossible rather than merely forbidden.',
+      name: st.name, onName:e=>self.setState({name:e.target.value}),
+      location: st.location, chooseLocation:()=>self.setState({picker:{target:'location',path:['Home']}}),
+      fileName: (st.name.trim()||'Untitled').replace(/[^\w -]/g,'')+'.sasl',
+      snapshotPath: st.snapshot, chooseSnapshot:()=>{},
+
+      step1Title: isMigrate?'Map the old root to a source':'Choose a starting vocabulary',
+      step1Blurb: isMigrate
+        ? 'Ownership is a foreign key now, not a path prefix — so relocating this folder later updates one row instead of every item under it.'
+        : 'A template only seeds the review screen. Everything it proposes can be renamed, reconfigured or dropped before anything is written.',
+      templates:[['concerts','Concerts','#8B93E8'],['learning','Learning','#6FBFB0'],['homeVideos','Home Videos','#C58BB8'],['empty','Empty','#8C8478']]
+        .map(([k,name,hue])=>{
+          const pl=self.planFor(k);
+          const on=st.template===k;
+          return {name, count: pl.categories.length?pl.categories.length+' categories':'no categories',
+            summary:({concerts:'Live music: bands, recording types with aliases, venues, and years that write back to file metadata.',
+                      learning:'Courses and lessons: subject and course, lesson ordering by field, and a watch-state category.',
+                      homeVideos:'Family footage: people as checkboxes, occasions, and places that write back to LOCATION.',
+                      empty:'No categories. Build the vocabulary yourself in Categories & Fields.'})[k],
+            dotStyle:'width:8px;height:8px;border-radius:2px;background:'+hue,
+            chips: pl.categories.slice(0,4).map(c=>({label:c.name,
+              style:'font-size:10.5px;padding:2px 7px;border-radius:4px;background:'+hue+'1C;color:'+hue})),
+            style:'padding:14px 15px;border-radius:9px;cursor:pointer;border:1px solid '+(on?'#7A6428':'#2A251E')+';background:'+(on?'#1F1A12':'#151209'),
+            pick:()=>self.setState({template:k,plan:self.planFor(k),open:null})};
+        }),
+
+      step2Blurb: isMigrate
+        ? 'Everything the snapshot carries, with its tag counts. Rename or exclude before it is written — an excluded category is never created, and its tags and fields simply do not exist.'
+        : 'Rename, reconfigure, reorder or exclude anything here. This is the same screen migration uses, so a library made either way is configured the same way.',
+      planRows: p.categories.map((c,i)=>{
+        const dragging=st.dragIndex===i;
+        const ed=(st.editTag&&st.editTag.cat===c.id)?st.editTag:null;
+        const et=ed?c.tags[ed.i]:null;
+        const fe=(st.editField&&st.editField.cat===c.id)?st.editField:null;
+        const fv=fe?c.fields[fe.i]:null;
+        return {name:c.name, tagCount:tagCount(c)+(tagCount(c)===1?' tag':' tags'),
+          // Order IS the focus rule — the first included category gets the
+          // cursor, so there is nothing to set and nothing to conflict.
+          handleStyle:'flex:none;margin-top:2px;padding:2px 4px;font-size:13px;line-height:1;letter-spacing:-1px;cursor:grab;color:'+(dragging?'#E9A23B':'#4A4238'),
+          dragStart:e=>{ if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(i));}
+            self.setState({dragIndex:i}); },
+          // Reorder live on dragover — the list settles under the cursor as
+          // you move, so the drop is a confirmation rather than a guess.
+          dragOver:e=>{ e.preventDefault();
+            const from=self.state.dragIndex;
+            if(from==null||from===i) return;
+            self.setState(s=>{
+              const n=s.plan.categories.slice();
+              const [row]=n.splice(from,1); n.splice(i,0,row);
+              return {plan:Object.assign({},s.plan,{categories:n}),dragIndex:i};
+            });
+          },
+          drop:e=>{ e.preventDefault(); self.setState({dragIndex:null}); },
+          dragEnd:()=>self.setState({dragIndex:null}),
+          mark:c.include?'✓':'',
+          renamed: c.name.trim()!==c.originalName, renamedFrom:'was “'+c.originalName+'”',
+          cardStyle:'padding:13px 14px;border-radius:9px;margin-bottom:8px;border:1px solid '+(dragging?'#7A6428':c.include?'#2A251E':'#221E19')+
+            ';background:'+(dragging?'#221B12':c.include?'#151209':'#110F0B')+';'+(dragging?'opacity:0.85;':c.include?'':'opacity:0.55;'),
+          boxStyle:'flex:none;margin-top:4px;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;'+
+            (c.include?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+          nameStyle:'flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid #2A251E;padding:2px 0;color:#F2EDE4;font-size:14px;font-weight:600',
+          rename:e=>{const v=e.target.value;self.patch(c.id,n=>{n.name=v;});},
+          // A binary choice reads as a choice only when both options are on
+          // screen — a lone chip saying "multiple" looks like a flag.
+          configRows: self.configRows(c),
+          chevStyle:'font-size:13px;color:#5E5749;cursor:pointer;display:inline-block;transform:rotate('+(open?'90':'0')+'deg)',
+          toggleInclude:()=>self.patch(c.id,n=>{n.include=!n.include;}),
+          toggleOpen:()=>self.setState(s=>({open:s.open===c.id?null:c.id})),
+          fieldsHint: c.fields.length?'attached to every tag in this category':'nothing yet — a Venue could carry a City',
+          fields:c.fields.map((f,fi)=>{
+            const on=fe&&fe.cat===c.id&&fe.i===fi;
+            return {label:f.name+' · '+f.type+(f.required?' *':''),
+              style:'font-family:\'JetBrains Mono\',monospace;font-size:10.5px;padding:3px 9px;border-radius:5px;cursor:pointer;'+
+                (on?'background:#3A2E16;color:#E9A23B;border:1px solid #7A6428':'background:#221D16;color:#A79E90;border:1px solid #332D24'),
+              edit:()=>self.setState({editField:on?null:{cat:c.id,i:fi}})};
+          }),
+          fieldDraft:(st.fieldDrafts[c.id]||''),
+          onFieldDraft:e=>{const v=e.target.value;self.setState(s=>({fieldDrafts:Object.assign({},s.fieldDrafts,{[c.id]:v})}));},
+          onFieldDraftKey:e=>{
+            if(e.key!=='Enter') return;
+            e.preventDefault();
+            const v=(st.fieldDrafts[c.id]||'').trim();
+            if(!v) return;
+            self.patch(c.id,n=>{ if(!n.fields.some(f=>f.name.toLowerCase()===v.toLowerCase()))
+              n.fields=n.fields.concat([{name:v,type:'text',required:false}]); });
+            self.setState(s=>({fieldDrafts:Object.assign({},s.fieldDrafts,{[c.id]:''}),
+              editField:{cat:c.id,i:c.fields.length}}));
+          },
+          editingField: !!(fe&&fe.cat===c.id&&c.fields[fe.i]),
+          fieldName: fv?fv.name:'',
+          onFieldName:e=>{const v=e.target.value;self.patch(c.id,n=>{n.fields=n.fields.map((f,j)=>j===fe.i?Object.assign({},f,{name:v}):f);});},
+          fieldTypes:['text','longText','number','date','boolean','url'].map(t=>({label:t,
+            style:'border-radius:5px;padding:3px 10px;font-family:\'JetBrains Mono\',monospace;font-size:10.5px;cursor:pointer;border:1px solid '+
+              ((fv&&fv.type===t)?'#7A6428':'#2A251E')+';background:'+((fv&&fv.type===t)?'#2E2616':'transparent')+';color:'+((fv&&fv.type===t)?'#E9A23B':'#7C7466'),
+            click:()=>self.patch(c.id,n=>{n.fields=n.fields.map((f,j)=>j===fe.i?Object.assign({},f,{type:t}):f);})})),
+          requiredStyle:'flex:none;border-radius:6px;padding:6px 13px;font-size:11.5px;cursor:pointer;border:1px solid '+((fv&&fv.required)?'#7A6428':'#332D24')+
+            ';background:'+((fv&&fv.required)?'#3A2E16':'transparent')+';color:'+((fv&&fv.required)?'#E9A23B':'#8C8478'),
+          toggleRequired:()=>self.patch(c.id,n=>{n.fields=n.fields.map((f,j)=>j===fe.i?Object.assign({},f,{required:!f.required}):f);}),
+          fieldNote: fv&&fv.type==='number'
+            ? 'Number fields also store a numeric value, so ordering by them sorts 2 before 10.'
+            : fv&&fv.type==='date'
+              ? 'Dates normalize to ISO 8601, which sorts correctly as text.'
+              : 'Attached to every tag in this category — a Taper carries their Equipment, a Venue its City.',
+          deleteField:()=>{ self.patch(c.id,n=>{n.fields=n.fields.filter((_,j)=>j!==fe.i);}); self.setState({editField:null}); },
+          closeFieldEdit:()=>self.setState({editField:null}),
+
+          tags:c.tags.slice(0,12).map((t,ti)=>{
+            const on=ed&&ed.cat===c.id&&ed.i===ti;
+            return {label:(t.fav?'★ ':'')+t.name+(t.aliases?'  ·  '+t.aliases:''),
+              style:'font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer;'+
+                (on?'background:#3A2E16;color:#E9A23B;border:1px solid #7A6428'
+                   :t.hidden?'background:#171410;color:#7C7466;border:1px dashed #332D24'
+                   :'background:#221D16;color:#CFC6B8;border:1px solid #332D24'),
+              edit:()=>self.setState({editTag:on?null:{cat:c.id,i:ti}})};
+          }),
+          // A migrated category knows its count without listing every tag —
+          // say so rather than showing "412 tags" above an empty row.
+          moreTags: (c.carried||0)>0||c.tags.length>12,
+          moreLabel: c.carried
+            ? c.carried+' carried from the snapshot'
+            : '+'+Math.max(0,c.tags.length-12)+' more',
+          draft: (st.drafts[c.id]||''),
+          onDraft:e=>{const v=e.target.value;self.setState(s=>({drafts:Object.assign({},s.drafts,{[c.id]:v})}));},
+          onDraftKey:e=>{
+            if(e.key!=='Enter') return;
+            e.preventDefault();
+            const v=(st.drafts[c.id]||'').trim();
+            if(!v) return;
+            self.patch(c.id,n=>{ if(!n.tags.some(t=>t.name.toLowerCase()===v.toLowerCase()))
+              n.tags=n.tags.concat([{name:v,aliases:'',fav:false,hidden:false}]); });
+            self.setState(s=>({drafts:Object.assign({},s.drafts,{[c.id]:''}),
+              editTag:{cat:c.id,i:c.tags.length}}));
+          },
+
+          editing: !!(ed&&ed.cat===c.id&&c.tags[ed.i]),
+          editName: et?et.name:'', editAliases: et?et.aliases:'',
+          onEditName:e=>{const v=e.target.value;self.patch(c.id,n=>{n.tags=n.tags.map((t,j)=>j===ed.i?Object.assign({},t,{name:v}):t);});},
+          onEditAliases:e=>{const v=e.target.value;self.patch(c.id,n=>{n.tags=n.tags.map((t,j)=>j===ed.i?Object.assign({},t,{aliases:v}):t);});},
+          editToggles:[['fav','★ Favourite'],['hidden','Hidden by default']].map(([k,label])=>({label,
+            style:'border-radius:6px;padding:4px 11px;font-size:11.5px;cursor:pointer;border:1px solid '+((et&&et[k])?'#7A6428':'#332D24')+
+              ';background:'+((et&&et[k])?'#3A2E16':'transparent')+';color:'+((et&&et[k])?'#E9A23B':'#8C8478'),
+            click:()=>self.patch(c.id,n=>{n.tags=n.tags.map((t,j)=>j===ed.i?Object.assign({},t,{[k]:!t[k]}):t);})})),
+          editNote: et&&et.hidden
+            ? 'Items carrying a hidden tag stay out of listings unless the filter names it — useful for “unknown” and “untitled”.'
+            : 'Favourites surface as quick-pick chips in the tag editor before you type. Aliases are comma-separated and match on search and import.',
+          deleteTag:()=>{ self.patch(c.id,n=>{n.tags=n.tags.filter((_,j)=>j!==ed.i);}); self.setState({editTag:null}); },
+          closeEdit:()=>self.setState({editTag:null})};
+      }),
+
+      fieldRows: p.itemFields.map((f,i)=>({name:f.name,type:f.type,mark:f.include?'✓':'',
+        boxStyle:'flex:none;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;'+
+          (f.include?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+        rowStyle:'display:flex;align-items:center;gap:11px;padding:9px 12px;border:1px solid #2A251E;border-radius:7px;background:#151209;'+(f.include?'':'opacity:0.55'),
+        toggle:()=>self.setState(s=>({plan:Object.assign({},s.plan,{
+          itemFields:s.plan.itemFields.map((x,j)=>j===i?Object.assign({},x,{include:!x.include}):x)})}))})),
+
+      step3Title: isMigrate?'Verify the counts':'Add a source',
+      step3Blurb: isMigrate
+        ? 'Read back from the new library and compared against the snapshot. A mismatch here means the migration is wrong, and it is cheaper to know now than after you have tagged for a week.'
+        : 'A source is a folder this library watches. You can skip this and add one later.',
+      verifyRows:[['Media items','9,847','9,847'],['Tags','693','693'],['Tag categories','6','6'],
+                  ['Field definitions','7','7'],['Analysis rules','4','4']]
+        .map(([label,from,to])=>({label,from,to,ok:'✓',
+          okStyle:'font-size:12px;color:#8FCF8F;text-align:right'})),
+      skipped:[{label:'stream hashes'},{label:'quality analyses'},{label:'fingerprints'},{label:'thumbnails'}],
+
+      sourceRows: st.sources.map((s,i)=>({name:s.name,path:s.path,
+        remove:()=>self.setState(x=>({sources:x.sources.filter((_,j)=>j!==i)}))})),
+      addSource:()=>self.setState({picker:{target:'source',path:[]}}),
+
+      pickerOpen: !!st.picker,
+      colHostRef:el=>{self._colHost=el;},
+      pickerTitle: st.picker&&st.picker.target==='source'?'Choose a source folder':'Choose where the library file lives',
+      // Column view: one column per level of the selected path, plus one for
+      // the children of the deepest selection — the system panel's shape.
+      columns: (()=>{
+        if(!st.picker) return [];
+        const p=st.picker.path, out=[];
+        for(let d=0; d<=p.length; d++){
+          const kids=(self.nodeAt(p.slice(0,d)).children)||[];
+          if(d>0&&!kids.length) { out.push({items:[],empty:true}); break; }
+          out.push({empty:false, items:kids.map(k=>{
+            const sel=p[d]===k.name;
+            return {name:k.name, hasChildren:!!(k.children&&k.children.length),
+              icon: k.kind==='volume'?'▤':k.kind==='home'?'⌂':'📁',
+              iconStyle:'flex:none;width:16px;text-align:center;font-size:11px;color:'+(sel?'#FFF':k.kind==='volume'?'#7FB8D8':'#7FA8D8'),
+              chevStyle:'font-size:11px;color:'+(sel?'#DDD':'#666'),
+              style:'display:flex;align-items:center;gap:7px;padding:4px 7px;border-radius:4px;cursor:pointer;color:'+(sel?'#FFF':'#DCDCDC')+';'+(sel?'background:#3B6EA5':''),
+              click:()=>self.setState(s=>({picker:Object.assign({},s.picker,{path:s.picker.path.slice(0,d).concat([k.name])})}))};
+          })});
+        }
+        return out;
+      })(),
+      sidebarGroups:[
+        {label:'Favourites',items:[['Desktop',['Home','Desktop'],'📁'],['Movies',['Home','Movies'],'📁'],['Music',['Home','Music'],'📁'],['Home',['Home'],'⌂']]},
+        {label:'Locations',items:[['ConcertsSSD',['ConcertsSSD'],'▤'],['RoadDrive',['RoadDrive'],'▤']]}
+      ].map(g=>({label:g.label, items:g.items.map(([name,path,icon])=>({name,icon,
+        iconStyle:'flex:none;width:15px;text-align:center;font-size:11px;color:#7FA8D8',
+        style:'display:flex;align-items:center;gap:8px;padding:4px 7px;border-radius:5px;cursor:pointer;color:'+
+          ((st.picker&&st.picker.path.join('/')===path.join('/'))?'#FFF':'#DCDCDC')+';'+
+          ((st.picker&&st.picker.path.join('/')===path.join('/'))?'background:#3B6EA5':''),
+        click:()=>self.setState(s=>({picker:Object.assign({},s.picker,{path:path})}))}))})),
+      pickerPath: st.picker?self.pathString(st.picker.path)||'Select a folder':'',
+      pickerGoLabel: st.picker&&st.picker.target==='source'?'Add source':'Choose',
+      pickerGoStyle:'border:none;border-radius:6px;padding:5px 15px;font-size:12.5px;font-weight:500;'+
+        ((st.picker&&st.picker.path.length)?'background:#3B6EA5;color:#FFF;cursor:pointer':'background:#3A3A3A;color:#6A6A6A;cursor:default'),
+      confirmPicker:()=>{
+        const pk=st.picker; if(!pk||!pk.path.length) return;
+        const path=self.pathString(pk.path);
+        if(pk.target==='location'){ self.setState({location:path,picker:null}); return; }
+        self.setState(s=>({sources:s.sources.concat([{name:pk.path[pk.path.length-1],path}]),picker:null}));
+      },
+      closePicker:()=>self.setState({picker:null}),
+      stop:e=>e.stopPropagation(),
+
+      hasErrors: errs.length>0, noErrors: errs.length===0,
+      firstError: errs[0]||'',
+      footerHint: st.step===3
+        ? (isMigrate?'Nothing has been written yet.':'You can add sources later.')
+        : 'Nothing is written until the last step.',
+      back:()=>self.setState(s=>({step:Math.max(0,s.step-1)})),
+      backStyle:'border-radius:7px;padding:8px 16px;font-size:12.5px;cursor:'+(st.step>0?'pointer':'default')+';background:transparent;border:1px solid '+(st.step>0?'#3A3328':'#241F19')+';color:'+(st.step>0?'#A79E90':'#443E34'),
+      nextLabel: st.step===3?(isMigrate?'Migrate':'Create library'):'Continue',
+      nextStyle:'border:none;border-radius:7px;padding:8px 18px;font-size:12.5px;font-weight:600;'+
+        (errs.length?'background:#2A241C;color:#5E5749;cursor:default':'background:#E9A23B;color:#1A1409;cursor:pointer'),
+      next:()=>{ if(errs.length) return;
+        if(st.step<3) self.setState(s=>({step:s.step+1})); else self.setState({done:true}); },
+
+      done: st.done,
+      doneTitle: isMigrate?'Migration complete':'Library created',
+      doneNote: isMigrate
+        ? 'Thumbnails, hashes and fingerprints regenerate in the background — they were skipped because they recompute from disk.'
+        : 'Open Categories & Fields any time to keep editing the vocabulary. Adding a source runs a scan; nothing imports until you confirm it.',
+      reset:()=>self.setState(self.seed()),
+
+      notes:[
+        {title:'ONE REVIEW SCREEN, TWO FLOWS',body:'Template creation and snapshot migration both produce the same editable plan, so the review step is built once. A library made either way ends up configured the same way, and the migration path gets rename-and-exclude for free.'},
+        {title:'EXCLUDING IS NOT DELETING',body:'An unchecked category is never created — its tags and fields simply never exist, rather than being written and then removed. The Flags pseudo-category is the case that matters: it maps cleanly, but per-feature state now lives in its own tables.'},
+        {title:'THE FOLDER PICKER IS NOT OURS',body:'Choosing a source opens the system open panel — sidebar, column view, the real file system. It is one NSOpenPanel call with canChooseDirectories, so none of it is UI we design, maintain, or get wrong. Drawn here only so the flow can be walked end to end.'},
+        {title:'ORDER CARRIES THE MEANING',body:'Categories appear in the tag editor in this order, and the first included one takes the cursor. Making focus a consequence of position removes a setting, removes a validation rule, and makes an invalid state unrepresentable — excluding the top category simply promotes the next.'},
+        {title:'VALIDATION IS CONTINUOUS',body:'Empty and duplicate category names block the last step from the moment they occur — shown in the footer where the button is, not collected into a dialog after the fact.'},
+        {title:'VERIFY BEFORE YOU TRUST IT',body:'The migration ends by reading the new library back and comparing against the snapshot. Recomputable data is skipped on purpose and listed plainly; analysis rules migrate because they were authored, not derived.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  button{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:24px">
+
+  <div style="width:1440px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B;margin-bottom:5px">Platform Canvas</div>
+      <div style="font-size:13px;color:#8C8478;max-width:640px;line-height:1.55;text-wrap:pretty">Mac, iPad, iPhone and Apple TV against one shared domain. iPad is drawn as its own view layer, not a stretched phone.</div>
+    </div>
+    <div style="flex:1"></div>
+    <div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">SHOW THE PRODUCT AT</div>
+      <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:8px;padding:3px;gap:3px">
+        <sc-for list="{{ revTabs }}" as="rt" hint-placeholder-count="4">
+          <button onClick="{{ rt.pick }}" style="{{ rt.style }}">{{ rt.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:1440px;padding:13px 16px;background:#1A1610;border:1px solid #3A3328;border-radius:9px;display:flex;align-items:baseline;gap:12px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B;flex:none">{{ revName }}</span>
+    <span style="font-size:12.5px;color:#CFC6B8;line-height:1.5;text-wrap:pretty">{{ revBlurb }}</span>
+  </div>
+
+  <div style="width:1440px;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+
+    <div style="flex:none;width:632px">
+      <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:9px">
+        <span style="font-size:14px;font-weight:700">macOS</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 7px;border-radius:4px;background:#2E2820;color:#A79E90">host · full</span>
+        <span style="font-size:11.5px;color:#6E6659">1440 × 900 · multi-window</span>
+      </div>
+      <div style="border-radius:9px;overflow:hidden;border:1px solid #2E2820;background:#131009">
+        <div style="height:26px;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 9px;gap:5px">
+          <div style="width:8px;height:8px;border-radius:50%;background:#E05A50"></div>
+          <div style="width:8px;height:8px;border-radius:50%;background:#DFA43B"></div>
+          <div style="width:8px;height:8px;border-radius:50%;background:#5CB05C"></div>
+          <div style="flex:1;text-align:center;font-size:9.5px;color:#8C8478">Concerts</div>
+        </div>
+        <div style="height:28px;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 9px;gap:6px">
+          <sc-for list="{{ macToolbar }}" as="mt" hint-placeholder-count="5">
+            <span style="{{ mt.style }}">{{ mt.label }}</span>
+          </sc-for>
+        </div>
+        <div style="display:flex;height:330px">
+          <div style="width:132px;flex:none;background:#17130E;border-right:1px solid #2A251E;padding:8px 7px">
+            <sc-for list="{{ macSidebar }}" as="ms" hint-placeholder-count="8">
+              <div style="{{ ms.style }}">{{ ms.label }}</div>
+            </sc-for>
+          </div>
+          <div style="flex:1;padding:9px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-content:start">
+            <sc-for list="{{ macTiles }}" as="tl" hint-placeholder-count="12">
+              <div>
+                <div style="{{ tl.thumbStyle }}"></div>
+                <div style="height:4px;width:80%;background:#241F19;border-radius:2px;margin-top:4px"></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <div style="{{ macNoteStyle }}">{{ macNote }}</div>
+    </div>
+
+    <div style="flex:none;width:520px">
+      <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:9px">
+        <span style="font-size:14px;font-weight:700">iPadOS</span>
+        <span style="{{ ipadBadgeStyle }}">{{ ipadBadge }}</span>
+        <span style="font-size:11.5px;color:#6E6659">own view layer</span>
+      </div>
+      <div style="padding:12px;background:#1A1A1C;border-radius:20px;border:1px solid #2E2E30">
+        <div style="border-radius:9px;overflow:hidden;background:#131009;border:1px solid #241F19">
+          <div style="height:26px;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 9px;gap:7px">
+            <span style="font-size:10px;color:#8C8478">☰</span>
+            <span style="font-size:10.5px;font-weight:600;color:#CFC6B8">Concerts</span>
+            <div style="flex:1"></div>
+            <sc-for list="{{ ipadToolbar }}" as="it" hint-placeholder-count="3">
+              <span style="{{ it.style }}">{{ it.label }}</span>
+            </sc-for>
+          </div>
+          <div style="display:flex;height:300px">
+            <div style="width:112px;flex:none;background:#17130E;border-right:1px solid #2A251E;padding:8px 7px">
+              <sc-for list="{{ ipadSidebar }}" as="ps" hint-placeholder-count="6">
+                <div style="{{ ps.style }}">{{ ps.label }}</div>
+              </sc-for>
+            </div>
+            <div style="flex:1;padding:9px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start">
+              <sc-for list="{{ ipadTiles }}" as="tl" hint-placeholder-count="9">
+                <div>
+                  <div style="{{ tl.thumbStyle }}"></div>
+                  <div style="height:4px;width:76%;background:#241F19;border-radius:2px;margin-top:4px"></div>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ ipadInspector }}" hint-placeholder-val="{{ false }}">
+              <div style="width:104px;flex:none;background:#151209;border-left:1px solid #2A251E;padding:9px 8px">
+                <div style="font-size:8px;font-weight:700;letter-spacing:0.1em;color:#6E6659;margin-bottom:6px">TAGS</div>
+                <sc-for list="{{ ipadPills }}" as="ip" hint-placeholder-count="4">
+                  <div style="{{ ip.style }}">{{ ip.label }}</div>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+      <div style="{{ ipadNoteStyle }}">{{ ipadNote }}</div>
+    </div>
+
+    <div style="flex:none;width:226px">
+      <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:9px">
+        <span style="font-size:14px;font-weight:700">iOS</span>
+        <span style="{{ iosBadgeStyle }}">{{ iosBadge }}</span>
+      </div>
+      <div style="padding:9px;background:#1A1A1C;border-radius:26px;border:1px solid #2E2E30">
+        <div style="border-radius:20px;overflow:hidden;background:#131009;position:relative">
+          <div style="height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8478">
+            <span>9:41</span><span>▪▪▪ ▮</span>
+          </div>
+          <div style="padding:4px 11px 8px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:7px">Library</div>
+            <div style="display:flex;gap:4px;overflow:hidden;margin-bottom:9px">
+              <sc-for list="{{ iosChips }}" as="ic" hint-placeholder-count="3">
+                <span style="{{ ic.style }}">{{ ic.label }}</span>
+              </sc-for>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+              <sc-for list="{{ iosTiles }}" as="tl" hint-placeholder-count="6">
+                <div>
+                  <div style="{{ tl.thumbStyle }}"></div>
+                  <div style="height:4px;width:72%;background:#241F19;border-radius:2px;margin-top:4px"></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="height:44px;border-top:1px solid #241F19;background:#17130E;display:flex;align-items:center;justify-content:space-around;padding:0 4px">
+            <sc-for list="{{ iosTabs }}" as="tb" hint-placeholder-count="3">
+              <div style="{{ tb.style }}">
+                <div style="font-size:12px">{{ tb.icon }}</div>
+                <div style="font-size:7.5px;margin-top:2px">{{ tb.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <div style="{{ iosNoteStyle }}">{{ iosNote }}</div>
+    </div>
+
+    <div style="flex:none;width:632px">
+      <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:9px">
+        <span style="font-size:14px;font-weight:700">tvOS</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 7px;border-radius:4px;background:#2E2820;color:#A79E90">viewer only</span>
+        <span style="font-size:11.5px;color:#6E6659">focus-driven · never edits</span>
+      </div>
+      <div style="border-radius:9px;overflow:hidden;border:1px solid #2E2820;background:#0E0C08;padding:16px 0 18px">
+        <div style="display:flex;align-items:center;gap:16px;padding:0 20px 14px">
+          <sc-for list="{{ tvNav }}" as="tv" hint-placeholder-count="4">
+            <span style="{{ tv.style }}">{{ tv.label }}</span>
+          </sc-for>
+        </div>
+        <div style="padding:0 20px 12px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:8px">CONTINUE WATCHING</div>
+          <div style="display:flex;gap:12px">
+            <sc-for list="{{ tvTiles }}" as="tl" hint-placeholder-count="5">
+              <div style="{{ tl.wrapStyle }}">
+                <div style="{{ tl.thumbStyle }}"></div>
+                <div style="{{ tl.labelStyle }}">{{ tl.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="padding:6px 20px 0">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:8px">BY BAND</div>
+          <div style="display:flex;gap:12px">
+            <sc-for list="{{ tvTiles2 }}" as="tl" hint-placeholder-count="5">
+              <div style="flex:none;width:104px">
+                <div style="{{ tl.thumbStyle }}"></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <div style="{{ tvNoteStyle }}">{{ tvNote }}</div>
+    </div>
+
+    <div style="flex:1;min-width:520px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:9px">Capability matrix</div>
+      <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1fr 62px 62px 62px 62px;padding:8px 12px;background:#1A1610;border-bottom:1px solid #2A251E">
+          <span style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">CAPABILITY</span>
+          <sc-for list="{{ matrixHeads }}" as="mh" hint-placeholder-count="4">
+            <span style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:center">{{ mh.label }}</span>
+          </sc-for>
+        </div>
+        <sc-for list="{{ matrixRows }}" as="mr" hint-placeholder-count="12">
+          <div style="display:grid;grid-template-columns:1fr 62px 62px 62px 62px;padding:7px 12px;border-bottom:1px solid #1F1B15;align-items:center">
+            <span style="font-size:12px;color:#CFC6B8">{{ mr.label }}</span>
+            <sc-for list="{{ mr.cells }}" as="cl" hint-placeholder-count="4">
+              <span style="{{ cl.style }}">{{ cl.label }}</span>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap">
+        <sc-for list="{{ legend }}" as="lg" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="{{ lg.chipStyle }}">{{ lg.mark }}</span>
+            <span style="font-size:11px;color:#8C8478">{{ lg.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:1440px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="4">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1520,&quot;height&quot;:1700}}">
+class Component extends DCLogic {
+  state = {rev:1};
+
+  renderVals(){
+    const st=this.state, self=this, r=st.rev;
+    const grad=i=>'width:100%;aspect-ratio:16/9;border-radius:3px;background:linear-gradient('+(112+i*17)+'deg,#2C2620,#16130F)';
+
+    const REVS=[
+      [1,'Rev 1','Pick a library, browse, filter, play. Nothing writes. iPhone and iPad ship the same capability set; the Apple TV arrives complete, because viewing is all it will ever do.'],
+      [2,'Rev 2','Tag editing reaches iPhone and iPad. The Mac still owns library creation and vocabulary authoring — that surface has exactly one implementation, on purpose.'],
+      [3,'Rev 3','Submit new media from a phone. This is where iOS stops: everything past it is screen-hungry, and a phone is the wrong tool for reviewing duplicates.'],
+      [4,'Rev 4','iPad reaches Mac parity — analysis, duplicates, organisation, write-back — through its own view layer against the shared domain, never a stretched phone.']
+    ];
+
+    // Availability by platform: a number is the rev it lands in, 0 = always,
+    // null = never planned, 'partial' = a reduced form.
+    const CAPS=[
+      ['Pick a library',0,1,1,0],
+      ['Create / configure a library',0,null,null,null],
+      ['Browse & filter',0,1,1,0],
+      ['Playback',0,1,1,0],
+      ['Edit tags',0,2,2,null],
+      ['Submit new media',0,3,3,null],
+      ['Tag analysis',0,null,4,null],
+      ['Duplicates & compare',0,null,4,null],
+      ['Media operations',0,null,'trigger',null],
+      ['Organisation & moves',0,null,4,null],
+      ['Write-back',0,null,4,null],
+      ['Source management',0,'status','status',null]
+    ];
+    const has=(v)=>v===0||(typeof v==='number'&&r>=v);
+
+    const cell=v=>{
+      if(v===null) return {label:'—',style:'font-size:11px;color:#3A3328;text-align:center'};
+      if(v===0) return {label:'●',style:'font-size:11px;color:#6FB86F;text-align:center'};
+      if(typeof v==='string') return {label:v==='trigger'?'▸':'◔',
+        style:'font-size:11px;color:'+(r>=4?'#9DBF7F':'#5E5749')+';text-align:center'};
+      return {label:r>=v?'●':'r'+v,
+        style:'font-'+(r>=v?'size:11px':'family:\'JetBrains Mono\',monospace;font-size:9.5px')+';color:'+(r>=v?'#6FB86F':'#5E5749')+';text-align:center'};
+    };
+
+    const dim=on=>'height:11px;border-radius:3px;margin-bottom:3px;background:'+(on?'#241F19':'#1A1712')+';'+(on?'':'opacity:0.5');
+    const noteStyle=on=>'font-size:11.5px;line-height:1.5;margin-top:9px;text-wrap:pretty;color:'+(on?'#8C8478':'#5E5749');
+
+    return {
+      revTabs: REVS.map(([n,label])=>({label,
+        style:'border:none;border-radius:6px;padding:6px 16px;font-size:12.5px;cursor:pointer;'+
+          (r===n?'background:#E9A23B;color:#1A1409;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({rev:n})})),
+      revName:(REVS.find(x=>x[0]===r)||REVS[0])[1],
+      revBlurb:(REVS.find(x=>x[0]===r)||REVS[0])[2],
+
+      macToolbar:['Video','386 items','Sort','View','Import','Categories','Duplicates'].map((label,i)=>({label,
+        style:'font-size:8.5px;padding:2px 6px;border-radius:3px;background:'+(i===0?'#2E2820':'transparent')+';border:1px solid '+(i===0?'transparent':'#241F19')+';color:'+(i===0?'#F2EDE4':'#7C7466')})),
+      macSidebar:['MEDIA TYPE','Video','Audio','SOURCES','Concerts SSD','Road Drive','BAND','Northlight','Hollow Bell','STATUS']
+        .map((label,i)=>({label,
+          style:'font-size:8px;padding:3px 5px;border-radius:3px;margin-bottom:1px;letter-spacing:'+(label===label.toUpperCase()?'0.09em':'0')+';'+
+            (label===label.toUpperCase()?'color:#5E5749;font-weight:700;margin-top:'+(i?'6px':'0'):'color:#A79E90')})),
+      macTiles:Array.from({length:12},(_,i)=>({thumbStyle:grad(i)})),
+      macNote:'Every window, always. Library creation and vocabulary authoring never leave here.',
+      macNoteStyle:noteStyle(true),
+
+      ipadBadge: r>=4?'Rev 4 · parity':r>=2?'Rev '+r+' · view + tag':'Rev 1 · view',
+      ipadBadgeStyle:'font-family:\'JetBrains Mono\',monospace;font-size:10.5px;padding:2px 7px;border-radius:4px;background:'+(r>=4?'#2F4A2F':'#2E2820')+';color:'+(r>=4?'#8FCF8F':'#A79E90'),
+      ipadToolbar:[['Filter',1],['Tag',2],['Analyse',4]].filter(([,v])=>r>=v).map(([label])=>({label,
+        style:'font-size:8.5px;padding:2px 6px;border-radius:3px;border:1px solid #241F19;color:#8C8478'})),
+      ipadSidebar:['SOURCES','Concerts SSD','Road Drive','BAND','Northlight','Hollow Bell','STATUS','★ Favourites']
+        .map(label=>({label,
+          style:'font-size:8px;padding:3px 5px;border-radius:3px;margin-bottom:1px;'+
+            (label===label.toUpperCase()?'color:#5E5749;font-weight:700;letter-spacing:0.09em;margin-top:5px':'color:#A79E90')})),
+      ipadTiles:Array.from({length:9},(_,i)=>({thumbStyle:grad(i+3)})),
+      ipadInspector: r>=2,
+      ipadPills:[['Northlight','#8B93E8'],['Soundboard','#C58BB8'],['Cedar Room','#6FBFB0'],['2024','#E9A23B']]
+        .map(([label,hue])=>({label,
+          style:'font-size:8px;padding:2px 6px;border-radius:999px;margin-bottom:3px;display:inline-block;background:'+hue+'22;color:'+hue})),
+      ipadNote: r>=4
+        ? 'Its own view layer against the shared domain — independent layout, no duplicated logic, no stretched-phone compromise.'
+        : 'Sidebar and grid like the Mac, but laid out for touch and one window. The tag inspector arrives at Rev 2.',
+      ipadNoteStyle:noteStyle(true),
+
+      iosBadge: r>=3?'Rev 3 · stops here':r>=2?'Rev 2 · view + tag':'Rev 1 · view',
+      iosBadgeStyle:'font-family:\'JetBrains Mono\',monospace;font-size:10.5px;padding:2px 7px;border-radius:4px;background:'+(r>=3?'#3A2E16':'#2E2820')+';color:'+(r>=3?'#E9A23B':'#A79E90'),
+      iosChips:[['Band ✓','#6FB86F'],['4K','#6B96D6'],['★','#E9A23B']].map(([label,c])=>({label,
+        style:'font-size:8px;padding:2px 7px;border-radius:999px;white-space:nowrap;background:'+c+'1C;color:'+c+';border:1px solid '+c+'44'})),
+      iosTiles:Array.from({length:6},(_,i)=>({thumbStyle:grad(i+6)})),
+      iosTabs:[['▦','Library',1],['⌕','Search',1],['≣','Queue',1],['⌂','Tag',2],['↑','Add',3]]
+        .filter(([,,v])=>r>=v).map(([icon,label],i)=>({icon,label,
+          style:'text-align:center;color:'+(i===0?'#E9A23B':'#6E6659')})),
+      iosNote: r>=3
+        ? 'View, tag, submit — and that is the whole phone. Everything past Rev 3 is screen-hungry.'
+        : r>=2 ? 'Tagging arrives as a sheet over the item, not a second workspace.'
+        : 'Browse, filter and play. The tab bar grows a tab per rev rather than a new mode.',
+      iosNoteStyle:noteStyle(true),
+
+      tvNav:['Library','Bands','Years','Search'].map((label,i)=>({label,
+        style:'font-size:11px;'+(i===0?'color:#F2EDE4;font-weight:600':'color:#5E5749')})),
+      tvTiles:['Northlight Sessions','Riverside Collective','Hollow Bell','Ash & Ember','Juno Grove']
+        .map((label,i)=>({label,
+          wrapStyle:'flex:none;width:104px;'+(i===1?'transform:scale(1.07);':''),
+          thumbStyle:'width:100%;aspect-ratio:16/9;border-radius:5px;background:linear-gradient('+(112+i*19)+'deg,#332C24,#18140F);'+
+            (i===1?'box-shadow:0 0 0 2px #F2EDE4,0 10px 24px rgba(0,0,0,0.7)':''),
+          labelStyle:'font-size:8.5px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(i===1?'#F2EDE4':'#6E6659')})),
+      tvTiles2:Array.from({length:5},(_,i)=>({thumbStyle:'width:100%;aspect-ratio:16/9;border-radius:5px;background:linear-gradient('+(130+i*15)+'deg,#2C2620,#16130F)'})),
+      tvNote:'Focus-driven browse and playback, and it stops there. Paired as a viewer, so it cannot edit tags even at Rev 4 — and can be authorised for Concerts and Home Videos while never seeing Learning.',
+      tvNoteStyle:noteStyle(true),
+
+      matrixHeads:['Mac','iOS','iPad','tvOS'].map(label=>({label})),
+      matrixRows:CAPS.map(row=>({label:row[0],cells:row.slice(1).map(cell)})),
+      legend:[['●','available now','#6FB86F'],['r2','arrives in a later rev','#5E5749'],['—','not planned','#3A3328']]
+        .map(([mark,label,c])=>({mark,label,
+          chipStyle:'font-family:\'JetBrains Mono\',monospace;font-size:10px;min-width:16px;text-align:center;color:'+c})),
+
+      notes:[
+        {title:'ONE DOMAIN, FOUR VIEW LAYERS',body:'The model, filter semantics and job abstraction are shared packages. Everything above them is written per platform — which is why iPad parity at Rev 4 costs a view layer rather than a fork.'},
+        {title:'AUTHORING STAYS ON THE MAC',body:'Creating a library and editing its vocabulary never ship anywhere else, on any rev. One implementation of the schema-editing surface is the whole reason the other platforms stay small.'},
+        {title:'THE PHONE HAS AN END',body:'iOS stops at Rev 3 by decision, not by backlog. Duplicate review and rule authoring on a phone would be worse than not having them, and saying so now keeps the tab bar from growing a mode a year.'},
+        {title:'ROLES ARE PER LIBRARY',body:'A device is paired, not a user, and each carries viewer / editor / full per library. The living-room Apple TV can hold Concerts and Home Videos and never see Learning.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

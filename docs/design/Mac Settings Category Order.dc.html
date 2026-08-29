@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1120px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Settings · Tag Category Configuration</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">One order to start from, and the freedom for each surface to disagree with it.</div>
+  </div>
+
+  <div style="width:1120px;height:800px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Settings</div>
+    </div>
+
+    <div style="flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:stretch;justify-content:center;gap:2px;padding:8px 12px">
+      <sc-for list="{{ sections }}" as="s" hint-placeholder-count="7">
+        <div onClick="{{ s.click }}" style="{{ s.style }}">
+          <span style="{{ s.iconStyle }}">{{ s.icon }}</span>
+          <span style="{{ s.labelStyle }}">{{ s.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:360px;flex:none;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0;background:#17130E">
+        <div style="flex:none;padding:18px 18px 12px">
+          <div style="font-size:15px;font-weight:700;margin-bottom:5px">Global order</div>
+          <div style="font-size:12px;color:#8C8478;line-height:1.5;text-wrap:pretty">The order categories appear in, everywhere, unless a surface has been allowed to differ.</div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0 12px 12px">
+          <sc-for list="{{ globalRows }}" as="g" hint-placeholder-count="6">
+            <div onDragOver="{{ g.dragOver }}" onDrop="{{ g.drop }}" style="{{ g.rowStyle }}">
+              <span draggable="true" onDragStart="{{ g.dragStart }}" onDragEnd="{{ g.dragEnd }}" style="{{ g.handleStyle }}" title="Drag to reorder">⠿</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749;width:16px">{{ g.n }}</span>
+              <span style="{{ g.swatchStyle }}"></span>
+              <span style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.name }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #241F19;padding:14px 16px 16px">
+          <div onClick="{{ toggleLock }}" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:8px;border-radius:7px;margin:-8px" style-hover="background:#1E1A14">
+            <span style="{{ lockBoxStyle }}">{{ lockMark }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12.5px;font-weight:500">Lock every surface to this order</div>
+              <div style="font-size:11.5px;color:#6E6659;margin-top:3px;line-height:1.45;text-wrap:pretty">{{ lockNote }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:none;padding:18px 20px 12px">
+          <div style="display:flex;align-items:baseline;gap:11px;margin-bottom:5px">
+            <div style="font-size:15px;font-weight:700">Where categories appear</div>
+            <span style="{{ divergedBadgeStyle }}">{{ divergedBadge }}</span>
+          </div>
+          <div style="font-size:12px;color:#8C8478;line-height:1.5;max-width:560px;text-wrap:pretty">{{ surfacesBlurb }}</div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:0 20px 20px;display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ surfaces }}" as="sf" hint-placeholder-count="4">
+            <div style="{{ sf.cardStyle }}">
+              <div style="display:flex;align-items:center;gap:11px;margin-bottom:10px">
+                <span style="{{ sf.iconStyle }}">{{ sf.icon }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:600">{{ sf.name }}</div>
+                  <div style="font-size:11px;color:#6E6659;margin-top:2px">{{ sf.why }}</div>
+                </div>
+                <span style="{{ sf.stateStyle }}">{{ sf.state }}</span>
+                <sc-if value="{{ sf.canReset }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ sf.reset }}" style="background:transparent;border:1px solid #332D24;border-radius:5px;padding:3px 10px;font-size:11px;color:#8C8478;cursor:pointer;white-space:nowrap" style-hover="border-color:#5A5142;color:#F2EDE4">Match global</button>
+                </sc-if>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ sf.chips }}" as="c" hint-placeholder-count="6">
+                  <div onDragOver="{{ c.dragOver }}" onDrop="{{ c.drop }}" draggable="{{ c.draggable }}" onDragStart="{{ c.dragStart }}" onDragEnd="{{ c.dragEnd }}" style="{{ c.style }}">
+                    <sc-if value="{{ c.movable }}" hint-placeholder-val="{{ false }}">
+                      <span style="opacity:0.4;font-size:10px;letter-spacing:-1px">⠿</span>
+                    </sc-if>
+                    <span>{{ c.name }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ sf.hidden }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:11px;color:#5E5749;margin-top:8px;line-height:1.45;text-wrap:pretty">{{ sf.hiddenNote }}</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1120px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  state = {
+    locked:false,
+    global:['Band','Recording Type','Venue','Year','Taper'],
+    // A surface with its own order has diverged; null means "follow global".
+    surfaces:{
+      browse:null,
+      player:['Band','Venue','Recording Type','Year','Taper'],
+      import:['Band','Year','Venue','Recording Type','Taper'],
+      review:null
+    },
+    drag:null, dragSurface:null, toast:null
+  };
+
+  hues(){ return {'Band':'#8B93E8','Recording Type':'#C58BB8','Venue':'#6FBFB0','Year':'#E9A23B','Taper':'#9DBF7F'}; }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2200); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  orderFor(key){
+    const s=this.state;
+    return (s.locked||!s.surfaces[key])?s.global:s.surfaces[key];
+  }
+
+  renderVals(){
+    const st=this.state, self=this, HUES=this.hues();
+
+    const SURFACES=[
+      ['browse','Browse sidebar','▤','filter panel — ordered by what you filter on most'],
+      ['player','Player tag panel','▶','tagging — ordered by what you type first'],
+      ['import','Import staging','↓','pre-staged on a batch — ordered by what a whole folder shares'],
+      ['review','Library review','⌗','creating or migrating a library']
+    ];
+
+    const divergedCount=Object.keys(st.surfaces).filter(k=>st.surfaces[k]).length;
+
+    const move=(arr,from,to)=>{ const n=arr.slice(); const [x]=n.splice(from,1); n.splice(to,0,x); return n; };
+
+    return {
+      sections:[['General','⚙'],['Import','↓'],['Playback','▶'],['Jobs','◷'],
+                ['Tag Category Configuration','⌗'],['Library Import','⤓'],['Repair','⚒']]
+        .map(([label,icon])=>{
+          const on=label==='Tag Category Configuration';
+          return {label,icon,
+            iconStyle:'font-size:15px;line-height:1;color:'+(on?'#E9A23B':'#6E6659'),
+            labelStyle:'font-size:10.5px;text-align:center;white-space:nowrap;color:'+(on?'#F2EDE4':'#8C8478'),
+            style:'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px 13px;border-radius:7px;cursor:pointer;'+
+              (on?'background:#2A2118':''),
+            click:()=>{ if(!on) self.flash(label+' settings'); }};
+        }),
+
+      globalRows: st.global.map((name,i)=>{
+        const dragging=st.drag===i&&st.dragSurface===null;
+        return {name, n:String(i+1),
+          swatchStyle:'flex:none;width:7px;height:7px;border-radius:2px;background:'+HUES[name],
+          handleStyle:'flex:none;padding:1px 3px;font-size:12px;line-height:1;letter-spacing:-1px;cursor:grab;color:'+(dragging?'#E9A23B':'#4A4238'),
+          rowStyle:'display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:7px;margin-bottom:3px;border:1px solid '+
+            (dragging?'#7A6428':'#2A251E')+';background:'+(dragging?'#221B12':'#151209'),
+          dragStart:e=>{ if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain','g'+i);}
+            self.setState({drag:i,dragSurface:null}); },
+          dragOver:e=>{ e.preventDefault();
+            const s=self.state;
+            if(s.dragSurface!==null||s.drag==null||s.drag===i) return;
+            self.setState({global:move(s.global,s.drag,i),drag:i});
+          },
+          drop:e=>{e.preventDefault();self.setState({drag:null,dragSurface:null});},
+          dragEnd:()=>self.setState({drag:null,dragSurface:null})};
+      }),
+
+      lockMark: st.locked?'✓':'',
+      lockBoxStyle:'flex:none;margin-top:1px;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+
+        (st.locked?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      lockNote: st.locked
+        ? 'On. Every surface follows the global order and cannot be rearranged on its own. Divergent orders are remembered, not discarded — unlock to get them back.'
+        : 'Off. The global order is a starting point; any surface can be dragged into an order that suits the work done there.',
+      toggleLock:()=>{ self.setState(s=>({locked:!s.locked}));
+        self.flash(st.locked?'Surfaces can diverge again':'All surfaces now follow the global order'); },
+
+      divergedBadge: st.locked?'locked to global':divergedCount?divergedCount+' of 4 diverged':'all matching global',
+      divergedBadgeStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;'+
+        (st.locked?'background:#3A2E16;color:#E9A23B':divergedCount?'background:#22262E;color:#8FA6D6':'background:#241F19;color:#7C7466'),
+      surfacesBlurb: st.locked
+        ? 'Locked. Each surface shows the global order and cannot be rearranged here.'
+        : 'Drag within a surface to give it its own order. The browse sidebar and the player rarely want the same one — you filter by Venue and tag by Band.',
+
+      surfaces: SURFACES.map(([key,name,icon,why])=>{
+        const own=st.surfaces[key], diverged=!st.locked&&!!own;
+        const order=self.orderFor(key);
+        return {name, icon, why,
+          iconStyle:'flex:none;width:22px;height:22px;border-radius:6px;background:#221D16;display:flex;align-items:center;justify-content:center;font-size:11px;color:#8C8478',
+          state: st.locked?'following global':diverged?'own order':'following global',
+          stateStyle:'font-size:10.5px;padding:2px 8px;border-radius:4px;white-space:nowrap;'+
+            (diverged?'background:#22262E;color:#8FA6D6':'background:#241F19;color:#7C7466'),
+          canReset: diverged,
+          reset:()=>{ self.setState(s=>({surfaces:Object.assign({},s.surfaces,{[key]:null})}));
+            self.flash(name+' follows the global order again'); },
+          cardStyle:'padding:13px 14px;border-radius:9px;background:#151209;border:1px solid '+(diverged?'#33415A':'#2A251E'),
+          hidden: key==='browse', hiddenNote:'Categories hidden from browse are left out here — hiding is per category, not per surface.',
+          chips: order.map((n2,i)=>{
+            const dragging=st.dragSurface===key&&st.drag===i;
+            return {name:n2, movable:!st.locked, draggable:!st.locked,
+              style:'display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 11px;font-size:11.5px;'+
+                (st.locked?'cursor:default;':'cursor:grab;')+
+                'background:'+(dragging?HUES[n2]+'33':HUES[n2]+'1C')+';color:'+HUES[n2]+
+                ';border:1px solid '+(dragging?HUES[n2]:HUES[n2]+'44'),
+              dragStart:e=>{ if(st.locked) return;
+                if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',key+i);}
+                self.setState({drag:i,dragSurface:key}); },
+              dragOver:e=>{ if(st.locked) return; e.preventDefault();
+                const s=self.state;
+                if(s.dragSurface!==key||s.drag==null||s.drag===i) return;
+                const base=s.surfaces[key]||s.global;
+                self.setState({surfaces:Object.assign({},s.surfaces,{[key]:move(base,s.drag,i)}),drag:i});
+              },
+              drop:e=>{e.preventDefault();self.setState({drag:null,dragSurface:null});},
+              dragEnd:()=>self.setState({drag:null,dragSurface:null})};
+          })};
+      }),
+
+      toast: st.toast,
+
+      notes:[
+        {title:'ONE ORDER TO START FROM',body:'A new surface begins at the global order rather than at nothing, so the setting is a default rather than four separate lists to maintain. Dragging within a surface is what makes it its own.'},
+        {title:'LOCKING HIDES, IT DOES NOT ERASE',body:'Turning the lock on makes every surface follow the global order, and turning it off gives each one its divergence back. A setting that silently discarded the arrangements underneath it would make the toggle unusable.'},
+        {title:'THEY DIVERGE FOR A REASON',body:'The browse sidebar is ordered by what you filter on; the player rail by what you type first; import staging by what a whole folder tends to share. Forcing one order on all three optimises none of them — which is why the lock is off by default.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

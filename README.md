@@ -5,7 +5,7 @@ Sights and Sounds (video/audio organizer), with iOS, iPadOS and tvOS to
 follow. Full context, locked decisions and the 11-phase plan live in
 [docs/replatform-brief.md](docs/replatform-brief.md).
 
-## Status — Phase 8: complete (shutdown gate open)
+## Status — Phase 8 complete (shutdown gate open); design pass under way
 
 - ✅ **Phase 0** (merged): SPM skeleton, GRDB store + migration mechanism,
   the three-way filter compiling to one SQL statement (no in-memory pass),
@@ -209,6 +209,17 @@ follow. Full context, locked decisions and the 11-phase plan live in
     items in the grid.
   - **The shutdown gate is open**: run the migrator against the real
     snapshot, verify counts, archive the old repo, stop the containers.
+- 🔨 **Design pass** (in progress): recreating the designed surfaces in
+  `docs/design/` — sixteen specs over the existing SwiftUI views, in the
+  order `docs/design/README-specs.md` sets.
+  - Design tokens (`Theme`): warm charcoal surfaces with an amber accent,
+    the app's own appearance rather than system materials. Archivo (UI)
+    and JetBrains Mono (every filename, path, count, duration and
+    timestamp) bundled and registered at launch.
+  - Spec 01, library picker: a **dialog**, not a window — it appears at
+    launch and from File ▸ Open Library… (⌘O), and goes away as soon as a
+    library is chosen. Cached per-library counts in the registry, so the
+    app opens without opening every library file and waking every drive.
 
 ### Demo library
 
@@ -245,8 +256,10 @@ For a double-clickable app with a dock presence:
 | `Sources/SightsAndSoundsKit/Filtering` | `MediaFilter` + `FilterCompiler` (filter → one SQL statement) |
 | `Sources/SightsAndSoundsKit/Jobs` | `Job`, `JobRunner`, `JobRecord` — the one job abstraction |
 | `Sources/SightsAndSoundsKit/FileAccess` | The one file-system boundary |
-| `Sources/SightsAndSoundsApp` | Early SwiftUI shell |
+| `Sources/SightsAndSoundsApp` | The macOS app: windows, views, and `Theme` (the design tokens) |
+| `Sources/SightsAndSoundsApp/Resources/Fonts` | Archivo and JetBrains Mono (OFL, licences alongside) |
 | `docs/` | Replatform brief, terminology ledger |
+| `docs/design/` | The design handoff: sixteen specs, tokens, comps and screenshots |
 | `scripts/` | Terminology guard (bash 3.2 portable, wired into CI) |
 
 ## Rules that hold from day one

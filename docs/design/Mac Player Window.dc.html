@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button{font-family:inherit}
+  input:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1440px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Player Window</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Playback, tagging, segments and queue in one window. Press <span style="font-family:'JetBrains Mono',monospace;color:#CFC6B8">?</span> to compare both keyboard maps.</div>
+  </div>
+
+  <div style="width:1440px;height:948px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Concerts — Player</div>
+    </div>
+
+    <div style="height:50px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:10px">
+      <button onClick="{{ back }}" style="background:transparent;border:1px solid #332D24;border-radius:7px;padding:6px 11px;font-size:12px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">‹ Grid</button>
+      <div style="min-width:0;max-width:400px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ itemName }}</div>
+        <div style="font-size:10.5px;color:#6E6659;margin-top:1px">{{ itemMeta }}</div>
+      </div>
+      <div style="display:flex;gap:5px;margin-left:6px">
+        <sc-for list="{{ flagBtns }}" as="fb" hint-placeholder-count="4">
+          <button onClick="{{ fb.click }}" style="{{ fb.style }}" title="{{ fb.title }}">{{ fb.label }}</button>
+        </sc-for>
+      </div>
+      <div style="flex:1"></div>
+      <button onClick="{{ toggleTriage }}" style="{{ triageStyle }}">{{ triageLabel }}</button>
+      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+        <sc-for list="{{ panelBtns }}" as="pb" hint-placeholder-count="4">
+          <button onClick="{{ pb.click }}" style="{{ pb.style }}">{{ pb.label }}</button>
+        </sc-for>
+      </div>
+      <button onClick="{{ openKeyboard }}" style="background:transparent;border:1px solid #332D24;border-radius:7px;padding:6px 10px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">?</button>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+        <div style="{{ stageStyle }}">
+          <div style="{{ videoStyle }}">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:7px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A443A">video surface</div>
+              <sc-if value="{{ paused }}" hint-placeholder-val="{{ true }}">
+                <div style="width:46px;height:46px;border-radius:50%;border:1px solid #4A443A;display:flex;align-items:center;justify-content:center;font-size:15px;color:#6E6659">▶</div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ marking }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:10px;left:12px;display:flex;align-items:center;gap:7px;background:rgba(12,9,5,0.86);border:1px solid #7A6428;border-radius:6px;padding:5px 10px">
+                <span style="width:7px;height:7px;border-radius:50%;background:#E9A23B"></span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#E9A23B">marking from {{ markStart }} — {{ markHint }} to close</span>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="flex:none;background:#17130E;border-top:1px solid #2A251E;padding:11px 16px 13px">
+          <div style="position:relative;height:44px;margin-bottom:9px">
+            <div onClick="{{ seekTo }}" style="position:absolute;left:0;right:0;top:11px;height:22px;background:#100D08;border:1px solid #241F19;border-radius:4px;overflow:hidden;cursor:pointer">
+              <div style="position:absolute;inset:0;display:flex;align-items:center;gap:1px;padding:0 2px">
+                <sc-for list="{{ peaks }}" as="pk" hint-placeholder-count="90">
+                  <div style="{{ pk.style }}"></div>
+                </sc-for>
+              </div>
+              <div style="{{ playedStyle }}"></div>
+            </div>
+            <sc-for list="{{ segBars }}" as="sb" hint-placeholder-count="4">
+              <div onClick="{{ sb.click }}" style="{{ sb.style }}" title="{{ sb.title }}"></div>
+            </sc-for>
+            <sc-if value="{{ marking }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ markStyle }}"></div>
+            </sc-if>
+            <div style="{{ headStyle }}"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <sc-for list="{{ transport }}" as="tr" hint-placeholder-count="5">
+                <button onClick="{{ tr.click }}" style="{{ tr.style }}" title="{{ tr.title }}">{{ tr.label }}</button>
+              </sc-for>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#CFC6B8">{{ timeLabel }}</div>
+            <div style="flex:1"></div>
+            <div style="display:flex;align-items:center;gap:7px">
+              <button onClick="{{ markIn }}" style="{{ markInStyle }}">{{ markInLabel }}</button>
+              <button onClick="{{ markOut }}" style="{{ markOutStyle }}">{{ markOutLabel }}</button>
+            </div>
+            <div style="display:flex;gap:5px">
+              <sc-for list="{{ toggles }}" as="tg" hint-placeholder-count="2">
+                <button onClick="{{ tg.click }}" style="{{ tg.style }}" title="{{ tg.title }}">{{ tg.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <sc-if value="{{ showText }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;height:112px;background:#151209;border-top:1px solid #2A251E;display:flex;flex-direction:column">
+            <div style="flex:none;display:flex;align-items:center;gap:9px;padding:8px 14px 6px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">ON-SCREEN TEXT</div>
+              <div style="font-size:11px;color:#5E5749">Vision OCR · click a line to seek</div>
+              <div style="flex:1"></div>
+              <button onClick="{{ closeText }}" style="background:none;border:none;color:#6E6659;font-size:13px;cursor:pointer">×</button>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:0 14px 10px">
+              <sc-for list="{{ ocrLines }}" as="ol" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:11px;padding:4px 6px;border-radius:5px" style-hover="background:#1E1A14">
+                  <span onClick="{{ ol.click }}" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#E9A23B;flex:none;cursor:pointer">{{ ol.at }}</span>
+                  <span onClick="{{ ol.click }}" style="flex:1;min-width:0;font-size:12.5px;color:#CFC6B8;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ol.text }}</span>
+                  <sc-if value="{{ ol.tagged }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:9px;padding:1px 6px;border-radius:3px;background:#1F3320;color:#8FCF8F;flex:none">tagged</span>
+                  </sc-if>
+                  <div style="display:flex;gap:4px;flex:none">
+                    <sc-for list="{{ ol.actions }}" as="ac" hint-placeholder-count="3">
+                      <button onClick="{{ ac.click }}" style="{{ ac.style }}" title="{{ ac.title }}">{{ ac.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showQueue }}" hint-placeholder-val="{{ true }}">
+          <div style="{{ queueStyle }}">
+            <div style="flex:none;display:flex;align-items:center;gap:9px;padding:8px 14px 7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">QUEUE</div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659">{{ queueLabel }}</span>
+              <div style="flex:1"></div>
+              <button onClick="{{ saveQueue }}" style="background:none;border:none;font-size:11.5px;color:#8C8478;cursor:pointer" style-hover="color:#E9A23B">Save as playlist</button>
+            </div>
+            <div style="flex:1;display:flex;gap:9px;overflow-x:auto;padding:0 14px 11px">
+              <sc-for list="{{ queue }}" as="q" hint-placeholder-count="7">
+                <div onClick="{{ q.click }}" style="{{ q.style }}">
+                  <div style="{{ q.thumbStyle }}">
+                    <sc-if value="{{ q.current }}" hint-placeholder-val="{{ false }}">
+                      <span style="position:absolute;top:4px;left:5px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#E9A23B;color:#1A1409">NOW</span>
+                    </sc-if>
+                    <span style="position:absolute;bottom:4px;right:5px;font-family:'JetBrains Mono',monospace;font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(12,9,5,0.8);color:#CFC6B8">{{ q.dur }}</span>
+                  </div>
+                  <div style="{{ q.nameStyle }}">{{ q.name }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ showRail }}" hint-placeholder-val="{{ true }}">
+        <div style="width:352px;flex:none;background:#17130E;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+
+          <sc-if value="{{ showTags }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ tagPaneStyle }}">
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:11px 14px 8px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">TAGS</div>
+                <span style="{{ tagZoneBadge }}">{{ zoneHint }}</span>
+                <div style="flex:1"></div>
+                <button onClick="{{ openBindings }}" style="background:none;border:none;font-size:11px;color:#8C8478;cursor:pointer" style-hover="color:#E9A23B">Key bindings…</button>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:0 14px 14px;display:flex;flex-direction:column;gap:14px">
+                <sc-for list="{{ categories }}" as="c" hint-placeholder-count="4">
+                  <div style="position:relative">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span style="{{ c.swatchStyle }}"></span>
+                      <span style="font-size:12px;font-weight:600;color:#CFC6B8">{{ c.name }}</span>
+                      <span style="font-size:10.5px;color:#6E6659">{{ c.rule }}</span>
+                    </div>
+                    <sc-if value="{{ c.isCheckboxes }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;flex-wrap:wrap;gap:5px">
+                        <sc-for list="{{ c.options }}" as="op" hint-placeholder-count="5">
+                          <button onClick="{{ op.pick }}" style="{{ op.style }}">{{ op.name }}<span style="{{ op.keyStyle }}">{{ op.key }}</span></button>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ c.isSearch }}" hint-placeholder-val="{{ true }}">
+                      <div>
+                        <sc-if value="{{ c.showQuick }}" hint-placeholder-val="{{ true }}">
+                          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+                            <sc-for list="{{ c.quick }}" as="qp" hint-placeholder-count="3">
+                              <button onClick="{{ qp.pick }}" style="{{ qp.style }}">★ {{ qp.name }}</button>
+                            </sc-for>
+                          </div>
+                        </sc-if>
+                        <input value="{{ c.query }}" onChange="{{ c.onInput }}" onKeyDown="{{ c.onKey }}" onFocus="{{ c.onFocus }}" placeholder="{{ c.placeholder }}" style="{{ c.inputStyle }}" />
+                        <sc-if value="{{ c.dropOpen }}" hint-placeholder-val="{{ false }}">
+                          <div style="position:absolute;left:0;right:0;z-index:30;margin-top:3px;background:#201B14;border:1px solid #4A4238;border-radius:7px;box-shadow:0 18px 40px rgba(0,0,0,0.65);overflow:hidden;max-height:182px;overflow-y:auto">
+                            <sc-for list="{{ c.rows }}" as="r" hint-placeholder-count="3">
+                              <div onClick="{{ r.pick }}" style="{{ r.style }}">
+                                <sc-if value="{{ r.badge }}" hint-placeholder-val="{{ false }}">
+                                  <span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#E9A23B;color:#1A1409">{{ r.badge }}</span>
+                                </sc-if>
+                                <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.label }}</span>
+                              </div>
+                            </sc-for>
+                          </div>
+                        </sc-if>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+                          <sc-for list="{{ c.pills }}" as="p" hint-placeholder-count="1">
+                            <span style="{{ p.style }}">{{ p.name }}<span onClick="{{ p.remove }}" style="cursor:pointer;opacity:0.6;font-size:12px">×</span></span>
+                          </sc-for>
+                        </div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ showSegments }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ segPaneStyle }}">
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:10px 14px 7px;border-top:1px solid #2A251E">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">SEGMENTS</div>
+                <span style="{{ segZoneBadge }}">{{ zoneHint }}</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ segCounts }}</span>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:0 10px 12px">
+                <sc-for list="{{ segRows }}" as="sg" hint-placeholder-count="4">
+                  <div onClick="{{ sg.click }}" style="{{ sg.rowStyle }}">
+                    <span style="{{ sg.kindStyle }}">{{ sg.kind }}</span>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sg.name }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:2px">{{ sg.range }}</div>
+                    </div>
+                    <span onClick="{{ sg.play }}" style="font-size:11px;color:#6E6659;cursor:pointer;padding:0 3px">▶</span>
+                    <span onClick="{{ sg.remove }}" style="font-size:13px;color:#5E5749;cursor:pointer;padding:0 2px">×</span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ noSegments }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:22px 12px;text-align:center;font-size:12px;color:#5E5749;line-height:1.5;text-wrap:pretty">No songs or clips yet. Press {{ markInLabel }} to open a segment, {{ markOutLabel }} to close it.</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="height:30px;flex:none;background:#100D08;border-top:1px solid #241F19;display:flex;align-items:center;padding:0 14px;gap:14px">
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#5E5749">FOCUS</span>
+        <sc-for list="{{ zoneChips }}" as="zc" hint-placeholder-count="4">
+          <button onClick="{{ zc.pick }}" style="{{ zc.style }}">{{ zc.label }}</button>
+        </sc-for>
+      </div>
+      <div style="flex:1"></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749">{{ statusHint }}</div>
+    </div>
+
+    <sc-if value="{{ keyboardOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeKeyboard }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.72);z-index:80;display:flex;align-items:center;justify-content:center;padding:30px">
+        <div onClick="{{ stop }}" style="width:840px;max-height:100%;overflow-y:auto;background:#1E1A15;border:1px solid #3A3328;border-radius:12px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:20px 22px">
+          <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
+            <div style="font-size:15.5px;font-weight:600">Keyboard map</div>
+            <div style="font-size:12.5px;color:#8C8478;text-wrap:pretty">Two maps disagree on four rows. Pick one — the hints throughout the window follow it.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 210px 210px;gap:0;margin-top:14px">
+            <div style="padding:7px 10px;font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">ACTION</div>
+            <sc-for list="{{ mapHeads }}" as="mh" hint-placeholder-count="2">
+              <div style="{{ mh.style }}">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font-size:12.5px;font-weight:600;color:{{ mh.color }}">{{ mh.name }}</span>
+                  <sc-if value="{{ mh.active }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:#E9A23B;color:#1A1409">ACTIVE</span>
+                  </sc-if>
+                </div>
+                <div style="font-size:11px;color:#6E6659;margin-top:2px;line-height:1.4">{{ mh.note }}</div>
+              </div>
+            </sc-for>
+            <sc-for list="{{ mapRows }}" as="mr" hint-placeholder-count="9">
+              <div style="{{ mr.labelStyle }}">{{ mr.label }}</div>
+              <div style="{{ mr.webStyle }}">{{ mr.web }}</div>
+              <div style="{{ mr.macStyle }}">{{ mr.mac }}</div>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <div style="flex:1;font-size:11.5px;color:#6E6659;line-height:1.5;text-wrap:pretty">Rows that differ are highlighted. Everything else is identical in both maps.</div>
+            <sc-for list="{{ mapPicks }}" as="mp" hint-placeholder-count="2">
+              <button onClick="{{ mp.pick }}" style="{{ mp.style }}">{{ mp.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ ocrSheet }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeOcrSheet }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.68);z-index:82;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ stop }}" style="width:440px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);overflow:hidden">
+          <div style="padding:15px 17px 12px;border-bottom:1px solid #2E2820">
+            <div style="font-size:14.5px;font-weight:600">{{ ocrSheetTitle }}</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B;margin-top:6px;padding:6px 9px;background:#100D08;border:1px solid #2A251E;border-radius:6px">{{ ocrSheetText }}</div>
+            <div style="font-size:11.5px;color:#8C8478;margin-top:8px;line-height:1.5;text-wrap:pretty">{{ ocrSheetNote }}</div>
+          </div>
+          <div style="padding:13px 17px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">{{ ocrSheetPickLabel }}</div>
+            <div style="display:flex;flex-direction:column;gap:2px;max-height:186px;overflow-y:auto">
+              <sc-for list="{{ ocrSheetOptions }}" as="oo" hint-placeholder-count="4">
+                <div onClick="{{ oo.pick }}" style="{{ oo.style }}">
+                  <span style="{{ oo.swatchStyle }}"></span>
+                  <span style="flex:1;min-width:0;font-size:12.5px">{{ oo.label }}</span>
+                  <span style="font-size:10.5px;color:#5E5749">{{ oo.hint }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="padding:11px 15px;border-top:1px solid #2E2820;display:flex;align-items:center;gap:9px">
+            <button onClick="{{ openAnalysis }}" style="background:none;border:none;font-size:11.5px;color:#8C8478;cursor:pointer;text-align:left" style-hover="color:#E9A23B">Find across the library →</button>
+            <div style="flex:1"></div>
+            <button onClick="{{ closeOcrSheet }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ bindingsOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeBindings }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.68);z-index:80;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ stop }}" style="width:470px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);overflow:hidden">
+          <div style="padding:15px 17px 11px;border-bottom:1px solid #2E2820">
+            <div style="font-size:14.5px;font-weight:600">Tag key bindings</div>
+            <div style="font-size:12px;color:#8C8478;margin-top:4px;line-height:1.5;text-wrap:pretty">A bound key toggles its tag on the playing item. Only keys the fixed map leaves free are offered.</div>
+          </div>
+          <div style="padding:8px 10px;max-height:250px;overflow-y:auto">
+            <sc-for list="{{ bindingRows }}" as="br" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px" style-hover="background:#251F18">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;width:34px;color:#E9A23B">{{ br.key }}</span>
+                <span style="flex:1;font-size:12.5px">{{ br.tag }}</span>
+                <sc-if value="{{ br.advance }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:9.5px;padding:1px 6px;border-radius:3px;background:#241F19;color:#8C8478">advances</span>
+                </sc-if>
+                <span onClick="{{ br.remove }}" style="color:#5E5749;cursor:pointer;font-size:13px">×</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:12px 15px;border-top:1px solid #2E2820;display:flex;justify-content:flex-end;gap:9px">
+            <button onClick="{{ closeBindings }}" style="background:#E9A23B;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#1A1409;cursor:pointer">Done</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:52px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1440px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="4">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1520,&quot;height&quot;:1180}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    return {
+      keymap:'web', playing:false, t:648, duration:5040,
+      zone:'video', panels:{tags:true,segments:true,queue:true,text:false},
+      applied:{Band:['Northlight Sessions'],'Recording Type':['Soundboard'],Venue:[],Year:['2024'],Taper:[]},
+      segments:[
+        {id:'s1',kind:'song',name:'Cedar Lines',start:120,end:412},
+        {id:'s2',kind:'song',name:'Ash & Ember',start:430,end:742},
+        {id:'s3',kind:'clip',name:'Guitar solo',start:512,end:566},
+        {id:'s4',kind:'song',name:'Broadside',start:760,end:1180},
+        {id:'s5',kind:'clip',name:'Crowd sing-along',start:1190,end:1244}
+      ],
+      selectedSeg:'s2', markStart:null,
+      flags:{fav:true,review:false,issue:false,del:false},
+      triage:false, triageCount:0,
+      active:null, query:'', highlight:0,
+      queueIndex:2, keyboardOpen:false, bindingsOpen:false, toast:null, ocrSheet:null,
+      bindings:[{key:'S',tag:'Recording Type · Soundboard',advance:false},
+                {key:'A',tag:'Recording Type · Audience',advance:false},
+                {key:'F1',tag:'Band · Northlight Sessions',advance:true}]
+    };
+  }
+
+  cats(){
+    return [
+      {name:'Band',hue:'#8B93E8',multi:true,mode:'search',
+       tags:['Northlight Sessions','Riverside Collective','The Broadside Trio','Marta Quinn','Hollow Bell','Ash & Ember'],
+       favs:['Northlight Sessions','Hollow Bell']},
+      {name:'Recording Type',hue:'#C58BB8',multi:false,mode:'checkboxes',
+       tags:['Soundboard','Audience','FM Broadcast','Pro-shot','Matrix'],favs:[]},
+      {name:'Venue',hue:'#6FBFB0',multi:false,mode:'search',
+       tags:['Riverside Amphitheater','The Broadside','Northlight Hall','Cedar Room'],
+       favs:['Northlight Hall','Cedar Room']},
+      {name:'Year',hue:'#E9A23B',multi:false,mode:'search',tags:['2021','2022','2023','2024'],favs:['2024']},
+      {name:'Taper',hue:'#9DBF7F',multi:true,mode:'search',tags:['J. Alvarez','M. Okafor','unknown'],favs:['J. Alvarez']}
+    ];
+  }
+
+  maps(){
+    return {
+      web:{name:'Web map',note:'Tuned by using it. Modified arrows, bracket marks, fixed triage.',
+        prev:'⇧←',next:'⇧→',segIn:'[',segOut:']',triage:'R / W / D',markInLabel:'[',markOutLabel:']'},
+      mac:{name:'Mac map',note:'What the Swift ships today. Bare arrows, control-bracket marks.',
+        prev:'←',next:'→',segIn:'⌃{',segOut:'⌃}',triage:'bound letters',markInLabel:'⌃{',markOutLabel:'⌃}'}
+    };
+  }
+
+  map(){ return this.maps()[this.state.keymap]; }
+  fmt(s){
+    s=Math.max(0,Math.round(s));
+    const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), x=s%60;
+    return h+':'+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0');
+  }
+  flash(m){ this.setState({toast:m}); clearTimeout(this._tt); this._tt=setTimeout(()=>this.setState({toast:null}),1900); }
+
+  seek(delta){ this.setState(s=>({t:Math.max(0,Math.min(s.duration,s.t+delta))})); }
+
+  markIn(){ this.setState(s=>({markStart:s.t})); }
+  markOut(kind){
+    const st=this.state;
+    if(st.markStart==null){ this.flash('Nothing open — mark a start first'); return; }
+    const a=Math.min(st.markStart,st.t), b=Math.max(st.markStart,st.t);
+    if(b-a<2){ this.setState({markStart:null}); this.flash('Too short'); return; }
+    const id='s'+Date.now();
+    this.setState(s=>({segments:s.segments.concat([{id,kind:kind||'song',name:(kind==='clip'?'New clip':'New song'),start:a,end:b}]).sort((x,y)=>x.start-y.start),
+      markStart:null,selectedSeg:id}));
+    this.flash((kind==='clip'?'Clip':'Song')+' added · '+this.fmt(a)+'–'+this.fmt(b));
+  }
+
+  triageMark(kind){
+    const label={review:'reviewed',issue:'playback issue',del:'marked for deletion'}[kind];
+    this.setState(s=>({flags:Object.assign({},s.flags,{[kind]:true}),triageCount:s.triageCount+1,
+      queueIndex:Math.min(s.queueIndex+1,6),t:0}));
+    this.flash(label+' · next item');
+  }
+
+  componentDidMount(){
+    this._tick=setInterval(()=>{
+      if(!this.state.playing) return;
+      this.setState(s=>({t:s.t+1>=s.duration?0:s.t+1}));
+    },1000);
+    this._key=e=>{
+      const tag=(e.target.tagName||'').toUpperCase();
+      const typing=tag==='INPUT'||tag==='TEXTAREA';
+      const st=this.state, M=this.map();
+
+      if(e.key==='Escape'){
+        e.preventDefault();
+        if(st.keyboardOpen||st.bindingsOpen||st.ocrSheet){ this.setState({keyboardOpen:false,bindingsOpen:false,ocrSheet:null}); return; }
+        if(st.markStart!=null){ this.setState({markStart:null}); return; }
+        // Esc from anywhere in the panels returns focus to the video —
+        // the single rule that makes every other single-key shortcut safe.
+        this.setState({zone:'video',active:null,query:''});
+        if(document.activeElement&&document.activeElement.blur) document.activeElement.blur();
+        return;
+      }
+      if(e.key==='?'){ e.preventDefault(); this.setState(s=>({keyboardOpen:!s.keyboardOpen})); return; }
+      if(e.key==='Tab'){
+        e.preventDefault();
+        const zones=['video','tags','segments','queue'].filter(z=>z==='video'||st.panels[z]);
+        const i=zones.indexOf(st.zone);
+        const n=e.shiftKey?(i-1+zones.length)%zones.length:(i+1)%zones.length;
+        this.setState({zone:zones[n],active:null,query:''});
+        return;
+      }
+
+      // Numpad seeking always works, even while typing a tag name.
+      if(e.location===3||e.code.indexOf('Numpad')===0){
+        const seeks={Numpad7:-180,Numpad9:180,Numpad4:-45,Numpad6:45,Numpad1:-2,Numpad3:2};
+        if(seeks[e.code]!=null){ e.preventDefault(); this.seek(seeks[e.code]); return; }
+        if(e.code==='Numpad5'){ e.preventDefault(); this.setState(s=>({playing:!s.playing})); return; }
+      }
+      if(typing) return;
+
+      if(e.code==='Space'){ e.preventDefault(); this.setState(s=>({playing:!s.playing})); return; }
+
+      const wantsShift=st.keymap==='web';
+      if(e.key==='ArrowLeft'&&e.shiftKey===wantsShift){ e.preventDefault(); this.setState(s=>({queueIndex:Math.max(0,s.queueIndex-1),t:0})); return; }
+      if(e.key==='ArrowRight'&&e.shiftKey===wantsShift){ e.preventDefault(); this.setState(s=>({queueIndex:Math.min(6,s.queueIndex+1),t:0})); return; }
+
+      if(st.zone!=='video') return;
+
+      if(st.keymap==='web'){
+        if(e.key==='['){ e.preventDefault(); this.markIn(); return; }
+        if(e.key===']'){ e.preventDefault(); this.markOut('song'); return; }
+      } else if(e.ctrlKey){
+        if(e.key==='{'||e.key==='['){ e.preventDefault(); this.markIn(); return; }
+        if(e.key==='}'||e.key===']'){ e.preventDefault(); this.markOut('song'); return; }
+      }
+      if(e.key==='c'||e.key==='C'){ e.preventDefault(); this.markOut('clip'); return; }
+
+      if(st.triage||st.keymap==='web'){
+        const k=e.key.toLowerCase();
+        if(k==='r'){ e.preventDefault(); this.triageMark('review'); return; }
+        if(k==='w'){ e.preventDefault(); this.triageMark('issue'); return; }
+        if(k==='d'){ e.preventDefault(); this.triageMark('del'); return; }
+      }
+      if(e.key==='t'||e.key==='T'){ e.preventDefault(); this.setState(s=>({panels:Object.assign({},s.panels,{tags:!s.panels.tags})})); }
+    };
+    window.addEventListener('keydown',this._key);
+  }
+  componentWillUnmount(){ clearInterval(this._tick); clearTimeout(this._tt); window.removeEventListener('keydown',this._key); }
+
+  renderVals(){
+    const st=this.state, self=this, M=this.map(), CATS=this.cats();
+    const pct=st.t/st.duration;
+    const zoneRing=z=>st.zone===z?'box-shadow:inset 0 0 0 1px rgba(233,162,59,0.55)':'';
+
+    const QUEUE=['northlight_sessions_2024_01_4k.mp4','riverside_collective_2023_04_1080p.mp4',
+      'the_broadside_trio_2024_02_4k.mp4','marta_quinn_2023_07_1080p.mp4','hollow_bell_2022_03_720p.mp4',
+      'ash_ember_2024_05_1080p.mp4','juno_grove_2021_02_1080p.mp4'];
+
+    const peaks=Array.from({length:96},(_,i)=>{
+      const h=22+Math.abs(Math.sin(i*0.42)*Math.cos(i*0.17))*74;
+      return {style:'flex:1;height:'+h.toFixed(0)+'%;border-radius:1px;background:'+(i/96<pct?'#6A5D45':'#332D24')};
+    });
+
+    const segBars=st.segments.map(sg=>{
+      const c=sg.kind==='song'?'#6FBFB0':'#C58BB8';
+      const on=st.selectedSeg===sg.id;
+      return {title:sg.name+' · '+self.fmt(sg.start)+'–'+self.fmt(sg.end),
+        style:'position:absolute;top:'+(sg.kind==='song'?'1px':'36px')+';height:7px;border-radius:2px;cursor:pointer;'+
+          'left:'+(sg.start/st.duration*100).toFixed(2)+'%;width:'+Math.max(0.5,(sg.end-sg.start)/st.duration*100).toFixed(2)+'%;'+
+          'background:'+c+(on?';box-shadow:0 0 0 1px #E9A23B':';opacity:0.62'),
+        click:e=>{e.stopPropagation();self.setState({selectedSeg:sg.id,t:sg.start});}};
+    });
+
+    const categories=CATS.map(c=>{
+      const sel=st.applied[c.name]||[];
+      const isOpen=st.active===c.name, q=isOpen?st.query:'';
+      const ql=q.trim().toLowerCase();
+      const matches=c.tags.filter(t=>t.toLowerCase().indexOf(ql)>=0&&sel.indexOf(t)<0);
+      const rows=matches.map(t=>({label:t,badge:null,val:t}));
+      if(ql&&!c.tags.some(t=>t.toLowerCase()===ql)) rows.push({label:'Create “'+q.trim()+'” in '+c.name,badge:'NEW',val:q.trim()});
+      const apply=val=>{
+        self.setState(s=>{
+          const cur=(s.applied[c.name]||[]).slice();
+          if(c.multi){ if(cur.indexOf(val)<0) cur.push(val); }
+          else { cur.length=0; cur.push(val); }
+          return {applied:Object.assign({},s.applied,{[c.name]:cur}),active:null,query:'',highlight:0};
+        });
+      };
+      return {name:c.name, rule:c.multi?'multiple':'one only',
+        isCheckboxes:c.mode==='checkboxes', isSearch:c.mode==='search',
+        placeholder:'Type to select '+c.name, query:q, dropOpen:isOpen&&rows.length>0,
+        showQuick: c.favs.length>0&&!isOpen,
+        swatchStyle:'width:7px;height:7px;border-radius:2px;background:'+c.hue,
+        inputStyle:'width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid '+(isOpen?'#7A6A4A':'#332D24')+';border-radius:6px;padding:7px 9px;color:#F2EDE4;font-size:12.5px',
+        quick:c.favs.filter(t=>sel.indexOf(t)<0).map(t=>({name:t,
+          style:'border-radius:999px;padding:3px 9px;font-size:11px;cursor:pointer;border:1px dashed '+c.hue+'55;background:transparent;color:'+c.hue,
+          pick:()=>apply(t)})),
+        options:c.tags.map((t,i)=>({name:t,key:'⌥'+(i+1),
+          keyStyle:'margin-left:6px;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:'+(sel.indexOf(t)>=0?c.hue:'#5E5749'),
+          style:'display:inline-flex;align-items:center;border-radius:5px;padding:4px 9px;font-size:11.5px;cursor:pointer;border:1px solid '+(sel.indexOf(t)>=0?c.hue:'#332D24')+';background:'+(sel.indexOf(t)>=0?c.hue+'22':'transparent')+';color:'+(sel.indexOf(t)>=0?c.hue:'#8C8478'),
+          pick:()=>apply(t)})),
+        pills:sel.map(t=>({name:t,
+          style:'display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:11.5px;background:'+c.hue+'22;color:'+c.hue+';border:1px solid '+c.hue+'44',
+          remove:e=>{e.stopPropagation();self.setState(s=>({applied:Object.assign({},s.applied,{[c.name]:(s.applied[c.name]||[]).filter(x=>x!==t)})}));}})),
+        rows:rows.map((r,i)=>({label:r.label,badge:r.badge,
+          style:'display:flex;align-items:center;gap:7px;padding:6px 9px;font-size:12px;cursor:pointer;'+(i===st.highlight?'background:#E9A23B;color:#1A1409':'color:#CFC6B8'),
+          pick:()=>apply(r.val)})),
+        onFocus:()=>self.setState({active:c.name,query:'',highlight:0,zone:'tags'}),
+        onInput:e=>self.setState({active:c.name,query:e.target.value,highlight:0}),
+        onKey:e=>{
+          if(e.key==='ArrowDown'){e.preventDefault();self.setState(s=>({highlight:(s.highlight+1)%Math.max(rows.length,1)}));}
+          else if(e.key==='ArrowUp'){e.preventDefault();self.setState(s=>({highlight:s.highlight<=0?rows.length-1:s.highlight-1}));}
+          else if(e.key==='Enter'){e.preventDefault();if(rows[st.highlight])apply(rows[st.highlight].val);}
+        }};
+    });
+
+    const mapRows=[
+      ['Play / pause','space · numpad 5','space · numpad 5'],
+      ['Seek ∓3m / ∓45s / ∓2s','numpad 7 9 · 4 6 · 1 3','numpad 7 9 · 4 6 · 1 3'],
+      ['Previous / next item','⇧← ⇧→','← →'],
+      ['Open / close a segment','[  ]','⌃{  ⌃}'],
+      ['Close as a clip','C','C'],
+      ['Triage keep / issue / delete','R  W  D','bound letters + advance'],
+      ['Toggle tag panel','T','T'],
+      ['Move focus zone','Tab · ⇧Tab','Tab · ⇧Tab'],
+      ['Release to video','Esc','Esc']
+    ].map(([label,web,mac])=>{
+      const differs=web!==mac;
+      const cell=(active)=>'padding:7px 10px;font-family:\'JetBrains Mono\',monospace;font-size:11.5px;border-top:1px solid #2A251E;'+
+        (differs?'color:'+(active?'#E9A23B':'#9A8F80')+';background:'+(active?'#2A2118':'#1A1610'):'color:#8C8478');
+      return {label, web, mac,
+        labelStyle:'padding:7px 10px;font-size:12.5px;border-top:1px solid #2A251E;color:'+(differs?'#F2EDE4':'#A79E90'),
+        webStyle:cell(st.keymap==='web'), macStyle:cell(st.keymap==='mac')};
+    });
+
+    return {
+      itemName:QUEUE[st.queueIndex],
+      itemMeta:'Concerts SSD · 4K · 1:24:00 · '+(st.segments.length)+' segments',
+      back:()=>self.flash('Back to grid — the listing is exactly as you left it'),
+
+      flagBtns:[['fav','★','Favourite'],['review','⟳','Needs review'],['issue','⚠','Playback issue'],['del','⌫','Marked for deletion']]
+        .map(([k,label,title])=>({label,title,
+          style:'border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;border:1px solid '+(st.flags[k]?'#E9A23B':'#332D24')+';background:'+(st.flags[k]?'#3A2E16':'transparent')+';color:'+(st.flags[k]?'#E9A23B':'#6E6659'),
+          click:()=>self.setState(s=>({flags:Object.assign({},s.flags,{[k]:!s.flags[k]})}))})),
+
+      triageLabel: st.triage?'Triage on · '+st.triageCount+' done':'Triage pass',
+      triageStyle:'border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer;border:1px solid '+(st.triage?'#7A6428':'#332D24')+';background:'+(st.triage?'#3A2E16':'transparent')+';color:'+(st.triage?'#E9A23B':'#A79E90'),
+      toggleTriage:()=>self.setState(s=>({triage:!s.triage,zone:'video'})),
+
+      panelBtns:[['tags','Tags'],['segments','Segments'],['queue','Queue'],['text','Text']].map(([k,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 10px;font-size:11.5px;cursor:pointer;'+(st.panels[k]?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        click:()=>self.setState(s=>({panels:Object.assign({},s.panels,{[k]:!s.panels[k]})}))})),
+
+      stageStyle:'flex:1;min-height:0;background:#0A0806;display:flex;align-items:center;justify-content:center;padding:16px;'+zoneRing('video'),
+      videoStyle:'position:relative;height:100%;aspect-ratio:16/9;max-width:100%;border-radius:6px;background:linear-gradient(128deg,#2A2620 0%,#16130F 100%);border:1px solid #241F19',
+      paused: !st.playing,
+      marking: st.markStart!=null,
+      markStart: st.markStart!=null?self.fmt(st.markStart):'',
+      markHint: M.segOut,
+      markStyle:'position:absolute;top:0;bottom:0;background:rgba(233,162,59,0.16);border-left:1px solid #E9A23B;border-right:1px solid #E9A23B;pointer-events:none;'+
+        'left:'+(Math.min(st.markStart||0,st.t)/st.duration*100).toFixed(2)+'%;width:'+(Math.abs(st.t-(st.markStart||0))/st.duration*100).toFixed(2)+'%',
+
+      peaks, segBars,
+      playedStyle:'position:absolute;top:0;bottom:0;left:0;width:'+(pct*100).toFixed(2)+'%;background:rgba(233,162,59,0.10);border-right:1px solid #E9A23B;pointer-events:none',
+      headStyle:'position:absolute;top:6px;bottom:6px;width:2px;background:#E9A23B;border-radius:1px;pointer-events:none;left:'+(pct*100).toFixed(2)+'%',
+      seekTo:e=>{const r=e.currentTarget.getBoundingClientRect();
+        self.setState({t:Math.round((e.clientX-r.left)/r.width*st.duration)});},
+
+      transport:[['⏮','Previous · '+M.prev,()=>self.setState(s=>({queueIndex:Math.max(0,s.queueIndex-1),t:0}))],
+                 ['−45s','numpad 4',()=>self.seek(-45)],
+                 [st.playing?'❙❙':'▶','space · numpad 5',()=>self.setState(s=>({playing:!s.playing}))],
+                 ['+45s','numpad 6',()=>self.seek(45)],
+                 ['⏭','Next · '+M.next,()=>self.setState(s=>({queueIndex:Math.min(6,s.queueIndex+1),t:0}))]]
+        .map(([label,title,click],i)=>({label,title,click,
+          style:'border-radius:6px;padding:'+(i===2?'6px 13px':'6px 10px')+';font-size:'+(i===2?'13px':'11.5px')+';cursor:pointer;border:1px solid '+(i===2?'#5A5142':'#332D24')+';background:'+(i===2?'#2A241C':'transparent')+';color:#CFC6B8'})),
+      timeLabel: self.fmt(st.t)+' / '+self.fmt(st.duration),
+
+      markInLabel: M.segIn, markOutLabel: M.segOut,
+      markInStyle:'border-radius:6px;padding:6px 12px;font-family:\'JetBrains Mono\',monospace;font-size:11.5px;cursor:pointer;border:1px solid '+(st.markStart!=null?'#7A6428':'#332D24')+';background:'+(st.markStart!=null?'#3A2E16':'transparent')+';color:'+(st.markStart!=null?'#E9A23B':'#A79E90'),
+      markOutStyle:'border-radius:6px;padding:6px 12px;font-family:\'JetBrains Mono\',monospace;font-size:11.5px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#A79E90',
+      markIn:()=>self.markIn(), markOut:()=>self.markOut('song'),
+
+      toggles:[['Loop','L'],['Mute','M']].map(([label,k])=>({label,title:label+' · '+k,
+        style:'border-radius:6px;padding:6px 10px;font-size:11.5px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#8C8478',
+        click:()=>self.flash(label+' toggled')})),
+
+      showText: st.panels.text, closeText:()=>self.setState(s=>({panels:Object.assign({},s.panels,{text:false})})),
+      ocrLines:[[188,'NORTHLIGHT SESSIONS'],[402,'CEDAR LINES'],[744,'ASH & EMBER'],[1182,'BROADSIDE']]
+        .map(([at,text])=>{
+          const tagged=CATS.some(c=>(st.applied[c.name]||[]).some(t=>t.toLowerCase()===text.toLowerCase()));
+          const btn=(label,title,click)=>({label,title,click,
+            style:'border-radius:5px;padding:2px 8px;font-size:10.5px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#8C8478'});
+          return {at:self.fmt(at),text,tagged,
+            click:()=>self.setState({t:at}),
+            // Every action here applies to the PLAYING item only. Anything
+            // plural is a link into Tag Analysis, never done from here.
+            actions:[
+              btn('Copy','Copy this line',e=>{e.stopPropagation();self.flash('Copied “'+text+'”');}),
+              btn('+ Tag','Create a tag from this line and apply it to this item',
+                e=>{e.stopPropagation();self.setState({ocrSheet:{mode:'tag',text}});}),
+              btn('+ Alias','Add this line as an alias of an existing tag',
+                e=>{e.stopPropagation();self.setState({ocrSheet:{mode:'alias',text}});})
+            ]};
+        }),
+
+      ocrSheet: !!st.ocrSheet,
+      ocrSheetText: st.ocrSheet?st.ocrSheet.text:'',
+      ocrSheetTitle: st.ocrSheet?(st.ocrSheet.mode==='tag'?'Create a tag from this line':'Add as an alias'):'',
+      ocrSheetNote: st.ocrSheet?(st.ocrSheet.mode==='tag'
+        ? 'Creates the tag in the chosen category and applies it to this item only. The category’s formatting rule normalizes the name.'
+        : 'The line becomes an alternative name for the tag you pick, so future searches and imports resolve it.'):'',
+      ocrSheetPickLabel: st.ocrSheet?(st.ocrSheet.mode==='tag'?'CATEGORY':'EXISTING TAG'):'',
+      ocrSheetOptions: (()=>{
+        if(!st.ocrSheet) return [];
+        const row=(label,hint,swatch,pick)=>({label,hint,pick,
+          swatchStyle:'flex:none;width:7px;height:7px;border-radius:2px;background:'+swatch,
+          style:'display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:6px;cursor:pointer;border:1px solid #2A251E;background:#161309'});
+        if(st.ocrSheet.mode==='tag'){
+          return CATS.map(c=>row(c.name,c.multi?'multiple':'one only',c.hue,()=>{
+            const name=st.ocrSheet.text.replace(/\b\w+/g,w=>w[0]+w.slice(1).toLowerCase());
+            self.setState(s=>{
+              const cur=(s.applied[c.name]||[]).slice();
+              if(c.multi){ if(cur.indexOf(name)<0) cur.push(name); } else { cur.length=0; cur.push(name); }
+              return {applied:Object.assign({},s.applied,{[c.name]:cur}),ocrSheet:null};
+            });
+            self.flash('Created “'+name+'” in '+c.name+' and applied it');
+          }));
+        }
+        const out=[];
+        CATS.forEach(c=>c.tags.slice(0,3).forEach(t=>out.push(row(t,c.name,c.hue,()=>{
+          self.setState({ocrSheet:null});
+          self.flash('“'+st.ocrSheet.text+'” is now an alias of '+t);
+        }))));
+        return out;
+      })(),
+      closeOcrSheet:()=>self.setState({ocrSheet:null}),
+      openAnalysis:()=>{self.setState({ocrSheet:null});self.flash('Opens Tag Analysis filtered to this string');},
+
+      showQueue: st.panels.queue,
+      queueStyle:'flex:none;height:146px;background:#151209;border-top:1px solid #2A251E;display:flex;flex-direction:column;'+zoneRing('queue'),
+      queueLabel:(st.queueIndex+1)+' of '+QUEUE.length+' · drag to reorder',
+      saveQueue:()=>self.flash('Saved as playlist'),
+      queue:QUEUE.map((n,i)=>({name:n,dur:'1:'+String(12+i*7).padStart(2,'0')+':00',current:i===st.queueIndex,
+        style:'flex:none;width:132px;cursor:pointer',
+        thumbStyle:'position:relative;width:100%;aspect-ratio:16/9;border-radius:5px;background:linear-gradient('+(112+i*13)+'deg,#2A2620,#16130F);border:1px solid '+(i===st.queueIndex?'#E9A23B':'#241F19'),
+        nameStyle:'font-family:\'JetBrains Mono\',monospace;font-size:9.5px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(i===st.queueIndex?'#E9A23B':'#7C7466'),
+        click:()=>self.setState({queueIndex:i,t:0,zone:'queue'})})),
+
+      showRail: st.panels.tags||st.panels.segments,
+      showTags: st.panels.tags, showSegments: st.panels.segments,
+      tagPaneStyle:'flex:'+(st.panels.segments?'1.35':'1')+';min-height:0;display:flex;flex-direction:column;'+zoneRing('tags'),
+      segPaneStyle:'flex:1;min-height:0;display:flex;flex-direction:column;'+zoneRing('segments'),
+      zoneHint:'Tab',
+      tagZoneBadge:'font-family:\'JetBrains Mono\',monospace;font-size:9px;padding:1px 5px;border-radius:3px;'+(st.zone==='tags'?'background:#3A2E16;color:#E9A23B':'background:#241F19;color:#5E5749'),
+      segZoneBadge:'font-family:\'JetBrains Mono\',monospace;font-size:9px;padding:1px 5px;border-radius:3px;'+(st.zone==='segments'?'background:#3A2E16;color:#E9A23B':'background:#241F19;color:#5E5749'),
+      categories,
+      openBindings:()=>self.setState({bindingsOpen:true}),
+
+      segCounts: st.segments.filter(s=>s.kind==='song').length+' songs · '+st.segments.filter(s=>s.kind==='clip').length+' clips',
+      noSegments: st.segments.length===0,
+      segRows: st.segments.map(sg=>{
+        const on=st.selectedSeg===sg.id, c=sg.kind==='song'?'#6FBFB0':'#C58BB8';
+        return {name:sg.name, kind:sg.kind==='song'?'SONG':'CLIP',
+          range:self.fmt(sg.start)+' – '+self.fmt(sg.end)+'  ·  '+self.fmt(sg.end-sg.start),
+          kindStyle:'flex:none;font-family:\'JetBrains Mono\',monospace;font-size:8.5px;font-weight:700;padding:2px 5px;border-radius:3px;background:'+c+'22;color:'+c,
+          rowStyle:'display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:6px;cursor:pointer;margin-bottom:2px;'+(on?'background:#241E16;box-shadow:inset 2px 0 0 #E9A23B':''),
+          click:()=>self.setState({selectedSeg:sg.id,zone:'segments'}),
+          play:e=>{e.stopPropagation();self.setState({t:sg.start,playing:true,selectedSeg:sg.id});},
+          remove:e=>{e.stopPropagation();self.setState(s=>({segments:s.segments.filter(x=>x.id!==sg.id)}));}};
+      }),
+
+      zoneChips:['video','tags','segments','queue'].filter(z=>z==='video'||st.panels[z]).map(z=>({
+        label:z, style:'border:none;border-radius:4px;padding:3px 9px;font-size:10.5px;cursor:pointer;'+
+          (st.zone===z?'background:#3A2E16;color:#E9A23B;font-weight:600':'background:transparent;color:#5E5749'),
+        pick:()=>self.setState({zone:z})})),
+      statusHint: st.zone==='video'
+        ? M.segIn+' '+M.segOut+' segment · '+M.triage+' triage · numpad seek · Tab moves focus'
+        : 'Esc releases to video · numpad seek still works · Tab moves focus',
+
+      keyboardOpen: st.keyboardOpen,
+      openKeyboard:()=>self.setState({keyboardOpen:true}),
+      closeKeyboard:()=>self.setState({keyboardOpen:false}),
+      mapHeads:['web','mac'].map(k=>({name:self.maps()[k].name,note:self.maps()[k].note,active:st.keymap===k,
+        color:st.keymap===k?'#E9A23B':'#CFC6B8',
+        style:'padding:7px 10px;border-radius:7px 7px 0 0;'+(st.keymap===k?'background:#2A2118':'')})),
+      mapRows,
+      mapPicks:['web','mac'].map(k=>({label:'Use the '+(k==='web'?'web':'Mac')+' map',
+        style:'border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;'+
+          (st.keymap===k?'background:#E9A23B;color:#1A1409':'background:#2A241C;color:#CFC6B8'),
+        pick:()=>{self.setState({keymap:k});self.flash((k==='web'?'Web':'Mac')+' map active');}})),
+
+      bindingsOpen: st.bindingsOpen,
+      closeBindings:()=>self.setState({bindingsOpen:false}),
+      bindingRows: st.bindings.map(b=>({key:b.key,tag:b.tag,advance:b.advance,
+        remove:()=>self.setState(s=>({bindings:s.bindings.filter(x=>x.key!==b.key)}))})),
+
+      toast: st.toast, stop:e=>e.stopPropagation(),
+
+      notes:[
+        {title:'ONE WINDOW, FOUR SCENES',body:'Playback, tagging, segments and queue share a window but not a component. Each panel collapses from the toolbar, and the player itself owns only the surface, transport and scrubber — the 4,382-line lesson, applied.'},
+        {title:'ESC IS THE WHOLE FOCUS MODEL',body:'Tab walks video → tags → segments → queue; Esc anywhere in the panels releases to the video. That one rule is what makes bare single-key shortcuts safe — while a field has focus, D spells a tag name; released, it marks for deletion.'},
+        {title:'NUMPAD NEVER YIELDS',body:'Seeking works even mid-word in a tag field, because it is the one thing you do constantly while typing. Everything else suspends while a text field owns the keyboard.'},
+        {title:'SEGMENTS READ TWICE',body:'Songs and clips appear as rows with start, end and length in the rail, and as bars on the scrubber — songs above the waveform, clips below. Selecting either highlights both.'},
+        {title:'THE PLAYER NEVER ACTS ON OTHER ITEMS',body:'On-screen text can be copied, turned into a tag, or added as an alias — all scoped to the item playing. “Find across the library” hands the string to Tag Analysis instead. That single rule is what keeps OCR in two windows from being two implementations of one feature.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

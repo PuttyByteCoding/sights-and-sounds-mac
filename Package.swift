@@ -23,7 +23,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "SightsAndSoundsApp",
-            dependencies: ["SightsAndSoundsKit"]
+            dependencies: ["SightsAndSoundsKit"],
+            // Archivo (UI) and JetBrains Mono (every filename, path, count,
+            // duration, size, timestamp, job kind and command) — the two
+            // faces `design-tokens.md` specifies. Both OFL; the licences
+            // ship beside them. `.copy` keeps the .ttf bytes intact —
+            // `.process` would try to compile them.
+            resources: [.copy("Resources/Fonts")]
         ),
         .testTarget(
             name: "SightsAndSoundsKitTests",

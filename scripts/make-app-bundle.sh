@@ -15,8 +15,16 @@ APP="$OUT/SightsAndSounds.app"
 swift build -c release
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/SightsAndSounds "$APP/Contents/MacOS/SightsAndSounds"
+
+# SPM emits each target's resources as a .bundle beside the binary. They
+# have to travel with it: Contents/Resources is where Bundle.main looks,
+# and without them the app runs in the system font instead of Archivo.
+for resource_bundle in .build/release/*.bundle; do
+    [ -e "$resource_bundle" ] || continue
+    cp -R "$resource_bundle" "$APP/Contents/Resources/"
+done
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

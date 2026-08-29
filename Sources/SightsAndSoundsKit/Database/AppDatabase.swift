@@ -14,12 +14,38 @@ public struct LibraryRef: Codable, Equatable, Identifiable, Sendable, FetchableR
     public var addedAt: Date
     public var lastOpenedAt: Date?
 
+    // What the library held at its last close. Flat columns rather than a
+    // JSON blob so the registry stays queryable, wrapped by `summary`
+    // below — `summaryCapturedAt` is the presence flag: a library added
+    // but never opened has counts of zero, which is not the same as
+    // "nothing is known yet".
+    public var summaryCapturedAt: Date?
+    public var summaryItemCount: Int?
+    public var summaryTotalBytes: Int64?
+    public var summarySourceCount: Int?
+    public var summaryCategoryCount: Int?
+    public var summaryTagCount: Int?
+
     public init(id: UUID, name: String, filePath: String, addedAt: Date = Date(), lastOpenedAt: Date? = nil) {
         self.id = id
         self.name = name
         self.filePath = filePath
         self.addedAt = addedAt
         self.lastOpenedAt = lastOpenedAt
+    }
+
+    /// The cached counts, or `nil` for a library that has not been closed
+    /// since the cache arrived. The picker shows a row either way; only
+    /// the summary line differs.
+    public var summary: LibrarySummary? {
+        guard let capturedAt = summaryCapturedAt else { return nil }
+        return LibrarySummary(
+            itemCount: summaryItemCount ?? 0,
+            totalBytes: summaryTotalBytes ?? 0,
+            sourceCount: summarySourceCount ?? 0,
+            categoryCount: summaryCategoryCount ?? 0,
+            tagCount: summaryTagCount ?? 0,
+            capturedAt: capturedAt)
     }
 }
 
@@ -62,6 +88,20 @@ public final class AppDatabase: Sendable {
                 t.column("value", .text).notNull()
             }
         }
+        // The picker's row summary, cached on close so opening the app
+        // does not mean opening every library and waking every drive.
+        // Nullable throughout: an existing registry has no counts yet, and
+        // a row with none is a legitimate state, not a broken one.
+        migrator.registerMigration("librarySummaryCache") { db in
+            try db.alter(table: "libraryRef") { t in
+                t.add(column: "summaryCapturedAt", .datetime)
+                t.add(column: "summaryItemCount", .integer)
+                t.add(column: "summaryTotalBytes", .integer)
+                t.add(column: "summarySourceCount", .integer)
+                t.add(column: "summaryCategoryCount", .integer)
+                t.add(column: "summaryTagCount", .integer)
+            }
+        }
         return migrator
     }
 
@@ -101,6 +141,30 @@ public final class AppDatabase: Sendable {
     public func unregister(_ libraryID: UUID) throws {
         try writer.write { db in
             try db.execute(sql: "DELETE FROM libraryRef WHERE id = ?", arguments: [libraryID])
+        }
+    }
+
+    /// Record what a library held, so the picker can show it without
+    /// opening the file. Called when a library closes — the one moment
+    /// the counts are both current and free, because the handle is
+    /// already open and about to go away.
+    ///
+    /// A library that is no longer registered is not an error: it was
+    /// forgotten while open, and the write simply has nowhere to land.
+    public func cacheSummary(_ summary: LibrarySummary, for libraryID: UUID) throws {
+        try writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE libraryRef SET
+                        summaryCapturedAt = ?, summaryItemCount = ?, summaryTotalBytes = ?,
+                        summarySourceCount = ?, summaryCategoryCount = ?, summaryTagCount = ?
+                    WHERE id = ?
+                    """,
+                arguments: [
+                    summary.capturedAt, summary.itemCount, summary.totalBytes,
+                    summary.sourceCount, summary.categoryCount, summary.tagCount,
+                    libraryID,
+                ])
         }
     }
 
