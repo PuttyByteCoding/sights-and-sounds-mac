@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button{font-family:inherit}
+  @keyframes barflow{0%{background-position:0 0}100%{background-position:28px 0}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1440px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Review</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Deletions and playback failures in one window — both are a flagged queue, evidence, a decision, and a batch confirm.</div>
+  </div>
+
+  <div style="width:1440px;height:918px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Review — Concerts</div>
+    </div>
+
+    <div style="height:48px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:10px">
+      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+        <sc-for list="{{ modeTabs }}" as="mt" hint-placeholder-count="2">
+          <button onClick="{{ mt.pick }}" style="{{ mt.style }}">{{ mt.label }}</button>
+        </sc-for>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C8478;padding:0 4px">{{ headline }}</div>
+      <div style="flex:1"></div>
+      <div style="font-size:12px;color:#6E6659">{{ safetyNote }}</div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:262px;flex:none;background:#17130E;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:1;overflow-y:auto;padding:11px 8px 14px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;padding:4px 7px 6px">{{ listHeading }}</div>
+          <sc-for list="{{ queueRows }}" as="q" hint-placeholder-count="6">
+            <div onClick="{{ q.click }}" style="{{ q.rowStyle }}">
+              <span style="{{ q.dotStyle }}"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ q.title }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6E6659;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ q.meta }}</div>
+              </div>
+              <sc-if value="{{ q.resolved }}" hint-placeholder-val="{{ false }}">
+                <span style="flex:none;font-size:11px;color:#6FB86F">✓</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #241F19;padding:11px 12px 13px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:7px">THIS PASS</div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ passStats }}" as="ps" hint-placeholder-count="3">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#E9A23B;min-width:58px;text-align:right">{{ ps.n }}</span>
+                <span style="font-size:11.5px;color:#8C8478">{{ ps.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+        <sc-if value="{{ isDelete }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;overflow-y:auto;padding:18px 20px;min-height:0">
+            <div style="display:flex;align-items:baseline;gap:11px;margin-bottom:4px">
+              <div style="font-size:17px;font-weight:700">{{ groupTitle }}</div>
+              <span style="{{ groupBadgeStyle }}">{{ groupBadge }}</span>
+            </div>
+            <div style="font-size:12.5px;color:#8C8478;margin-bottom:16px;line-height:1.5;text-wrap:pretty">{{ groupBlurb }}</div>
+
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <sc-for list="{{ candidates }}" as="cd" hint-placeholder-count="2">
+                <div style="{{ cd.cardStyle }}">
+                  <div style="{{ cd.thumbStyle }}">
+                    <span style="position:absolute;bottom:6px;left:7px;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:1px 5px;border-radius:3px;background:rgba(12,9,5,0.8);color:#CFC6B8">{{ cd.res }}</span>
+                    <span style="position:absolute;bottom:6px;right:7px;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:1px 5px;border-radius:3px;background:rgba(12,9,5,0.8);color:#CFC6B8">{{ cd.dur }}</span>
+                    <sc-if value="{{ cd.best }}" hint-placeholder-val="{{ false }}">
+                      <span style="position:absolute;top:7px;left:7px;font-size:9px;font-weight:700;letter-spacing:0.07em;padding:2px 7px;border-radius:4px;background:#2F4A2F;color:#8FCF8F">BEST QUALITY</span>
+                    </sc-if>
+                  </div>
+                  <div style="padding:10px 11px 11px">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px">{{ cd.name }}</div>
+                    <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:11px">
+                      <sc-for list="{{ cd.metrics }}" as="m" hint-placeholder-count="6">
+                        <div style="{{ m.rowStyle }}">
+                          <span style="flex:1;font-size:11px;color:#7C7466">{{ m.label }}</span>
+                          <span style="{{ m.valStyle }}">{{ m.value }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex;gap:6px">
+                      <button onClick="{{ cd.keep }}" style="{{ cd.keepStyle }}">{{ cd.keepLabel }}</button>
+                      <button onClick="{{ cd.drop }}" style="{{ cd.dropStyle }}">{{ cd.dropLabel }}</button>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="margin-top:16px;padding:12px 14px;border:1px solid #2A251E;border-radius:9px;background:#151209">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:7px">WHY THESE MATCHED</div>
+              <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px">
+                <sc-for list="{{ matchReasons }}" as="mr" hint-placeholder-count="3">
+                  <span style="{{ mr.style }}">{{ mr.label }}</span>
+                </sc-for>
+              </div>
+              <div style="font-size:12px;color:#7C7466;line-height:1.5;text-wrap:pretty">{{ matchNote }}</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+            <div style="flex:none;padding:16px 20px 12px">
+              <div style="display:flex;align-items:baseline;gap:11px;margin-bottom:4px">
+                <div style="font-size:17px;font-weight:700">Marked for deletion</div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B">{{ listTotals }}</span>
+              </div>
+              <div style="font-size:12.5px;color:#8C8478;line-height:1.5;text-wrap:pretty">Everything marked with D during triage, plus the losing copy of every duplicate you have resolved. Nothing here has been touched yet.</div>
+            </div>
+            <div style="flex:none;display:grid;grid-template-columns:30px 1fr 150px 84px 108px;align-items:center;height:31px;padding:0 20px;border-bottom:1px solid #2A251E;background:#141109">
+              <span onClick="{{ toggleAll }}" style="{{ headBoxStyle }}">{{ headMark }}</span>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">FILE</div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">MARKED BY</div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">SIZE</div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">RESTORE</div>
+            </div>
+            <div style="flex:1;overflow-y:auto">
+              <sc-for list="{{ listRows }}" as="lr" hint-placeholder-count="6">
+                <div onClick="{{ lr.toggle }}" style="{{ lr.rowStyle }}">
+                  <span style="{{ lr.boxStyle }}">{{ lr.mark }}</span>
+                  <div style="min-width:0">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lr.name }}</div>
+                    <div style="font-size:10.5px;color:#6E6659;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ lr.detail }}</div>
+                  </div>
+                  <div><span style="{{ lr.reasonStyle }}">{{ lr.reason }}</span></div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90;text-align:right">{{ lr.size }}</div>
+                  <div style="display:flex;justify-content:flex-end">
+                    <button onClick="{{ lr.restore }}" style="background:transparent;border:1px solid #332D24;border-radius:5px;padding:3px 10px;font-size:11px;color:#8C8478;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Restore</button>
+                  </div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ listEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:80px 20px;text-align:center">
+                  <div style="font-size:15px;font-weight:600;color:#8C8478;margin-bottom:6px">Nothing marked for deletion</div>
+                  <div style="font-size:12.5px;color:#6E6659;line-height:1.5;text-wrap:pretty">Press D during a triage pass, or resolve a duplicate group, and the files land here.</div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isIssue }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;overflow-y:auto;padding:18px 20px;min-height:0">
+            <div style="display:flex;align-items:baseline;gap:11px;margin-bottom:4px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600">{{ issueName }}</div>
+              <span style="{{ issueBadgeStyle }}">{{ issueBadge }}</span>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659;margin-bottom:15px">{{ issuePath }}</div>
+
+            <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:16px">
+              <div style="{{ issueThumbStyle }}">
+                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#6A5A4A">{{ issueThumbNote }}</span>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">PROBE OUTPUT</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.65;color:#C9A18E;background:#0F0C07;border:1px solid #2A251E;border-radius:7px;padding:10px 12px;white-space:pre-wrap">{{ probeText }}</div>
+              </div>
+            </div>
+
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:8px">FIXES FOR THIS FAILURE</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ fixes }}" as="fx" hint-placeholder-count="3">
+                <div onClick="{{ fx.pick }}" style="{{ fx.rowStyle }}">
+                  <span style="{{ fx.dotStyle }}"></span>
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:baseline;gap:9px">
+                      <span style="font-size:13px;font-weight:500">{{ fx.name }}</span>
+                      <span style="{{ fx.tagStyle }}">{{ fx.tag }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749">{{ fx.time }}</span>
+                    </div>
+                    <div style="font-size:11.5px;color:#7C7466;margin-top:3px;line-height:1.45;text-wrap:pretty">{{ fx.desc }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fx.cmd }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="flex:none;height:62px;border-top:1px solid #2A251E;background:#1C1814;display:flex;align-items:center;padding:0 18px;gap:14px">
+          <div style="font-size:12.5px;color:#CFC6B8;min-width:0;text-wrap:pretty">{{ footerText }}</div>
+          <div style="flex:1"></div>
+          <sc-for list="{{ footerActions }}" as="fa" hint-placeholder-count="2">
+            <button onClick="{{ fa.click }}" style="{{ fa.style }}">{{ fa.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="width:300px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:1;overflow-y:auto;padding:14px 15px 18px;display:flex;flex-direction:column;gap:15px">
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">{{ sideTitle }}</div>
+            <div style="font-size:12.5px;color:#CFC6B8;line-height:1.55;text-wrap:pretty">{{ sideBlurb }}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">PENDING DECISIONS</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <sc-for list="{{ pending }}" as="pd" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #2A251E;border-radius:7px;background:#0F0C07">
+                  <span style="{{ pd.dotStyle }}"></span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#CFC6B8">{{ pd.name }}</div>
+                    <div style="font-size:10.5px;color:#6E6659;margin-top:2px">{{ pd.action }}</div>
+                  </div>
+                  <span onClick="{{ pd.undo }}" style="font-size:12px;color:#5E5749;cursor:pointer">×</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ noPending }}" hint-placeholder-val="{{ true }}">
+                <div style="font-size:11.5px;color:#5E5749;padding:5px 0;line-height:1.5;text-wrap:pretty">Nothing staged. Decisions collect here and apply together, so a batch can be reviewed before anything touches a file.</div>
+              </sc-if>
+            </div>
+          </div>
+          <div style="border-top:1px solid #2A251E;padding-top:13px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">SAFETY</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ safety }}" as="sf" hint-placeholder-count="3">
+                <div style="display:flex;align-items:flex-start;gap:8px">
+                  <span style="flex:none;margin-top:3px;width:6px;height:6px;border-radius:50%;background:#6FB86F"></span>
+                  <span style="flex:1;font-size:11.5px;color:#8C8478;line-height:1.45;text-wrap:pretty">{{ sf.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ running }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(8,7,5,0.74);z-index:80;display:flex;align-items:center;justify-content:center">
+        <div style="width:480px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:22px">
+          <div style="font-size:14.5px;font-weight:600;margin-bottom:5px">{{ runTitle }}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8C8478">{{ runSub }}</div>
+          <div style="height:7px;background:#0F0C07;border-radius:4px;margin:15px 0 9px;overflow:hidden">
+            <div style="{{ runBarStyle }}"></div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90">{{ runPct }}</div>
+          <div style="display:flex;justify-content:flex-end;margin-top:18px">
+            <button onClick="{{ cancelRun }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ confirmOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeConfirm }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.7);z-index:82;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ stop }}" style="width:470px;background:#1E1A15;border:1px solid #4A2A24;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:21px">
+          <div style="font-size:14.5px;font-weight:600;margin-bottom:9px">{{ confirmTitle }}</div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+            <sc-for list="{{ confirmRows }}" as="cr" hint-placeholder-count="3">
+              <div style="display:flex;align-items:baseline;gap:10px;font-size:12.5px;color:#CFC6B8">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;min-width:64px;text-align:right">{{ cr.n }}</span>
+                <span>{{ cr.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:11.5px;color:#8C8478;line-height:1.5;text-wrap:pretty">{{ confirmNote }}</div>
+          <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+            <button onClick="{{ closeConfirm }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+            <button onClick="{{ doConfirm }}" style="background:#8A3428;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#FFEDE8;cursor:pointer">{{ confirmGo }}</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:76px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1440px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="4">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1520,&quot;height&quot;:1180}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const f=(name,res,dur,size,bitrate,codec,score,extra)=>Object.assign(
+      {name,res,dur,size,bitrate,codec,score},extra||{});
+    return {
+      mode:'dupes', sel:0, resolved:{}, listFilter:'all', unchecked:{},
+      running:null, progress:0, confirm:null, toast:null, fix:null,
+      // The delete list is the shared destination: triage marks land here,
+      // and so does the losing copy of every duplicate you resolve.
+      deleteList:[
+        {name:'hollow_bell_2022_03_720p.mp4',size:'1.2 GB',reason:'triage',detail:'720p · 0:48:31 · quality score 44'},
+        {name:'juno_grove_2021_02_cam_b.mp4',size:'2.8 GB',reason:'triage',detail:'1080p · 1:11:04 · marked during import review'},
+        {name:'marta_quinn_2023_07_partial.mp4',size:'0.6 GB',reason:'triage',detail:'1080p · 0:12:18 · incomplete recording'}
+      ],
+      groups:[
+        {id:'g1',title:'Northlight Sessions · 2024-06-14',reason:'fingerprint',
+         match:['fingerprint 98%','same duration ±0.4s','same show date'],
+         note:'The fingerprint prefilter has a measured reliability floor near 25 seconds, so anything shorter is never matched automatically — these are 84 minutes.',
+         items:[
+           f('northlight_sessions_2024_01_4k.mp4','3840×2160','1:24:12','12.4 GB','19.6 Mbps','hevc',92),
+           f('northlight_2024_06_14_1080p.mp4','1920×1080','1:24:09','3.1 GB','4.9 Mbps','h264',71)]},
+        {id:'g2',title:'Riverside Collective · 2023-08-02',reason:'content hash',
+         match:['identical content hash','byte-identical'],
+         note:'Byte-identical files. Nothing is lost by keeping one, but which path survives is still yours to pick.',
+         items:[
+           f('riverside_collective_2023_04_1080p.mp4','1920×1080','1:02:47','4.8 GB','10.2 Mbps','h264',80),
+           f('riverside_2023_backup.mp4','1920×1080','1:02:47','4.8 GB','10.2 Mbps','h264',80)]},
+        {id:'g3',title:'The Broadside Trio · 2024-02-09',reason:'fingerprint',
+         match:['fingerprint 94%','same duration ±1.1s'],
+         note:'A pro-shot and an audience capture of the same set. The scores favour the pro-shot, but the audience recording may still be worth keeping — the matcher does not know that.',
+         items:[
+           f('broadside_trio_2024_02_proshot_4k.mp4','3840×2160','0:58:22','9.7 GB','22.1 Mbps','hevc',89),
+           f('broadside_trio_2024_02_aud_1080p.mp4','1920×1080','0:58:23','2.4 GB','5.6 Mbps','h264',63)]}
+      ],
+      issues:[
+        {id:'i1',name:'ash_ember_2024_05_1080p.mp4',path:'/Volumes/ConcertsSSD/Shows/2024 Shows/',
+         badge:'container',thumb:'no thumbnail — decode failed',
+         probe:'moov atom not found\n  invalid data when processing input\n  0 streams identified',
+         fixes:[
+           ['Remux to faststart','container','~40s','Rewrites the container with the moov atom at the front. Stream copy — the video is never re-encoded.','ffmpeg -i IN -c copy -movflags +faststart OUT'],
+           ['Rebuild index','container','~2m','Scans the file and reconstructs the index from packet boundaries. For a file truncated mid-write.','untrunc -s reference.mp4 IN'],
+           ['Re-encode from what decodes','last resort','~26m','Salvages the readable portion, losing quality and anything unreadable. Only when the two above fail.','ffmpeg -err_detect ignore_err -i IN -c:v hevc_videotoolbox OUT']]},
+        {id:'i2',name:'fm_rip_1998_02_720p.avi',path:'/Volumes/ConcertsSSD/Shows/2022 Archive/FM Rips/',
+         badge:'codec',thumb:'thumbnail from cache',
+         probe:'Stream #0:0: Video: indeo5 (IV50)\n  decoder not available in AVFoundation\n  audio ok: pcm_s16le, 44100 Hz',
+         fixes:[
+           ['Transcode legacy video','codec','~14m','Converts the Indeo stream to HEVC and copies the audio untouched. AVFoundation cannot decode Indeo; ffmpeg can.','ffmpeg -i IN -c:v hevc_videotoolbox -c:a copy OUT'],
+           ['Keep as audio only','codec','~1m','The PCM audio is intact. Extracts it and reclassifies the item as audio.','ffmpeg -i IN -vn -c:a copy OUT.wav']]},
+        {id:'i3',name:'broadside_2024_09_4k.mkv',path:'/Volumes/ConcertsSSD/Shows/2024 Shows/',
+         badge:'stream',thumb:'thumbnail from cache',
+         probe:'Stream #0:2: Audio: aac — 214 decode errors\n  video stream ok\n  plays with silence after 00:41:16',
+         fixes:[
+           ['Strip the damaged stream','stream','~50s','Drops audio track 2 and keeps the rest by stream copy. The show has a second, clean audio track.','ffmpeg -i IN -map 0 -map -0:2 -c copy OUT'],
+           ['Re-encode audio only','stream','~4m','Decodes what it can and re-encodes to AAC, papering over the errors with silence.','ffmpeg -i IN -c:v copy -c:a aac OUT']]}
+      ]
+    };
+  }
+
+  /// One place to pluralise, so a new count cannot reintroduce a mismatch
+  /// between a dialog title and the row beneath it.
+  pl(n,word){ return n===1?word:word+'s'; }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2200); }
+  componentWillUnmount(){ clearTimeout(this._t); clearInterval(this._r); }
+
+  /// Progress is derived from elapsed time against a duration captured at
+  /// start, and the run says declaratively what it resolves — so a remount
+  /// resumes it instead of leaving a modal hung on a dead timer.
+  startRun(title,sub,resolveId){
+    this.setState({running:{title,sub,startedAt:Date.now(),ms:1300,resolveId},progress:0});
+    this.tickRun();
+  }
+
+  tickRun(){
+    clearInterval(this._r);
+    this._r=setInterval(()=>{
+      const s=this.state;
+      if(!s.running){ clearInterval(this._r); this._r=null; return; }
+      const p=Math.min(100,Math.round((Date.now()-s.running.startedAt)/s.running.ms*100));
+      if(p<100){ this.setState({progress:p}); return; }
+      clearInterval(this._r); this._r=null;
+      const id=s.running.resolveId;
+      this.setState(x=>({progress:100,running:null,fix:null,
+        resolved:id?Object.assign({},x.resolved,{[id]:true}):x.resolved}));
+      this.flash('Repaired and re-probed — plays cleanly');
+    },50);
+  }
+
+  componentDidMount(){ if(this.state.running) this.tickRun(); }
+  componentDidUpdate(){
+    if(this.state.running){ if(!this._r) this.tickRun(); }
+    else if(this._r){ clearInterval(this._r); this._r=null; }
+  }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const isDupes=st.mode==='dupes', isList=st.mode==='list', isIssue=st.mode==='issues';
+    const isDelete=isDupes;
+    const list=isDupes?st.groups:isIssue?st.issues:[];
+    const sel=Math.min(st.sel,Math.max(0,list.length-1));
+    const cur=list[sel]||null;
+    const visibleList=st.deleteList.filter(x=>st.listFilter==='all'||x.reason===st.listFilter);
+    const checked=visibleList.filter(x=>!st.unchecked[x.name]);
+    const sumGB=arr=>arr.reduce((a,b)=>a+parseFloat(b.size),0).toFixed(1)+' GB';
+
+    const dot=c=>'flex:none;width:7px;height:7px;border-radius:50%;background:'+c;
+
+    const queueRows=isList
+      ? [['all','Everything'],['triage','Marked in triage'],['duplicate','Losing copies']].map(([k,label])=>{
+          const n=st.deleteList.filter(x=>k==='all'||x.reason===k).length;
+          return {title:label, meta:n+' '+self.pl(n,'file'), resolved:false,
+            dotStyle:dot(k==='triage'?'#D07A6A':k==='duplicate'?'#C58BB8':'#8C8478'),
+            rowStyle:'display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:6px;cursor:pointer;margin-bottom:1px;'+
+              (st.listFilter===k?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':''),
+            click:()=>self.setState({listFilter:k})};
+        })
+      : list.map((g,i)=>{
+          const done=!!st.resolved[g.id];
+          return {title:isDupes?g.title:g.name,
+            meta:isDupes?g.items.length+' copies · '+g.reason:g.badge+' failure',
+            resolved:done,
+            dotStyle:dot(done?'#6FB86F':isDupes?'#C58BB8':'#C9884A'),
+            rowStyle:'display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:6px;cursor:pointer;margin-bottom:1px;'+
+              (i===sel?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':'')+(done?';opacity:0.55':''),
+            click:()=>self.setState({sel:i,fix:null})};
+        });
+
+    // ---- deletion mode ----
+    const best=cur&&isDupes?cur.items.reduce((a,b)=>b.score>a.score?b:a,cur.items[0]):null;
+    const candidates=(isDupes&&cur?cur.items:[]).map(it=>{
+      const other=cur.items.find(x=>x!==it);
+      const metric=(label,value,better)=>({label,value,
+        rowStyle:'display:flex;align-items:center;gap:8px;padding:3px 0',
+        valStyle:'font-family:\'JetBrains Mono\',monospace;font-size:11px;color:'+(better===true?'#8FCF8F':better===false?'#9A8F80':'#CFC6B8')});
+      const cmp=(a,b)=>other?(a>b?true:a<b?false:null):null;
+      return {name:it.name, res:it.res, dur:it.dur, best:it===best&&cur.items.length>1,
+        cardStyle:'flex:1;min-width:0;max-width:330px;border-radius:10px;overflow:hidden;background:#151209;border:1px solid #2A251E',
+        thumbStyle:'position:relative;width:100%;aspect-ratio:16/9;background:linear-gradient(122deg,#2C2620,#16130F);border-bottom:1px solid #241F19',
+        metrics:[
+          metric('Resolution',it.res,other?cmp(parseInt(it.res),parseInt(other.res)):null),
+          metric('Bitrate',it.bitrate,other?cmp(parseFloat(it.bitrate),parseFloat(other.bitrate)):null),
+          metric('Codec',it.codec,null),
+          metric('Duration',it.dur,null),
+          metric('File size',it.size,null),
+          metric('Quality score',it.score+' / 100',other?cmp(it.score,other.score):null)
+        ],
+        keepLabel:'Keep this one',
+        keepStyle:'flex:1;border-radius:7px;padding:7px 8px;font-size:12px;cursor:pointer;border:1px solid #4A6A3C;background:#1F3320;color:#8FCF8F',
+        // Resolving a duplicate does not delete anything — the losing copies
+        // join the delete list, which is where deleting actually happens.
+        keep:()=>{
+          const losers=cur.items.filter(x=>x!==it);
+          self.setState(s=>({
+            deleteList:s.deleteList.concat(losers.map(l=>({name:l.name,size:l.size,reason:'duplicate',
+              detail:l.res+' · '+l.dur+' · duplicate of '+it.name}))),
+            resolved:Object.assign({},s.resolved,{[cur.id]:true})
+          }));
+          self.flash(losers.length+' '+self.pl(losers.length,'copy')+' moved to the delete list');
+        },
+        dropLabel:'Preview',
+        dropStyle:'flex:none;border-radius:7px;padding:7px 12px;font-size:12px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#A79E90',
+        drop:()=>self.flash('Opens '+it.name+' in the player')};
+    });
+
+    const reclaim=sumGB(checked);
+
+    // ---- issue mode ----
+    const fixes=(!isDelete&&cur?cur.fixes:[]).map(([name,tag,time,desc,cmd],i)=>({name,tag,time,desc,cmd,
+      dotStyle:'flex:none;margin-top:5px;width:8px;height:8px;border-radius:50%;background:'+(st.fix===i?'#E9A23B':'#3A3328'),
+      tagStyle:'font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:3px;background:'+
+        (tag==='last resort'?'#3A2119;color:#D07A6A':'#241F19;color:#8C8478'),
+      rowStyle:'display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:9px;cursor:pointer;border:1px solid '+
+        (st.fix===i?'#7A6428':'#2A251E')+';background:'+(st.fix===i?'#1F1A12':'#151209'),
+      pick:()=>self.setState({fix:i})}));
+
+    return {
+      modeTabs:[['dupes','Duplicates',st.groups.filter(g=>!st.resolved[g.id]).length],
+                ['list','Delete list',st.deleteList.length],
+                ['issues','Playback issues',st.issues.filter(x=>!st.resolved[x.id]).length]]
+        .map(([v,label,n])=>({label:label+'  '+n,
+          style:'border:none;border-radius:5px;padding:5px 14px;font-size:12px;cursor:pointer;'+
+            (st.mode===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+          pick:()=>self.setState({mode:v,sel:0,fix:null})})),
+      headline: isDupes
+        ? st.groups.filter(g=>!st.resolved[g.id]).length+' groups still to resolve'
+        : isList ? sumGB(st.deleteList)+' recoverable'
+        : st.issues.length+' items will not play',
+      safetyNote: isDupes?'Resolving a group only moves the losing copy to the delete list.'
+        : isList?'Files leave disk only when you delete them here.'
+        : 'Every fix archives the original first.',
+      listHeading: isDupes?'DUPLICATE GROUPS':isList?'SHOW':'ISSUE QUEUE',
+      queueRows,
+
+      isList,
+      listTotals: checked.length+' of '+visibleList.length+' selected · '+reclaim,
+      listEmpty: visibleList.length===0,
+      headMark: visibleList.length&&checked.length===visibleList.length?'✓':'',
+      headBoxStyle:'width:15px;height:15px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;'+
+        ((visibleList.length&&checked.length===visibleList.length)?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      toggleAll:()=>self.setState(s=>{
+        const all=visibleList.every(x=>!s.unchecked[x.name]);
+        const n=Object.assign({},s.unchecked);
+        visibleList.forEach(x=>{ if(all) n[x.name]=true; else delete n[x.name]; });
+        return {unchecked:n};
+      }),
+      listRows: visibleList.map(x=>{
+        const on=!st.unchecked[x.name];
+        return {name:x.name, detail:x.detail, size:x.size,
+          reason:x.reason==='triage'?'triage pass':'duplicate',
+          reasonStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;'+
+            (x.reason==='triage'?'background:#3A2119;color:#D07A6A':'background:#2E2130;color:#C58BB8'),
+          mark:on?'✓':'',
+          boxStyle:'width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+
+            (on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+          rowStyle:'display:grid;grid-template-columns:30px 1fr 150px 84px 108px;align-items:center;padding:9px 20px;border-bottom:1px solid #1F1B15;cursor:pointer;'+(on?'':'opacity:0.5'),
+          toggle:()=>self.setState(s=>{const n=Object.assign({},s.unchecked);
+            if(n[x.name]) delete n[x.name]; else n[x.name]=true; return {unchecked:n};}),
+          restore:e=>{e.stopPropagation();
+            self.setState(s=>({deleteList:s.deleteList.filter(y=>y.name!==x.name)}));
+            self.flash(x.name+' returned to the library');}};
+      }),
+
+      // Counted per queue — the two share one resolved map but must never
+      // borrow each other's numbers.
+      passStats: isDupes
+        ? [{n:st.groups.filter(g=>st.resolved[g.id]).length,label:self.pl(st.groups.filter(g=>st.resolved[g.id]).length,'group')+' resolved'},
+           {n:st.deleteList.filter(x=>x.reason==='duplicate').length,label:'copies sent to the list'},
+           {n:st.groups.filter(g=>!st.resolved[g.id]).length,label:'still to judge'}]
+        : isList
+        ? [{n:st.deleteList.length,label:self.pl(st.deleteList.length,'file')+' on the list'},
+           {n:checked.length,label:'selected'},{n:reclaim,label:'recoverable'}]
+        : [{n:st.issues.filter(x=>st.resolved[x.id]).length,label:'repaired'},
+           {n:st.issues.filter(x=>!st.resolved[x.id]).length,label:'still failing'},
+           {n:'0',label:'escalated'}],
+
+      isDelete: isDupes, isIssue: isIssue,
+
+      groupTitle: cur&&isDelete?cur.title:'',
+      groupBadge: cur&&isDelete?(cur.items.length>1?cur.items.length+' copies':'marked by hand'):'',
+      groupBadgeStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;background:#241F19;color:#8C8478',
+      groupBlurb: cur&&isDupes
+        ? 'Pick the one to keep. The others move to the delete list — this screen never deletes anything itself.'
+        : '',
+      candidates,
+      matchReasons:(cur&&isDelete?cur.match:[]).map(label=>({label,
+        style:'font-family:\'JetBrains Mono\',monospace;font-size:10.5px;padding:3px 9px;border-radius:5px;background:#1D2A26;color:#6FBFB0;border:1px solid #2A3A34'})),
+      matchNote: cur&&isDelete?cur.note:'',
+
+      issueName: cur&&!isDelete?cur.name:'',
+      issuePath: cur&&!isDelete?cur.path:'',
+      issueBadge: cur&&!isDelete?cur.badge+' failure':'',
+      issueBadgeStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;background:#3A2119;color:#D07A6A',
+      issueThumbStyle:'position:relative;flex:none;width:224px;aspect-ratio:16/9;border-radius:8px;border:1px solid #2A251E;background:linear-gradient(122deg,#241F19,#141109)',
+      issueThumbNote: cur&&!isDelete?cur.thumb:'',
+      probeText: cur&&!isDelete?cur.probe:'',
+      fixes,
+
+      footerText: isDupes
+        ? 'Keeping one copy sends the rest to the delete list. Nothing is removed from disk here.'
+        : isList
+        ? (checked.length?checked.length+' '+self.pl(checked.length,'file')+' selected · '+reclaim+' recoverable'
+                         :'Nothing selected. Tick the files you want gone.')
+        : (st.fix!=null?'Runs on a copy. The original is archived and the result is re-probed before it replaces anything.'
+                       :'Pick a fix to run against this file.'),
+      footerActions: isDupes
+        ? [['Keep both',()=>{ if(!cur) return;
+             self.setState(s=>({resolved:Object.assign({},s.resolved,{[cur.id]:true})}));
+             self.flash('Group cleared — both copies kept'); },false]]
+          .map(([label,click])=>({label,click,
+            style:'border-radius:7px;padding:8px 16px;font-size:12.5px;background:transparent;border:1px solid #3A3328;color:#A79E90;cursor:pointer'}))
+        : isList
+        ? [['Restore selected',()=>{ if(!checked.length) return;
+             const names=checked.map(x=>x.name);
+             self.setState(s=>({deleteList:s.deleteList.filter(x=>names.indexOf(x.name)<0)}));
+             self.flash(names.length+' '+self.pl(names.length,'file')+' returned to the library'); },false],
+           ['Delete '+checked.length+' '+self.pl(checked.length,'file')+'…',
+             ()=>{ if(checked.length) self.setState({confirm:'delete'}); },checked.length>0]]
+          .map(([label,click,primary])=>({label,click,
+            style:'border-radius:7px;padding:8px 16px;font-size:12.5px;font-weight:'+(primary?'600':'400')+';'+
+              (primary?'background:#8A3428;border:none;color:#FFEDE8;cursor:pointer'
+                     :'background:transparent;border:1px solid #3A3328;color:#A79E90;cursor:pointer')}))
+        : [['Mark unfixable',()=>{ if(!cur) return;
+             self.setState(s=>({resolved:Object.assign({},s.resolved,{[cur.id]:true}),
+               deleteList:s.deleteList.concat([{name:cur.name,size:'—',reason:'triage',detail:'unrepairable · '+cur.badge+' failure'}])}));
+             self.flash('Moved to the delete list'); },false],
+           ['Run fix',()=>{ if(st.fix==null||!cur) return;
+             self.startRun('Running “'+cur.fixes[st.fix][0]+'”',cur.name,cur.id); },st.fix!=null]]
+          .map(([label,click,primary])=>({label,click,
+            style:'border-radius:7px;padding:8px 16px;font-size:12.5px;font-weight:'+(primary?'600':'400')+';'+
+              (primary?'background:#E9A23B;border:none;color:#1A1409;cursor:pointer'
+                     :'background:transparent;border:1px solid #3A3328;color:#A79E90;cursor:pointer')})),
+
+      sideTitle:'HOW THESE GOT HERE',
+      sideBlurb: isDupes
+        ? 'Candidates come from the fingerprint matcher and the content hash. Resolving a group is a judgement, not a deletion — the losing copy joins the delete list and waits there with everything else.'
+        : isList
+        ? 'Two sources, one list: files you marked with D during a triage pass, and the copies you rejected while resolving duplicates. This is the only screen that removes anything.'
+        : 'Items flagged with W during a triage pass, plus anything the player failed to open. The probe output is captured at the moment of failure, not re-run now.',
+      pending: (isList?checked:[]).slice(0,6).map(x=>({name:x.name,action:x.reason==='triage'?'marked in triage':'losing copy',
+        dotStyle:dot('#D07A6A'),
+        undo:()=>self.setState(s=>({unchecked:Object.assign({},s.unchecked,{[x.name]:true})}))})),
+      noPending: !isList||checked.length===0,
+      safety:[
+        {label:'Deleting moves files to a purge list; they leave disk on the next maintenance pass.'},
+        {label:'Every repair works on a copy, archives the original, and re-probes before replacing anything.'},
+        {label:'Both are written to the operation log and revert from there.'}
+      ],
+
+      running: !!st.running,
+      runTitle: st.running?st.running.title:'',
+      runSub: st.running?st.running.sub:'',
+      runBarStyle:'height:100%;width:'+st.progress+'%;background:repeating-linear-gradient(90deg,#E9A23B 0 14px,#D18F2E 14px 28px);animation:barflow 0.7s linear infinite',
+      runPct: st.progress+'%',
+      cancelRun:()=>{clearInterval(self._r);self.setState({running:null,progress:0});},
+
+      confirmOpen: !!st.confirm,
+      confirmTitle:'Delete '+checked.length+' '+self.pl(checked.length,'file')+'?',
+      confirmRows:[{n:checked.length,label:self.pl(checked.length,'file')+' removed from disk'},{n:reclaim,label:'space reclaimed'},
+                   {n:'0',label:'tags or field values lost — a kept duplicate inherits them'}],
+      confirmNote:'Files move to the purge list and are removed on the next maintenance pass. The operation log keeps a revert entry until then.',
+      confirmGo:'Delete',
+      closeConfirm:()=>self.setState({confirm:null}),
+      doConfirm:()=>{
+        const names=checked.map(x=>x.name), n=names.length, gained=reclaim;
+        self.setState(s=>({confirm:null,deleteList:s.deleteList.filter(x=>names.indexOf(x.name)<0)}));
+        self.flash(n+' '+self.pl(n,'file')+' purged · '+gained+' reclaimed');
+      },
+
+      toast: st.toast, stop:e=>e.stopPropagation(),
+
+      notes:[
+        {title:'JUDGING AND DELETING ARE SEPARATE',body:'Duplicates asks one question — which copy survives — and answering it moves the loser onto the delete list. The delete list asks a different one: are you done, and shall these go. Everything marked with D during triage is already waiting there, so the two paths converge on one button.'},
+        {title:'THE MATCHER PROPOSES, YOU DISPOSE',body:'Fingerprint and hash matches arrive pre-grouped with a BEST QUALITY marker and metric-by-metric comparison, but nothing is ever auto-deleted, and Keep both is always available. The measured reliability floor near 25 seconds is respected rather than redesigned.'},
+        {title:'FIXES ARE AUTHORED, NOT GUESSED',body:'Each failure kind offers the scripts that actually address it, cheapest first, with the command shown. Remuxing a moov atom is a stream copy; re-encoding is labelled a last resort because it loses quality.'},
+        {title:'NOTHING HAPPENS UNTIL IT DOES',body:'Decisions stage in the inspector and apply together. Deletions go to a purge list, repairs run on a copy with the original archived, and both leave a revert entry in the operation log.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

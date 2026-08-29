@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button,select{font-family:inherit}
+  input:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1440px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Browse Window</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Warm-charcoal tokens, the three-way filter vocabulary, offline-source states, multi-select, and audio tiles.</div>
+  </div>
+
+  <div style="width:1440px;height:920px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Concerts</div>
+    </div>
+
+    <div style="height:46px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C8478;padding:0 6px">{{ itemCount }}</div>
+      <div style="font-size:11.5px;color:#6E6659">{{ kindSummary }}</div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:7px;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:6px 10px;width:240px">
+        <span style="font-size:12px;color:#6E6659">⌕</span>
+        <input value="{{ search }}" onChange="{{ onSearch }}" placeholder="Name, path, notes, on-screen text" style="flex:1;min-width:0;background:transparent;border:none;color:#F2EDE4;font-size:12.5px" />
+      </div>
+      <div style="flex:1"></div>
+      <sc-for list="{{ toolbarBtns }}" as="tb" hint-placeholder-count="5">
+        <button onClick="{{ tb.click }}" style="{{ tb.style }}">{{ tb.label }}</button>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:262px;flex:none;background:#17130E;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:1;overflow-y:auto;padding:9px 8px 16px">
+
+          <sc-if value="{{ hasFilter }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ clearFilter }}" style="width:100%;display:flex;align-items:center;gap:7px;background:#2A2118;border:1px solid #4A3C24;border-radius:6px;padding:7px 9px;font-size:12px;color:#E9A23B;cursor:pointer;margin-bottom:9px" style-hover="background:#332715">✕ Clear filter · {{ filterCount }}</button>
+          </sc-if>
+
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;padding:5px 7px 6px">MEDIA TYPE</div>
+          <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:11px">
+            <sc-for list="{{ kindRows }}" as="kr" hint-placeholder-count="3">
+              <div onClick="{{ kr.toggle }}" style="{{ kr.rowStyle }}">
+                <span style="{{ kr.boxStyle }}">{{ kr.mark }}</span>
+                <span style="{{ kr.nameStyle }}">{{ kr.label }}</span>
+                <sc-if value="{{ kr.soon }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#241F19;color:#6E6659">soon</span>
+                </sc-if>
+                <span style="{{ kr.countStyle }}">{{ kr.count }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;padding:5px 7px 6px">SOURCES</div>
+          <div onClick="{{ pickAllItems }}" style="{{ allItemsStyle }}">
+            <span style="font-size:11px;color:#6E6659;width:13px">▦</span>
+            <span style="flex:1;font-size:12.5px">All Items</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659">{{ allItemsCount }}</span>
+          </div>
+          <sc-for list="{{ sourceRows }}" as="s" hint-placeholder-count="3">
+            <div>
+              <div onClick="{{ s.toggle }}" style="{{ s.rowStyle }}">
+                <span style="{{ s.chevStyle }}">›</span>
+                <span style="{{ s.dotStyle }}"></span>
+                <span style="{{ s.nameStyle }}">{{ s.name }}</span>
+                <span style="{{ s.tagStyle }}">{{ s.tagLabel }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659">{{ s.count }}</span>
+              </div>
+              <sc-if value="{{ s.open }}" hint-placeholder-val="{{ false }}">
+                <div>
+                  <sc-for list="{{ s.folders }}" as="fo" hint-placeholder-count="3">
+                    <div onClick="{{ fo.pick }}" style="{{ fo.style }}">
+                      <span style="font-size:10px;color:#5E5749">▸</span>
+                      <span style="flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fo.name }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749">{{ fo.count }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <button onClick="{{ addSource }}" style="width:100%;text-align:left;background:none;border:none;padding:7px 9px 7px 27px;font-size:12px;color:#6E6659;cursor:pointer" style-hover="color:#E9A23B">+ Add Source…</button>
+
+          <sc-for list="{{ catSections }}" as="cs" hint-placeholder-count="4">
+            <div style="margin-top:11px">
+              <div onClick="{{ cs.toggle }}" style="display:flex;align-items:center;gap:7px;padding:5px 7px;cursor:pointer;border-radius:5px" style-hover="background:#1E1A14">
+                <span style="{{ cs.chevStyle }}">›</span>
+                <span style="{{ cs.swatchStyle }}"></span>
+                <span style="flex:1;font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478;text-transform:uppercase">{{ cs.label }}</span>
+                <sc-if value="{{ cs.showBadge }}" hint-placeholder-val="{{ false }}">
+                  <span style="{{ cs.badgeStyle }}">{{ cs.activeCount }}</span>
+                </sc-if>
+              </div>
+              <sc-if value="{{ cs.open }}" hint-placeholder-val="{{ false }}">
+                <div style="padding-bottom:3px">
+                  <sc-if value="{{ cs.showQuery }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;align-items:center;gap:6px;margin:3px 7px 5px;background:#100D08;border:1px solid #2A251E;border-radius:5px;padding:4px 8px">
+                      <span style="font-size:10px;color:#5E5749">⌕</span>
+                      <input value="{{ cs.query }}" onChange="{{ cs.onQuery }}" placeholder="Filter tags" style="flex:1;min-width:0;background:transparent;border:none;color:#CFC6B8;font-size:11.5px" />
+                    </div>
+                  </sc-if>
+                  <sc-for list="{{ cs.tags }}" as="tg" hint-placeholder-count="4">
+                    <div onClick="{{ tg.cycle }}" onContextMenu="{{ tg.back }}" style="{{ tg.rowStyle }}">
+                      <span style="{{ tg.slotStyle }}">{{ tg.slotMark }}</span>
+                      <span style="{{ tg.nameStyle }}">{{ tg.name }}</span>
+                      <span style="{{ tg.countStyle }}">{{ tg.count }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+
+          <div style="margin-top:11px">
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 7px">
+              <span style="width:9px"></span>
+              <span style="flex:1;font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478">STATUS</span>
+            </div>
+            <sc-for list="{{ statusRows }}" as="sr" hint-placeholder-count="4">
+              <div onClick="{{ sr.cycle }}" onContextMenu="{{ sr.back }}" style="{{ sr.rowStyle }}">
+                <span style="{{ sr.slotStyle }}">{{ sr.slotMark }}</span>
+                <span style="{{ sr.nameStyle }}">{{ sr.name }}</span>
+                <span style="{{ sr.countStyle }}">{{ sr.count }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:14px;padding:9px 9px 10px;border-top:1px solid #241F19">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">FILTER SLOTS</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <sc-for list="{{ legend }}" as="lg" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="{{ lg.chipStyle }}">{{ lg.mark }}</span>
+                  <span style="font-size:11px;color:#8C8478">{{ lg.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size:10.5px;color:#5E5749;margin-top:7px;line-height:1.45;text-wrap:pretty">Click cycles forward, right-click steps back.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;position:relative">
+
+        <sc-if value="{{ hasFilter }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #241F19;background:#171309">
+            <sc-for list="{{ filterChips }}" as="fc" hint-placeholder-count="0">
+              <span style="{{ fc.style }}">
+                <span style="{{ fc.dotStyle }}"></span>
+                <span style="{{ fc.labelStyle }}">{{ fc.label }}</span>
+                <span onClick="{{ fc.remove }}" style="cursor:pointer;opacity:0.6;font-size:12px">×</span>
+              </span>
+            </sc-for>
+            <div style="flex:1"></div>
+            <button onClick="{{ clearFilter }}" style="background:none;border:none;font-size:11.5px;color:#8C8478;cursor:pointer" style-hover="color:#E9A23B">Clear all</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showOfflineBanner }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;display:flex;align-items:center;gap:11px;padding:9px 16px;background:#2A1F12;border-bottom:1px solid #4A3620">
+            <span style="width:8px;height:8px;border-radius:50%;background:#D9924A;flex:none"></span>
+            <div style="flex:1;font-size:12.5px;color:#E8CFA8;text-wrap:pretty">{{ offlineMessage }}</div>
+            <button onClick="{{ hideOffline }}" style="background:transparent;border:1px solid #5A452A;border-radius:6px;padding:5px 11px;font-size:11.5px;color:#E8CFA8;cursor:pointer" style-hover="background:#3A2C18">{{ offlineActionLabel }}</button>
+          </div>
+        </sc-if>
+
+        <div style="flex:1;overflow-y:auto;padding:16px">
+          <div style="display:grid;grid-template-columns:{{ gridTemplate }};gap:16px;align-items:start">
+            <sc-for list="{{ tiles }}" as="ti" hint-placeholder-count="12">
+              <div onClick="{{ ti.click }}" onMouseMove="{{ ti.scrub }}" onMouseLeave="{{ ti.unscrub }}" style="{{ ti.wrapStyle }}">
+                <div style="{{ ti.outTopStyle }}">
+                  <sc-for list="{{ ti.outTop }}" as="bd" hint-placeholder-count="0">
+                    <span style="{{ bd.style }}">{{ bd.text }}</span>
+                  </sc-for>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:6px">
+                <div style="{{ ti.outLeftStyle }}">
+                  <sc-for list="{{ ti.outLeft }}" as="bd" hint-placeholder-count="0">
+                    <span style="{{ bd.style }}">{{ bd.text }}</span>
+                  </sc-for>
+                </div>
+                <div style="flex:1;min-width:0">
+                <div style="{{ ti.thumbStyle }}">
+                  <div style="{{ ti.mediaStyle }}">
+                    <sc-if value="{{ ti.isAudio }}" hint-placeholder-val="{{ false }}">
+                      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:2px;padding:0 12px">
+                        <sc-for list="{{ ti.bars }}" as="b" hint-placeholder-count="16">
+                          <div style="{{ b.style }}"></div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ ti.scrubbing }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ ti.scrubBarStyle }}"></div>
+                  </sc-if>
+                  <sc-for list="{{ ti.slots }}" as="sl" hint-placeholder-count="4">
+                    <div style="{{ sl.style }}">
+                      <sc-for list="{{ sl.badges }}" as="bd" hint-placeholder-count="1">
+                        <span style="{{ bd.style }}">{{ bd.text }}</span>
+                      </sc-for>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ ti.selected }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;background:#E9A23B;color:#1A1409;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;z-index:3">✓</span>
+                  </sc-if>
+                </div>
+                </div>
+                <div style="{{ ti.outRightStyle }}">
+                  <sc-for list="{{ ti.outRight }}" as="bd" hint-placeholder-count="0">
+                    <span style="{{ bd.style }}">{{ bd.text }}</span>
+                  </sc-for>
+                </div>
+                </div>
+                <div style="{{ ti.outBottomStyle }}">
+                  <sc-for list="{{ ti.outBottom }}" as="bd" hint-placeholder-count="1">
+                    <span style="{{ bd.style }}">{{ bd.text }}</span>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ noTiles }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:90px 20px;text-align:center">
+              <div style="font-size:15px;font-weight:600;color:#8C8478;margin-bottom:6px">Nothing matches this filter</div>
+              <div style="font-size:12.5px;color:#6E6659">{{ emptyHint }}</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:9px;background:#221D16;border:1px solid #4A4238;border-radius:9px;padding:9px 12px;box-shadow:0 20px 48px rgba(0,0,0,0.65)">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B">{{ selCount }} selected</span>
+            <span style="width:1px;height:17px;background:#3A3328"></span>
+            <sc-for list="{{ bulkActions }}" as="ba" hint-placeholder-count="4">
+              <button onClick="{{ ba.click }}" style="{{ ba.style }}">{{ ba.label }}</button>
+            </sc-for>
+            <span style="width:1px;height:17px;background:#3A3328"></span>
+            <button onClick="{{ clearSelection }}" style="background:none;border:none;font-size:12px;color:#8C8478;cursor:pointer" style-hover="color:#F2EDE4">{{ deselectLabel }}</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ optionsOpen }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closeOptions }}" style="position:absolute;inset:0;z-index:50">
+            <div onClick="{{ stop }}" style="position:absolute;top:6px;right:14px;width:372px;max-height:96%;overflow-y:auto;background:#1E1A15;border:1px solid #3A3328;border-radius:10px;box-shadow:0 26px 60px rgba(0,0,0,0.7);padding:14px">
+
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">SAVED VIEWS</div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">press V to cycle</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+                <sc-for list="{{ viewPills }}" as="vp" hint-placeholder-count="3">
+                  <button onClick="{{ vp.pick }}" style="{{ vp.style }}">{{ vp.name }}</button>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:14px">
+                <input value="{{ viewName }}" onChange="{{ onViewName }}" style="flex:1;min-width:0;background:#100D08;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12px" style-focus="border-color:#7A6A4A" />
+                <button onClick="{{ duplicateView }}" style="background:transparent;border:1px solid #3A3328;border-radius:6px;padding:6px 10px;font-size:11.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Duplicate</button>
+                <button onClick="{{ deleteView }}" style="{{ deleteViewStyle }}">Delete</button>
+              </div>
+
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">OVERLAY LAYOUT</div>
+              <div style="display:grid;grid-template-columns:38px 1fr 1fr 1fr 38px;grid-template-rows:26px 38px 38px 38px 26px;gap:3px;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:5px;margin-bottom:9px">
+                <sc-for list="{{ layoutCells }}" as="lc" hint-placeholder-count="11">
+                  <div onClick="{{ lc.pick }}" style="{{ lc.style }}">
+                    <span style="{{ lc.labelStyle }}">{{ lc.label }}</span>
+                    <sc-if value="{{ lc.hasItems }}" hint-placeholder-val="{{ false }}">
+                      <span style="{{ lc.summaryStyle }}">{{ lc.summary }}</span>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="font-size:11px;color:#5E5749;margin-bottom:9px;line-height:1.45;text-wrap:pretty">The outer ring sits beside the thumbnail; the inner nine overlay it.</div>
+
+              <div style="font-size:11.5px;color:#8C8478;margin-bottom:7px">Showing in <span style="color:#E9A23B;font-weight:600">{{ activeSlotName }}</span> — pick any number of values.</div>
+              <div style="display:flex;flex-direction:column;gap:1px;max-height:196px;overflow-y:auto;margin-bottom:14px;border:1px solid #2A251E;border-radius:7px;padding:4px">
+                <sc-for list="{{ valueOptions }}" as="vo" hint-placeholder-count="8">
+                  <div>
+                    <div style="{{ vo.rowStyle }}">
+                      <span onClick="{{ vo.toggle }}" style="{{ vo.boxStyle }}">{{ vo.mark }}</span>
+                      <span onClick="{{ vo.toggle }}" style="flex:1;min-width:0;font-size:12px;cursor:pointer">{{ vo.label }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5E5749">{{ vo.hint }}</span>
+                      <sc-if value="{{ vo.configurable }}" hint-placeholder-val="{{ false }}">
+                        <span onClick="{{ vo.expand }}" style="{{ vo.caretStyle }}">›</span>
+                      </sc-if>
+                    </div>
+                    <sc-if value="{{ vo.expanded }}" hint-placeholder-val="{{ false }}">
+                      <div style="padding:3px 8px 9px 30px;display:flex;flex-direction:column;gap:6px">
+                        <sc-for list="{{ vo.controls }}" as="ct" hint-placeholder-count="3">
+                          <div style="display:flex;align-items:center;gap:7px">
+                            <span style="width:50px;flex:none;font-size:10.5px;color:#6E6659">{{ ct.label }}</span>
+                            <div style="display:flex;background:#100D08;border:1px solid #2A251E;border-radius:6px;padding:2px;gap:2px">
+                              <sc-for list="{{ ct.opts }}" as="op" hint-placeholder-count="2">
+                                <button onClick="{{ op.pick }}" style="{{ op.style }}">{{ op.label }}</button>
+                              </sc-for>
+                            </div>
+                            <sc-if value="{{ ct.showNumber }}" hint-placeholder-val="{{ false }}">
+                              <input value="{{ ct.number }}" onChange="{{ ct.onNumber }}" style="width:52px;background:#100D08;border:1px solid #2A251E;border-radius:6px;padding:4px 7px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:11px" style-focus="border-color:#7A6A4A" />
+                            </sc-if>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:8px">THUMBNAIL SIZE</div>
+              <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px;margin-bottom:13px">
+                <sc-for list="{{ sizeTabs }}" as="sz" hint-placeholder-count="3">
+                  <button onClick="{{ sz.pick }}" style="{{ sz.style }}">{{ sz.label }}</button>
+                </sc-for>
+              </div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">UNDER EACH THUMBNAIL</div>
+              <div style="display:flex;flex-direction:column;gap:1px">
+                <sc-for list="{{ optionToggles }}" as="ot" hint-placeholder-count="3">
+                  <div onClick="{{ ot.toggle }}" style="display:flex;align-items:center;gap:9px;padding:6px 7px;border-radius:6px;cursor:pointer" style-hover="background:#251F18">
+                    <span style="{{ ot.boxStyle }}">{{ ot.mark }}</span>
+                    <span style="font-size:12.5px">{{ ot.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;top:98px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1440px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="5">
+      <div style="flex:1;min-width:250px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1520,&quot;height&quot;:1180}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const sources=[
+      {id:'ssd',name:'Concerts SSD',online:true,enabled:true,folders:[['2024 Shows',96],['2023 Shows',112],['2022 Archive',40]]},
+      {id:'road',name:'Road Drive',online:false,enabled:true,folders:[['Taped 2024',58],['Taped 2023',38]]},
+      {id:'nas',name:'Archive NAS',online:true,enabled:true,folders:[['FM Rips',26],['Transfers',16]]}
+    ];
+    const BANDS=['Northlight Sessions','Riverside Collective','The Broadside Trio','Marta Quinn','Hollow Bell','Ash & Ember','Juno Grove'];
+    const RECS=['Soundboard','Audience','FM Broadcast','Pro-shot','Matrix'];
+    const VENUES=['Riverside Amphitheater','The Broadside','Northlight Hall','Cedar Room'];
+    const YEARS=['2024','2023','2022','2021'];
+    const RES=['4K','1080p','1080p','720p','1080p'];
+    const slug=n=>n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+    const items=[];
+    for(let i=0;i<58;i++){
+      const src=i<30?'ssd':i<46?'road':'nas';
+      const band=BANDS[i%BANDS.length], rec=RECS[(i*3)%RECS.length], ven=VENUES[(i*2)%VENUES.length], yr=YEARS[i%YEARS.length];
+      const res=RES[i%RES.length];
+      const mins=42+((i*19)%88);
+      items.push({id:'v'+i,kind:'video',src,
+        name:slug(band)+'_'+yr+'_'+String(i%12+1).padStart(2,'0')+'_'+res.toLowerCase()+'.mp4',
+        dur:Math.floor(mins/60)+':'+String(mins%60).padStart(2,'0')+':'+String((i*13)%60).padStart(2,'0'),
+        spec:res, fav:i%9===0, review:i%7===0, issue:i%17===0, del:i%23===0,
+        tags:{Band:[band],'Recording Type':[rec],Venue:[ven],Year:[yr]}, grad:i%6});
+    }
+    // Phone-shot footage — 9:16, and a few square social clips.
+    for(let i=0;i<10;i++){
+      const src=i<6?'road':'ssd';
+      const band=BANDS[(i*5)%BANDS.length], ven=VENUES[i%VENUES.length], yr=YEARS[i%YEARS.length];
+      const sq=i%5===4;
+      const mins=2+((i*7)%14);
+      items.push({id:'vp'+i,kind:'video',src,ar:sq?'1/1':'9/16',
+        name:slug(band)+'_'+yr+'_phone_'+String(i+1).padStart(2,'0')+'.mov',
+        dur:'0:'+String(mins).padStart(2,'0')+':'+String((i*17)%60).padStart(2,'0'),
+        spec:sq?'1080×1080':'1080×1920', fav:i%4===0, review:i%3===0, issue:false, del:false,
+        tags:{Band:[band],'Recording Type':['Audience'],Venue:[ven],Year:[yr]}, grad:i%6});
+    }
+    for(let i=0;i<20;i++){
+      const src=i<12?'ssd':'nas';
+      const band=BANDS[(i*2)%BANDS.length], rec=RECS[i%RECS.length], yr=YEARS[(i+1)%YEARS.length];
+      const mins=51+((i*23)%70);
+      items.push({id:'a'+i,kind:'audio',src,
+        name:slug(band)+'_'+yr+'_sbd_d1t'+String(i%9+1).padStart(2,'0')+'.flac',
+        dur:Math.floor(mins/60)+':'+String(mins%60).padStart(2,'0')+':'+String((i*7)%60).padStart(2,'0'),
+        spec:i%3===0?'96kHz · 2ch':'44.1kHz · 2ch', fav:i%8===0, review:i%6===0, issue:false, del:false,
+        tags:{Band:[band],'Recording Type':[rec],Venue:[],Year:[yr]}, grad:i%6});
+    }
+    for(let i=0;i<14;i++){
+      const src=i<9?'ssd':'nas';
+      const band=BANDS[(i*3)%BANDS.length], ven=VENUES[i%VENUES.length], yr=YEARS[i%YEARS.length];
+      const dims=['6000×4000','4032×3024','5472×3648'][i%3];
+      items.push({id:'p'+i,kind:'photo',src,
+        name:slug(band)+'_'+yr+'_stills_'+String(i+1).padStart(3,'0')+'.jpg',
+        dur:(3.1+((i*11)%76)/10).toFixed(1)+' MB', spec:dims,
+        fav:i%5===0, review:i%4===0, issue:false, del:false,
+        tags:{Band:[band],'Recording Type':[],Venue:[ven],Year:[yr]}, grad:i%6});
+    }
+    return {
+      sources, items,
+      cats:[
+        {name:'Band',hue:'#8B93E8',tags:BANDS},
+        {name:'Recording Type',hue:'#C58BB8',tags:RECS},
+        {name:'Venue',hue:'#6FBFB0',tags:VENUES},
+        {name:'Year',hue:'#E9A23B',tags:YEARS}
+      ],
+      kinds:{video:true,audio:false,photo:false}, search:'', slots:{}, openCats:{Band:true}, openSources:{ssd:true},
+      catQueries:{}, folder:null, selection:{}, size:1, showTags:true, showPath:false,
+      optionsOpen:false, scrub:null, toast:null, hideOfflineItems:false, trueAspect:false,
+      views:[
+        {id:'v1',name:'Default',slots:{tl:['offline','aspect'],tr:['fav'],bl:['format'],br:['duration'],ob:['filename']}},
+        {id:'v2',name:'Triage',slots:{tl:['review','issue','deletion'],tr:['fav'],br:['duration'],ob:['filename','tags']}},
+        {id:'v3',name:'Tagging',slots:{tr:['fav'],br:['duration'],ob:['filename','tags:Band','tags:Venue','tags:Year']}},
+        {id:'v4',name:'Contact sheet',slots:{br:['duration'],ol:['tags:Year'],ot:['source']}},
+        {id:'v5',name:'Clean',slots:{br:['duration']}}
+      ],
+      viewIndex:0, activeSlot:'ob', expandedValue:null
+    };
+  }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2000); }
+  componentDidMount(){
+    // Esc unwinds one layer at a time: an open popover first, then the
+    // selection — so it never clears a selection the user can still see
+    // a panel over.
+    this._esc=e=>{
+      if(e.key!=='Escape') return;
+      if(this.state.optionsOpen){ this.setState({optionsOpen:false}); return; }
+      if(Object.keys(this.state.selection).length){ this.setState({selection:{}}); }
+    };
+    this._vkey=e=>{
+      if(e.key!=='v'&&e.key!=='V') return;
+      const t=e.target.tagName;
+      if(t==='INPUT'||t==='TEXTAREA'||e.metaKey||e.ctrlKey) return;
+      this.setState(s=>({viewIndex:(s.viewIndex+1)%s.views.length}));
+    };
+    window.addEventListener('keydown',this._vkey);
+    window.addEventListener('keydown',this._esc);
+  }
+  componentWillUnmount(){
+    clearTimeout(this._t);
+    window.removeEventListener('keydown',this._esc);
+    window.removeEventListener('keydown',this._vkey);
+  }
+
+  cycle(key,back){
+    const order=[undefined,'req','opt','exc'];
+    this.setState(st=>{
+      const cur=st.slots[key];
+      let i=order.indexOf(cur);
+      i=back?(i+3)%4:(i+1)%4;
+      const slots=Object.assign({},st.slots);
+      if(order[i]===undefined) delete slots[key]; else slots[key]=order[i];
+      return {slots};
+    });
+  }
+
+  matches(it){
+    const st=this.state;
+    const has=key=>{
+      if(key.indexOf('flag:')===0){ const f=key.slice(5); return f==='fav'?it.fav:f==='review'?it.review:f==='issue'?it.issue:it.del; }
+      // "Missing" is the absence of any tag from the category — the
+      // tagging backlog, filterable in the same three-way vocabulary.
+      if(key.indexOf('missing::')===0) return (it.tags[key.slice(9)]||[]).length===0;
+      const [c,t]=key.split('::');
+      return (it.tags[c]||[]).indexOf(t)>=0;
+    };
+    const keys=Object.keys(st.slots);
+    const req=keys.filter(k=>st.slots[k]==='req'), opt=keys.filter(k=>st.slots[k]==='opt'), exc=keys.filter(k=>st.slots[k]==='exc');
+    if(req.some(k=>!has(k))) return false;
+    if(exc.some(k=>has(k))) return false;
+    if(opt.length&&!opt.some(k=>has(k))) return false;
+    return true;
+  }
+
+  /// Everything the filter admits, before the offline toggle — the banner
+  /// counts against this so hiding offline items can be undone.
+  /// Everything a thumbnail can display. `get` returns null when the value
+  /// does not apply, so a conditional badge simply does not render.
+  registry(){
+    const R=[
+      {k:'duration',label:'Duration',hint:'0:48:12',c:'#CFC6B8',get:it=>it.kind==='photo'?null:it.dur},
+      {k:'format',label:'Resolution / sample rate',hint:'4K · 96kHz',c:'#CFC6B8',get:it=>it.spec},
+      {k:'filesize',label:'File size',hint:'4.2 GB',c:'#A79E90',get:it=>it.size},
+      {k:'filename',label:'File name',hint:'…_4k.mp4',c:'#CFC6B8',clip:true,get:it=>it.name},
+      {k:'source',label:'Source',hint:'Concerts SSD',c:'#A79E90',get:it=>it.srcName},
+      {k:'kind',label:'Media type',hint:'video',c:'#A79E90',get:it=>it.kind},
+      {k:'aspect',label:'Aspect — only when not landscape',hint:'⇕ 9:16',c:'#8FA6D6',b:'#3F4A6A',get:it=>it.arLabel},
+      {k:'fav',label:'Favourite',hint:'★',c:'#E9A23B',glyph:true,get:it=>it.fav?'★':null},
+      {k:'offline',label:'Offline source',hint:'◍',c:'#D9924A',b:'#6A4E2A',get:it=>it.offline?'◍ offline':null},
+      {k:'review',label:'Needs review',hint:'⟳',c:'#6B96D6',b:'#33456A',get:it=>it.review?'⟳ review':null},
+      {k:'issue',label:'Playback issue',hint:'⚠',c:'#D07A6A',b:'#6A3A30',get:it=>it.issue?'⚠ issue':null},
+      {k:'deletion',label:'Marked for deletion',hint:'⌫',c:'#D07A6A',b:'#6A3A30',get:it=>it.del?'⌫ delete':null},
+      {k:'tags',label:'Tags — all categories',hint:'every tag',c:'#CFC6B8',pill:true,
+       get:it=>{const out=[];(it.catOrder||[]).forEach(c=>{(it.tags[c]||[]).forEach(t=>out.push({text:t,c:it.hues[c]}));});return out.length?out:null;}}
+    ];
+    // One entry per category, so a view can show just Band, or Band + Year.
+    this.state.cats.forEach(cat=>{
+      R.push({k:'tags:'+cat.name,label:'Tags — '+cat.name,hint:cat.name.toLowerCase(),c:cat.hue,pill:true,
+        get:it=>{const v=(it.tags[cat.name]||[]);return v.length?v.map(t=>({text:t,c:cat.hue})):null;}});
+    });
+    return R;
+  }
+
+  /// A slot entry is either a bare key (all defaults) or a config object.
+  /// Defaults come from the SLOT, so an untouched value already reads
+  /// correctly for where it sits — no one has to open these controls.
+  entryOf(e){ return typeof e==='string'?{k:e}:e; }
+
+  slotDefaults(slotKey){
+    const align={tl:'left',tc:'center',tr:'right',mc:'center',bl:'left',bc:'center',br:'right',
+                 ot:'left',ob:'left',ol:'right',or:'left'}[slotKey]||'left';
+    // The wide strips can afford to wrap; a corner badge never should.
+    const wrap=(slotKey==='ob'||slotKey==='ot');
+    return {align,wrap,width:'auto',px:96};
+  }
+
+  /// Overlay badges sit on the image and need a scrim; outside badges sit
+  /// on the tile background and read better as plain text.
+  badgeStyle(def,color,outside,big,cfg){
+    const c=color||def.c;
+    if(def.glyph) return 'font-size:'+(outside?'12px':'13px')+';color:'+c+(outside?'':';text-shadow:0 1px 3px rgba(0,0,0,0.8)');
+    const base="font-family:'JetBrains Mono',monospace;font-size:"+(big?'11.5px':outside?'10px':'9.5px')+';font-weight:600;color:'+c;
+    const flow=cfg.wrap
+      ? ';white-space:normal;overflow-wrap:anywhere;line-height:1.4'
+      : ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const w=cfg.width==='fill'?';width:100%;box-sizing:border-box'
+      :cfg.width==='fixed'?';width:'+cfg.px+'px;box-sizing:border-box'
+      :';max-width:100%';
+    const al=';text-align:'+cfg.align;
+    // Tags are pills wherever they appear. Over an image the hue tint is
+    // layered on a scrim so it stays legible; on the tile background the
+    // tint alone carries it.
+    if(def.pill){
+      const fill=outside
+        ? ';background:'+c+'1F'
+        : ';background:linear-gradient(0deg,'+c+'33,'+c+'33),rgba(12,9,5,0.82)';
+      return base+';padding:2px 8px;border-radius:999px;border:1px solid '+c+(outside?'33':'55')+fill+flow+w+al;
+    }
+    if(outside) return base+flow+w+al;
+    return base+';padding:2px 6px;border-radius:4px;background:rgba(12,9,5,0.78)'+(def.b?';border:1px solid '+def.b:'')+flow+w+al;
+  }
+
+  slotDefs(){
+    return [
+      {k:'tl',name:'top left',pos:'top:6px;left:6px;',dir:'row'},
+      {k:'tc',name:'top centre',pos:'top:6px;left:50%;transform:translateX(-50%);',dir:'row'},
+      {k:'tr',name:'top right',pos:'top:6px;right:6px;',dir:'row'},
+      {k:'mc',name:'middle centre',pos:'top:50%;left:50%;transform:translate(-50%,-50%);',dir:'column'},
+      {k:'bl',name:'bottom left',pos:'bottom:6px;left:6px;',dir:'row'},
+      {k:'bc',name:'bottom centre',pos:'bottom:6px;left:50%;transform:translateX(-50%);max-width:92%;',dir:'row'},
+      {k:'br',name:'bottom right',pos:'bottom:6px;right:6px;',dir:'row'}
+    ];
+  }
+
+  outsideDefs(){
+    return [
+      {k:'ot',name:'above the thumbnail'},
+      {k:'ol',name:'left of the thumbnail'},
+      {k:'or',name:'right of the thumbnail'},
+      {k:'ob',name:'below the thumbnail'}
+    ];
+  }
+
+  view(){ return this.state.views[this.state.viewIndex]||this.state.views[0]; }
+
+  patchView(fn){
+    this.setState(st=>{
+      const views=st.views.map((v,i)=>{
+        if(i!==st.viewIndex) return v;
+        const n=Object.assign({},v,{slots:Object.assign({},v.slots)});
+        fn(n); return n;
+      });
+      return {views};
+    });
+  }
+
+  /// The media-kind guard stays IN the query, never in the UI. Every
+  /// listing path goes through here, so an unchecked kind cannot leak
+  /// rows the way a forgotten hard-filter did in the web app.
+  kindOK(it){ return !!this.state.kinds[it.kind]; }
+
+  visibleBase(){
+    const st=this.state, q=st.search.trim().toLowerCase();
+    return st.items.filter(it=>this.kindOK(it)
+      && (!st.folder||it.src===st.folder.src)
+      && (!q||it.name.indexOf(q)>=0)
+      && this.matches(it));
+  }
+
+  visible(){
+    const st=this.state;
+    if(!st.hideOfflineItems) return this.visibleBase();
+    const online={}; st.sources.forEach(s=>online[s.id]=s.online);
+    return this.visibleBase().filter(it=>online[it.src]);
+  }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const SLOT={req:{c:'#6FB86F',m:'+',label:'Required — item must carry it'},
+                opt:{c:'#6B96D6',m:'~',label:'Optional — any one of these'},
+                exc:{c:'#D07A6A',m:'−',label:'Excluded — item must not carry it'}};
+    const vis=this.visible();
+    const srcById={}; st.sources.forEach(s=>srcById[s.id]=s);
+    const selIds=Object.keys(st.selection);
+
+    const slotChip=(slot,size)=>{
+      const s=SLOT[slot];
+      const d=size||14;
+      return 'flex:none;width:'+d+'px;height:'+d+'px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;'+
+        (s?'background:'+s.c+'26;border:1px solid '+s.c+';color:'+s.c:'background:transparent;border:1px solid #332E26;color:transparent');
+    };
+
+    const tagRow=(key,name,count,italic)=>{
+      const slot=st.slots[key], s=SLOT[slot];
+      return {name,count:String(count),
+        slotMark:s?s.m:'', slotStyle:slotChip(slot),
+        nameStyle:'flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'+
+          (italic?'font-style:italic;':'')+
+          (slot==='exc'?'text-decoration:line-through;color:#9A8F80':slot?'color:#F2EDE4;font-weight:500':italic?'color:#9A8F80':'color:#CFC6B8'),
+        countStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;color:"+(count===0?'#443E34':'#6E6659'),
+        rowStyle:'display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:5px;cursor:pointer;'+(slot?'background:'+s.c+'14':''),
+        cycle:()=>self.cycle(key,false),
+        back:e=>{e.preventDefault();self.cycle(key,true);}};
+    };
+
+    const countFor=fn=>st.items.filter(it=>self.kindOK(it)&&fn(it)).length;
+
+    const catSections=st.cats.map(c=>{
+      const open=!!st.openCats[c.name];
+      const q=(st.catQueries[c.name]||'').trim().toLowerCase();
+      const active=c.tags.filter(t=>st.slots[c.name+'::'+t]).length+(st.slots['missing::'+c.name]?1:0);
+      const shown=c.tags.filter(t=>!q||t.toLowerCase().indexOf(q)>=0||st.slots[c.name+'::'+t]);
+      return {label:c.name+' ('+c.tags.length+')', open,
+        chevStyle:'font-size:11px;color:#5E5749;width:9px;display:inline-block;transition:transform .12s;transform:rotate('+(open?'90':'0')+'deg)',
+        swatchStyle:'width:6px;height:6px;border-radius:2px;background:'+c.hue,
+        showBadge: !open&&active>0, activeCount:String(active),
+        badgeStyle:'font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:1px 6px;border-radius:8px;background:#3A2E16;color:#E9A23B',
+        showQuery: c.tags.length>8,
+        query: st.catQueries[c.name]||'',
+        onQuery:e=>{const v=e.target.value;self.setState(s=>({catQueries:Object.assign({},s.catQueries,{[c.name]:v})}));},
+        toggle:()=>self.setState(s=>({openCats:Object.assign({},s.openCats,{[c.name]:!s.openCats[c.name]})})),
+        tags: shown.map(t=>tagRow(c.name+'::'+t,t,countFor(it=>(it.tags[c.name]||[]).indexOf(t)>=0)))
+          .concat([tagRow('missing::'+c.name,'Missing — no '+c.name+' tag',
+            countFor(it=>(it.tags[c.name]||[]).length===0),true)])};
+    });
+
+    const statusRows=[['fav','★ Favorite',it=>it.fav],['review','Needs review',it=>it.review],
+                      ['issue','Playback issue',it=>it.issue],['del','Marked for deletion',it=>it.del]]
+      .map(([k,label,fn])=>tagRow('flag:'+k,label,countFor(fn)));
+
+    const sourceRows=st.sources.map(s=>{
+      const open=!!st.openSources[s.id];
+      const n=st.items.filter(it=>self.kindOK(it)&&it.src===s.id).length;
+      return {name:s.name, count:String(n), open,
+        chevStyle:'font-size:11px;color:#5E5749;width:9px;display:inline-block;transform:rotate('+(open?'90':'0')+'deg)',
+        dotStyle:'flex:none;width:7px;height:7px;border-radius:50%;background:'+(!s.enabled?'#5E5749':s.online?'#5CB05C':'#D9924A'),
+        nameStyle:'flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(s.enabled?'#F2EDE4':'#7C7466'),
+        tagLabel: s.enabled?(s.online?'':'offline'):'disabled',
+        tagStyle:'font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:3px;'+(s.enabled&&!s.online?'background:#3A2C18;color:#D9924A':s.enabled?'display:none':'background:#241F19;color:#6E6659'),
+        rowStyle:'display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:5px;cursor:pointer',
+        toggle:()=>self.setState(x=>({openSources:Object.assign({},x.openSources,{[s.id]:!x.openSources[s.id]})})),
+        folders: s.folders.map(([fn,fc])=>({name:fn,count:String(fc),
+          style:'display:flex;align-items:center;gap:7px;padding:5px 7px 5px 27px;border-radius:5px;cursor:pointer;'+
+            (st.folder&&st.folder.src===s.id&&st.folder.name===fn?'background:#2A2118;color:#E9A23B':'color:#A79E90'),
+          pick:()=>self.setState(x=>({folder:(x.folder&&x.folder.name===fn)?null:{src:s.id,name:fn}}))}))};
+    });
+
+    const filterChips=Object.keys(st.slots).map(key=>{
+      const slot=st.slots[key], s=SLOT[slot];
+      const isFlag=key.indexOf('flag:')===0, isMissing=key.indexOf('missing::')===0;
+      const label=isFlag
+        ? ({fav:'★ Favorite',review:'Needs review',issue:'Playback issue',del:'Marked for deletion'})[key.slice(5)]
+        : isMissing ? 'Missing' : key.split('::')[1];
+      const cat=isFlag?'Status':isMissing?key.slice(9):key.split('::')[0];
+      return {label:cat+' · '+label,
+        style:'display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:4px 9px;font-size:11.5px;background:'+s.c+'1F;border:1px solid '+s.c+'66',
+        dotStyle:'width:6px;height:6px;border-radius:50%;background:'+s.c,
+        labelStyle:'color:'+s.c+';'+(slot==='exc'?'text-decoration:line-through':''),
+        remove:()=>self.setState(x=>{const n=Object.assign({},x.slots);delete n[key];return {slots:n};})};
+    });
+
+    const base=this.visibleBase();
+    const offlineVis=base.filter(it=>!srcById[it.src].online);
+    const offlineSrcNames=[...new Set(offlineVis.map(it=>srcById[it.src].name))];
+
+    const REG={}; this.registry().forEach(r=>REG[r.k]=r);
+    const SLOTS=this.slotDefs(), OUT=this.outsideDefs();
+    const CAT_ORDER=st.cats.map(c=>c.name), HUES={};
+    st.cats.forEach(c=>HUES[c.name]=c.hue);
+    const view=this.view();
+    const W=[168,208,262][st.size];
+    const tiles=vis.map(it=>{
+      const src=srcById[it.src], offline=!src.online;
+      const sel=!!st.selection[it.id];
+      const sc=st.scrub&&st.scrub.id===it.id?st.scrub.pct:null;
+      const g=['#2C2620','#2A2A26','#302822','#26282C','#2E2A24','#282420'][it.grad];
+      const g2=['#1A1713','#191A17','#1D1814','#171819','#1C1A15','#181613'][it.grad];
+      const pos=sc==null?50:Math.round(sc*100);
+      // Every kind declares a natural aspect; the FRAME is uniform per kind
+      // so the grid keeps its rhythm, and anything narrower pillarboxes.
+      const ar=it.ar||(it.kind==='audio'?'16/10':it.kind==='photo'?'3/2':'16/9');
+      const frameAR=it.kind==='audio'?'16/10':it.kind==='photo'?'3/2':'16/9';
+      const num=s=>{const p=s.split('/');return Number(p[0])/Number(p[1]);};
+      const arNum=num(ar), frameNum=num(frameAR);
+      const pills=[];
+      Object.keys(it.tags).forEach(c=>{
+        const hue=(st.cats.find(x=>x.name===c)||{}).hue||'#8C8478';
+        (it.tags[c]||[]).slice(0,1).forEach(t=>pills.push({name:t,
+          style:'font-size:9.5px;padding:1px 6px;border-radius:3px;background:'+hue+'1C;color:'+hue+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%'}));
+      });
+      const ctx=Object.assign({},it,{offline,srcName:src.name,catOrder:CAT_ORDER,hues:HUES,
+        arLabel: ar==='9/16'?'⇕ 9:16':ar==='1/1'?'⧉ 1:1':null,
+        size: it.kind==='photo'?it.dur:(1.4+((it.grad*13+it.name.length)%88)/10).toFixed(1)+' GB'});
+
+      const build=(slotKey,outside,big)=>{
+        const out=[], base=self.slotDefaults(slotKey);
+        (view.slots[slotKey]||[]).forEach(e=>{
+          const en=self.entryOf(e), def=REG[en.k]; if(!def) return;
+          const v=def.get(ctx); if(v==null||v==='') return;
+          const cfg=Object.assign({},base,en);
+          if(Array.isArray(v)) v.forEach(x=>out.push({text:x.text,style:self.badgeStyle(def,x.c,outside,big,cfg)}));
+          else out.push({text:v,style:self.badgeStyle(def,null,outside,big,cfg)});
+        });
+        return out;
+      };
+
+      const slots=SLOTS.map(sd=>{
+        const badges=build(sd.k,false,sd.k==='mc');
+        if(!badges.length) return null;
+        return {badges,
+          style:'position:absolute;z-index:2;display:flex;flex-direction:'+sd.dir+';align-items:center;gap:4px;pointer-events:none;'+
+            sd.pos+(sd.k==='tr'&&sel?'right:28px;':'')};
+      }).filter(Boolean);
+
+      const outTop=build('ot',true), outLeft=build('ol',true), outRight=build('or',true), outBottom=build('ob',true);
+      const strip=(n,extra)=>n?'display:flex;flex-wrap:wrap;align-items:center;gap:5px;'+extra:'display:none';
+
+      return {name:it.name, slots, offline, selected:sel,
+        outTop, outLeft, outRight, outBottom,
+        outTopStyle: strip(outTop.length,'margin-bottom:5px'),
+        outBottomStyle: strip(outBottom.length,'margin-top:6px'),
+        outLeftStyle: outLeft.length?'flex:none;width:54px;display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right;padding-top:2px':'display:none',
+        outRightStyle: outRight.length?'flex:none;width:54px;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding-top:2px':'display:none',
+        isAudio: it.kind==='audio', scrubbing: sc!=null,
+        wrapStyle:'cursor:pointer;border-radius:8px;padding:5px;'+(sel?'background:#2A2118;box-shadow:0 0 0 2px #E9A23B':'background:transparent'),
+        portrait: it.ar==='9/16',
+        thumbStyle:'position:relative;width:100%;aspect-ratio:'+(st.trueAspect?ar:frameAR)+
+          ';border-radius:6px;overflow:hidden;border:1px solid #2A251E;background:#0C0A07;'+(offline?'filter:saturate(0.55)':''),
+        mediaStyle:'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);aspect-ratio:'+ar+';'+
+          (st.trueAspect?'width:100%;height:100%;':(arNum<frameNum?'height:100%;width:auto;':'width:100%;height:auto;'))+
+          'background:linear-gradient('+(115+it.grad*11)+'deg,'+g+' 0%,'+g2+' 100%);background-size:220% 100%;background-position:'+pos+'% 0',
+        scrubBarStyle:'position:absolute;bottom:0;left:0;height:2px;width:'+pos+'%;background:#E9A23B',
+        bars: it.kind==='audio'?Array.from({length:16},(_,b)=>{
+          const h=18+Math.abs(Math.sin((b+it.grad)*1.7))*62;
+          return {style:'flex:1;height:'+h.toFixed(0)+'%;border-radius:1px;background:'+(offline?'#4A443A':'#5A5142')};
+        }):[],
+        nameStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+(offline?'#8C8478':'#CFC6B8'),
+        pills,
+        click:e=>{
+          if(e.metaKey||e.ctrlKey||e.shiftKey||selIds.length){
+            self.setState(x=>{const s=Object.assign({},x.selection);if(s[it.id])delete s[it.id];else s[it.id]=true;return {selection:s};});
+          } else { self.flash(offline?'Source offline — playback unavailable':'Opening '+it.name); }
+        },
+        scrub:e=>{
+          const r=e.currentTarget.getBoundingClientRect();
+          const pct=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+          self.setState({scrub:{id:it.id,pct}});
+        },
+        unscrub:()=>self.setState(x=>(x.scrub&&x.scrub.id===it.id?{scrub:null}:null))};
+    });
+
+    return {
+      kindRows:[['video','Video',false],['audio','Audio',false],['photo','Photo',true]].map(([k,label,soon])=>{
+        const on=!!st.kinds[k];
+        const n=st.items.filter(it=>it.kind===k).length;
+        const last=on&&Object.keys(st.kinds).filter(x=>st.kinds[x]).length===1;
+        return {label,soon,count:String(n),mark:on?'✓':'',
+          boxStyle:'flex:none;width:14px;height:14px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;'+(on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+          nameStyle:'flex:1;min-width:0;font-size:12.5px;font-weight:'+(on?'500':'400')+';color:'+(on?'#F2EDE4':'#8C8478'),
+          countStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;color:"+(n===0?'#443E34':'#6E6659'),
+          rowStyle:'display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:5px;cursor:'+(last?'default':'pointer')+';'+(on?'background:#231E17':''),
+          toggle:()=>{ if(last){ self.flash('At least one media type stays selected'); return; }
+            self.setState(x=>({kinds:Object.assign({},x.kinds,{[k]:!x.kinds[k]}),selection:{},scrub:null})); }};
+      }),
+      kindSummary:(()=>{const on=['video','audio','photo'].filter(k=>st.kinds[k]);
+        return on.length===1?on[0]:on.length+' media types';})(),
+      itemCount: vis.length+' items',
+      search: st.search, onSearch:e=>self.setState({search:e.target.value}),
+      toolbarBtns:[['Sort',()=>self.flash('Name · Path · Size · Duration · Shuffle')],
+                   ['View · '+view.name,()=>self.setState({optionsOpen:true})],
+                   ['Import',()=>self.flash('Import window')],
+                   ['Categories',()=>self.flash('Categories & Fields window')],
+                   ['Duplicates',()=>self.flash('Duplicates window')]]
+        .map(([label,click])=>({label,click,
+          style:'background:transparent;border:1px solid #332D24;border-radius:7px;padding:6px 11px;font-size:12px;color:#A79E90;cursor:pointer'})),
+
+      hasFilter: Object.keys(st.slots).length>0,
+      filterCount: Object.keys(st.slots).length+(Object.keys(st.slots).length===1?' slot':' slots'),
+      clearFilter:()=>self.setState({slots:{}}),
+      filterChips, catSections, statusRows, sourceRows,
+      allItemsCount: String(st.items.filter(it=>self.kindOK(it)).length),
+      allItemsStyle:'display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:5px;cursor:pointer;'+(!st.folder?'background:#231E17':''),
+      pickAllItems:()=>self.setState({folder:null}),
+      addSource:()=>self.flash('Add Source — registers the folder, then opens Import'),
+      legend:[['req','Required'],['opt','Optional'],['exc','Excluded']].map(([k,label])=>({
+        label:SLOT[k].label, mark:SLOT[k].m, chipStyle:slotChip(k,13)})),
+
+      showOfflineBanner: offlineVis.length>0,
+      offlineMessage: st.hideOfflineItems
+        ? offlineVis.length+' items on '+offlineSrcNames.join(' and ')+' are hidden. Their tags, fields and thumbnails are local and still current.'
+        : offlineVis.length+' of these '+base.length+' items live on '+offlineSrcNames.join(' and ')+
+          ' — tags, fields and thumbnails are local and current. Only playback and file operations are unavailable.',
+      offlineActionLabel: st.hideOfflineItems?'Show offline items':'Hide offline items',
+      hideOffline:()=>self.setState(x=>({hideOfflineItems:!x.hideOfflineItems,selection:{}})),
+
+      gridTemplate:'repeat(auto-fill,minmax('+W+'px,1fr))',
+      tiles, noTiles: tiles.length===0,
+      emptyHint: Object.keys(st.slots).length?'Loosen a required slot, or clear the filter.':'Try a different source or search term.',
+      showTags: st.showTags,
+
+      hasSelection: selIds.length>0, selCount: selIds.length,
+      bulkActions:[['Add tags',()=>self.flash('Bulk tag editor for '+selIds.length+' items')],
+                   ['Mark reviewed',()=>self.flash(selIds.length+' items marked reviewed')],
+                   ['Add to queue',()=>self.flash('Queued '+selIds.length+' items')],
+                   ['Mark for deletion',()=>self.flash(selIds.length+' items flagged for deletion review')]]
+        .map(([label,click])=>({label,click,
+          style:'background:transparent;border:1px solid #4A4238;border-radius:6px;padding:5px 11px;font-size:12px;color:#CFC6B8;cursor:pointer'})),
+      clearSelection:()=>self.setState({selection:{}}),
+      deselectLabel:'Deselect · esc',
+
+      viewPills: st.views.map((v,i)=>({name:v.name,
+        style:'border-radius:6px;padding:5px 11px;font-size:11.5px;cursor:pointer;border:1px solid '+(i===st.viewIndex?'#E9A23B':'#332D24')+';background:'+(i===st.viewIndex?'#3A2E16':'transparent')+';color:'+(i===st.viewIndex?'#E9A23B':'#8C8478'),
+        pick:()=>self.setState({viewIndex:i})})),
+      viewName: view.name,
+      onViewName:e=>{const v=e.target.value;self.patchView(n=>{n.name=v;});},
+      duplicateView:()=>self.setState(x=>{
+        const copy=JSON.parse(JSON.stringify(view));
+        copy.id='v'+Date.now(); copy.name=view.name+' copy';
+        return {views:x.views.concat([copy]),viewIndex:x.views.length};
+      }),
+      deleteViewStyle:'border-radius:6px;padding:6px 10px;font-size:11.5px;cursor:'+(st.views.length>1?'pointer':'default')+';background:transparent;border:1px solid '+(st.views.length>1?'#4A2A24':'#2A251E')+';color:'+(st.views.length>1?'#C97A6A':'#443E34'),
+      deleteView:()=>{ if(st.views.length<2) return;
+        self.setState(x=>({views:x.views.filter((_,i)=>i!==x.viewIndex),viewIndex:Math.max(0,x.viewIndex-1)})); },
+
+      layoutCells:[
+        ['ot','↑ above','grid-column:2/5;grid-row:1',true],
+        ['ol','←','grid-column:1;grid-row:2/5',true],
+        ['tl','↖','grid-column:2;grid-row:2'],['tc','↑','grid-column:3;grid-row:2'],['tr','↗','grid-column:4;grid-row:2'],
+        ['mc','●','grid-column:3;grid-row:3'],
+        ['bl','↙','grid-column:2;grid-row:4'],['bc','↓','grid-column:3;grid-row:4'],['br','↘','grid-column:4;grid-row:4'],
+        ['or','→','grid-column:5;grid-row:2/5',true],
+        ['ob','↓ below','grid-column:2/5;grid-row:5',true]
+      ].map(([k,label,area,outside])=>{
+        const items=view.slots[k]||[], on=st.activeSlot===k;
+        return {label,
+          hasItems:items.length>0,
+          summary:items.length===1?(REG[self.entryOf(items[0]).k]||{hint:'?'}).hint:items.length+' values',
+          summaryStyle:"font-family:'JetBrains Mono',monospace;font-size:9px;color:#E9A23B;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+          style:area+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0 3px;border-radius:5px;cursor:pointer;'+
+            'border:1px '+(outside?'dashed':'solid')+' '+(on?'#E9A23B':items.length?'#4A4238':'#2A251E')+
+            ';background:'+(on?'#3A2E16':items.length?'#241F19':outside?'transparent':'#161309'),
+          labelStyle:'font-size:'+(outside?'9.5px':'12px')+';color:'+(on?'#E9A23B':items.length?'#CFC6B8':'#4A4238'),
+          pick:()=>self.setState({activeSlot:k,expandedValue:null})};
+      }),
+      activeSlotName:(SLOTS.concat(OUT).find(s=>s.k===st.activeSlot)||SLOTS[0]).name,
+      valueOptions: this.registry().map(r=>{
+        const list=(view.slots[st.activeSlot]||[]).map(e=>self.entryOf(e));
+        const idx=list.findIndex(e=>e.k===r.k), on=idx>=0;
+        const base=self.slotDefaults(st.activeSlot);
+        const cfg=on?Object.assign({},base,list[idx]):base;
+        const open=on&&st.expandedValue===r.k;
+        const seg=(cur,val,label,pick)=>({label,pick,
+          style:'border:none;border-radius:4px;padding:3px 8px;font-size:10.5px;cursor:pointer;'+
+            (cur===val?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478')});
+        const set=(opt,val)=>self.patchView(n=>{
+          const cur=(n.slots[st.activeSlot]||[]).map(e=>Object.assign({},self.entryOf(e)));
+          const i=cur.findIndex(e=>e.k===r.k); if(i<0) return;
+          cur[i][opt]=val; n.slots[st.activeSlot]=cur;
+        });
+        return {label:r.label, hint:r.hint, mark:on?'✓':'',
+          configurable: on&&!r.glyph, expanded: open,
+          caretStyle:'flex:none;font-size:12px;color:'+(open?'#E9A23B':'#5E5749')+';cursor:pointer;padding:0 2px;display:inline-block;transform:rotate('+(open?'90':'0')+'deg)',
+          expand:e=>{e.stopPropagation();self.setState(x=>({expandedValue:x.expandedValue===r.k?null:r.k}));},
+          boxStyle:'flex:none;width:14px;height:14px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;'+(on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+          rowStyle:'display:flex;align-items:center;gap:9px;padding:5px 7px;border-radius:5px;'+(on?'background:#231E17':''),
+          toggle:()=>self.patchView(n=>{
+            const cur=(n.slots[st.activeSlot]||[]).slice();
+            const i=cur.findIndex(e=>self.entryOf(e).k===r.k);
+            if(i>=0) cur.splice(i,1); else cur.push({k:r.k});
+            n.slots[st.activeSlot]=cur;
+          }),
+          controls:[
+            {label:'Overflow',opts:[seg(cfg.wrap,false,'Truncate',()=>set('wrap',false)),
+                                    seg(cfg.wrap,true,'Wrap',()=>set('wrap',true))]},
+            {label:'Align',opts:[seg(cfg.align,'left','Left',()=>set('align','left')),
+                                 seg(cfg.align,'center','Centre',()=>set('align','center')),
+                                 seg(cfg.align,'right','Right',()=>set('align','right'))]},
+            {label:'Width',showNumber: cfg.width==='fixed', number:String(cfg.px),
+             onNumber:e=>{const v=parseInt(e.target.value,10);set('px',isNaN(v)?96:v);},
+             opts:[seg(cfg.width,'auto','Auto',()=>set('width','auto')),
+                   seg(cfg.width,'fill','Fill',()=>set('width','fill')),
+                   seg(cfg.width,'fixed','Fixed',()=>set('width','fixed'))]}
+          ]};
+      }),
+
+      optionsOpen: st.optionsOpen,
+      closeOptions:()=>self.setState({optionsOpen:false}),
+      sizeTabs:['Small','Medium','Large'].map((label,i)=>({label,
+        style:'flex:1;border:none;border-radius:5px;padding:5px 4px;font-size:11.5px;cursor:pointer;'+(st.size===i?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({size:i})})),
+      optionToggles:[['trueAspect','Fit tiles to media aspect']].map(([k,label])=>({label,
+        mark:st[k]?'✓':'',
+        boxStyle:'width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+(st[k]?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+        toggle:()=>self.setState(x=>({[k]:!x[k]}))})),
+
+      toast: st.toast, stop:e=>e.stopPropagation(),
+
+      notes:[
+        {title:'1 · WARM CHARCOAL TOKENS',body:'Sidebar #17130E against content #131009 separates the two without a hard rule. Counts are JetBrains Mono throughout; a zero count dims rather than disappearing — “exists but unused for this kind” is the information.'},
+        {title:'2 · THREE-WAY FILTER',body:'Green + required, blue ~ optional, red − excluded and struck through. Click cycles forward, right-click steps back. A collapsed category still shows an amber count, and every live slot appears as a chip above the grid.'},
+        {title:'3 · OFFLINE, HONESTLY',body:'Cached thumbnails mean offline tiles look complete — so the tile carries a small ◍ badge and slight desaturation rather than a blocking overlay, and a banner states plainly what still works. One unplugged drive costs that drive\u2019s playback and nothing else.'},
+        {title:'4 · SELECTION',body:'Click opens; ⌘-click or shift-click starts a selection, after which plain clicks extend it. Selected tiles take an amber ring and check, with the bulk bar floating over the grid so the sidebar stays reachable.'},
+        {title:'5 · MEDIA TYPE IS A FILTER',body:'Video, Audio and Photo are sidebar checkboxes, not a toolbar mode — several can be on at once. The kind guard moved INTO the query, so relaxing the one-kind-at-a-time rule cannot leak rows through a listing path that forgot to scope itself.'},
+        {title:'6 · VERTICAL AND SQUARE',body:'Each kind gets one uniform frame so the grid keeps its rhythm at 10,000 items; a 9:16 clip pillarboxes inside it against near-black and carries a ⇕ badge, rather than standing three times taller than its neighbours. View Options → “Fit tiles to media aspect” switches to true aspect when you are actually reviewing phone footage.'},
+        {title:'7 · SAVED TILE VIEWS',body:'Eleven slots: nine overlaying the thumbnail, plus a dashed outer ring — above, below, left, right — that sits beside it. Overlay badges get a scrim, outside ones read as plain text. Tags show all categories at once or one category at a time, each in its own hue. Views are named, duplicated and cycled with V.'},
+        {title:'PROGRESSIVE, NOT “ADVANCED”',body:'Overflow, alignment and width appear only on a value you have already ticked, and only where they apply — ★ has no caret. Defaults come from the slot, so a right-hand corner right-aligns and truncates while the bottom strip wraps. Nobody has to open these; there is no mode to be in.'},
+        {title:'8 · MISSING IS A FILTER VALUE',body:'Every category ends with an italic “Missing” row carrying its own count — the tagging backlog, cycled through required / optional / excluded like any tag. Required on Venue is the untagged worklist; excluded is “only fully tagged shows”.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button{font-family:inherit}
+  input:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:20px">
+
+  <div style="width:1180px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B;margin-bottom:5px">Command Palette</div>
+      <div style="font-size:13px;color:#8C8478;max-width:600px;line-height:1.55;text-wrap:pretty">⌃K over any window. Every command in the app, scoped to what is in front of you and what you have selected.</div>
+    </div>
+    <div style="flex:1"></div>
+    <div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">SELECTION BEHIND IT</div>
+      <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:8px;padding:3px;gap:3px">
+        <sc-for list="{{ selTabs }}" as="s" hint-placeholder-count="3">
+          <button onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:relative;width:1180px;height:660px;border-radius:12px;overflow:hidden;border:1px solid #2E2820;background:#0E0C08">
+
+    <div style="position:absolute;inset:0;opacity:0.42">
+      <div style="height:30px;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 12px;gap:7px">
+        <div style="width:10px;height:10px;border-radius:50%;background:#3A3328"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:#3A3328"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:#3A3328"></div>
+        <div style="flex:1;text-align:center;font-size:11px;color:#5E5749">Concerts</div>
+      </div>
+      <div style="display:flex;height:100%">
+        <div style="width:150px;background:#17130E;border-right:1px solid #241F19"></div>
+        <div style="flex:1;padding:14px;display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-content:start">
+          <sc-for list="{{ ghost }}" as="g" hint-placeholder-count="18">
+            <div style="{{ g.style }}"></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="position:absolute;inset:0;background:rgba(8,7,5,0.6);display:flex;align-items:flex-start;justify-content:center;padding-top:72px">
+      <div style="width:620px;background:#1B1712;border:1px solid #3A3328;border-radius:12px;box-shadow:0 40px 90px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden;max-height:470px">
+
+        <div style="flex:none;display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid #2A251E">
+          <sc-if value="{{ inDrill }}" hint-placeholder-val="{{ false }}">
+            <span style="flex:none;font-size:11px;font-weight:600;padding:3px 9px;border-radius:5px;background:#3A2E16;color:#E9A23B;white-space:nowrap">{{ drillLabel }}</span>
+          </sc-if>
+          <sc-if value="{{ notDrill }}" hint-placeholder-val="{{ true }}">
+            <span style="flex:none;font-size:14px;color:#6E6659">⌕</span>
+          </sc-if>
+          <input ref="{{ inputRef }}" value="{{ query }}" onChange="{{ onQuery }}" placeholder="{{ placeholder }}" style="flex:1;min-width:0;background:transparent;border:none;color:#F2EDE4;font-size:15px" />
+          <span style="flex:none;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749">{{ scopeHint }}</span>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;min-height:0;padding:6px 0">
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+            <div>
+              <div style="font-size:9.5px;font-weight:700;letter-spacing:0.13em;color:#5E5749;padding:8px 16px 5px">{{ g.label }}</div>
+              <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+                <div onClick="{{ it.run }}" onMouseEnter="{{ it.hover }}" style="{{ it.rowStyle }}">
+                  <span style="{{ it.iconStyle }}">{{ it.icon }}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="{{ it.nameStyle }}">{{ it.name }}</div>
+                    <sc-if value="{{ it.hasNote }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ it.noteStyle }}">{{ it.note }}</div>
+                    </sc-if>
+                  </div>
+                  <span style="{{ it.keyStyle }}">{{ it.keys }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+          <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:44px 20px;text-align:center">
+              <div style="font-size:13px;color:#8C8478;margin-bottom:5px">{{ emptyTitle }}</div>
+              <div style="font-size:11.5px;color:#6E6659;line-height:1.5;text-wrap:pretty">{{ emptyNote }}</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="flex:none;display:flex;align-items:center;gap:14px;padding:9px 16px;border-top:1px solid #2A251E;background:#171310">
+          <sc-for list="{{ legend }}" as="l" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;background:#241F19;color:#A79E90">{{ l.k }}</span>
+              <span style="font-size:11px;color:#6E6659">{{ l.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1180px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:290px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1260,&quot;height&quot;:940}}">
+class Component extends DCLogic {
+  state = {query:'', hi:0, sel:4, drill:null, toast:null,
+    // These must be the ids `commands()` generates, not hand-written guesses.
+    recents:['categories-fields','missing-no-band-tag','clear-the-filter','tile-view-tagging']};
+
+  /// The value hole is initial-value-only here, so clearing the field has to
+  /// touch the DOM — otherwise a drill inherits the text that opened it.
+  setQuery(v){
+    if(this._input) this._input.value=v;
+    this.setState({query:v,hi:0});
+  }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2200); }
+
+  componentDidMount(){
+    this._key=e=>{
+      const rows=this._rows||[];
+      if(e.key==='ArrowDown'){ e.preventDefault(); this.setState(s=>({hi:Math.min(rows.length-1,s.hi+1)})); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); this.setState(s=>({hi:Math.max(0,s.hi-1)})); }
+      else if(e.key==='Enter'){ e.preventDefault(); const r=rows[this.state.hi]; if(r) r.go(); }
+      else if(e.key==='Escape'){ e.preventDefault();
+        if(this.state.drill) this.setState({drill:null});
+        this.setQuery(''); }
+    };
+    window.addEventListener('keydown',this._key);
+  }
+  componentWillUnmount(){ clearTimeout(this._t); window.removeEventListener('keydown',this._key); }
+
+  commands(){
+    const n=this.state.sel;
+    // needs: how many items a command requires. `arg` opens a second level
+    // rather than guessing — an encode preset is a choice, not a default.
+    return [
+      // Go to
+      ['go','Browse','▦','⌘1',0,null],
+      ['go','Categories & Fields','⌗','⌘2',0,null],
+      ['go','Tag Analysis','◉','⌘3',0,null],
+      ['go','Import','↓','⌘I',0,null],
+      ['go','Review — duplicates and playback issues','⚖','⌘4',0,null],
+      ['go','Organise by template','⇄','',0,null],
+      ['go','Background Tasks','◷','⌘0',0,null],
+      ['go','Devices','◫','',0,null],
+      ['go','Library Properties','ⓘ','⌘I',0,null],
+      ['go','Open Library…','▤','⇧⌘O',0,null],
+      ['go','Settings · Repair','⚒','',0,null],
+      // Filter
+      ['filter','Clear the filter','✕','⇧⌘K',0,null],
+      ['filter','Missing — no Band tag','◐','',0,null],
+      ['filter','Missing — no Venue tag','◐','',0,null],
+      ['filter','★ Favourites','★','',0,null],
+      ['filter','Needs review','⟳','',0,null],
+      ['filter','Playback issue','⚠','',0,null],
+      ['filter','Hide offline items','◍','',0,null],
+      ['filter','Band is…','⊕','',0,'band'],
+      ['filter','Venue is…','⊕','',0,'venue'],
+      // Tag the selection
+      ['tag','Add a Band tag…','＋','',1,'band'],
+      ['tag','Add a Venue tag…','＋','',1,'venue'],
+      ['tag','Mark reviewed','R','R',1,null],
+      ['tag','Mark playback issue','W','W',1,null],
+      ['tag','Mark for deletion','D','D',1,null],
+      // Do
+      ['do','Encode a Copy…','⚙','',1,'preset'],
+      ['do','Optimize (Faststart)','⚡','',1,null],
+      ['do','Repair Container','✚','',1,null],
+      ['do','Join Files','⛓','',2,null],
+      ['do','Export Clip to File','✂','',1,null],
+      ['do','Export Copy Without Hidden Blocks','◎','',1,null],
+      ['do','Scan On-Screen Text (OCR)','⌯','',1,null],
+      ['do','Write Tags to File','✎','',1,null],
+      ['do','Add to queue','≣','',1,null],
+      // View
+      ['view','Tile view · Default','▤','V',0,null],
+      ['view','Tile view · Triage','▤','V',0,null],
+      ['view','Tile view · Tagging','▤','V',0,null],
+      ['view','Fit tiles to media aspect','⤢','',0,null]
+    ].map(([kind,name,icon,keys,needs,arg])=>({kind,name,icon,keys,needs,arg,
+      id:name.toLowerCase().replace(/[^a-z]+/g,'-').replace(/^-|-$/g,'')}));
+  }
+
+  args(kind){
+    if(kind==='band') return ['Northlight Sessions','Riverside Collective','The Broadside Trio','Hollow Bell','Ash & Ember'];
+    if(kind==='venue') return ['Riverside Amphitheater','The Broadside','Northlight Hall','Cedar Room'];
+    return ['HEVC'];
+  }
+
+  renderVals(){
+    const st=this.state, self=this, n=st.sel;
+    const GROUPS={go:'GO TO',filter:'FILTER',tag:'TAG THE SELECTION',do:'DO',view:'VIEW',arg:''};
+    const q=st.query.trim().toLowerCase();
+
+    let rows=[];
+    if(st.drill){
+      // Second level: the command is chosen, this is its argument.
+      rows=self.args(st.drill.arg)
+        .filter(a=>!q||a.toLowerCase().indexOf(q)>=0)
+        .map(a=>({kind:'arg',name:a,icon:'›',keys:'',off:false,note:'',
+          go:()=>{ self.flash(st.drill.name.replace('…','')+' — '+a); self.setState({drill:null}); self.setQuery(''); }}));
+    } else {
+      const all=self.commands();
+      const base= q ? all.filter(c=>c.name.toLowerCase().indexOf(q)>=0||c.kind.indexOf(q)===0)
+                    : st.recents.map(id=>all.find(c=>c.id===id)).filter(Boolean);
+      rows=base.map(c=>{
+        const off=c.needs>n;
+        return {kind:c.kind,name:c.name,icon:c.icon,keys:c.keys,off,
+          note: off?('needs '+c.needs+(c.needs===1?' item':' items')+' selected — '+n+' selected')
+              : c.arg?'press ⏎ to choose':'',
+          go:()=>{ if(off){ self.flash(c.name+' needs '+c.needs+(c.needs===1?' item':' items')+' selected'); return; }
+            if(c.arg){ self.setState({drill:c}); self.setQuery(''); return; }
+            self.flash(c.name); }};
+      });
+    }
+
+    const hi=Math.min(st.hi,Math.max(0,rows.length-1));
+    rows.forEach((r,i)=>{ r._i=i; });
+    this._rows=rows;
+
+    const order=st.drill?['arg']:['go','filter','tag','do','view'];
+    const groups=order.map(k=>({label:GROUPS[k],
+      items:rows.filter(r=>r.kind===k).map(r=>{
+        const on=r._i===hi;
+        return {name:r.name, icon:r.icon, keys:r.keys, note:r.note, hasNote:!!r.note,
+          iconStyle:'flex:none;width:22px;text-align:center;font-size:12px;color:'+(r.off?'#4A4238':on?'#E9A23B':'#7C7466'),
+          nameStyle:'font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(r.off?'#6E6659':on?'#F2EDE4':'#CFC6B8'),
+          noteStyle:'font-size:10.5px;margin-top:2px;color:'+(r.off?'#8A6A55':'#8C8478'),
+          keyStyle:"flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;"+
+            (r.keys?'background:'+(on?'#3A2E16':'#241F19')+';color:'+(on?'#E9A23B':'#8C8478'):'background:transparent;color:transparent'),
+          rowStyle:'display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:'+(r.off?'default':'pointer')+';'+
+            (on?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':''),
+          hover:()=>self.setState({hi:r._i}),
+          run:r.go};
+      })})).filter(g=>g.items.length);
+
+    return {
+      selTabs:[[0,'Nothing'],[1,'1 item'],[4,'4 items']].map(([v,label])=>({label,
+        style:'border:none;border-radius:6px;padding:6px 13px;font-size:12px;cursor:pointer;'+
+          (n===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({sel:v,hi:0})})),
+
+      ghost: Array.from({length:18},(_,i)=>({
+        style:'width:100%;aspect-ratio:16/9;border-radius:4px;background:linear-gradient('+(112+i*11)+'deg,#241F19,#151209)'})),
+
+      query: st.query,
+      onQuery:e=>self.setState({query:e.target.value,hi:0}),
+      placeholder: st.drill?('Pick a '+(st.drill.arg==='preset'?'preset':st.drill.arg)):'Search commands, tags and windows…',
+      inDrill: !!st.drill, notDrill: !st.drill,
+      drillLabel: st.drill?st.drill.name.replace('…',''):'',
+      scopeHint: n===0?'nothing selected':n+(n===1?' item selected':' items selected'),
+
+      inputRef:el=>{self._input=el;},
+      groups, empty: rows.length===0,
+      emptyTitle: q?'Nothing matches “'+st.query.trim()+'”':'Start typing',
+      emptyNote: q
+        ? 'Tag names, category names and every window are searchable from here.'
+        : 'Commands, windows, filters and your own tag names — all from this one field.',
+
+      legend:[['↑↓','move'],['⏎','run'],['esc',st.drill?'back':'clear'],['⌃K','close']]
+        .map(([k,label])=>({k,label})),
+
+      toast: st.toast,
+
+      notes:[
+        {title:'ONE LIST, EVERY WINDOW',body:'Windows, filters, tagging, operations and saved views are all reachable from the same field, so a command you use twice a year does not need a menu you remember. Typing a band or venue name finds it directly — the vocabulary is searchable, not just the commands.'},
+        {title:'SCOPED TO THE SELECTION',body:'A command needing items is listed and greyed rather than hidden, with the requirement where its description goes — switch the selection above and watch Join, Encode and the tagging commands come and go. Hiding them would make the palette teach you nothing.'},
+        {title:'ARGUMENTS ARE A SECOND STEP',body:'“Add a Band tag…” and “Encode a Copy…” do not guess. Enter drills into a second level scoped to that command, with Escape stepping back out — so one field can carry a choice as well as a command without ever running the wrong thing.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

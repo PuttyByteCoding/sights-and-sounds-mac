@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button,textarea,select{font-family:inherit}
+  input:focus,textarea:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1320px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Categories &amp; Fields</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Its own window, not a Settings pane — category configuration, the full tag manager, and field definitions in one place.</div>
+  </div>
+
+  <div style="width:1320px;height:880px;background:#171411;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Categories &amp; Fields — Concerts</div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:246px;flex:none;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0;background:#151209">
+        <div style="flex:none;padding:13px 14px 8px;display:flex;align-items:baseline;justify-content:space-between">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466">CATEGORIES</div>
+          <button onClick="{{ newCategory }}" style="background:none;border:none;padding:0;font-size:11.5px;color:#E9A23B;cursor:pointer">+ New</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0 8px 10px">
+          <sc-for list="{{ catRows }}" as="c" hint-placeholder-count="5">
+            <div onClick="{{ c.pick }}" style="{{ c.rowStyle }}">
+              <span style="color:#4A4238;font-size:12px;cursor:grab">≡</span>
+              <span style="{{ c.swatchStyle }}"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6E6659;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.meta }}</div>
+              </div>
+              <sc-if value="{{ c.hidden }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#2E2820;color:#8C8478">hidden</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #2A251E;padding:11px 8px 12px">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;padding:0 6px 7px">ITEM FIELDS</div>
+          <div onClick="{{ pickItemFields }}" style="{{ itemFieldsStyle }}">
+            <span style="width:7px;height:7px;border-radius:2px;background:#8C8478"></span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12.5px;font-weight:500">Media Item Fields</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6E6659;margin-top:2px">{{ itemFieldCount }} · scope mediaItem</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+        <sc-if value="{{ showTags }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:none;padding:13px 16px 11px;border-bottom:1px solid #2A251E">
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px">
+              <div style="font-size:17px;font-weight:700">{{ catName }}</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#7C7466">{{ catStats }}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:7px;background:#131009;border:1px solid #2E2820;border-radius:7px;padding:6px 10px;width:230px">
+                <span style="font-size:12px;color:#6E6659">⌕</span>
+                <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Filter tags and aliases" style="flex:1;min-width:0;background:transparent;border:none;color:#F2EDE4;font-size:12.5px" />
+              </div>
+              <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+                <sc-for list="{{ viewTabs }}" as="v" hint-placeholder-count="2">
+                  <button onClick="{{ v.pick }}" style="{{ v.style }}">{{ v.label }}</button>
+                </sc-for>
+              </div>
+              <div style="flex:1"></div>
+              <button onClick="{{ toggleMerge }}" style="{{ mergeBtnStyle }}">{{ mergeBtnLabel }}</button>
+              <button onClick="{{ openPaste }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:6px 12px;font-size:12px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Paste List…</button>
+              <button onClick="{{ addTag }}" style="background:#E9A23B;border:none;border-radius:7px;padding:6px 13px;font-size:12px;font-weight:600;color:#1A1409;cursor:pointer">+ Tag</button>
+            </div>
+          </div>
+
+          <div style="flex:none;display:grid;grid-template-columns:{{ gridCols }};align-items:center;height:31px;padding:0 16px;border-bottom:1px solid #2A251E;background:#141109">
+            <sc-if value="{{ mergeMode }}" hint-placeholder-val="{{ false }}">
+              <div></div>
+            </sc-if>
+            <sc-for list="{{ headCols }}" as="h" hint-placeholder-count="5">
+              <div onClick="{{ h.sort }}" style="{{ h.style }}">{{ h.label }}<span style="{{ h.markStyle }}">{{ h.mark }}</span></div>
+            </sc-for>
+          </div>
+
+          <div style="flex:1;overflow-y:auto">
+            <sc-for list="{{ tagRows }}" as="t" hint-placeholder-count="14">
+              <div onClick="{{ t.click }}" style="{{ t.rowStyle }}">
+                <sc-if value="{{ t.isHeader }}" hint-placeholder-val="{{ false }}">
+                  <div style="grid-column:1 / -1;font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:#C58BB8">{{ t.headerLabel }}</div>
+                </sc-if>
+                <sc-if value="{{ t.isTag }}" hint-placeholder-val="{{ true }}">
+                  <sc-if value="{{ mergeMode }}" hint-placeholder-val="{{ false }}">
+                    <span onClick="{{ t.togglePick }}" style="{{ t.pickStyle }}">{{ t.pickMark }}</span>
+                  </sc-if>
+                  <div style="min-width:0;display:flex;align-items:center;gap:7px">
+                    <span style="{{ t.nameStyle }}">{{ t.name }}</span>
+                    <sc-if value="{{ t.hidden }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#2E2820;color:#8C8478;flex:none">hidden</span>
+                    </sc-if>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#7C7466;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.aliases }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90;text-align:right">{{ t.uses }}</div>
+                  <div style="display:flex;justify-content:center"><span onClick="{{ t.toggleFav }}" style="{{ t.favStyle }}">★</span></div>
+                  <div style="display:flex;justify-content:flex-end"><span onClick="{{ t.menu }}" style="color:#5E5749;cursor:pointer;font-size:14px;padding:0 3px">⋯</span></div>
+                </sc-if>
+              </div>
+            </sc-for>
+            <sc-if value="{{ noTags }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:64px 20px;text-align:center;color:#6E6659;font-size:13px">{{ emptyNote }}</div>
+            </sc-if>
+          </div>
+
+          <sc-if value="{{ mergeMode }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:none;border-top:1px solid #3A3328;background:#221B12;padding:11px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div style="font-size:12px;color:#CFC6B8;text-wrap:pretty;max-width:280px">Pick tags to merge, then a target — one of the picks, or a new tag the picks become aliases of.</div>
+              <div style="flex:1"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#E9A23B">{{ mergeCount }} picked</span>
+              <select value="{{ mergeTarget }}" onChange="{{ onMergeTarget }}" style="background:#131009;border:1px solid #3A3328;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12px">
+                <option value="">Existing target…</option>
+                <sc-for list="{{ mergeOptions }}" as="mo" hint-placeholder-count="0">
+                  <option value="{{ mo.value }}">{{ mo.label }}</option>
+                </sc-for>
+              </select>
+              <span style="font-size:11.5px;color:#6E6659">or</span>
+              <input value="{{ mergeNew }}" onChange="{{ onMergeNew }}" placeholder="New tag name…" style="background:#131009;border:1px solid #3A3328;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12px;width:150px" />
+              <button onClick="{{ doMerge }}" style="{{ mergeGoStyle }}">Merge</button>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ showItemFields }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;padding:13px 16px 11px;border-bottom:1px solid #2A251E;display:flex;align-items:center;gap:10px">
+            <div style="font-size:17px;font-weight:700">Media Item Fields</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#7C7466">scope mediaItem · applies to every item in the library</div>
+            <div style="flex:1"></div>
+            <button onClick="{{ addItemField }}" style="background:#E9A23B;border:none;border-radius:7px;padding:6px 13px;font-size:12px;font-weight:600;color:#1A1409;cursor:pointer">+ Field</button>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:12px 16px">
+            <sc-for list="{{ itemFieldRows }}" as="f" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:22px 1fr 108px 88px 30px;align-items:center;gap:10px;padding:10px 11px;border:1px solid #2A251E;border-radius:8px;margin-bottom:7px;background:#151209">
+                <span style="color:#4A4238;font-size:12px;cursor:grab">≡</span>
+                <div>
+                  <div style="font-size:13px;font-weight:500">{{ f.name }}</div>
+                  <div style="font-size:11px;color:#6E6659;margin-top:2px">{{ f.notes }}</div>
+                </div>
+                <span style="{{ f.typeStyle }}">{{ f.type }}</span>
+                <span style="{{ f.reqStyle }}">{{ f.req }}</span>
+                <span style="color:#5E5749;cursor:pointer;font-size:14px;text-align:right">⋯</span>
+              </div>
+            </sc-for>
+            <div style="font-size:12px;color:#6E6659;margin-top:10px;line-height:1.55;text-wrap:pretty">Number fields also store a numeric value so sorting is numeric, and dates normalize to ISO 8601 — this is what makes ordering by a field possible at all.</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="width:326px;flex:none;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0;background:#151209">
+        <div style="flex:none;display:flex;border-bottom:1px solid #2A251E">
+          <sc-for list="{{ inspTabs }}" as="it" hint-placeholder-count="2">
+            <button onClick="{{ it.pick }}" style="{{ it.style }}">{{ it.label }}</button>
+          </sc-for>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:14px 15px 18px;display:flex;flex-direction:column;gap:16px">
+
+          <sc-if value="{{ inspCategory }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div>
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">NAME</div>
+                <input value="{{ catName }}" onChange="{{ onRenameCat }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:7px 9px;color:#F2EDE4;font-size:13px" style-focus="border-color:#7A6A4A" />
+              </div>
+              <div>
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">BEHAVIOR</div>
+                <div style="display:flex;flex-direction:column;gap:1px">
+                  <sc-for list="{{ toggles }}" as="tg" hint-placeholder-count="5">
+                    <div onClick="{{ tg.toggle }}" style="display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#1C1810">
+                      <span style="{{ tg.boxStyle }}">{{ tg.mark }}</span>
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:12.5px">{{ tg.label }}</div>
+                        <div style="font-size:11px;color:#6E6659;margin-top:1px;line-height:1.4;text-wrap:pretty">{{ tg.note }}</div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">NAME FORMATTING</div>
+                <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+                  <sc-for list="{{ formats }}" as="fm" hint-placeholder-count="4">
+                    <button onClick="{{ fm.pick }}" style="{{ fm.style }}">{{ fm.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:7px;line-height:1.5;text-wrap:pretty">{{ formatPreview }}</div>
+              </div>
+              <div>
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">METADATA WRITE-BACK</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span onClick="{{ toggleWriteback }}" style="{{ wbBoxStyle }}">{{ wbMark }}</span>
+                  <input value="{{ wbField }}" onChange="{{ onWbField }}" placeholder="auto — BAND" style="flex:1;min-width:0;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:12px" style-focus="border-color:#7A6A4A" />
+                </div>
+                <div style="font-size:11px;color:#6E6659;margin-top:6px;line-height:1.45;text-wrap:pretty">Blank writes an uppercased custom field. A standard key (ARTIST, DATE, PERFORMER) maps to the container's own tag.</div>
+              </div>
+              <div>
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+                  <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466">TAG FIELDS</div>
+                  <button onClick="{{ addTagField }}" style="background:none;border:none;padding:0;font-size:11.5px;color:#E9A23B;cursor:pointer">+ Field</button>
+                </div>
+                <div style="font-size:11px;color:#6E6659;margin-bottom:7px;line-height:1.45;text-wrap:pretty">Attach to every tag in this category — Venue gets a City, Taper gets Equipment.</div>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <sc-for list="{{ tagFieldRows }}" as="tf" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #2A251E;border-radius:6px;background:#0F0C07">
+                      <span style="flex:1;font-size:12.5px">{{ tf.name }}</span>
+                      <span style="{{ tf.typeStyle }}">{{ tf.type }}</span>
+                      <span style="color:#5E5749;cursor:pointer;font-size:13px">⋯</span>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ noTagFields }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:11.5px;color:#5E5749;padding:6px 0">None yet.</div>
+                  </sc-if>
+                </div>
+              </div>
+              <div style="border-top:1px solid #2A251E;padding-top:13px">
+                <button onClick="{{ askDeleteCat }}" style="width:100%;background:transparent;border:1px solid #4A2A24;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#C97A6A;cursor:pointer" style-hover="background:#2A1512;border-color:#7A3A30">Delete Category…</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ inspTag }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div>
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">TAG NAME</div>
+                <input value="{{ tagName }}" onChange="{{ onRenameTag }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:7px 9px;color:#F2EDE4;font-size:13px" style-focus="border-color:#7A6A4A" />
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:6px">{{ tagUsage }}</div>
+              </div>
+              <div style="display:flex;gap:7px">
+                <button onClick="{{ tagFav }}" style="{{ tagFavStyle }}">★ Favorite</button>
+                <button onClick="{{ tagHide }}" style="{{ tagHideStyle }}">Hidden by default</button>
+              </div>
+              <div>
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+                  <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466">ALIASES</div>
+                  <span style="font-size:11px;color:#6E6659">match on search &amp; import</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">
+                  <sc-for list="{{ aliasPills }}" as="ap" hint-placeholder-count="1">
+                    <span style="display:inline-flex;align-items:center;gap:5px;border-radius:5px;padding:3px 8px;font-size:11.5px;background:#221D16;border:1px solid #3A3328;color:#CFC6B8">{{ ap.name }}<span onClick="{{ ap.remove }}" style="cursor:pointer;opacity:0.55;font-size:12px">×</span></span>
+                  </sc-for>
+                </div>
+                <input value="{{ aliasDraft }}" onChange="{{ onAliasDraft }}" onKeyDown="{{ onAliasKey }}" placeholder="Add alias, press Enter" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+              </div>
+              <sc-if value="{{ hasTagFieldValues }}" hint-placeholder-val="{{ false }}">
+                <div>
+                  <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">FIELD VALUES</div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <sc-for list="{{ tagValueRows }}" as="tv" hint-placeholder-count="1">
+                      <div>
+                        <div style="font-size:11px;color:#8C8478;margin-bottom:3px">{{ tv.label }}</div>
+                        <input value="{{ tv.value }}" onChange="{{ tv.onInput }}" placeholder="{{ tv.placeholder }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+              <div style="border-top:1px solid #2A251E;padding-top:13px;display:flex;flex-direction:column;gap:7px">
+                <button onClick="{{ convertAlias }}" style="width:100%;background:transparent;border:1px solid #3A3328;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Convert to alias of…</button>
+                <button onClick="{{ askDeleteTag }}" style="width:100%;background:transparent;border:1px solid #4A2A24;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#C97A6A;cursor:pointer" style-hover="background:#2A1512;border-color:#7A3A30">Delete Tag…</button>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ pasteOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closePaste }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.62);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding-top:88px">
+        <div onClick="{{ stop }}" style="width:470px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);overflow:hidden">
+          <div style="padding:15px 17px 11px;border-bottom:1px solid #2E2820">
+            <div style="font-size:14.5px;font-weight:600">Paste tag list into {{ catName }}</div>
+            <div style="font-size:12px;color:#8C8478;margin-top:4px;line-height:1.5;text-wrap:pretty">One name per line. Names are normalized by this category's formatting rule, deduped against existing tags, and created in chunks.</div>
+          </div>
+          <div style="padding:14px 17px">
+            <textarea value="{{ pasteText }}" onChange="{{ onPaste }}" placeholder="Northlight Sessions&#10;Hollow Bell&#10;ash &amp; ember" style="width:100%;box-sizing:border-box;height:140px;resize:vertical;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:9px 10px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6" style-focus="border-color:#7A6A4A"></textarea>
+            <div style="display:flex;gap:16px;margin-top:10px;font-family:'JetBrains Mono',monospace;font-size:11.5px">
+              <span style="color:#7FBF7F">{{ pasteNew }} new</span>
+              <span style="color:#6E6659">{{ pasteDupe }} already exist</span>
+            </div>
+          </div>
+          <div style="padding:12px 15px;border-top:1px solid #2E2820;display:flex;justify-content:flex-end;gap:9px">
+            <button onClick="{{ closePaste }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+            <button onClick="{{ doPaste }}" style="{{ pasteGoStyle }}">{{ pasteGoLabel }}</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ confirmOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeConfirm }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.66);z-index:75;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ stop }}" style="width:420px;background:#1E1A15;border:1px solid #4A2A24;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:20px">
+          <div style="font-size:14.5px;font-weight:600;margin-bottom:7px">{{ confirmTitle }}</div>
+          <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ confirmBody }}</div>
+          <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+            <button onClick="{{ closeConfirm }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+            <button onClick="{{ doConfirm }}" style="background:#8A3428;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#FFEDE8;cursor:pointer">Delete</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1320px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:1090}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const cats=[
+      {id:'band',name:'Band',hue:'#8B93E8',allowMultiple:true,checkboxes:false,focus:true,hidden:false,format:1,seps:true,wbOn:true,wbField:'ARTIST',
+       fields:[{name:'Origin Country',type:'text'}]},
+      {id:'rec',name:'Recording Type',hue:'#C58BB8',allowMultiple:false,checkboxes:true,focus:false,hidden:false,format:0,seps:false,wbOn:true,wbField:'',fields:[]},
+      {id:'venue',name:'Venue',hue:'#6FBFB0',allowMultiple:false,checkboxes:false,focus:false,hidden:false,format:1,seps:false,wbOn:false,wbField:'',
+       fields:[{name:'City',type:'text'},{name:'Capacity',type:'number'}]},
+      {id:'year',name:'Year',hue:'#E9A23B',allowMultiple:false,checkboxes:false,focus:false,hidden:false,format:0,seps:false,wbOn:true,wbField:'DATE',fields:[]},
+      {id:'taper',name:'Taper',hue:'#9DBF7F',allowMultiple:true,checkboxes:false,focus:false,hidden:true,format:0,seps:false,wbOn:false,wbField:'',
+       fields:[{name:'Equipment',type:'text'}]}
+    ];
+    const t=(cat,name,uses,aliases,fav,hid)=>({id:cat+':'+name,cat,name,uses,aliases:aliases||[],fav:!!fav,hidden:!!hid,values:{}});
+    const tags=[
+      t('band','Northlight Sessions',148,[],true),
+      t('band','Northlight Session',6,[]),
+      t('band','northlight sessions',3,[]),
+      t('band','Riverside Collective',92,['RVC'],true),
+      t('band','The Broadside Trio',67,[]),
+      t('band','Broadside Trio',11,[]),
+      t('band','Marta Quinn',54,['M. Quinn']),
+      t('band','Hollow Bell',41,[]),
+      t('band','Ash & Ember',38,[]),
+      t('band','Ash and Ember',5,[]),
+      t('band','Cedar & Pine',22,[]),
+      t('band','The Long Fields',19,[]),
+      t('band','Juno Grove',14,[]),
+      t('band','Paper Anchor',9,[],false,true),
+      t('band','Wren',7,[]),
+      t('rec','Soundboard',312,['SBD'],true),
+      t('rec','Audience',188,['AUD']),
+      t('rec','FM Broadcast',64,['FM','Radio Broadcast']),
+      t('rec','Pro-shot',41,['Professional','Multi-cam']),
+      t('rec','Matrix',27,[]),
+      t('venue','Riverside Amphitheater',73,['Riverside Amp'],true),
+      t('venue','The Broadside',58,[]),
+      t('venue','Broadside',4,[]),
+      t('venue','Northlight Hall',44,[]),
+      t('venue','Cedar Room',31,[]),
+      t('year','2024',96,[]),
+      t('year','2023',142,[]),
+      t('year','2022',118,[]),
+      t('year','2021',67,[]),
+      t('taper','J. Alvarez',88,['jalvarez'],true),
+      t('taper','M. Okafor',52,[]),
+      t('taper','unknown',204,[],false,true)
+    ];
+    tags.forEach(x=>{ if(x.cat==='venue'){x.values={City:'',Capacity:''};} if(x.cat==='taper'){x.values={Equipment:''};} if(x.cat==='band'){x.values={'Origin Country':''};} });
+    return {
+      cats, tags, selCat:'band', selTag:null, pane:'category',
+      query:'', view:'flat', sortStack:[{col:'uses',dir:-1}],
+      mergeMode:false, picks:{}, mergeTarget:'', mergeNew:'',
+      pasteOpen:false, pasteText:'', confirm:null, toast:null, aliasDraft:'',
+      itemFields:[
+        {name:'Show Date',type:'date',required:false,notes:'Date of the performance.'},
+        {name:'Source URL',type:'url',required:false,notes:'archive.org / etree origin.'},
+        {name:'Setlist Notes',type:'longText',required:false,notes:'Free text, searchable.'}
+      ],
+      showItemFields:false
+    };
+  }
+
+  cat(){ return this.state.cats.find(c=>c.id===this.state.selCat); }
+  tag(){ return this.state.tags.find(t=>t.id===this.state.selTag); }
+  catTags(){ return this.state.tags.filter(t=>t.cat===this.state.selCat); }
+  norm(n){ return n.toLowerCase().replace(/[^a-z0-9]/g,'').replace(/s$/,''); }
+
+  flash(msg){
+    this.setState({toast:msg});
+    clearTimeout(this._toast);
+    this._toast=setTimeout(()=>this.setState({toast:null}),2200);
+  }
+  componentWillUnmount(){ clearTimeout(this._toast); }
+
+  patchCat(fn){
+    this.setState(st=>{
+      const cats=st.cats.map(c=>{ if(c.id!==st.selCat) return c; const n=Object.assign({},c); fn(n); return n; });
+      return {cats};
+    });
+  }
+  patchTag(id,fn){
+    this.setState(st=>({tags:st.tags.map(t=>{ if(t.id!==id) return t; const n=Object.assign({},t,{aliases:t.aliases.slice(),values:Object.assign({},t.values)}); fn(n); return n; })}));
+  }
+
+  renderVals(){
+    const st=this.state, self=this, cat=this.cat(), tag=this.tag();
+    const FMT=['As typed','Title Case','lowercase','UPPERCASE'];
+    const TYPE={text:'text',longText:'long text',number:'number',date:'date',boolean:'boolean',url:'url'};
+
+    const catRows=st.cats.map(c=>{
+      const n=st.tags.filter(t=>t.cat===c.id).length;
+      const bits=[c.allowMultiple?'multiple':'single'];
+      if(c.checkboxes) bits.push('checkboxes');
+      if(c.focus) bits.push('focus');
+      const on=!st.showItemFields&&st.selCat===c.id;
+      return {name:c.name, meta:n+' tags · '+bits.join(' · '), hidden:c.hidden,
+        swatchStyle:'flex:none;width:7px;height:7px;border-radius:2px;background:'+c.hue,
+        rowStyle:'display:flex;align-items:center;gap:8px;padding:7px 7px;border-radius:6px;cursor:pointer;margin-bottom:1px;'+(on?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':'background:transparent'),
+        pick:()=>self.setState({selCat:c.id,selTag:null,pane:'category',showItemFields:false,query:'',mergeMode:false,picks:{}})};
+    });
+
+    // ---- tag table ----
+    const q=st.query.trim().toLowerCase();
+    let base=this.catTags().filter(t=>!q||t.name.toLowerCase().indexOf(q)>=0||t.aliases.some(a=>a.toLowerCase().indexOf(q)>=0));
+    const getters={name:t=>t.name.toLowerCase(),aliases:t=>t.aliases.length,uses:t=>t.uses,fav:t=>t.fav?1:0};
+    if(st.sortStack.length){
+      base=base.slice().sort((a,b)=>{
+        for(const s of st.sortStack){
+          const ga=getters[s.col](a), gb=getters[s.col](b);
+          if(ga<gb) return -1*s.dir;
+          if(ga>gb) return 1*s.dir;
+        }
+        return 0;
+      });
+    }
+
+    let listing=[];
+    if(st.view==='similar'){
+      const groups={};
+      this.catTags().forEach(t=>{ const k=self.norm(t.name); (groups[k]=groups[k]||[]).push(t); });
+      Object.keys(groups).forEach(k=>{
+        const g=groups[k];
+        if(g.length<2) return;
+        g.sort((a,b)=>b.uses-a.uses);
+        listing.push({header:g.length+' VARIANTS · '+g[0].name});
+        g.forEach(t=>listing.push({tag:t}));
+      });
+    } else {
+      base.forEach(t=>listing.push({tag:t}));
+    }
+
+    const cols=[['name','TAG','left'],['aliases','ALIASES','left'],['uses','USES','right'],['fav','★','center'],['','','right']];
+    const headCols=cols.map(([col,label,align])=>{
+      const idx=st.sortStack.findIndex(s=>s.col===col);
+      const s=idx>=0?st.sortStack[idx]:null;
+      return {label,
+        style:'font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:'+(s?'#E9A23B':'#7C7466')+';text-align:'+align+';'+(col?'cursor:pointer':'')+';display:flex;gap:3px;align-items:center;justify-content:'+(align==='right'?'flex-end':align==='center'?'center':'flex-start'),
+        mark: s?(s.dir>0?'▲':'▼')+(st.sortStack.length>1?String(idx+1):''):'',
+        markStyle:'font-size:8px;color:#E9A23B',
+        sort:e=>{ if(!col) return;
+          self.setState(state=>{
+            const stack=state.sortStack.slice();
+            const i=stack.findIndex(x=>x.col===col);
+            if(!e.shiftKey){ return {sortStack:[{col,dir:i>=0&&stack[i].dir===-1?1:-1}]}; }
+            if(i>=0){ stack[i]={col,dir:stack[i].dir===-1?1:-1}; } else { stack.push({col,dir:-1}); }
+            return {sortStack:stack};
+          });
+        }};
+    });
+
+    const gridCols=(st.mergeMode?'30px ':'')+'1fr 150px 66px 40px 34px';
+
+    const tagRows=listing.map(row=>{
+      if(row.header) return {isHeader:true,isTag:false,headerLabel:row.header,
+        rowStyle:'display:grid;grid-template-columns:'+gridCols+';padding:11px 16px 5px;border-bottom:1px solid #1F1B15'};
+      const t=row.tag, sel=st.selTag===t.id, picked=!!st.picks[t.id];
+      return {isHeader:false,isTag:true,name:t.name,hidden:t.hidden,
+        aliases:t.aliases.length?t.aliases.join(', '):'—',
+        uses:String(t.uses), pickMark:picked?'✓':'',
+        nameStyle:'font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(t.hidden?'#7C7466':'#F2EDE4'),
+        rowStyle:'display:grid;grid-template-columns:'+gridCols+';align-items:center;gap:0;padding:7px 16px;border-bottom:1px solid #1F1B15;cursor:pointer;'+(sel?'background:#241E16;box-shadow:inset 2px 0 0 #E9A23B':picked?'background:#1D1810':''),
+        pickStyle:'width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+(picked?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+        favStyle:'font-size:13px;cursor:pointer;color:'+(t.fav?'#E9A23B':'#332E26'),
+        click:()=>self.setState({selTag:t.id,pane:'tag',aliasDraft:''}),
+        togglePick:e=>{e.stopPropagation();self.setState(s=>{const p=Object.assign({},s.picks);if(p[t.id])delete p[t.id];else p[t.id]=true;return {picks:p};});},
+        toggleFav:e=>{e.stopPropagation();self.patchTag(t.id,n=>{n.fav=!n.fav;});},
+        menu:e=>{e.stopPropagation();self.setState({selTag:t.id,pane:'tag'});}};
+    });
+
+    const pickIds=Object.keys(st.picks);
+    const canMerge=pickIds.length>=2&&(!!st.mergeTarget!==!!st.mergeNew.trim());
+
+    const toggles=[
+      ['allowMultiple','Allow multiple per item','Band: yes. Year: no — a new pick replaces the old.'],
+      ['checkboxes','Display as checkboxes','Renders every tag as a toggle instead of autocomplete. Small fixed sets only.'],
+      ['focus','Default focus on open','The tag editor puts the cursor here. At most one category has it.'],
+      ['hidden','Hidden from browse filters','Still editable — just absent from the filter panel.'],
+      ['seps','Separators to spaces','Converts - . _ to spaces before formatting runs.']
+    ].map(([k,label,note])=>({label,note,
+      mark:cat[k]?'✓':'',
+      boxStyle:'flex:none;margin-top:1px;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+(cat[k]?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      toggle:()=>self.patchCat(n=>{n[k]=!n[k];})}));
+
+    const formats=FMT.map((label,i)=>({label,
+      style:'flex:1;border:none;border-radius:5px;padding:5px 4px;font-size:11px;cursor:pointer;'+(cat.format===i?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+      pick:()=>self.patchCat(n=>{n.format=i;})}));
+    const sample=cat.seps?'dave-matthews-band':'dave matthews band';
+    const out=cat.format===1?'Dave Matthews Band':cat.format===2?'dave matthews band':cat.format===3?'DAVE MATTHEWS BAND':(cat.seps?'dave matthews band':sample);
+    const typeChip=v=>'font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:2px 7px;border-radius:4px;background:#241F19;color:#8C8478;text-align:center';
+
+    const inspTabs=[['category','Category'],['tag','Tag']].map(([v,label])=>({
+      label: v==='tag'&&tag?'Tag · '+tag.name:label,
+      style:'flex:1;background:transparent;border:none;border-bottom:2px solid '+(st.pane===v?'#E9A23B':'transparent')+';padding:11px 8px;font-size:12.5px;font-weight:'+(st.pane===v?'600':'400')+';color:'+(st.pane===v?'#F2EDE4':'#7C7466')+';cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
+      pick:()=>self.setState({pane:v})}));
+
+    return {
+      catRows, headCols, tagRows, gridCols, toggles, formats, inspTabs,
+      showTags: !st.showItemFields, showItemFields: st.showItemFields,
+      itemFieldCount: st.itemFields.length+' fields',
+      itemFieldsStyle:'display:flex;align-items:center;gap:8px;padding:7px 7px;border-radius:6px;cursor:pointer;'+(st.showItemFields?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':'background:transparent'),
+      pickItemFields:()=>self.setState({showItemFields:true,selTag:null}),
+      itemFieldRows: st.itemFields.map(f=>({name:f.name,notes:f.notes,type:TYPE[f.type],
+        typeStyle:typeChip(),
+        req:f.required?'required':'optional',
+        reqStyle:'font-size:10.5px;text-align:center;color:'+(f.required?'#E9A23B':'#5E5749')})),
+      addItemField:()=>self.flash('New field sheet — name, type, required, sort order'),
+
+      catName: cat.name, catStats: this.catTags().length+' tags · '+this.catTags().reduce((a,b)=>a+b.uses,0)+' taggings',
+      query: st.query, onQuery:e=>self.setState({query:e.target.value}),
+      viewTabs:[['flat','All'],['similar','Similar only']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 11px;font-size:12px;cursor:pointer;'+(st.view===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({view:v})})),
+      noTags: tagRows.length===0,
+      emptyNote: st.view==='similar'?'No near-duplicate names in this category.':'No tags match that filter.',
+
+      mergeMode: st.mergeMode,
+      mergeBtnLabel: st.mergeMode?'Cancel merge':'Merge tags',
+      mergeBtnStyle:'border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer;'+(st.mergeMode?'background:#3A2E16;border:1px solid #7A6428;color:#E9A23B':'background:transparent;border:1px solid #3A3328;color:#A79E90'),
+      toggleMerge:()=>self.setState(s=>({mergeMode:!s.mergeMode,picks:{},mergeTarget:'',mergeNew:''})),
+      mergeCount: pickIds.length,
+      mergeTarget: st.mergeTarget, onMergeTarget:e=>self.setState({mergeTarget:e.target.value}),
+      mergeNew: st.mergeNew, onMergeNew:e=>self.setState({mergeNew:e.target.value}),
+      mergeOptions: pickIds.map(id=>{const t=st.tags.find(x=>x.id===id);return {value:id,label:t?t.name+' ('+t.uses+')':id};}),
+      mergeGoStyle:'border:none;border-radius:7px;padding:6px 15px;font-size:12px;font-weight:600;'+(canMerge?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      doMerge:()=>{
+        if(!canMerge) return;
+        const srcs=pickIds.map(id=>st.tags.find(x=>x.id===id)).filter(Boolean);
+        self.setState(s=>{
+          let tags=s.tags.slice();
+          if(s.mergeNew.trim()){
+            const name=s.mergeNew.trim();
+            const uses=srcs.reduce((a,b)=>a+b.uses,0);
+            const aliases=srcs.map(x=>x.name);
+            tags=tags.filter(x=>!s.picks[x.id]);
+            tags.push({id:s.selCat+':'+name,cat:s.selCat,name,uses,aliases,fav:false,hidden:false,values:{}});
+          } else {
+            const target=tags.find(x=>x.id===s.mergeTarget);
+            const folded=srcs.filter(x=>x.id!==s.mergeTarget);
+            tags=tags.map(x=>x.id!==s.mergeTarget?x:Object.assign({},x,{
+              uses:x.uses+folded.reduce((a,b)=>a+b.uses,0),
+              aliases:x.aliases.concat(folded.map(f=>f.name))}));
+            tags=tags.filter(x=>!(s.picks[x.id]&&x.id!==s.mergeTarget));
+          }
+          return {tags,mergeMode:false,picks:{},mergeTarget:'',mergeNew:'',selTag:null,pane:'category'};
+        });
+        self.flash(srcs.length+' tags merged — names kept as aliases');
+      },
+
+      addTag:()=>self.flash('Inline new-tag row added to '+cat.name),
+      pasteOpen: st.pasteOpen, pasteText: st.pasteText,
+      openPaste:()=>self.setState({pasteOpen:true,pasteText:''}),
+      closePaste:()=>self.setState({pasteOpen:false}),
+      onPaste:e=>self.setState({pasteText:e.target.value}),
+      pasteNew: (()=>{const names=st.pasteText.split('\n').map(x=>x.trim()).filter(Boolean);const ex=new Set(self.catTags().map(t=>self.norm(t.name)));const seen=new Set();let n=0;names.forEach(x=>{const k=self.norm(x);if(!ex.has(k)&&!seen.has(k)){seen.add(k);n++;}});return n;})(),
+      pasteDupe: (()=>{const names=st.pasteText.split('\n').map(x=>x.trim()).filter(Boolean);const ex=new Set(self.catTags().map(t=>self.norm(t.name)));return names.filter(x=>ex.has(self.norm(x))).length;})(),
+      pasteGoLabel:'Create tags',
+      pasteGoStyle:'border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;'+(st.pasteText.trim()?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      doPaste:()=>{
+        const names=st.pasteText.split('\n').map(x=>x.trim()).filter(Boolean);
+        if(!names.length) return;
+        self.setState(s=>{
+          const ex=new Set(s.tags.filter(t=>t.cat===s.selCat).map(t=>self.norm(t.name)));
+          const add=[];
+          names.forEach(x=>{const k=self.norm(x);if(ex.has(k))return;ex.add(k);
+            add.push({id:s.selCat+':'+x,cat:s.selCat,name:x,uses:0,aliases:[],fav:false,hidden:false,values:{}});});
+          return {tags:s.tags.concat(add),pasteOpen:false,pasteText:''};
+        });
+        self.flash('Created tags in '+cat.name);
+      },
+
+      inspCategory: st.pane==='category', inspTag: st.pane==='tag'&&!!tag,
+      onRenameCat:e=>{const v=e.target.value;self.patchCat(n=>{n.name=v;});},
+      formatPreview:'“'+sample+'” → “'+out+'”',
+      wbMark: cat.wbOn?'✓':'',
+      wbBoxStyle:'flex:none;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;'+(cat.wbOn?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      toggleWriteback:()=>self.patchCat(n=>{n.wbOn=!n.wbOn;}),
+      wbField: cat.wbField, onWbField:e=>{const v=e.target.value;self.patchCat(n=>{n.wbField=v;});},
+      tagFieldRows: cat.fields.map(f=>({name:f.name,type:TYPE[f.type],typeStyle:typeChip()})),
+      noTagFields: cat.fields.length===0,
+      addTagField:()=>self.flash('New tag field on '+cat.name),
+
+      tagName: tag?tag.name:'', tagUsage: tag?tag.uses+' items carry this tag':'',
+      onRenameTag:e=>{const v=e.target.value;if(tag)self.patchTag(tag.id,n=>{n.name=v;});},
+      tagFavStyle:'flex:1;border-radius:7px;padding:7px 8px;font-size:12px;cursor:pointer;'+(tag&&tag.fav?'background:#3A2E16;border:1px solid #7A6428;color:#E9A23B':'background:transparent;border:1px solid #3A3328;color:#8C8478'),
+      tagFav:()=>{if(tag)self.patchTag(tag.id,n=>{n.fav=!n.fav;});},
+      tagHideStyle:'flex:1;border-radius:7px;padding:7px 8px;font-size:12px;cursor:pointer;'+(tag&&tag.hidden?'background:#2A2520;border:1px solid #5A5142;color:#CFC6B8':'background:transparent;border:1px solid #3A3328;color:#8C8478'),
+      tagHide:()=>{if(tag)self.patchTag(tag.id,n=>{n.hidden=!n.hidden;});},
+      aliasPills: tag?tag.aliases.map(a=>({name:a,remove:()=>self.patchTag(tag.id,n=>{n.aliases=n.aliases.filter(x=>x!==a);})})):[],
+      aliasDraft: st.aliasDraft, onAliasDraft:e=>self.setState({aliasDraft:e.target.value}),
+      onAliasKey:e=>{ if(e.key!=='Enter'||!tag) return; e.preventDefault();
+        const v=e.target.value.trim(); if(!v) return;
+        self.patchTag(tag.id,n=>{ if(n.aliases.indexOf(v)<0) n.aliases.push(v); });
+        self.setState({aliasDraft:''}); },
+      hasTagFieldValues: !!(tag&&cat.fields.length),
+      tagValueRows: tag?cat.fields.map(f=>({label:f.name,placeholder:TYPE[f.type],value:tag.values[f.name]||'',
+        onInput:e=>{const v=e.target.value;self.patchTag(tag.id,n=>{n.values[f.name]=v;});}})):[],
+      convertAlias:()=>self.flash('Pick a target tag — this one folds in and becomes its alias'),
+
+      confirmOpen: !!st.confirm,
+      confirmTitle: st.confirm?st.confirm.title:'',
+      confirmBody: st.confirm?st.confirm.body:'',
+      askDeleteCat:()=>self.setState({confirm:{kind:'cat',title:'Delete “'+cat.name+'”?',
+        body:'Removes the category, its '+self.catTags().length+' tags, every tagging that used them, and any field values underneath. This cannot be undone from this window.'}}),
+      askDeleteTag:()=>{ if(!tag) return; self.setState({confirm:{kind:'tag',id:tag.id,title:'Delete “'+tag.name+'”?',
+        body:'Removes the tag from '+tag.uses+' items. Consider Convert to alias instead — that keeps the taggings and folds the name into another tag.'}}); },
+      closeConfirm:()=>self.setState({confirm:null}),
+      doConfirm:()=>{
+        const c=st.confirm; if(!c) return;
+        if(c.kind==='cat'){
+          self.setState(s=>{const cats=s.cats.filter(x=>x.id!==s.selCat);return {cats,tags:s.tags.filter(t=>t.cat!==s.selCat),selCat:cats[0]?cats[0].id:null,selTag:null,confirm:null,pane:'category'};});
+          self.flash('Category deleted');
+        } else {
+          self.setState(s=>({tags:s.tags.filter(t=>t.id!==c.id),selTag:null,pane:'category',confirm:null}));
+          self.flash('Tag deleted');
+        }
+      },
+      newCategory:()=>{
+        const id='cat'+Date.now();
+        self.setState(s=>({cats:s.cats.concat([{id,name:'New Category',hue:'#8C8478',allowMultiple:true,checkboxes:false,focus:false,hidden:false,format:0,seps:false,wbOn:true,wbField:'',fields:[]}]),selCat:id,selTag:null,pane:'category',showItemFields:false}));
+      },
+      toast: st.toast,
+      stop:e=>e.stopPropagation(),
+      notes:[
+        {title:'ONE WINDOW, NOT A SETTINGS PANE',body:'Authoring a vocabulary is a task, not a preference. It gets a window with its own toolbar and a persistent inspector — and stays Mac-only on every platform rev, so the schema-editing surface has exactly one implementation.'},
+        {title:'SIMILAR ONLY FINDS THE DRIFT',body:'Clusters tags whose names normalize to the same key — “Ash & Ember” / “Ash and Ember”, “Broadside” / “The Broadside”. Merging keeps the discarded spellings as aliases, so old searches and imports still resolve.'},
+        {title:'DELETE IS THE LAST RESORT',body:'Deleting a tag drops its taggings. Convert to alias folds the name into another tag and keeps them, which is almost always what a duplicate actually needs.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

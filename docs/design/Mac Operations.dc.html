@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1280px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Operations</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Every one of these writes a new file and leaves the original alone. Nothing here edits media in place.</div>
+  </div>
+
+  <div style="width:1280px;height:868px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Operations — Concerts</div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:250px;flex:none;background:#17130E;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:none;padding:12px 12px 7px;font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659">OPERATION</div>
+        <div style="flex:1;overflow-y:auto;padding:0 8px 12px">
+          <sc-for list="{{ opRows }}" as="o" hint-placeholder-count="5">
+            <div onClick="{{ o.click }}" style="{{ o.rowStyle }}">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;font-weight:500">{{ o.name }}</div>
+                <div style="font-size:10.5px;color:#6E6659;margin-top:3px;line-height:1.4;text-wrap:pretty">{{ o.produces }}</div>
+              </div>
+              <span style="{{ o.tagStyle }}">{{ o.tag }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #241F19;padding:12px;font-size:11px;color:#8C8478;line-height:1.5;text-wrap:pretty">Each runs as a background job on this library's queue, one at a time.</div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:none;padding:18px 20px 14px;border-bottom:1px solid #2A251E">
+          <div style="font-size:17px;font-weight:700;margin-bottom:5px">{{ opTitle }}</div>
+          <div style="font-size:12.5px;color:#8C8478;line-height:1.55;max-width:640px;text-wrap:pretty">{{ opBlurb }}</div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px;min-height:0">
+
+          <sc-if value="{{ hasSettings }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:13px;flex-wrap:wrap">
+              <span style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">{{ settingsLabel }}</span>
+              <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+                <sc-for list="{{ settingOpts }}" as="so" hint-placeholder-count="2">
+                  <button onClick="{{ so.click }}" style="{{ so.style }}">{{ so.label }}</button>
+                </sc-for>
+              </div>
+              <span style="font-size:11.5px;color:#8C8478;line-height:1.45;text-wrap:pretty">{{ settingsNote }}</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasFolderPick }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:13px;flex-wrap:wrap">
+              <span style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">FOLDER</span>
+              <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+                <sc-for list="{{ folderOpts }}" as="fo" hint-placeholder-count="2">
+                  <button onClick="{{ fo.click }}" style="{{ fo.style }}">{{ fo.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isOcr }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:16px;align-items:flex-start">
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+                <sc-for list="{{ ocrControls }}" as="oc" hint-placeholder-count="5">
+                  <div>
+                    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+                      <span style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">{{ oc.label }}</span>
+                      <span style="font-size:11px;color:#8C8478;line-height:1.4;text-wrap:pretty">{{ oc.note }}</span>
+                    </div>
+                    <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px;width:fit-content;max-width:100%;flex-wrap:wrap">
+                      <sc-for list="{{ oc.opts }}" as="o" hint-placeholder-count="3">
+                        <button onClick="{{ o.click }}" style="{{ o.style }}">{{ o.label }}</button>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="flex:none;width:250px;display:flex;flex-direction:column;gap:11px">
+                <div>
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">REGION SCANNED</div>
+                  <div style="position:relative;width:100%;aspect-ratio:16/9;border-radius:7px;overflow:hidden;border:1px solid #2A251E;background:linear-gradient(122deg,#2A2620,#15120E)">
+                    <div style="{{ regionStyle }}"></div>
+                    <span style="position:absolute;bottom:6px;left:8px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8478">{{ regionLabel }}</span>
+                  </div>
+                </div>
+                <div style="padding:11px 12px;border:1px solid #4A3C24;border-radius:8px;background:#221B12">
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">THIS SETTING COSTS</div>
+                  <div style="display:flex;flex-direction:column;gap:5px">
+                    <sc-for list="{{ ocrEstimate }}" as="e" hint-placeholder-count="3">
+                      <div style="display:flex;align-items:baseline;gap:9px">
+                        <span style="{{ e.nStyle }}">{{ e.n }}</span>
+                        <span style="font-size:11.5px;color:#8C8478">{{ e.label }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:11px;color:#A79E90;margin-top:9px;line-height:1.45;text-wrap:pretty">{{ ocrVerdict }}</div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasOrder }}" hint-placeholder-val="{{ false }}">
+            <div>
+              <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">JOINED IN THIS ORDER</div>
+                <span style="font-size:11.5px;color:#8C8478">{{ orderNote }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <sc-for list="{{ orderRows }}" as="or" hint-placeholder-count="3">
+                  <div onDragOver="{{ or.dragOver }}" onDrop="{{ or.drop }}" style="{{ or.rowStyle }}">
+                    <span draggable="{{ or.draggable }}" onDragStart="{{ or.dragStart }}" onDragEnd="{{ or.dragEnd }}" style="{{ or.handleStyle }}">⠿</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749;width:14px">{{ or.n }}</span>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#CFC6B8">{{ or.name }}</div>
+                      <div style="{{ or.metaStyle }}">{{ or.meta }}</div>
+                    </div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8478">{{ or.dur }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasTimeline }}" hint-placeholder-val="{{ false }}">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:9px">{{ timelineLabel }}</div>
+              <div style="position:relative;height:34px;border-radius:6px;background:#1F3320;overflow:hidden;border:1px solid #2A3A2C">
+                <sc-for list="{{ blocks }}" as="b" hint-placeholder-count="3">
+                  <div style="{{ b.style }}" title="{{ b.title }}"></div>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:center;gap:16px;margin-top:9px;flex-wrap:wrap">
+                <sc-for list="{{ timelineLegend }}" as="tl" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:7px">
+                    <span style="{{ tl.swatchStyle }}"></span>
+                    <span style="font-size:11.5px;color:#8C8478">{{ tl.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:9px">{{ listLabel }}</div>
+            <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden">
+              <sc-for list="{{ ioRows }}" as="io" hint-placeholder-count="4">
+                <div onClick="{{ io.toggle }}" style="{{ io.rowStyle }}">
+                  <sc-if value="{{ io.pickable }}" hint-placeholder-val="{{ false }}">
+                    <span style="{{ io.boxStyle }}">{{ io.mark }}</span>
+                  </sc-if>
+                  <div style="min-width:0">
+                    <div style="{{ io.fromStyle }}">{{ io.from }}</div>
+                    <div style="{{ io.fromMetaStyle }}">{{ io.fromMeta }}</div>
+                  </div>
+                  <span style="{{ io.arrowStyle }}">→</span>
+                  <div style="min-width:0">
+                    <div style="{{ io.toStyle }}">{{ io.to }}</div>
+                    <div style="{{ io.toMetaStyle }}">{{ io.toMeta }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <sc-if value="{{ hasRefusal }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:flex-start;gap:11px;padding:13px 14px;border:1px solid #4A2A24;border-radius:9px;background:#251512">
+              <span style="flex:none;margin-top:1px;font-size:13px;color:#D07A6A">✕</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;font-weight:600;color:#D9A090;margin-bottom:3px">{{ refusalTitle }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#C9857A;line-height:1.6;white-space:pre-wrap">{{ refusalBody }}</div>
+                <div style="font-size:11.5px;color:#A79E90;margin-top:8px;line-height:1.45;text-wrap:pretty">{{ refusalNote }}</div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="flex:none;height:62px;border-top:1px solid #2A251E;background:#1C1814;display:flex;align-items:center;padding:0 20px;gap:14px">
+          <div style="font-size:12.5px;color:#CFC6B8;min-width:0;text-wrap:pretty">{{ footerText }}</div>
+          <div style="flex:1"></div>
+          <button onClick="{{ run }}" style="{{ runStyle }}">{{ runLabel }}</button>
+        </div>
+      </div>
+
+      <div style="width:296px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:1;overflow-y:auto;padding:15px 15px 18px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:8px">WHAT THIS COSTS</div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <sc-for list="{{ costs }}" as="c" hint-placeholder-count="3">
+                <div style="display:flex;align-items:baseline;gap:9px">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#E9A23B;min-width:62px;text-align:right">{{ c.n }}</span>
+                  <span style="font-size:11.5px;color:#8C8478">{{ c.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:8px">GUARANTEES</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ guarantees }}" as="g" hint-placeholder-count="3">
+                <div style="display:flex;align-items:flex-start;gap:9px">
+                  <span style="{{ g.dotStyle }}"></span>
+                  <span style="flex:1;font-size:11.5px;color:#A79E90;line-height:1.45;text-wrap:pretty">{{ g.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="border-top:1px solid #2A251E;padding-top:13px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">COMMAND</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8478;line-height:1.65;background:#0F0C07;border:1px solid #2A251E;border-radius:7px;padding:10px 11px;white-space:pre-wrap">{{ command }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:78px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1280px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:290px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1360,&quot;height&quot;:1060}}">
+class Component extends DCLogic {
+  state = {op:'encode', preset:'hevc', mode:'optimize', joinSource:'selection', joinFolder:'mismatch',
+    picked:{0:true,1:true,2:true,3:true}, order:[0,1,2,3], drag:null, toast:null,
+    // Vision defaults are deliberate but conservative; these are the knobs
+    // worth exposing, with the cost of turning them up shown as you do.
+    interval:2, level:'accurate', region:'full', minHeight:0.04, correction:true, dedupe:true,
+    parts:[
+      {name:'northlight_2024_06_14_part1.mp4',meta:'h264 · 1920×1080 · 48kHz · 2.1 GB',dur:'0:34:10'},
+      {name:'northlight_2024_06_14_part2.mp4',meta:'h264 · 1920×1080 · 48kHz · 2.0 GB',dur:'0:33:02'},
+      {name:'northlight_2024_06_14_part3.mp4',meta:'h264 · 1920×1080 · 48kHz · 1.4 GB',dur:'0:31:08'},
+      {name:'northlight_2024_06_14_encore.mp4',meta:'h264 · 1920×1080 · 48kHz · 0.6 GB',dur:'0:12:44'}
+    ]};
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2400); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  renderVals(){
+    const st=this.state, self=this;
+    // Names as the grid's context menu already says them.
+    const OPS=[
+      ['encode','Encode a Copy','a re-encoded copy','re-encode','#E9A23B',1],
+      ['remux','Optimize (Faststart) / Repair Container','the same streams, rewritten','stream copy','#6FB86F',1],
+      ['join','Join Files','one file from many parts','stream copy','#6FB86F',2],
+      ['clip','Export Clip to File','a standalone file per clip','stream copy','#6FB86F',1],
+      ['blocks','Export Copy Without Hidden Blocks','an edited copy','stream copy','#6FB86F',1],
+      ['ocr','Scan On-Screen Text (OCR)','searchable text, no new file','reads only','#6B96D6',1]
+    ];
+    const minFor=id=>(OPS.find(o=>o[0]===id)||[])[5]||1;
+    const n=Object.keys(st.picked).filter(k=>st.picked[k]).length;
+    const blocked=minFor(st.op)>n;
+
+    // One source of truth for the edit: the ranges draw the picture AND
+    // produce every number printed beside it, so the two cannot drift.
+    const D=5052, HIDE=[[0,182],[2410,2680],[4590,4780]];
+    const removed=HIDE.reduce((a,[x,y])=>a+(y-x),0), kept=D-removed;
+    const hms=s=>Math.floor(s/3600)+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+    const mmss=s=>Math.floor(s/60)+'m '+String(s%60).padStart(2,'0')+'s';
+
+    // `pick` turns a row into an includable one — the selection lives in the
+    // operation's own list, which is where the files already are.
+    const row=(from,fromMeta,to,toMeta,ok,pick)=>({from,fromMeta,to,toMeta,
+      pickable: !!pick, mark: pick&&pick.on?'✓':'', toggle: pick?pick.toggle:(()=>{}),
+      boxStyle:'flex:none;width:14px;height:14px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;'+
+        ((pick&&pick.on)?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      rowStyle:'display:grid;grid-template-columns:'+(pick?'26px ':'')+'minmax(0,1fr) 26px minmax(0,1fr);align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid #1F1B15;background:#151209;'+
+        (pick?'cursor:pointer;':'')+((pick&&!pick.on)?'opacity:0.45;':''),
+      fromMetaStyle:'font-size:10.5px;color:#8C8478;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
+      fromStyle:"font-family:'JetBrains Mono',monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#CFC6B8",
+      arrowStyle:'font-size:12px;text-align:center;color:'+(ok===false?'#6A3A30':'#4A4238'),
+      toStyle:"font-family:'JetBrains Mono',monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+(ok===false?'#C9857A':'#8FCF8F'),
+      toMetaStyle:'font-size:10.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(ok===false?'#C9884A':'#8C8478')});
+
+    const CFG={
+      encode:{
+        title:'Encode', blurb:'Re-encode into a fresh file beside the original. The original is not touched, not replaced, and not deleted — this only ever adds.',
+        settingsLabel:'PRESET', settings:[['hevc','HEVC']],
+        settingsNote:'The old app’s encode line, carried over verbatim.',
+        listLabel:'4 SELECTED ITEMS',
+        rows:[
+          row('northlight_sessions_e01_4k.mp4','3840×2160 · h264 · 12.4 GB','northlight_sessions_e01_4k_hevc.mp4','≈ 5.1 GB · hevc'),
+          row('northlight_sessions_e02_4k.mp4','3840×2160 · h264 · 11.8 GB','northlight_sessions_e02_4k_hevc.mp4','≈ 4.9 GB · hevc'),
+          row('riverside_collective_0412.mp4','1920×1080 · h264 · 4.8 GB','riverside_collective_0412_hevc.mp4','≈ 2.2 GB · hevc'),
+          row('broadside_trio_proshot.mp4','3840×2160 · h264 · 9.7 GB','broadside_trio_proshot_hevc.mp4','≈ 4.0 GB · hevc')
+        ],
+        costs:[['4','files written'],['≈ 22.6 GB','added to disk'],['≈ 1h 40m','of encoding']],
+        guarantees:['The originals stay exactly as they are.','New items are added to the library alongside them.','Re-encoding loses a generation of quality — the only operation here that does.'],
+        command:'ffmpeg -i {in} -c:v hevc_videotoolbox -b:v 12M -c:a copy {out}',
+        footer:'4 items · adds ≈ 22.6 GB', run:'Encode 4 items'},
+
+      remux:{
+        title:'Optimize (Faststart) / Repair Container', blurb:'Rewrite the container without touching a single frame. Optimize moves the index to the front so a file starts playing instantly; Repair rebuilds a container that will not open.',
+        settingsLabel:'MODE', settings:[['optimize','Optimize (Faststart)'],['repair','Repair Container']],
+        settingsNote:'Streams are copied either way — nothing is decoded.',
+        listLabel:'2 SELECTED ITEMS',
+        rows:[
+          row('ash_ember_late_set.mp4','index at the end · 6.1 GB','ash_ember_late_set_faststart.mp4','6.1 GB · index at the front'),
+          row('juno_grove_untitled.mp4','index at the end · 3.4 GB','juno_grove_untitled_faststart.mp4','3.4 GB · index at the front')
+        ],
+        costs:[['2','files written'],['9.5 GB','added to disk'],['≈ 90s','of copying']],
+        guarantees:['Byte-identical streams — no quality change is possible.','Fast: limited by disk, not by CPU.','The originals stay exactly as they are.'],
+        command:'ffmpeg -i {in} -c copy -movflags +faststart {out}',
+        footer:'2 items · adds 9.5 GB', run:'Remux 2 items'},
+
+      join:{
+        blurb:'Concatenate several files into one. Stream copy, so it is exact and fast — and it refuses outright when the parts do not actually match.',
+        settingsLabel:'PARTS FROM',
+        settings:[['selection','The items I selected'],['folder','Everything in a folder']],
+        listLabel:'RESULT'},
+
+      ocr:{
+        title:'Scan On-Screen Text (OCR)', blurb:'Read the text visible in each frame with Vision and store it against the item. The only operation here that writes no file — it adds searchable text and nothing else.',
+        listLabel:'2 SELECTED ITEMS',
+        rows:[
+          row('northlight_sessions_e01_4k.mp4','1:24:12 · video','searchable text on the item','≈ 140 lines · no file written'),
+          row('broadside_trio_proshot.mp4','0:58:22 · video','searchable text on the item','≈ 90 lines · no file written')
+        ],
+        costs:[['0','files written'],['—','added to disk'],['read-only','on the media']],
+        guarantees:['Vision runs locally; nothing leaves the machine.','The media file is opened read-only and never written.',
+          'Rescanning replaces the previous result for that item, so tightening a setting and running again is safe.'],
+        command:'Vision · VNRecognizeTextRequest — no external tool',
+        footer:'2 items · no files written', run:'Scan 2 items'},
+
+      clip:{
+        title:'Export Clip to File', blurb:'Turn an embedded clip into a standalone file. Stream-copied, never re-encoded — and the clip is not deleted from its parent.',
+        listLabel:'CLIPS MARKED FOR EXPORT',
+        rows:[
+          row('Guitar solo','in northlight_sessions_e01 · 0:08:32–0:09:26','guitar_solo.mp4','54s · stream copy'),
+          row('Crowd sing-along','in broadside_trio_proshot · 0:19:50–0:20:44','crowd_sing_along.mp4','54s · stream copy'),
+          row('Encore walk-on','in riverside_collective_0412 · 0:58:02–0:58:41','encore_walk_on.mp4','39s · stream copy')
+        ],
+        costs:[['3','files written'],['1.2 GB','added to disk'],['≈ 40s','of copying']],
+        guarantees:['The clip row is kept, marked exported, not deleted.','It keeps a reference to the new file, so the parent’s timeline still shows a clip was taken from there.','The parent file is untouched.'],
+        command:'ffmpeg -ss {start} -to {end} -i {in} -c copy {out}',
+        footer:'3 clips · adds 1.2 GB', run:'Export 3 clips'},
+
+      blocks:{
+        title:'Export Copy Without Hidden Blocks', blurb:'Cut the hidden ranges out into an edited copy. The player already skips these live, so what you have been hearing is what the edit keeps.',
+        listLabel:'RESULT',
+        rows:[
+          row('northlight_sessions_e01_4k.mp4',hms(D)+' · '+HIDE.length+' hidden ranges · 12.4 GB',
+              'northlight_sessions_e01_4k_edited.mp4',hms(kept)+' · 10.7 GB · stream copy')
+        ],
+        costs:[['1','file written'],['10.7 GB','added to disk'],[mmss(removed),'removed']],
+        guarantees:['Stream copy — the kept material is bit-for-bit the original.','The source file and its blocks are left in place.','What the edit keeps is exactly what the player has been playing.'],
+        command:'ffmpeg -i {in} -filter_complex "select=…" -c copy {out}',
+        footer:'1 item · '+mmss(removed)+' removed', run:'Write the edited copy'}
+    };
+
+    let cfg=CFG[st.op];
+
+    // One selection drives every operation. Nothing hardcodes its own count.
+    const ITEMS=[
+      {name:'northlight_sessions_e01_4k.mp4',spec:'3840×2160 · h264',gb:12.4,dur:'1:24:12',secs:5052,clip:'Guitar solo',clipAt:'0:08:32–0:09:26'},
+      {name:'northlight_sessions_e02_4k.mp4',spec:'3840×2160 · h264',gb:11.8,dur:'1:19:40',secs:4780,clip:'False start',clipAt:'0:02:11–0:02:48'},
+      {name:'riverside_collective_0412.mp4',spec:'1920×1080 · h264',gb:4.8,dur:'1:02:47',secs:3767,clip:'Encore walk-on',clipAt:'0:58:02–0:58:41'},
+      {name:'broadside_trio_proshot.mp4',spec:'3840×2160 · h264',gb:9.7,dur:'0:58:22',secs:3502,clip:'Crowd sing-along',clipAt:'0:19:50–0:20:44'}
+    ];
+    const items=ITEMS.filter((_,i)=>st.picked[i]);
+    const plural=(k,w)=>k+' '+w+(k===1?'':'s');
+    const sum=a=>a.reduce((x,y)=>x+y,0);
+    const pickFor=i=>({on:!!st.picked[i],
+      toggle:()=>self.setState(s=>{const p=Object.assign({},s.picked);
+        if(p[i]) delete p[i]; else p[i]=true; return {picked:p};})});
+
+    if(st.op==='encode'){
+      const out=sum(items.map(i=>i.gb*0.41));
+      cfg=Object.assign({},cfg,{
+        listLabel:'SELECTED ITEMS · '+n+' OF '+ITEMS.length+' INCLUDED',
+        rows:ITEMS.map((i,ix)=>row(i.name,i.spec+' · '+i.gb.toFixed(1)+' GB',
+          st.picked[ix]?i.name.replace('.mp4','_hevc.mp4'):'excluded',
+          st.picked[ix]?'≈ '+(i.gb*0.41).toFixed(1)+' GB · hevc':'nothing written',null,pickFor(ix))),
+        costs:[[String(n),plural(n,'file').split(' ')[1]+' written'],['≈ '+out.toFixed(1)+' GB','added to disk'],
+               ['≈ '+Math.round(sum(items.map(i=>i.gb))*2)+'m','of encoding']],
+        footer:plural(n,'item')+' · adds ≈ '+out.toFixed(1)+' GB', run:'Encode '+plural(n,'item')});
+    } else if(st.op==='remux'){
+      const suffix=st.mode==='optimize'?'_faststart.mp4':'_repaired.mp4';
+      cfg=Object.assign({},cfg,{
+        listLabel:'SELECTED ITEMS · '+n+' OF '+ITEMS.length+' INCLUDED',
+        rows:ITEMS.map((i,ix)=>row(i.name,(st.mode==='optimize'?'index at the end · ':'container will not open · ')+i.gb.toFixed(1)+' GB',
+          st.picked[ix]?i.name.replace('.mp4',suffix):'excluded',
+          st.picked[ix]?i.gb.toFixed(1)+' GB · '+(st.mode==='optimize'?'index at the front':'container rebuilt'):'nothing written',null,pickFor(ix))),
+        costs:[[String(n),'files written'],[sum(items.map(i=>i.gb)).toFixed(1)+' GB','added to disk'],
+               ['≈ '+Math.round(sum(items.map(i=>i.gb))*4)+'s','of copying']],
+        footer:plural(n,'item')+' · adds '+sum(items.map(i=>i.gb)).toFixed(1)+' GB',
+        run:(st.mode==='optimize'?'Optimize ':'Repair ')+plural(n,'item')});
+    } else if(st.op==='ocr'){
+      cfg=Object.assign({},cfg,{
+        listLabel:'SELECTED ITEMS · '+n+' OF '+ITEMS.length+' INCLUDED',
+        rows:ITEMS.map((i,ix)=>row(i.name,i.dur+' · video',
+          st.picked[ix]?'searchable text on the item':'excluded','no file written',null,pickFor(ix))),
+        footer:plural(n,'item')+' · no files written', run:'Scan '+plural(n,'item')});
+    } else if(st.op==='clip'){
+      cfg=Object.assign({},cfg,{
+        listLabel:'CLIPS MARKED FOR EXPORT · '+n+' OF '+ITEMS.length+' INCLUDED',
+        rows:ITEMS.map((i,ix)=>row(i.clip,'in '+i.name.replace('.mp4','')+' · '+i.clipAt,
+          st.picked[ix]?i.clip.toLowerCase().split(' ').join('_')+'.mp4':'excluded',
+          st.picked[ix]?'stream copy':'nothing written',null,pickFor(ix))),
+        costs:[[String(n),'files written'],[(n*0.4).toFixed(1)+' GB','added to disk'],['≈ '+(n*13)+'s','of copying']],
+        footer:plural(n,'clip')+' · adds '+(n*0.4).toFixed(1)+' GB', run:'Export '+plural(n,'clip')});
+    } else if(st.op==='blocks'){
+      cfg=Object.assign({},cfg,{
+        listLabel:'RESULT · 1 OF '+plural(n,'SELECTED ITEM').toUpperCase()+' HAS HIDDEN BLOCKS'});
+    }
+
+    // Join is the one that can refuse, and the refusal is the honest case.
+    let joinRows=[], refusal=null, joinCosts=[], joinGuarantees=[], joinFooter='', joinRun='', joinDisabled=false;
+    let orderRows=[], orderNote='';
+    if(st.op==='join'){
+      const sel=st.joinSource==='selection';
+      // Selection mode reads the same ITEMS/picked the other operations do —
+      // ordered by st.order, which is what dragging rearranges.
+      const visible=st.order.filter(i=>st.picked[i]);
+      const parts=sel
+        ? visible.map(i=>({name:ITEMS[i].name,meta:ITEMS[i].spec+' · '+ITEMS[i].gb.toFixed(1)+' GB',
+            dur:ITEMS[i].dur,gb:ITEMS[i].gb}))
+        : (st.joinFolder==='ok'
+          ? [{name:'northlight_2024_06_14_part1.mp4',meta:'h264 · 1920×1080 · 48kHz · 2.1 GB',dur:'0:34:10',gb:2.1},
+             {name:'northlight_2024_06_14_part2.mp4',meta:'h264 · 1920×1080 · 48kHz · 2.0 GB',dur:'0:33:02',gb:2.0},
+             {name:'northlight_2024_06_14_part3.mp4',meta:'h264 · 1920×1080 · 48kHz · 1.4 GB',dur:'0:31:08',gb:1.4}]
+          : [{name:'fm_rip_1998_02_a.avi',meta:'indeo5 · 720×480 · 44.1kHz · 0.8 GB',dur:'0:29:40',gb:0.8},
+             {name:'fm_rip_1998_02_b.mp4',meta:'h264 · 1920×1080 · 48kHz · 2.2 GB',dur:'0:31:12',gb:2.2,bad:true}]);
+      const mismatch=parts.some(p=>p.bad);
+
+      // Selected parts are dragged into order; a folder is name order, which
+      // is the whole reason the two modes read differently.
+      orderNote= sel?'Drag to reorder — this is the order they will play in.'
+                    :'Name order. Rename the files if you need a different one.';
+      orderRows=parts.map((p,i)=>{
+        const dragging=sel&&st.drag===i;
+        return {name:p.name, meta:p.meta, dur:p.dur, n:String(i+1),
+          draggable: sel,
+          metaStyle:'font-size:10.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(p.bad?'#C9884A':'#8C8478'),
+          handleStyle:'flex:none;padding:1px 3px;font-size:12px;line-height:1;letter-spacing:-1px;color:'+
+            (sel?(dragging?'#E9A23B':'#4A4238'):'#2A251E')+';cursor:'+(sel?'grab':'default'),
+          rowStyle:'display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;border:1px solid '+
+            (p.bad?'#4A2A24':dragging?'#7A6428':'#2A251E')+';background:'+(dragging?'#221B12':'#151209'),
+          dragStart:e=>{ if(!sel) return;
+            if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(i));}
+            self.setState({drag:i}); },
+          dragOver:e=>{ if(!sel) return; e.preventDefault();
+            const from=self.state.drag;
+            if(from==null||from===i) return;
+            // Reorder the visible (selected) items, then put the unselected
+            // ones back after them so the order survives re-ticking.
+            self.setState(s=>{
+              const vis=s.order.filter(x=>s.picked[x]);
+              const [moved]=vis.splice(from,1); vis.splice(i,0,moved);
+              return {order:vis.concat(s.order.filter(x=>!s.picked[x])),drag:i};
+            });
+          },
+          drop:e=>{e.preventDefault();self.setState({drag:null});},
+          dragEnd:()=>self.setState({drag:null})};
+      });
+
+      if(mismatch){
+        joinRows=[row(plural(parts.length,'part'),'indeo5 + h264 — incompatible','','nothing written',false)];
+        refusal={title:'ffmpeg refuses this join',
+          body:'Non-matching streams:\n  #0: indeo5 720×480 44100 Hz\n  #1: h264 1920×1080 48000 Hz',
+          note:'Concatenating without re-encoding requires identical codecs, dimensions and sample rates. Transcode the odd one out first — Encode a Copy will do it — then join the results.'};
+        joinCosts=[['0','files written'],['—','added to disk']];
+        joinGuarantees=['Nothing is written when the parts do not match.','The refusal comes from ffmpeg itself, not a guess made here.'];
+        joinFooter='Parts do not match — nothing to write'; joinRun='Join'; joinDisabled=true;
+      } else {
+        const total=sum(parts.map(p=>p.gb)), gb=total.toFixed(1)+' GB';
+        joinRows=[row(plural(parts.length,'part'),parts.map(p=>p.dur).join(' + '),
+          sel?'joined.mp4':'northlight_2024_06_14.mp4',gb+' · stream copy')];
+        joinCosts=[['1','file written'],[gb,'added to disk'],['≈ '+Math.round(total*13)+'s','of copying']];
+        joinGuarantees=['Stream copy — exact, and fast.','The parts stay exactly where they are.',
+          sel?'They join in the order shown above, not in name order.':'Joined in name order — rename to change it.'];
+        joinFooter=plural(parts.length,'part')+' · one '+gb+' file'; joinRun='Join '+plural(parts.length,'part');
+      }
+    }
+
+    const rows=st.op==='join'?joinRows:cfg.rows;
+    const costs=(st.op==='join'?joinCosts:cfg.costs).map(([n,label])=>({n,label}));
+    const guarantees=(st.op==='join'?joinGuarantees:cfg.guarantees).map(label=>({label,
+      dotStyle:'flex:none;margin-top:5px;width:6px;height:6px;border-radius:50%;background:#6FB86F'}));
+
+    return {
+
+      // An operation that needs two files is unavailable, not hidden, when
+      // one is selected — the requirement is the useful thing to see.
+      opRows: OPS.map(([id,name,produces,tag,c,min])=>{
+        const off=min>n;
+        return {name, produces: off?'needs at least '+plural(min,'item')+' selected':produces,
+          tag: off?'unavailable':tag,
+          producesOff: off,
+          tagStyle:'flex:none;font-size:9.5px;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap;'+
+            (off?'background:#241F19;color:#6E6659':'background:'+c+'1C;color:'+c),
+          rowStyle:'display:flex;align-items:flex-start;gap:9px;padding:10px 9px;border-radius:7px;margin-bottom:2px;cursor:'+
+            (off?'default':'pointer')+';'+(off?'opacity:0.5;':'')+
+            (st.op===id?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':''),
+          click:()=>{ if(off){ self.flash(name+' needs at least '+plural(min,'item')+' selected'); return; } self.setState({op:id}); }};
+      }),
+
+      // The name is stored once, on OPS. A heading cannot disagree with the
+      // list entry that opened it because it is the same string.
+      opTitle:(OPS.find(o=>o[0]===st.op)||[])[1]||'',
+      opBlurb: cfg.blurb,
+      hasSettings: !!cfg.settings,
+      settingsLabel: cfg.settingsLabel||'',
+      settingsNote: st.op==='join'
+        ? (st.joinSource==='selection'
+            ? 'Whatever you picked in Browse, in whatever order you want.'
+            : 'Every video in the folder, in name order.')
+        : (cfg.settingsNote||''),
+      settingOpts:(cfg.settings||[]).map(([v,label])=>{
+        const key=st.op==='join'?'joinSource':st.op==='remux'?'mode':'preset';
+        return {label,
+          style:'border:none;border-radius:5px;padding:5px 13px;font-size:11.5px;cursor:pointer;'+
+            (st[key]===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+          click:()=>self.setState({[key]:v})};
+      }),
+
+      isOcr: st.op==='ocr',
+      ocrControls: (()=>{
+        const seg=(key,val,label)=>({label,
+          style:'border:none;border-radius:5px;padding:5px 12px;font-size:11.5px;cursor:pointer;'+
+            (st[key]===val?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+          click:()=>self.setState({[key]:val})});
+        return [
+          {label:'SAMPLE EVERY', note:'How often a frame is read. Text on screen for less than this can be missed entirely.',
+           opts:[[4,'4s'],[2,'2s · default'],[1,'1s'],[0.5,'0.5s']].map(([v,l])=>seg('interval',v,l))},
+          {label:'RECOGNITION', note:st.level==='accurate'?'Slower, and much better on stylised or small type.':'Roughly three times faster, and misses stylised type.',
+           opts:[['fast','Fast'],['accurate','Accurate · default']].map(([v,l])=>seg('level',v,l))},
+          {label:'SMALLEST TEXT', note:'As a share of frame height. Lower catches captions and credits; it also catches noise.',
+           opts:[[0.08,'8% · large only'],[0.04,'4% · default'],[0.02,'2% · captions']].map(([v,l])=>seg('minHeight',v,l))},
+          {label:'REGION', note:'Restrict where text is looked for. A stage banner lives up top; a caption lives at the bottom.',
+           opts:[['full','Whole frame'],['lower','Lower third'],['upper','Upper third']].map(([v,l])=>seg('region',v,l))},
+          {label:'CORRECTION', note:'Vision guesses at plausible misreads. Off is literal — better when the text is a band name it will not know.',
+           opts:[[true,'Correct'],[false,'Literal']].map(([v,l])=>seg('correction',v,l))},
+          {label:'REPEATS', note:'The same banner across 200 frames is 200 identical lines unless they are collapsed.',
+           opts:[[true,'Collapse'],[false,'Keep every frame']].map(([v,l])=>seg('dedupe',v,l))}
+        ];
+      })(),
+      regionLabel: st.region==='full'?'whole frame':st.region==='lower'?'lower third':'upper third',
+      regionStyle:'position:absolute;left:0;right:0;background:rgba(107,150,214,0.22);border:1px solid #6B96D6;'+
+        (st.region==='full'?'top:0;bottom:0':st.region==='lower'?'bottom:0;height:33.3%':'top:0;height:33.3%'),
+      ocrEstimate: (()=>{
+        // Derived from the ticked items, like every other operation's costs.
+        const totalSecs=sum(items.map(i=>i.secs));
+        const frames=Math.round(totalSecs/st.interval);
+        const per=(st.level==='accurate'?0.034:0.011)*(st.region==='full'?1:0.4)*(st.minHeight<=0.02?1.35:1);
+        const secs=Math.round(frames*per);
+        const mins=Math.floor(secs/60);
+        return [
+          {n:frames.toLocaleString(),label:'frames read',
+           nStyle:"font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;min-width:62px;text-align:right"},
+          {n:(mins?mins+'m ':'')+(secs%60)+'s',label:'of scanning',
+           nStyle:"font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;min-width:62px;text-align:right"},
+          {n:'0',label:'files written',
+           nStyle:"font-family:'JetBrains Mono',monospace;font-size:13px;color:#8C8478;min-width:62px;text-align:right"}
+        ];
+      })(),
+      ocrVerdict: st.interval<=0.5
+        ? 'Thorough enough for a caption that flashes for a second. Expect it to take a while, and to find more noise alongside the text you wanted.'
+        : st.interval>=4
+          ? 'Cheap, and fine for a stage banner that stays up for a whole song. A short caption will slip through the gaps.'
+          : 'The balance the defaults strike — a banner or a title card will be caught, a one-second flash may not.',
+
+      hasOrder: st.op==='join', orderRows, orderNote,
+      hasFolderPick: st.op==='join'&&st.joinSource==='folder',
+      folderOpts:[['ok','2024-06-14 Northlight'],['mismatch','2022 Archive / FM Rips']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 13px;font-size:11.5px;cursor:pointer;'+
+          (st.joinFolder===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        click:()=>self.setState({joinFolder:v})})),
+      hasTimeline: st.op==='blocks',
+      timelineLabel:'WHAT THE EDIT KEEPS',
+      blocks: HIDE.map(([a,b])=>({title:'hidden '+a+'s–'+b+'s',
+        style:'position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,#4A2A24 0 6px,#3A211C 6px 12px);border-left:1px solid #6A3A30;border-right:1px solid #6A3A30;'+
+          'left:'+(a/D*100).toFixed(2)+'%;width:'+((b-a)/D*100).toFixed(2)+'%'})),
+      timelineLegend:[['kept · '+hms(kept),'#1F3320','#2A3A2C'],['removed · '+mmss(removed),'#3A211C','#6A3A30']]
+        .map(([label,bg,bd])=>({label,swatchStyle:'width:14px;height:9px;border-radius:2px;background:'+bg+';border:1px solid '+bd})),
+
+      listLabel: cfg.listLabel, ioRows: rows,
+
+      hasRefusal: !!refusal,
+      refusalTitle: refusal?refusal.title:'',
+      refusalBody: refusal?refusal.body:'',
+      refusalNote: refusal?refusal.note:'',
+
+      costs, guarantees,
+      command: st.op==='join'?'ffmpeg -f concat -safe 0 -i parts.txt -c copy {out}':cfg.command,
+
+      // The panel cannot offer to run what the sidebar calls unavailable.
+      footerText: blocked
+        ? (OPS.find(o=>o[0]===st.op)||[])[1]+' needs at least '+plural(minFor(st.op),'item')+' — '+n+' selected'
+        : n===0 ? 'Nothing selected'
+        : st.op==='join'?joinFooter:cfg.footer,
+      runLabel: st.op==='join'?joinRun:cfg.run,
+      runStyle:'border:none;border-radius:7px;padding:9px 18px;font-size:12.5px;font-weight:600;'+
+        ((joinDisabled||blocked||n===0)?'background:#2A241C;color:#5E5749;cursor:default':'background:#E9A23B;color:#1A1409;cursor:pointer'),
+      run:()=>{ if(joinDisabled||blocked||n===0) return;
+        self.flash('Queued on this library — follow it in Background Tasks'); },
+
+      toast: st.toast,
+
+      notes:[
+        {title:'ADDITIVE, WITHOUT EXCEPTION',body:'Every operation writes a new file beside the original and adds it to the library. Nothing is modified in place, so there is no undo to design — the original never stopped existing. Even clip export keeps its clip, marked exported rather than deleted, so the parent’s timeline still shows one was taken from there.'},
+        {title:'STREAM COPY UNLESS IT CANNOT BE',body:'Four of these copy streams untouched and say so; OCR writes no file at all; only Encode loses a generation. That distinction decides how freely you can use each one, so it sits on the operation list rather than buried in a description.'},
+        {title:'THE DEFAULTS ARE A GUESS, SO SHOW WHAT CHANGING THEM COSTS',body:'Everywhere else in the app you only see OCR results. Here you set how they were produced — how often a frame is read, how hard Vision looks, how small the text can be, and where in the frame to look — with the frame count and scan time updating as you choose. Half-second sampling across four concerts is 34,000 frames, and that is worth knowing before you start it rather than after.'},
+        {title:'REACHED BY RIGHT-CLICKING A SELECTION',body:'These are the browse grid’s own context-menu commands, named identically, opened against whatever is selected. The selection is the list itself — untick an item to leave it out, and the outputs, sizes and times recompute. Drop below what an operation needs and it goes unavailable in the sidebar and inert in the panel, with the requirement stated where the summary was.'},
+        {title:'A REFUSAL IS BETTER THAN A BAD FILE',body:'Join concatenates without re-encoding, which needs identical codecs and dimensions. Pick the FM Rips folder to see it refuse with ffmpeg’s own output rather than a guess — and tell you the fix, which is to encode the odd part first.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

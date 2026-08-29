@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1180px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Devices</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">The Mac serves; everything else is a paired device with a role per library. No accounts, no certificate authority, no internet.</div>
+  </div>
+
+  <div style="width:1180px;height:812px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Devices</div>
+    </div>
+
+    <div style="flex:none;background:#1A1610;border-bottom:1px solid #2A251E;padding:12px 16px;display:flex;align-items:center;gap:12px">
+      <span style="{{ servingDotStyle }}"></span>
+      <div style="min-width:0">
+        <div style="font-size:12.5px;font-weight:500">{{ servingTitle }}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:2px">{{ servingDetail }}</div>
+      </div>
+      <div style="flex:1"></div>
+      <button onClick="{{ toggleServing }}" style="{{ servingBtnStyle }}">{{ servingBtnLabel }}</button>
+      <button onClick="{{ startPairing }}" style="{{ pairBtnStyle }}">Pair a device…</button>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:292px;flex:none;background:#17130E;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:none;padding:12px 12px 7px;font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659">PAIRED DEVICES</div>
+        <div style="flex:1;overflow-y:auto;padding:0 8px 12px">
+          <sc-for list="{{ deviceRows }}" as="d" hint-placeholder-count="4">
+            <div onClick="{{ d.click }}" style="{{ d.rowStyle }}">
+              <span style="{{ d.iconStyle }}">{{ d.icon }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ d.name }}</span>
+                  <sc-if value="{{ d.isHost }}" hint-placeholder-val="{{ false }}">
+                    <span style="flex:none;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:#3A2E16;color:#E9A23B">HOST</span>
+                  </sc-if>
+                </div>
+                <div style="font-size:10.5px;color:#6E6659;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ d.meta }}</div>
+              </div>
+              <span style="{{ d.dotStyle }}"></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #241F19;padding:12px;font-size:11px;color:#5E5749;line-height:1.5;text-wrap:pretty">A device is the unit of identity. There are no user accounts — revoking a device is the whole of removing access.</div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;overflow-y:auto;padding:20px 22px 24px;display:flex;flex-direction:column;gap:20px">
+
+            <div style="display:flex;align-items:flex-start;gap:14px">
+              <span style="{{ selIconStyle }}">{{ selIcon }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:17px;font-weight:700">{{ selName }}</div>
+                <div style="font-size:12.5px;color:#8C8478;margin-top:3px">{{ selPlatform }}</div>
+              </div>
+              <sc-if value="{{ selRevocable }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ revoke }}" style="background:transparent;border:1px solid #4A2A24;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#C97A6A;cursor:pointer" style-hover="background:#2A1512;border-color:#7A3A30">Revoke access</button>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ selAwaiting }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:flex-start;gap:11px;padding:13px 14px;border:1px solid #4A3C24;border-radius:9px;background:#2A2118">
+                <span style="flex:none;margin-top:1px;font-size:13px;color:#E9A23B">◔</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12.5px;font-weight:600;color:#E9A23B;margin-bottom:3px">Requesting access</div>
+                  <div style="font-size:12px;color:#E8CFA8;line-height:1.5;text-wrap:pretty">{{ selAwaitingNote }}</div>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden;background:#151209">
+              <sc-for list="{{ selFacts }}" as="f" hint-placeholder-count="4">
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);align-items:center;gap:12px;padding:9px 13px;border-bottom:1px solid #1F1B15">
+                  <span style="font-size:12.5px;color:#A79E90">{{ f.label }}</span>
+                  <span style="{{ f.valStyle }}">{{ f.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ selShowRoles }}" hint-placeholder-val="{{ true }}">
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">ACCESS, PER LIBRARY</div>
+                <div style="font-size:12px;color:#8C8478;margin-bottom:10px;line-height:1.5;text-wrap:pretty">{{ selRolesBlurb }}</div>
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  <sc-for list="{{ selRoles }}" as="r" hint-placeholder-count="3">
+                    <div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid #2A251E;border-radius:9px;background:#151209">
+                      <div style="flex:1;min-width:0">
+                        <div style="font-size:13px;font-weight:500">{{ r.library }}</div>
+                        <div style="font-size:11px;color:#6E6659;margin-top:2px">{{ r.note }}</div>
+                      </div>
+                      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+                        <sc-for list="{{ r.opts }}" as="o" hint-placeholder-count="4">
+                          <button onClick="{{ o.click }}" style="{{ o.style }}">{{ o.label }}</button>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ selIsHost }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:14px 15px;border:1px solid #2A251E;border-radius:9px;background:#151209">
+                <div style="font-size:12.5px;color:#CFC6B8;line-height:1.55;text-wrap:pretty">This Mac is the host. It owns the library files, runs every worker, and is the only platform that can create or configure a library — so it has no role to set.</div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <sc-if value="{{ pairing }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(8,7,5,0.76);z-index:80;display:flex;align-items:center;justify-content:center">
+        <div style="width:520px;background:#1E1A15;border:1px solid #3A3328;border-radius:12px;box-shadow:0 40px 90px rgba(0,0,0,0.75);overflow:hidden">
+
+          <div style="padding:18px 20px 14px;border-bottom:1px solid #2E2820">
+            <div style="font-size:15px;font-weight:600">{{ pairTitle }}</div>
+            <div style="font-size:12.5px;color:#8C8478;margin-top:5px;line-height:1.5;text-wrap:pretty">{{ pairBlurb }}</div>
+          </div>
+
+          <sc-if value="{{ pairWaiting }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:20px;display:flex;gap:20px;align-items:center">
+              <div style="flex:none;width:132px;height:132px;border-radius:10px;background:#0F0C07;border:1px solid #2A251E;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;box-sizing:border-box">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749;line-height:1.5">QR for phones<br>same code</span>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:38px;letter-spacing:0.14em;color:#E9A23B;line-height:1">{{ pairCode }}</div>
+                <div style="font-size:12px;color:#8C8478;margin-top:11px">Expires in <span style="font-family:'JetBrains Mono',monospace;color:#CFC6B8">{{ pairExpiry }}</span> · single use</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#E9A23B;animation:pulse 1.4s ease-in-out infinite"></span>
+                  <span style="font-size:12px;color:#A79E90">Waiting for a device on the local network…</span>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ pairFound }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:18px 20px">
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 13px;border:1px solid #4A3C24;border-radius:9px;background:#1F1A12;margin-bottom:15px">
+                <span style="font-size:19px;color:#E9A23B">▢</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13.5px;font-weight:600">{{ incomingName }}</div>
+                  <div style="font-size:11.5px;color:#8C8478;margin-top:2px">{{ incomingMeta }}</div>
+                </div>
+                <sc-if value="{{ incomingKnown }}" hint-placeholder-val="{{ false }}">
+                  <span style="flex:none;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;background:#22262E;color:#8FA6D6">ALREADY PAIRED</span>
+                </sc-if>
+              </div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">CERTIFICATE FINGERPRINT</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#CFC6B8;line-height:1.7;background:#0F0C07;border:1px solid #2A251E;border-radius:7px;padding:10px 12px;word-break:break-all">{{ fingerprint }}</div>
+              <div style="font-size:11.5px;color:#6E6659;margin-top:9px;line-height:1.5;text-wrap:pretty">{{ fingerprintNote }}</div>
+            </div>
+          </sc-if>
+
+          <div style="padding:13px 18px;border-top:1px solid #2E2820;display:flex;align-items:center;gap:10px">
+            <sc-if value="{{ pairWaiting }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ regen }}" style="background:none;border:none;padding:0;font-size:11.5px;color:#8C8478;cursor:pointer">New code</button>
+            </sc-if>
+            <div style="flex:1"></div>
+            <button onClick="{{ cancelPair }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+            <sc-if value="{{ pairFound }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ confirmPair }}" style="background:#E9A23B;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#1A1409;cursor:pointer">Fingerprints match — pair</button>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1180px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1260,&quot;height&quot;:1010}}">
+class Component extends DCLogic {
+  state = {
+    serving:true, sel:'tv', pairing:null, toast:null,
+    libs:['Concerts','Learning','Home Videos'],
+    devices:[
+      {id:'host',name:'Studio Mac mini',platform:'macOS 26.1 · this Mac',icon:'▣',host:true,
+       online:true,paired:'—',seen:'now',fp:'—',roles:{}},
+      {id:'tv',name:'Living Room Apple TV',platform:'tvOS 26.1 · Apple TV 4K',icon:'▭',
+       online:true,paired:'26 August 2026',seen:'now',cap:'viewer',
+       fp:'A4 3F 91 C2 08 5D 7E BB 14 6A F0 29 3C D8 51 77 9E 02 B6 4A 88 1F E3 5C 70 D9 26 AB 4E 63 C1 0F',
+       roles:{'Concerts':'viewer','Learning':'none','Home Videos':'viewer'}},
+      {id:'phone',name:'Ellie’s iPhone',platform:'iOS 26.1 · iPhone 17 Pro',icon:'▯',
+       online:true,paired:'24 August 2026',seen:'2 minutes ago',
+       fp:'6B 12 D4 A9 3E 77 05 CC 8F 41 92 0B E6 35 7A D1 48 C3 9F 26 B0 5E 71 84 2D FA 63 19 07 8C E4 B2',
+       roles:{'Concerts':'editor','Learning':'viewer','Home Videos':'editor'}},
+      {id:'ipad',name:'Workshop iPad Pro',platform:'iPadOS 26.1 · 13-inch',icon:'▤',
+       online:false,paired:'24 August 2026',seen:'yesterday at 21:04',
+       fp:'C7 58 20 EE 9B 33 4F A6 71 0D 85 B4 12 6C F9 3A 27 D0 48 96 5B E1 7F 04 AC 32 68 DD 91 5A 0E B8',
+       roles:{'Concerts':'full','Learning':'full','Home Videos':'viewer'}}
+    ]
+  };
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2400); }
+
+  componentDidMount(){ this._tick=setInterval(()=>{ if(this.state.pairing) this.forceUpdate(); },500); }
+  componentWillUnmount(){ clearTimeout(this._t); clearInterval(this._tick); }
+
+  code(){ return String(Math.floor(100000+Math.random()*900000)).replace(/(\d{3})(\d{3})/,'$1 $2'); }
+
+  /// Whoever answers the advertisement. A distinct certificate is a new
+  /// device; a certificate already pinned is the same device coming back.
+  incoming(){
+    return {name:'Sam’s iPhone',platform:'iOS 26.1 · iPhone 16',ip:'192.168.1.64',icon:'▯',
+      fp:'D9 04 7C 3B E1 68 A2 5F 90 CD 16 44 B7 2E FA 83 55 01 9C D3 6E 27 B8 4F 71 EA 3D 08 96 C5 12 6B'};
+  }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const sel=st.devices.find(d=>d.id===st.sel)||null;
+    const ROLES=[['none','None'],['viewer','Viewer'],['editor','Editor'],['full','Full']];
+    const inc=this.incoming();
+    const known=st.devices.find(d=>d.fp===inc.fp)||null;
+    const awaiting=d=>!d.host&&!Object.keys(d.roles||{}).some(k=>d.roles[k]&&d.roles[k]!=='none');
+
+    // A pairing code lives for 90 seconds. Derived from the clock so the
+    // countdown cannot drift or strand itself.
+    const left=st.pairing?Math.max(0,90-Math.floor((Date.now()-st.pairing.at)/1000)):0;
+    const found=!!(st.pairing&&st.pairing.found);
+    // A device answers the advertisement a few seconds in.
+    if(st.pairing&&!found&&left<=84&&left>0&&!st.pairing.marked){ st.pairing.marked=true;
+      setTimeout(()=>this.setState(s=>({pairing:s.pairing?Object.assign({},s.pairing,{found:true}):null})),0); }
+
+    return {
+      servingDotStyle:'flex:none;width:9px;height:9px;border-radius:50%;background:'+(st.serving?'#6FB86F':'#5E5749')+
+        (st.serving?';animation:pulse 2.4s ease-in-out infinite':''),
+      servingTitle: st.serving?'Advertising on the local network':'Not advertising',
+      servingDetail: st.serving?'_sightsandsounds._tcp · Studio Mac mini · 3 devices paired'
+                               :'Paired devices keep their tokens and reconnect when you start serving again',
+      servingBtnLabel: st.serving?'Stop serving':'Start serving',
+      servingBtnStyle:'border-radius:7px;padding:7px 13px;font-size:12.5px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#A79E90',
+      toggleServing:()=>{ self.setState(s=>({serving:!s.serving}));
+        self.flash(st.serving?'Stopped advertising — paired devices cannot reach this Mac':'Advertising over Bonjour'); },
+      pairBtnStyle:'border:none;border-radius:7px;padding:7px 15px;font-size:12.5px;font-weight:600;'+
+        (st.serving?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      startPairing:()=>{ if(!st.serving){ self.flash('Start serving first'); return; }
+        self.setState({pairing:{at:Date.now(),code:self.code(),found:false}}); },
+
+      deviceRows: st.devices.map(d=>{
+        const on=st.sel===d.id;
+        const wait=awaiting(d);
+        return {name:d.name, isHost:!!d.host,
+          meta: d.host?'host · owns the libraries'
+            :wait?'requesting access'
+            :(d.online?'online · '+(d.cap==='viewer'?'viewer only':'paired'):'last seen '+d.seen),
+          icon:d.icon,
+          iconStyle:'flex:none;width:24px;height:24px;border-radius:6px;background:#221D16;display:flex;align-items:center;justify-content:center;font-size:12px;color:'+(wait?'#E9A23B':'#8C8478'),
+          dotStyle:'flex:none;width:7px;height:7px;border-radius:50%;background:'+(wait?'#E9A23B':d.online?'#6FB86F':'#5E5749')+(wait?';animation:pulse 1.6s ease-in-out infinite':''),
+          rowStyle:'display:flex;align-items:center;gap:9px;padding:9px 8px;border-radius:7px;cursor:pointer;margin-bottom:2px;'+
+            (on?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':''),
+          click:()=>self.setState({sel:d.id})};
+      }),
+
+      hasSel: !!sel,
+      selName: sel?sel.name:'', selPlatform: sel?sel.platform:'',
+      selIcon: sel?sel.icon:'',
+      selIconStyle:'flex:none;width:42px;height:42px;border-radius:10px;background:#221D16;display:flex;align-items:center;justify-content:center;font-size:19px;color:#8C8478',
+      selIsHost: !!(sel&&sel.host), selRevocable: !!(sel&&!sel.host),
+      selShowRoles: !!(sel&&!sel.host),
+      selFacts: sel?[
+        {label:'Status',
+         value: awaiting(sel)?'Requesting access':(sel.online?'Online':'Offline · last seen '+sel.seen),
+         valStyle:'font-size:12.5px;text-align:right;color:'+(awaiting(sel)?'#E9A23B':sel.online?'#8FCF8F':'#8C8478')},
+        {label:'Paired',value:sel.paired,valStyle:"font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#CFC6B8;text-align:right"},
+        {label:'Pinned certificate',value:sel.host?'—':sel.fp.slice(0,23)+' …',
+         valStyle:"font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8478;text-align:right"},
+        {label:'Token',value:sel.host?'—':'in this device’s Keychain',
+         valStyle:'font-size:12px;color:#8C8478;text-align:right'}
+      ]:[],
+
+      selAwaiting: !!(sel&&awaiting(sel)),
+      selAwaitingNote: sel?sel.name+' has paired and is trusted, but no library has been granted to it. Until you set a role below it cannot see that any library exists — not their names, not their counts.':'',
+      selRolesBlurb: sel&&sel.cap==='viewer'
+        ? 'This platform never edits, so its highest role is Viewer — it can be given a library or denied one, and nothing more.'
+        : 'Set per library, not per device. A role of None means the library is not listed at all on that device.',
+      selRoles: sel&&!sel.host?st.libs.map(lib=>{
+        const cur=sel.roles[lib]||'none';
+        const capped=sel.cap==='viewer';
+        return {library:lib,
+          note: cur==='none'?'not listed on this device'
+            :cur==='viewer'?'browse and play'
+            :cur==='editor'?'browse, play and edit tags'
+            :'everything this platform supports',
+          opts:ROLES.map(([v,label])=>{
+            const disabled=capped&&(v==='editor'||v==='full');
+            return {label,
+              style:'border:none;border-radius:5px;padding:4px 11px;font-size:11px;'+
+                (disabled?'cursor:default;color:#6A6154;background:transparent;text-decoration:line-through'
+                  :cur===v?'cursor:pointer;background:#2E2820;color:#F2EDE4;font-weight:600'
+                  :'cursor:pointer;background:transparent;color:#8C8478'),
+              click:()=>{ if(disabled){ self.flash('tvOS is paired as a viewer — it has no editing surface'); return; }
+                self.setState(s=>({devices:s.devices.map(d=>d.id!==sel.id?d
+                  :Object.assign({},d,{roles:Object.assign({},d.roles,{[lib]:v})}))}));
+              }};
+          })};
+      }):[],
+      revoke:()=>{ if(!sel) return;
+        self.setState(s=>({devices:s.devices.filter(d=>d.id!==sel.id),sel:'host'}));
+        self.flash(sel.name+' revoked — its token no longer authorises anything'); },
+
+      pairing: !!st.pairing,
+      pairWaiting: !!st.pairing&&!found,
+      pairFound: found,
+      pairTitle: found?'A device is asking to pair':'Pair a device',
+      pairBlurb: found
+        ? 'Check the fingerprint shown on the device against this one before pairing.'
+        : 'Open Sights and Sounds on the device, pick this Mac, and enter the code. Phones can scan the square instead.',
+      pairCode: st.pairing?st.pairing.code:'',
+      pairExpiry: String(Math.floor(left/60))+':'+String(left%60).padStart(2,'0'),
+      incomingName: inc.name,
+      incomingMeta: inc.platform+' · '+inc.ip,
+      incomingKnown: !!known,
+      fingerprint: inc.fp.replace(/^((?:\S+\s){16})/,'$1\n').trim(),
+      fingerprintNote: known
+        ? 'This certificate is already pinned to '+known.name+'. Pairing again refreshes that device rather than creating a second one — one certificate is one identity, which is what makes revoking it sufficient.'
+        : 'The device shows this same fingerprint. If they match, it pins ours and will refuse anything else from then on — no trust store, on any platform.',
+      regen:()=>self.setState({pairing:{at:Date.now(),code:self.code(),found:false}}),
+      cancelPair:()=>self.setState({pairing:null}),
+      confirmPair:()=>{
+        // The fingerprint decides. A known one refreshes its device and keeps
+        // its roles; only an unseen certificate becomes a new row.
+        if(known){
+          self.setState(s=>({pairing:null,sel:known.id,
+            devices:s.devices.map(d=>d.id===known.id?Object.assign({},d,{online:true,seen:'now'}):d)}));
+          self.flash(known.name+' reconnected — its roles are unchanged');
+          return;
+        }
+        const id='d'+Date.now();
+        self.setState(s=>({pairing:null,sel:id,
+          devices:s.devices.concat([{id,name:inc.name,platform:inc.platform,icon:inc.icon,
+            online:true,paired:'today',seen:'now',fp:inc.fp,
+            // Pairing establishes identity, not access. Until a library is
+            // granted here, the device cannot see that any exist.
+            roles:{'Concerts':'none','Learning':'none','Home Videos':'none'}}])}));
+        self.flash(inc.name+' paired — it has no access to any library yet');
+      },
+
+      toast: st.toast,
+
+      notes:[
+        {title:'PAIRING IS NOT ACCESS',body:'A newly paired device arrives with every library set to None and reads as “Requesting access” until you grant one here. It cannot see that a library exists — not the name, not the count — so approving a device and choosing what it may reach stay two separate decisions.'},
+        {title:'A DEVICE IS THE IDENTITY',body:'No accounts, no identity provider, nothing that reaches the internet. Pairing puts a long-lived token in the device’s Keychain, and revoking it is the entirety of removing access — there is no user to also disable.'},
+        {title:'PINNED, NOT TRUSTED',body:'The Mac holds one self-signed identity and the device pins its fingerprint at pairing, refusing anything else afterwards. That replaces a certificate authority and the per-device trust dance — nothing has to be installed on any client.'},
+        {title:'ROLES ARE PER LIBRARY',body:'Access is granted a library at a time, so the living-room Apple TV can hold Concerts and Home Videos and never see Learning. tvOS caps at Viewer because it has no editing surface at all — the higher roles are shown disabled rather than hidden, so the ceiling is visible.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

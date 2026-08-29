@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button,select{font-family:inherit}
+  input:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1440px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Tag Analysis</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Candidate mining across the library, and the authored rules that fold evidence into tags. The plural half of what the player does one item at a time.</div>
+  </div>
+
+  <div style="width:1440px;height:912px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Tag Analysis — Concerts</div>
+    </div>
+
+    <div style="height:48px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:10px">
+      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+        <sc-for list="{{ modeTabs }}" as="mt" hint-placeholder-count="2">
+          <button onClick="{{ mt.pick }}" style="{{ mt.style }}">{{ mt.label }}</button>
+        </sc-for>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C8478;padding:0 4px">{{ headline }}</div>
+      <div style="flex:1"></div>
+      <sc-if value="{{ isCandidates }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:7px;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:6px 10px;width:230px">
+          <span style="font-size:12px;color:#6E6659">⌕</span>
+          <input value="{{ search }}" onChange="{{ onSearch }}" placeholder="Filter values and keys" style="flex:1;min-width:0;background:transparent;border:none;color:#F2EDE4;font-size:12.5px" />
+        </div>
+      </sc-if>
+      <button onClick="{{ rescan }}" style="background:transparent;border:1px solid #332D24;border-radius:7px;padding:6px 12px;font-size:12px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Rescan library</button>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="{{ sidebarStyle }}">
+        <div style="flex:none;border-bottom:1px solid #241F19">
+          <div onClick="{{ togglePreview }}" style="display:flex;align-items:center;gap:7px;padding:9px 12px 8px;cursor:pointer" style-hover="background:#1E1A14">
+            <span style="{{ previewChevStyle }}">›</span>
+            <span style="flex:1;font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659">PREVIEW</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">{{ previewCount }}</span>
+          </div>
+          <sc-if value="{{ previewOpen }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:0 12px 11px">
+              <sc-if value="{{ hasPreview }}" hint-placeholder-val="{{ true }}">
+                <div>
+                  <div style="{{ previewFrameStyle }}">
+                    <sc-if value="{{ previewIsOcr }}" hint-placeholder-val="{{ false }}">
+                      <span style="{{ previewOverlayStyle }}">{{ previewOverlay }}</span>
+                    </sc-if>
+                    <span style="position:absolute;bottom:5px;right:6px;font-family:'JetBrains Mono',monospace;font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(12,9,5,0.84);color:#E9A23B">{{ previewAt }}</span>
+                    <span onClick="{{ previewExpand }}" style="position:absolute;top:5px;right:6px;width:19px;height:19px;border-radius:4px;background:rgba(12,9,5,0.84);border:1px solid #4A4238;color:#CFC6B8;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer">⤢</span>
+                  </div>
+                  <div onClick="{{ previewSeek }}" style="height:5px;border-radius:3px;background:#100D08;border:1px solid #241F19;position:relative;cursor:pointer;margin-top:7px">
+                    <div style="{{ previewHeadStyle }}"></div>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#7C7466;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ previewName }}</div>
+                  <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
+                    <button onClick="{{ previewPrev }}" style="{{ previewNavStyle }}">‹</button>
+                    <button onClick="{{ previewNext }}" style="{{ previewNavStyle }}">›</button>
+                    <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5E5749;text-align:right">{{ previewPos }}</div>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ noPreview }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:22px 8px;text-align:center;font-size:11.5px;color:#5E5749;line-height:1.5;text-wrap:pretty">Select a candidate to preview the items it was found in.</div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:11px 8px 14px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;padding:4px 7px 6px">EVIDENCE SOURCES</div>
+          <sc-for list="{{ sourceRows }}" as="s" hint-placeholder-count="3">
+            <div onClick="{{ s.pick }}" style="{{ s.style }}">
+              <span style="{{ s.dotStyle }}"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px">{{ s.name }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6E6659;margin-top:2px">{{ s.meta }}</div>
+              </div>
+            </div>
+          </sc-for>
+
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;padding:14px 7px 6px">STATUS</div>
+          <sc-for list="{{ statusRows }}" as="sr" hint-placeholder-count="3">
+            <div onClick="{{ sr.pick }}" style="{{ sr.style }}">
+              <span style="{{ sr.dotStyle }}"></span>
+              <span style="flex:1;font-size:12.5px">{{ sr.name }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ sr.count }}</span>
+            </div>
+          </sc-for>
+
+          <div style="margin-top:16px;padding:10px 9px;border-top:1px solid #241F19">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">THIS PASS</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <sc-for list="{{ passStats }}" as="ps" hint-placeholder-count="3">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B;min-width:34px;text-align:right">{{ ps.n }}</span>
+                  <span style="font-size:11.5px;color:#8C8478">{{ ps.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ canUndo }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ undo }}" style="width:100%;margin-top:9px;background:transparent;border:1px solid #3A3328;border-radius:6px;padding:6px 10px;font-size:11.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Undo last decision</button>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+
+      <div onMouseDown="{{ startResize }}" style="flex:none;width:5px;margin-left:-3px;cursor:col-resize;background:transparent;z-index:20"></div>
+
+      <sc-if value="{{ isCandidates }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+          <div style="flex:none;display:grid;grid-template-columns:30px 1fr 128px 66px 158px 40px;align-items:center;height:31px;padding:0 14px;border-bottom:1px solid #2A251E;background:#141109">
+            <span onClick="{{ toggleAll }}" style="{{ headBoxStyle }}">{{ headMark }}</span>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">VALUE</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">KEY</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">ITEMS</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;padding-left:14px">SUGGESTION</div>
+            <div></div>
+          </div>
+          <div style="flex:1;overflow-y:auto">
+            <sc-for list="{{ candRows }}" as="cd" hint-placeholder-count="12">
+              <div onClick="{{ cd.click }}" style="{{ cd.rowStyle }}">
+                <span onClick="{{ cd.togglePick }}" style="{{ cd.pickStyle }}">{{ cd.pickMark }}</span>
+                <div style="min-width:0;display:flex;align-items:center;gap:7px">
+                  <span style="{{ cd.valueStyle }}">{{ cd.value }}</span>
+                  <sc-if value="{{ cd.ruled }}" hint-placeholder-val="{{ false }}">
+                    <span style="flex:none;font-size:9px;padding:1px 5px;border-radius:3px;background:#241F19;color:#8C8478">by rule</span>
+                  </sc-if>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#7C7466;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cd.key }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90;text-align:right">{{ cd.items }}</div>
+                <div style="padding-left:14px;display:flex;align-items:center;gap:6px;min-width:0">
+                  <span style="{{ cd.suggStyle }}">{{ cd.sugg }}</span>
+                </div>
+                <div style="display:flex;justify-content:flex-end">
+                  <button onClick="{{ cd.makeRule }}" style="{{ cd.ruleBtnStyle }}" title="{{ cd.ruleBtnTitle }}">⊕</button>
+                </div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ noCands }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:80px 20px;text-align:center">
+                <div style="font-size:15px;font-weight:600;color:#8C8478;margin-bottom:6px">Nothing left in this queue</div>
+                <div style="font-size:12.5px;color:#6E6659">Every candidate from this source has been decided.</div>
+              </div>
+            </sc-if>
+          </div>
+
+          <sc-if value="{{ showStrip }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:none;height:158px;border-top:1px solid #2A251E;background:#151209;display:flex;flex-direction:column">
+              <div style="flex:none;display:flex;align-items:center;gap:9px;padding:8px 14px 6px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">MATCHING FRAMES</div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659">{{ stripLabel }}</span>
+                <div style="flex:1"></div>
+                <button onClick="{{ toggleStrip }}" style="background:none;border:none;font-size:11.5px;color:#8C8478;cursor:pointer" style-hover="color:#E9A23B">Hide</button>
+              </div>
+              <div style="flex:1;display:flex;gap:9px;overflow-x:auto;padding:0 14px 11px">
+                <sc-for list="{{ stripItems }}" as="ev" hint-placeholder-count="8">
+                  <div onClick="{{ ev.peek }}" style="flex:none;width:154px;cursor:pointer">
+                    <div style="{{ ev.thumbStyle }}">
+                      <sc-if value="{{ ev.isOcr }}" hint-placeholder-val="{{ false }}">
+                        <span style="position:absolute;left:8px;right:8px;top:50%;transform:translateY(-50%);text-align:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.08em;color:#D8CBB4;text-shadow:0 1px 4px rgba(0,0,0,0.9)">{{ ev.overlay }}</span>
+                      </sc-if>
+                      <span style="position:absolute;bottom:4px;right:5px;font-family:'JetBrains Mono',monospace;font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(12,9,5,0.82);color:#E9A23B">{{ ev.at }}</span>
+                    </div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#7C7466">{{ ev.name }}</div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ stripMore }}" hint-placeholder-val="{{ false }}">
+                  <div onClick="{{ showInBrowse }}" style="flex:none;width:110px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11.5px;color:#8C8478;border:1px dashed #3A3328;border-radius:6px;cursor:pointer">{{ stripMoreLabel }}</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasPicks }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:none;border-top:1px solid #3A3328;background:#221B12;padding:10px 14px;display:flex;align-items:center;gap:10px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#E9A23B">{{ pickCount }} picked · {{ pickItems }} items affected</span>
+              <div style="flex:1"></div>
+              <sc-for list="{{ bulkActions }}" as="ba" hint-placeholder-count="3">
+                <button onClick="{{ ba.click }}" style="{{ ba.style }}">{{ ba.label }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="width:340px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+          <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:1;overflow-y:auto;padding:14px 15px 18px;display:flex;flex-direction:column;gap:15px">
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">CANDIDATE</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;padding:8px 10px;background:#0F0C07;border:1px solid #2A251E;border-radius:6px;word-break:break-word">{{ selValue }}</div>
+                <div style="font-size:11.5px;color:#8C8478;margin-top:7px;line-height:1.5;text-wrap:pretty">{{ selSummary }}</div>
+              </div>
+
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">DECIDE</div>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <sc-for list="{{ decisions }}" as="dc" hint-placeholder-count="4">
+                    <button onClick="{{ dc.click }}" style="{{ dc.style }}">
+                      <span style="{{ dc.dotStyle }}"></span>
+                      <div style="flex:1;min-width:0;text-align:left">
+                        <div style="font-size:12.5px">{{ dc.label }}</div>
+                        <div style="font-size:11px;color:#6E6659;margin-top:1px;line-height:1.4">{{ dc.note }}</div>
+                      </div>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+
+              <sc-if value="{{ needsTarget }}" hint-placeholder-val="{{ false }}">
+                <div>
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">{{ targetLabel }}</div>
+                  <div style="display:flex;flex-direction:column;gap:3px;max-height:184px;overflow-y:auto">
+                    <sc-for list="{{ targets }}" as="tg" hint-placeholder-count="4">
+                      <div onClick="{{ tg.pick }}" style="{{ tg.style }}">
+                        <span style="{{ tg.swatchStyle }}"></span>
+                        <span style="flex:1;min-width:0;font-size:12.5px">{{ tg.label }}</span>
+                        <span style="font-size:10.5px;color:#5E5749">{{ tg.hint }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <div>
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+                  <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">APPEARS IN</div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ selItems }}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <sc-for list="{{ sampleItems }}" as="si" hint-placeholder-count="4">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8478;padding:4px 7px;border-radius:5px;background:#0F0C07;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ si.name }}</div>
+                  </sc-for>
+                </div>
+                <button onClick="{{ showInBrowse }}" style="margin-top:7px;background:none;border:none;padding:0;font-size:11.5px;color:#E9A23B;cursor:pointer">Show all in Browse →</button>
+              </div>
+
+              <div style="border-top:1px solid #2A251E;padding-top:13px;display:flex;flex-direction:column;gap:8px">
+                <button onClick="{{ apply }}" style="{{ applyStyle }}">{{ applyLabel }}</button>
+                <button onClick="{{ makeRule }}" style="width:100%;background:transparent;border:1px solid #3A3328;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Make a rule from this…</button>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noSelection }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:30px;text-align:center">
+              <div style="font-size:12.5px;color:#5E5749;line-height:1.55;text-wrap:pretty">Select a candidate to see where it appears and what to do with it.</div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isRules }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+          <div style="flex:none;display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #2A251E">
+            <div style="font-size:12.5px;color:#8C8478;text-wrap:pretty">Rules run top to bottom, and actions fold in list order — both orders are significant.</div>
+            <div style="flex:1"></div>
+            <button onClick="{{ newRule }}" style="background:#E9A23B;border:none;border-radius:7px;padding:6px 13px;font-size:12px;font-weight:600;color:#1A1409;cursor:pointer">+ Rule</button>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:12px 14px">
+            <sc-for list="{{ ruleRows }}" as="r" hint-placeholder-count="4">
+              <div onClick="{{ r.click }}" style="{{ r.rowStyle }}">
+                <span style="color:#4A4238;font-size:12px;cursor:grab">≡</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749;width:26px">{{ r.order }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 7px;border-radius:4px;background:#22262E;color:#8FA6D6">{{ r.match }}</span>
+                    <sc-if value="{{ r.hasActions }}" hint-placeholder-val="{{ true }}">
+                      <span style="color:#4A4238;font-size:11px">→</span>
+                    </sc-if>
+                    <sc-for list="{{ r.actions }}" as="ac" hint-placeholder-count="1">
+                      <span style="{{ ac.style }}">{{ ac.label }}</span>
+                    </sc-for>
+                    <sc-if value="{{ r.noActions }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:10.5px;padding:2px 7px;border-radius:4px;background:#3A2C18;color:#D9924A">no actions yet</span>
+                    </sc-if>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:5px">{{ r.dryRun }}</div>
+                </div>
+                <div style="display:flex;gap:2px">
+                  <button onClick="{{ r.up }}" style="background:none;border:none;color:#6E6659;cursor:pointer;font-size:12px;padding:2px 4px">↑</button>
+                  <button onClick="{{ r.down }}" style="background:none;border:none;color:#6E6659;cursor:pointer;font-size:12px;padding:2px 4px">↓</button>
+                  <button onClick="{{ r.remove }}" style="background:none;border:none;color:#5E5749;cursor:pointer;font-size:13px;padding:2px 4px">×</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="width:340px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+          <div style="flex:1;overflow-y:auto;padding:14px 15px 18px;display:flex;flex-direction:column;gap:15px">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">MATCH</div>
+              <div style="display:flex;flex-direction:column;gap:3px">
+                <sc-for list="{{ matcherOpts }}" as="mo" hint-placeholder-count="4">
+                  <div onClick="{{ mo.pick }}" style="{{ mo.style }}">
+                    <span style="{{ mo.boxStyle }}"></span>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px">{{ mo.name }}</div>
+                      <div style="font-size:11px;color:#6E6659;margin-top:1px;line-height:1.4">{{ mo.note }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <input value="{{ matchArg }}" onChange="{{ onMatchArg }}" placeholder="{{ matchArgPlaceholder }}" style="width:100%;box-sizing:border-box;margin-top:7px;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:7px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:12px" style-focus="border-color:#7A6A4A" />
+            </div>
+
+            <div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">ACTIONS, IN ORDER</div>
+                <span style="font-size:10.5px;color:#5E5749">folds top to bottom</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+                <sc-for list="{{ actionRows }}" as="ar" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #2A251E;border-radius:6px;background:#0F0C07">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">{{ ar.n }}</span>
+                    <span style="{{ ar.style }}">{{ ar.label }}</span>
+                    <div style="flex:1"></div>
+                    <button onClick="{{ ar.up }}" style="background:none;border:none;color:#6E6659;cursor:pointer;font-size:11px">↑</button>
+                    <button onClick="{{ ar.remove }}" style="background:none;border:none;color:#5E5749;cursor:pointer;font-size:12px">×</button>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ addActions }}" as="aa" hint-placeholder-count="6">
+                  <button onClick="{{ aa.click }}" style="border-radius:5px;padding:4px 9px;font-family:'JetBrains Mono',monospace;font-size:10.5px;cursor:pointer;border:1px dashed #4A4238;background:transparent;color:#8C8478" style-hover="border-color:#7A6A4A;color:#F2EDE4">+ {{ aa.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid #2A251E;padding-top:13px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">DRY RUN</div>
+              <div style="font-size:12.5px;color:#CFC6B8;line-height:1.55;text-wrap:pretty">{{ dryRunText }}</div>
+              <button onClick="{{ runRule }}" style="width:100%;margin-top:11px;background:#E9A23B;border:none;border-radius:7px;padding:8px 12px;font-size:12.5px;font-weight:600;color:#1A1409;cursor:pointer">Apply this rule</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ peek }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closePeek }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.76);z-index:84;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ stop }}" style="width:760px;background:#1E1A15;border:1px solid #3A3328;border-radius:12px;box-shadow:0 40px 90px rgba(0,0,0,0.7);overflow:hidden">
+          <div style="{{ peekFrameStyle }}">
+            <sc-if value="{{ peekIsOcr }}" hint-placeholder-val="{{ false }}">
+              <span style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-family:'JetBrains Mono',monospace;font-size:20px;letter-spacing:0.14em;color:#E4D8C2;text-shadow:0 2px 10px rgba(0,0,0,0.9)">{{ peekOverlay }}</span>
+            </sc-if>
+            <span style="position:absolute;bottom:10px;left:12px;font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(12,9,5,0.82);color:#E9A23B">{{ peekAt }}</span>
+          </div>
+          <div style="padding:11px 14px;display:flex;align-items:center;gap:10px;border-top:1px solid #2E2820">
+            <div onClick="{{ peekSeek }}" style="flex:1;height:6px;border-radius:3px;background:#100D08;border:1px solid #241F19;position:relative;cursor:pointer">
+              <div style="{{ peekHeadStyle }}"></div>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8478">{{ peekTime }}</span>
+          </div>
+          <div style="padding:0 14px 13px;display:flex;align-items:center;gap:9px">
+            <div style="min-width:0;flex:1">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ peekName }}</div>
+              <div style="font-size:11px;color:#6E6659;margin-top:2px">{{ peekPos }}</div>
+            </div>
+            <button onClick="{{ peekPrev }}" style="background:transparent;border:1px solid #3A3328;border-radius:6px;padding:6px 11px;font-size:12px;color:#A79E90;cursor:pointer">‹ Prev</button>
+            <button onClick="{{ peekNext }}" style="background:transparent;border:1px solid #3A3328;border-radius:6px;padding:6px 11px;font-size:12px;color:#A79E90;cursor:pointer">Next ›</button>
+            <button onClick="{{ openInPlayer }}" style="background:#E9A23B;border:none;border-radius:6px;padding:6px 13px;font-size:12px;font-weight:600;color:#1A1409;cursor:pointer">Open in player</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1440px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="4">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1520,&quot;height&quot;:1140}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const c=(id,src,key,value,items,sugg,target,ruled)=>({id,src,key,value,items,sugg,target,ruled:!!ruled,status:'new'});
+    return {
+      mode:'candidates', source:'all', statusFilter:'new', search:'',
+      candidates:[
+        c('c1','meta','band','Northlight Sessions',148,'assignCategory','Band'),
+        c('c2','meta','band','northlight sessions',6,'alias','Northlight Sessions'),
+        c('c3','meta','ARTIST','Riverside Collective',92,'assignCategory','Band'),
+        c('c4','meta','band','The Broadside Trio',67,'assignCategory','Band'),
+        c('c5','meta','band','Broadside Trio',11,'alias','The Broadside Trio'),
+        c('c6','meta','taper','J. Alvarez',88,'assignCategory','Taper'),
+        c('c7','meta','venue','The Broadside',58,'assignCategory','Venue'),
+        c('c8','meta','DATE','2024-06-14',96,'assignCategory','Year'),
+        c('c9','meta','comment','SBD > DAT > FLAC (24/48)',61,'ignore',null),
+        c('c10','meta','OriginalMD5','3f2a…c81b',380,'setKind','md5',true),
+        c('c11','meta','encoder','Lavf58.76.100',412,'ignore',null),
+        c('c12','ocr','on-screen','NORTHLIGHT SESSIONS',47,'assignCategory','Band'),
+        c('c13','ocr','on-screen','CEDAR ROOM',22,'assignCategory','Venue'),
+        c('c14','ocr','on-screen','ASH & EMBER',31,'assignCategory','Band'),
+        c('c15','file','filename','sbd',134,'alias','Soundboard'),
+        c('c16','file','path root','_unsorted',96,'ignore',null)
+      ],
+      selected:'c1', picks:{}, decision:null, target:null, history:[],
+      rules:[
+        {id:'r1',match:'keyEquals · OriginalFilename',actions:['setKind filename'],dry:'412 pairs · 380 items'},
+        {id:'r2',match:'keyEquals · OriginalMD5',actions:['setKind md5'],dry:'380 pairs · 380 items'},
+        {id:'r3',match:'valueStartsWith · SBD',actions:['stripPrefix SBD','assignCategory Recording Type'],dry:'134 pairs · 118 items'},
+        {id:'r4',match:'pathRootStartsWith · _unsorted',actions:['ignore'],dry:'96 pairs · 96 items'}
+      ],
+      showStrip:true, peekIndex:null, peekT:0.42,
+      sidebarWidth:266, previewOpen:true, previewIndex:0, previewT:null,
+      selectedRule:'r3', matcher:'valueStartsWith', matchArg:'SBD',
+      ruleActions:['stripPrefix SBD','assignCategory Recording Type'],
+      toast:null
+    };
+  }
+
+  cats(){ return [
+    {name:'Band',hue:'#8B93E8',multi:true},{name:'Recording Type',hue:'#C58BB8',multi:false},
+    {name:'Venue',hue:'#6FBFB0',multi:false},{name:'Year',hue:'#E9A23B',multi:false},
+    {name:'Taper',hue:'#9DBF7F',multi:true}]; }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2100); }
+  componentWillUnmount(){ clearTimeout(this._t); this.endResize(); }
+
+  /// The preview is width-driven — the frame is 16:9 of whatever the pane
+  /// is, so dragging the divider resizes it with no breakpoints.
+  startResize(e){
+    e.preventDefault();
+    const x0=e.clientX, w0=this.state.sidebarWidth;
+    this._move=ev=>this.setState({sidebarWidth:Math.max(212,Math.min(470,w0+ev.clientX-x0))});
+    this._up=()=>this.endResize();
+    window.addEventListener('mousemove',this._move);
+    window.addEventListener('mouseup',this._up);
+  }
+  endResize(){
+    if(this._move) window.removeEventListener('mousemove',this._move);
+    if(this._up) window.removeEventListener('mouseup',this._up);
+    this._move=null; this._up=null;
+  }
+
+  /// The items a candidate was found in. OCR evidence carries the frame
+  /// timestamp the string was read at — that is the whole reason a still
+  /// is worth showing at all.
+  evidenceFor(c){
+    if(!c) return [];
+    const NAMES=['northlight_sessions_2024_01_4k','riverside_collective_2023_04_1080p',
+      'the_broadside_trio_2024_02_4k','marta_quinn_2023_07_1080p','hollow_bell_2022_03_720p',
+      'ash_ember_2024_05_1080p','juno_grove_2021_02_1080p','cedar_room_2023_11_1080p',
+      'broadside_2024_09_4k','fm_rip_1998_02_720p'];
+    const n=Math.min(c.items,10);
+    return Array.from({length:n},(_,i)=>{
+      const secs=c.src==='ocr'?(120+((i*397)%2600)):(0);
+      return {name:NAMES[(i+c.id.length)%NAMES.length]+'.mp4',
+        at:c.src==='ocr'?this.fmt(secs):'frame 1',
+        secs, grad:(i+c.id.length)%6, isOcr:c.src==='ocr', overlay:c.value};
+    });
+  }
+
+  fmt(s){ s=Math.round(s); const m=Math.floor(s/60), x=s%60;
+    return Math.floor(m/60)+':'+String(m%60).padStart(2,'0')+':'+String(x).padStart(2,'0'); }
+
+  /// Seed the rule editor from a candidate. The matcher follows the
+  /// evidence: a metadata key becomes keyEquals, a path fragment becomes
+  /// pathRootStartsWith, an OCR or filename string becomes valueStartsWith.
+  ruleFrom(c){
+    // An alias candidate is about one spelling, not the whole key, so it
+    // matches on the VALUE. Key-level evidence matches on the key.
+    const matcher = c.key==='path root' ? 'pathRootStartsWith'
+      : (c.src==='meta'&&c.sugg!=='alias') ? 'keyEquals'
+      : 'valueStartsWith';
+    const arg = matcher==='keyEquals' ? c.key : c.value;
+    // setKind takes a kind from a small closed vocabulary — never the
+    // metadata key. The candidate carries the intended kind.
+    const actions = c.sugg==='assignCategory'&&c.target ? ['assignCategory '+c.target]
+      : c.sugg==='ignore' ? ['ignore']
+      : c.sugg==='setKind'&&c.target ? ['setKind '+c.target]
+      : [];
+    const match=matcher+' · '+arg;
+
+    // Two rules with the same matcher is a correctness problem once order
+    // is significant — go to the existing one rather than shadowing it.
+    const existing=this.state.rules.find(r=>r.match===match);
+    if(existing){
+      this.setState({mode:'rules',selectedRule:existing.id,matcher,matchArg:arg,ruleActions:existing.actions.slice()});
+      this.flash('Already covered by a rule — showing it');
+      return;
+    }
+
+    const id='r'+Date.now();
+    this.setState(s=>({
+      mode:'rules', matcher, matchArg:arg, ruleActions:actions, selectedRule:id,
+      rules:s.rules.concat([{id,match,actions,dry:'not run yet'}])
+    }));
+    this.flash(actions.length
+      ? 'New rule from “'+arg+'” — review the actions before applying'
+      : 'New rule from “'+arg+'” — add an action to make it do something');
+  }
+
+  decide(ids,status,label){
+    const before=this.state.candidates;
+    this.setState(s=>({
+      candidates:s.candidates.map(c=>ids.indexOf(c.id)>=0?Object.assign({},c,{status}):c),
+      picks:{}, history:s.history.concat([{before,label}])
+    }));
+    this.flash(label);
+  }
+
+  renderVals(){
+    const st=this.state, self=this, CATS=this.cats();
+    const SRC={meta:{name:'Embedded metadata',c:'#8B93E8'},ocr:{name:'On-screen text',c:'#6FBFB0'},file:{name:'File names & paths',c:'#C58BB8'}};
+    const SUGG={assignCategory:{label:'Assign to category',c:'#6FB86F'},alias:{label:'Add as alias',c:'#6B96D6'},
+                ignore:{label:'Ignore this key',c:'#8C8478'},setKind:{label:'Set kind',c:'#C58BB8'}};
+
+    const q=st.search.trim().toLowerCase();
+    const visible=st.candidates.filter(c=>
+      (st.source==='all'||c.src===st.source)
+      && (st.statusFilter==='all'||c.status===st.statusFilter)
+      && (!q||c.value.toLowerCase().indexOf(q)>=0||c.key.toLowerCase().indexOf(q)>=0));
+
+    const sel=st.candidates.find(c=>c.id===st.selected&&visible.indexOf(c)>=0)||visible[0]||null;
+    const pickIds=Object.keys(st.picks).filter(k=>st.picks[k]);
+
+    const decision=st.decision||(sel?sel.sugg:null);
+    const target=st.target!==null?st.target:(sel?sel.target:null);
+    const needsTarget=decision==='assignCategory'||decision==='alias';
+
+    const evidence=this.evidenceFor(sel);
+    const pi=Math.min(st.previewIndex,Math.max(0,evidence.length-1));
+    const pv=evidence[pi]||null;
+    // null previewT means "follow the frame" — derived here so there is one
+    // source of truth instead of every entry point remembering to set it.
+    // A scrub writes a number, which then wins until the frame changes.
+    const pt=st.previewT==null?(pv?pv.secs/5040:0):st.previewT;
+
+    const MATCHERS=[
+      ['keyEquals','the metadata key is exactly this'],
+      ['valueStartsWith','the value begins with this string'],
+      ['numericRange','the value parses as a number in a range'],
+      ['pathRootStartsWith','the item’s path root begins with this']
+    ];
+    const ACTION_KINDS=['ignore','setKind','stripPrefix','onlyIfTrue','assignCategory','hidePrefix'];
+
+    return {
+      modeTabs:[['candidates','Candidates'],['rules','Rules']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 15px;font-size:12px;cursor:pointer;'+(st.mode===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({mode:v})})),
+      isCandidates: st.mode==='candidates', isRules: st.mode==='rules',
+      headline: st.mode==='candidates'
+        ? visible.length+' candidates · '+visible.reduce((a,b)=>a+b.items,0)+' item references'
+        : st.rules.length+' rules, applied in order',
+      search: st.search, onSearch:e=>self.setState({search:e.target.value}),
+      rescan:()=>self.flash('Rescanning embedded metadata, OCR text and paths…'),
+
+      sourceRows:[['all','All evidence',null]].concat(Object.keys(SRC).map(k=>[k,SRC[k].name,SRC[k].c]))
+        .map(([k,name,c])=>{
+          const n=st.candidates.filter(x=>(k==='all'||x.src===k)&&x.status==='new').length;
+          return {name, meta:n+' undecided',
+            dotStyle:'flex:none;width:7px;height:7px;border-radius:2px;background:'+(c||'#8C8478'),
+            style:'display:flex;align-items:center;gap:8px;padding:7px 7px;border-radius:6px;cursor:pointer;margin-bottom:1px;'+(st.source===k?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':''),
+            pick:()=>self.setState({source:k})};
+        }),
+
+      statusRows:[['new','Undecided'],['accepted','Applied'],['ignored','Ignored'],['all','Everything']]
+        .map(([k,name])=>({name, count:String(st.candidates.filter(c=>k==='all'||c.status===k).length),
+          dotStyle:'flex:none;width:7px;height:7px;border-radius:50%;background:'+({new:'#E9A23B',accepted:'#6FB86F',ignored:'#5E5749',all:'#8C8478'})[k],
+          style:'display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:6px;cursor:pointer;'+(st.statusFilter===k?'background:#231E17':''),
+          pick:()=>self.setState({statusFilter:k})})),
+
+      passStats:[
+        {n:st.candidates.filter(c=>c.status==='accepted').length,label:'candidates applied'},
+        {n:st.candidates.filter(c=>c.status==='accepted').reduce((a,b)=>a+b.items,0),label:'items retagged'},
+        {n:st.candidates.filter(c=>c.status==='ignored').length,label:'ignored'}
+      ],
+      canUndo: st.history.length>0,
+      undo:()=>{ const h=st.history[st.history.length-1];
+        self.setState(s=>({candidates:h.before,history:s.history.slice(0,-1)}));
+        self.flash('Reverted: '+h.label); },
+
+      headMark: visible.length&&visible.every(c=>st.picks[c.id])?'✓':'',
+      headBoxStyle:'width:15px;height:15px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;'+
+        (visible.length&&visible.every(c=>st.picks[c.id])?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      toggleAll:()=>self.setState(s=>{const all=visible.every(c=>s.picks[c.id]);const p={};if(!all)visible.forEach(c=>p[c.id]=true);return {picks:p};}),
+
+      candRows: visible.map(c=>{
+        const on=sel&&sel.id===c.id, picked=!!st.picks[c.id], sg=SUGG[c.sugg];
+        return {value:c.value, key:c.key, items:String(c.items), ruled:c.ruled,
+          sugg: sg.label+(c.target?' · '+c.target:''), pickMark:picked?'✓':'',
+          valueStyle:"font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+(c.status==='new'?'#F2EDE4':'#7C7466'),
+          suggStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:'+sg.c+'1C;color:'+sg.c,
+          pickStyle:'width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+
+            (picked?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+          rowStyle:'display:grid;grid-template-columns:30px 1fr 128px 66px 158px 40px;align-items:center;padding:7px 14px;border-bottom:1px solid #1F1B15;cursor:pointer;'+
+            (on?'background:#241E16;box-shadow:inset 2px 0 0 #E9A23B':picked?'background:#1D1810':''),
+          ruleBtnTitle:c.ruled?'A rule already covers this — show it'
+            :'Create a rule from '+(c.src==='meta'&&c.sugg!=='alias'?'the key “'+c.key+'”':'“'+c.value+'”'),
+          ruleBtnStyle:'border-radius:5px;padding:2px 7px;font-size:12px;cursor:pointer;border:1px solid '+(c.ruled?'#332D24':'#3A3328')+';background:transparent;color:'+(c.ruled?'#443E34':'#8C8478'),
+          makeRule:e=>{e.stopPropagation();self.ruleFrom(c);},
+          click:()=>self.setState({selected:c.id,decision:null,target:null,peekIndex:null,previewIndex:0,previewT:null}),
+          togglePick:e=>{e.stopPropagation();self.setState(s=>{const p=Object.assign({},s.picks);if(p[c.id])delete p[c.id];else p[c.id]=true;return {picks:p};});}};
+      }),
+      noCands: visible.length===0,
+
+      hasPicks: pickIds.length>0, pickCount: pickIds.length,
+      pickItems: st.candidates.filter(c=>pickIds.indexOf(c.id)>=0).reduce((a,b)=>a+b.items,0),
+      bulkActions:[
+        ['Apply suggestions',()=>self.decide(pickIds,'accepted','Applied '+pickIds.length+' suggested decisions')],
+        ['Ignore',()=>self.decide(pickIds,'ignored','Ignored '+pickIds.length+' candidates')],
+        ['Clear',()=>self.setState({picks:{}})]
+      ].map(([label,click],i)=>({label,click,
+        style:'border-radius:6px;padding:6px 13px;font-size:12px;cursor:pointer;'+(i===0?'background:#E9A23B;border:none;color:#1A1409;font-weight:600':'background:transparent;border:1px solid #4A4238;color:#CFC6B8')})),
+
+      hasSelection: !!sel, noSelection: !sel,
+      selValue: sel?sel.value:'',
+      selItems: sel?sel.items+' items':'',
+      selSummary: sel?('Found as '+(sel.src==='ocr'?'on-screen text':sel.src==='file'?'a path or file name':'metadata key “'+sel.key+'”')+
+        ' in '+sel.items+' items'+(sel.ruled?'. A rule already claims this key.':'.')):'',
+      sampleItems: evidence.slice(0,4).map(e=>({name:e.name})),
+
+      sidebarStyle:'width:'+st.sidebarWidth+'px;flex:none;background:#17130E;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0',
+      startResize:e=>self.startResize(e),
+
+      previewOpen: st.previewOpen,
+      togglePreview:()=>self.setState(s=>({previewOpen:!s.previewOpen})),
+      previewChevStyle:'font-size:11px;color:#5E5749;width:9px;display:inline-block;transform:rotate('+(st.previewOpen?'90':'0')+'deg)',
+      previewCount: evidence.length?(pi+1)+' / '+(sel?sel.items:0):'—',
+      hasPreview: !!pv, noPreview: !pv,
+      previewIsOcr: !!(sel&&sel.src==='ocr'),
+      previewOverlay: sel?sel.value:'',
+      previewOverlayStyle:'position:absolute;left:8px;right:8px;top:50%;transform:translateY(-50%);text-align:center;font-family:\'JetBrains Mono\',monospace;'+
+        'font-size:'+Math.max(9,Math.round(st.sidebarWidth*0.048))+'px;letter-spacing:0.1em;color:#DCCFB8;text-shadow:0 1px 6px rgba(0,0,0,0.9)',
+      previewFrameStyle:'position:relative;width:100%;aspect-ratio:16/9;border-radius:6px;overflow:hidden;border:1px solid #2A251E;background:linear-gradient('+(112+(pv?pv.grad:0)*15)+'deg,#2E2822,#14110D)',
+      previewAt: pv?pv.at:'',
+      previewName: pv?pv.name:'',
+      previewPos: pv?self.fmt(pt*5040):'',
+      previewHeadStyle:'position:absolute;top:-3px;width:2px;height:11px;background:#E9A23B;border-radius:1px;left:'+(pt*100).toFixed(1)+'%',
+      previewSeek:e=>{const r=e.currentTarget.getBoundingClientRect();
+        self.setState({previewT:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))});},
+      previewNavStyle:'border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#A79E90',
+      previewPrev:()=>self.setState(s=>({previewIndex:Math.max(0,s.previewIndex-1),previewT:null})),
+      previewNext:()=>self.setState(s=>({previewIndex:Math.min(evidence.length-1,s.previewIndex+1),previewT:null})),
+      previewExpand:e=>{e.stopPropagation();self.setState({peekIndex:pi,peekT:pt});},
+
+      showStrip: st.showStrip&&!!sel,
+      toggleStrip:()=>self.setState(s=>({showStrip:!s.showStrip})),
+      stripLabel: sel?(sel.src==='ocr'?'frames where this text was read':'first frame of each matching item'):'',
+      stripItems: evidence.map((e,i)=>({name:e.name, at:e.at, isOcr:e.isOcr, overlay:e.overlay,
+        thumbStyle:'position:relative;width:100%;aspect-ratio:16/9;border-radius:5px;overflow:hidden;background:linear-gradient('+(112+e.grad*15)+'deg,#2E2822,#14110D);border:1px solid '+(i===pi?'#E9A23B':'#241F19'),
+        // A strip click loads the left-pane preview; ⤢ on the preview is
+        // what enlarges. Neither ever leaves the queue.
+        peek:()=>self.setState({previewIndex:i,previewT:null,previewOpen:true})})),
+      stripMore: !!sel&&sel.items>10,
+      stripMoreLabel: sel?('+'+(sel.items-10)+' more'):'',
+
+      peek: st.peekIndex!=null&&!!evidence[st.peekIndex],
+      peekIsOcr: !!(sel&&sel.src==='ocr'),
+      peekOverlay: sel?sel.value:'',
+      peekName: evidence[st.peekIndex]?evidence[st.peekIndex].name:'',
+      peekAt: evidence[st.peekIndex]?evidence[st.peekIndex].at:'',
+      peekPos: evidence[st.peekIndex]?('item '+(st.peekIndex+1)+' of '+(sel?sel.items:0)+' carrying this evidence'):'',
+      peekTime: self.fmt(st.peekT*5040),
+      peekFrameStyle:'position:relative;width:100%;aspect-ratio:16/9;background:linear-gradient('+(112+(evidence[st.peekIndex]?evidence[st.peekIndex].grad:0)*15)+'deg,#2E2822,#14110D)',
+      peekHeadStyle:'position:absolute;top:-3px;width:2px;height:12px;background:#E9A23B;border-radius:1px;left:'+(st.peekT*100).toFixed(1)+'%',
+      peekSeek:e=>{const r=e.currentTarget.getBoundingClientRect();
+        self.setState({peekT:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))});},
+      // Each item has its own read timestamp, so the playhead follows the
+      // frame rather than keeping the previous item's position.
+      peekPrev:()=>self.setState(s=>{const i=Math.max(0,(s.peekIndex||0)-1);
+        return {peekIndex:i,peekT:evidence[i]?evidence[i].secs/5040:0};}),
+      peekNext:()=>self.setState(s=>{const i=Math.min(evidence.length-1,(s.peekIndex||0)+1);
+        return {peekIndex:i,peekT:evidence[i]?evidence[i].secs/5040:0};}),
+      closePeek:()=>self.setState({peekIndex:null}),
+      openInPlayer:()=>{self.setState({peekIndex:null});self.flash('Opens the player at this timestamp');},
+      showInBrowse:()=>self.flash('Opens Browse filtered to these '+(sel?sel.items:0)+' items'),
+
+      decisions:[
+        ['assignCategory','Assign to a category','Creates the tag if needed and applies it to every item.'],
+        ['alias','Add as an alias','Folds this spelling into an existing tag. Taggings are preserved.'],
+        ['ignore','Ignore this key','Never offer it again. Reversible from the Ignored list.'],
+        ['hidePrefix','Hide the prefix','Keeps the value, drops the leading token from display.']
+      ].map(([k,label,note])=>({label,note,
+        dotStyle:'flex:none;width:8px;height:8px;border-radius:50%;margin-top:4px;background:'+(decision===k?'#E9A23B':'#3A3328'),
+        style:'display:flex;align-items:flex-start;gap:9px;width:100%;padding:8px 10px;border-radius:7px;cursor:pointer;text-align:left;color:#F2EDE4;border:1px solid '+(decision===k?'#7A6428':'#2A251E')+';background:'+(decision===k?'#2A2118':'#0F0C07'),
+        click:()=>self.setState({decision:k,target:null})})),
+
+      needsTarget,
+      targetLabel: decision==='alias'?'FOLD INTO':'CATEGORY',
+      targets: decision==='alias'
+        ? ['Northlight Sessions','The Broadside Trio','Soundboard','Riverside Amphitheater'].map(t=>({label:t,hint:'existing tag',
+            swatchStyle:'flex:none;width:7px;height:7px;border-radius:2px;background:#8B93E8',
+            style:'display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid '+(target===t?'#7A6428':'#2A251E')+';background:'+(target===t?'#2A2118':'#0F0C07'),
+            pick:()=>self.setState({target:t})}))
+        : CATS.map(c=>({label:c.name,hint:c.multi?'multiple':'one only',
+            swatchStyle:'flex:none;width:7px;height:7px;border-radius:2px;background:'+c.hue,
+            style:'display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid '+(target===c.name?'#7A6428':'#2A251E')+';background:'+(target===c.name?'#2A2118':'#0F0C07'),
+            pick:()=>self.setState({target:c.name})})),
+
+      applyLabel: sel?('Apply to '+sel.items+' items'):'Apply',
+      applyStyle:'width:100%;border:none;border-radius:7px;padding:9px 12px;font-size:12.5px;font-weight:600;'+
+        ((sel&&(!needsTarget||target))?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      apply:()=>{ if(!sel||(needsTarget&&!target)) return;
+        const verb=decision==='ignore'?'Ignored':decision==='alias'?'Folded into '+target:decision==='hidePrefix'?'Prefix hidden':'Tagged '+sel.items+' items as '+target;
+        self.decide([sel.id],decision==='ignore'?'ignored':'accepted',verb);
+        self.setState({decision:null,target:null}); },
+      makeRule:()=>{ if(sel) self.ruleFrom(sel); },
+
+      ruleRows: st.rules.map((r,i)=>({order:String(i*10), match:r.match, dryRun:r.dry,
+        hasActions: r.actions.length>0, noActions: r.actions.length===0,
+        actions:r.actions.map(a=>({label:a,
+          style:'font-family:\'JetBrains Mono\',monospace;font-size:11px;padding:2px 7px;border-radius:4px;background:#22301F;color:#8FCF8F'})),
+        rowStyle:'display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border:1px solid '+(st.selectedRule===r.id?'#4A3C24':'#2A251E')+';border-radius:8px;margin-bottom:7px;cursor:pointer;background:'+(st.selectedRule===r.id?'#1E1A12':'#151209'),
+        click:()=>self.setState({selectedRule:r.id,matcher:r.match.split(' · ')[0],matchArg:r.match.split(' · ')[1]||'',ruleActions:r.actions.slice()}),
+        up:e=>{e.stopPropagation();self.setState(s=>{if(i===0)return null;const n=s.rules.slice();const t=n[i-1];n[i-1]=n[i];n[i]=t;return {rules:n};});},
+        down:e=>{e.stopPropagation();self.setState(s=>{if(i===s.rules.length-1)return null;const n=s.rules.slice();const t=n[i+1];n[i+1]=n[i];n[i]=t;return {rules:n};});},
+        remove:e=>{e.stopPropagation();self.setState(s=>({rules:s.rules.filter(x=>x.id!==r.id)}));}})),
+      newRule:()=>{ const id='r'+Date.now();
+        self.setState(s=>({rules:s.rules.concat([{id,match:'keyEquals · ',actions:[],dry:'not run yet'}]),
+          selectedRule:id,matcher:'keyEquals',matchArg:'',ruleActions:[]})); },
+
+      matcherOpts: MATCHERS.map(([name,note])=>({name,note,
+        boxStyle:'flex:none;width:8px;height:8px;border-radius:50%;margin-top:4px;background:'+(st.matcher===name?'#E9A23B':'#3A3328'),
+        style:'display:flex;align-items:flex-start;gap:9px;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid '+(st.matcher===name?'#7A6428':'#2A251E')+';background:'+(st.matcher===name?'#2A2118':'#0F0C07'),
+        pick:()=>self.setState({matcher:name})})),
+      matchArg: st.matchArg, onMatchArg:e=>self.setState({matchArg:e.target.value}),
+      matchArgPlaceholder: st.matcher==='numericRange'?'e.g. 1960-2030':st.matcher==='keyEquals'?'metadata key':'string',
+
+      actionRows: st.ruleActions.map((a,i)=>({n:String(i+1),label:a,
+        style:'font-family:\'JetBrains Mono\',monospace;font-size:11px;padding:2px 7px;border-radius:4px;background:#22301F;color:#8FCF8F',
+        up:()=>self.setState(s=>{if(i===0)return null;const n=s.ruleActions.slice();const t=n[i-1];n[i-1]=n[i];n[i]=t;return {ruleActions:n};}),
+        remove:()=>self.setState(s=>({ruleActions:s.ruleActions.filter((_,j)=>j!==i)}))})),
+      addActions: ACTION_KINDS.map(label=>({label,
+        click:()=>self.setState(s=>({ruleActions:s.ruleActions.concat([label])}))})),
+
+      dryRunText: st.ruleActions.length
+        ? 'Matches 134 metadata pairs across 118 items. '+st.ruleActions.length+' action'+(st.ruleActions.length>1?'s':'')+' fold in order; nothing is written until you apply.'
+        : 'Add at least one action to see what this rule would do.',
+      runRule:()=>self.flash('Rule applied · 118 items updated, revertible from the write-back log'),
+
+      toast: st.toast,
+      stop:e=>e.stopPropagation(),
+
+      notes:[
+        {title:'THREE SOURCES, ONE QUEUE',body:'Embedded metadata keys, on-screen text and path fragments all arrive as the same kind of thing: a string that appears in N items and has no tag behind it yet. Deciding once applies across every item that carries it.'},
+        {title:'THE PLURAL HALF',body:'The player can copy a line, make a tag, or add an alias — for the item playing. Everything that touches other items happens here, which is what keeps the same OCR list in two windows from becoming two features.'},
+        {title:'ORDER IS THE ENGINE',body:'Rules run top to bottom and actions fold in list order, so both are drag-reorderable and numbered. A dry run reports matches before anything is written; applying goes through the write-back log and reverts.'},
+        {title:'CANDIDATES BECOME RULES',body:'Deciding the same thing twice is a rule waiting to be written. “Make a rule from this” carries the candidate’s key straight into the matcher, so the third occurrence is handled without being seen.'},
+        {title:'FRAMES, NOT A SECOND PLAYER',body:'The evidence strip shows every matching item as a still — for on-screen text, the frame at the moment the string was read. That answers the bulk question (do these 47 really belong together?) at a glance. Real playback hands off to the player window.'},
+        {title:'THE PREVIEW IS ALWAYS THERE',body:'It sits above the sidebar filters, collapses from its own header, and is sized entirely by the pane — drag the divider and the frame follows, overlay type included, with no breakpoints. A strip click loads it; ⤢ enlarges it.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

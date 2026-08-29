@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button{font-family:inherit}
+  input:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1240px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Organise</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Move files into folders named by their own tags. Nothing moves unseen, and every move can be put back.</div>
+  </div>
+
+  <div style="width:1240px;height:842px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Organise — Concerts</div>
+    </div>
+
+    <div style="height:46px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:10px">
+      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+          <button onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}</button>
+        </sc-for>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C8478;padding:0 4px">{{ headline }}</div>
+    </div>
+
+    <sc-if value="{{ isPlan }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;display:flex;min-height:0">
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+          <div style="flex:none;padding:16px 18px 12px;border-bottom:1px solid #2A251E">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">FOLDER TEMPLATE</div>
+            <input value="{{ template }}" onChange="{{ onTemplate }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #4A3C24;border-radius:7px;padding:10px 12px;color:#E9A23B;font-family:'JetBrains Mono',monospace;font-size:14px" style-focus="border-color:#7A6A4A" />
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;align-items:center">
+              <span style="font-size:11px;color:#5E5749;margin-right:3px">Insert</span>
+              <sc-for list="{{ tokenChips }}" as="tk" hint-placeholder-count="5">
+                <button onClick="{{ tk.click }}" style="{{ tk.style }}">{{ tk.label }}</button>
+              </sc-for>
+            </div>
+            <div style="font-size:11.5px;color:#6E6659;margin-top:9px;line-height:1.45;text-wrap:pretty">{{ templateNote }}</div>
+            <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+                <span style="width:7px;height:7px;border-radius:50%;background:#D07A6A"></span>
+                <span style="font-size:12px;color:#D9A090">{{ errorText }}</span>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="flex:none;display:grid;grid-template-columns:20px 1fr 1fr;align-items:center;height:30px;padding:0 18px;border-bottom:1px solid #2A251E;background:#141109;scrollbar-gutter:stable;overflow-y:scroll">
+            <div></div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">FILE</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">DESTINATION</div>
+          </div>
+          <div style="flex:1;overflow-y:scroll;scrollbar-gutter:stable">
+            <sc-for list="{{ planRows }}" as="p" hint-placeholder-count="12">
+              <div style="{{ p.rowStyle }}">
+                <span style="{{ p.dotStyle }}"></span>
+                <div style="min-width:0">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ p.nameColor }}">{{ p.name }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.from }}</div>
+                </div>
+                <div style="min-width:0">
+                  <div style="{{ p.toStyle }}">{{ p.to }}</div>
+                  <sc-if value="{{ p.skipped }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:10.5px;color:#C9884A;margin-top:2px">{{ p.reason }}</div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="width:300px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+          <div style="flex:1;overflow-y:auto;padding:15px 15px 18px;display:flex;flex-direction:column;gap:16px">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:8px">THIS PLAN</div>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <sc-for list="{{ planStats }}" as="ps" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:baseline;gap:9px">
+                    <span style="{{ ps.nStyle }}">{{ ps.n }}</span>
+                    <span style="font-size:11.5px;color:#8C8478">{{ ps.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <sc-if value="{{ hasSkips }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">WHY ITEMS ARE SKIPPED</div>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <sc-for list="{{ skipReasons }}" as="sr" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid #2A251E;border-radius:7px;background:#0F0C07">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#C9884A;min-width:24px;text-align:right">{{ sr.n }}</span>
+                      <span style="flex:1;min-width:0;font-size:11.5px;color:#A79E90;line-height:1.4">{{ sr.label }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="font-size:11px;color:#6E6659;margin-top:8px;line-height:1.45;text-wrap:pretty">A skipped item is left exactly where it is. Tag it and run the plan again — nothing has to be undone first.</div>
+              </div>
+            </sc-if>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">FOLDERS THIS CREATES</div>
+              <div style="display:flex;flex-direction:column;gap:3px;max-height:190px;overflow-y:auto">
+                <sc-for list="{{ folderList }}" as="fl" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:#0F0C07">
+                    <span style="flex:1;min-width:0;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#CFC6B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fl.path }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">{{ fl.n }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid #2A251E;padding-top:13px">
+              <button onClick="{{ apply }}" style="{{ applyStyle }}">{{ applyLabel }}</button>
+              <div style="font-size:11px;color:#6E6659;margin-top:9px;line-height:1.45;text-wrap:pretty">Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;overflow-y:auto;padding:18px 20px 22px;display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ sessions }}" as="s" hint-placeholder-count="3">
+          <div style="{{ s.cardStyle }}">
+            <div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-bottom:1px solid #1F1B15">
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#E9A23B">{{ s.template }}</span>
+                  <span style="font-size:11.5px;color:#6E6659">{{ s.when }}</span>
+                </div>
+                <div style="font-size:11.5px;color:#8C8478;margin-top:4px">{{ s.summary }}</div>
+              </div>
+              <span style="{{ s.stateStyle }}">{{ s.state }}</span>
+              <sc-if value="{{ s.canRevert }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ s.revert }}" style="background:transparent;border:1px solid #3A3328;border-radius:6px;padding:5px 12px;font-size:11.5px;color:#A79E90;cursor:pointer;white-space:nowrap" style-hover="border-color:#5A5142;color:#F2EDE4">Put all back</button>
+              </sc-if>
+            </div>
+            <div style="max-height:196px;overflow-y:auto">
+              <sc-for list="{{ s.moves }}" as="m" hint-placeholder-count="3">
+                <div style="{{ m.rowStyle }}">
+                  <div style="min-width:0">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ m.nameColor }}">{{ m.name }}</div>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.from }}</div>
+                  <span style="font-size:11px;color:#4A4238;text-align:center">→</span>
+                  <div style="{{ m.toStyle }}">{{ m.to }}</div>
+                  <div style="display:flex;justify-content:flex-end">
+                    <sc-if value="{{ m.canRevert }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ m.revert }}" style="background:transparent;border:1px solid #332D24;border-radius:5px;padding:2px 9px;font-size:10.5px;color:#8C8478;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Put back</button>
+                    </sc-if>
+                    <sc-if value="{{ m.reverted }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:10.5px;color:#6FB86F">reverted</span>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <div style="font-size:11.5px;color:#5E5749;line-height:1.5;padding:4px 2px;text-wrap:pretty">Reverting is one-shot per move — a move that has been put back cannot be put back again, and the entry stays as the record that it happened.</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1240px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1320,&quot;height&quot;:1040}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const it=(name,from,tags,offline)=>({name,from,tags,offline:!!offline});
+    return {
+      tab:'plan', template:'%Band/%Year', toast:null,
+      items:[
+        it('northlight_sessions_e01_4k.mp4','_unsorted',{Band:'Northlight Sessions',Year:'2024',Venue:'Northlight Hall','Recording Type':'Soundboard'}),
+        it('northlight_sessions_e02_4k.mp4','_unsorted',{Band:'Northlight Sessions',Year:'2024',Venue:'Northlight Hall','Recording Type':'Soundboard'}),
+        it('riverside_collective_0412.mp4','2023 Shows',{Band:'Riverside Collective',Year:'2023',Venue:'Riverside Amphitheater','Recording Type':'Audience'}),
+        it('riverside_collective_0418.mp4','2023 Shows',{Band:'Riverside Collective',Year:'2023',Venue:'Riverside Amphitheater','Recording Type':'Audience'}),
+        it('broadside_trio_proshot.mp4','_unsorted',{Band:'The Broadside Trio',Year:'2024',Venue:'The Broadside','Recording Type':'Pro-shot'}),
+        it('marta_quinn_solo_set.mp4','2023 Shows',{Band:'Marta Quinn',Year:'2023',Venue:'Cedar Room','Recording Type':'Soundboard'}),
+        it('hollow_bell_2022_03.mp4','2022 Archive',{Band:'Hollow Bell',Year:'2022',Venue:'Cedar Room','Recording Type':'Audience'}),
+        it('ash_ember_late_set.mp4','_unsorted',{Band:'Ash & Ember',Year:'2024',Venue:'The Broadside','Recording Type':'Matrix'}),
+        it('juno_grove_untitled.mp4','_unsorted',{Band:'Juno Grove',Venue:'Cedar Room','Recording Type':'Audience'}),
+        it('unknown_taped_show_a.mp4','_unsorted',{Year:'2021','Recording Type':'Audience'}),
+        it('unknown_taped_show_b.mp4','_unsorted',{Year:'2021','Recording Type':'Audience'}),
+        it('fm_rip_1998_02.mp4','2022 Archive/FM Rips',{Band:'Northlight Sessions',Year:'1998','Recording Type':'FM Broadcast'}),
+        it('road_capture_0714.mp4','Taped 2024',{Band:'Hollow Bell',Year:'2024',Venue:'Cedar Room','Recording Type':'Audience'},true),
+        it('road_capture_0715.mp4','Taped 2024',{Band:'Ash & Ember',Year:'2024',Venue:'The Broadside','Recording Type':'Audience'},true)
+      ],
+      sessions:[
+        {id:'s1',template:'%Year/%Band',when:'27 August 2026 at 14:02',reverted:{},
+         moves:[
+           {id:'m1',name:'cedar_room_2022_night_one.mp4',from:'_unsorted',to:'2022/Hollow Bell'},
+           {id:'m2',name:'cedar_room_2022_night_two.mp4',from:'_unsorted',to:'2022/Hollow Bell'},
+           {id:'m3',name:'broadside_2023_acoustic.mp4',from:'_unsorted',to:'2023/The Broadside Trio'}
+         ]},
+        {id:'s2',template:'%Venue',when:'24 August 2026 at 09:41',reverted:{m4:true,m5:true},
+         moves:[
+           {id:'m4',name:'northlight_hall_open.mp4',from:'2024 Shows',to:'Northlight Hall'},
+           {id:'m5',name:'northlight_hall_close.mp4',from:'2024 Shows',to:'Northlight Hall'}
+         ]}
+      ]
+    };
+  }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2400); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  /// Resolve one item against the template. A token names a category —
+  /// underscores stand in for spaces — and a missing value skips the item
+  /// rather than inventing a folder for it.
+  resolve(item,template){
+    if(item.offline) return {reason:'source offline'};
+    const segs=template.split('/').map(s=>s.trim()).filter(Boolean);
+    if(!segs.length) return {reason:'empty template'};
+    const out=[];
+    for(const seg of segs){
+      let missing=null;
+      const text=seg.replace(/%([A-Za-z_]+)/g,(_,tok)=>{
+        const cat=tok.split('_').join(' ');
+        const val=item.tags[cat];
+        if(!val){ missing=cat; return ''; }
+        return val;
+      });
+      if(missing) return {reason:'missing %'+missing.split(' ').join('_')};
+      if(!text.trim()) return {reason:'empty folder name'};
+      out.push(text.trim());
+    }
+    return {to:out.join('/')};
+  }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const CATS=['Band','Year','Venue','Recording Type','Taper'];
+    const unknown=(st.template.match(/%([A-Za-z_]+)/g)||[])
+      .map(t=>t.slice(1).split('_').join(' '))
+      .filter(c=>CATS.indexOf(c)<0);
+
+    const plan=st.items.map(i=>Object.assign({item:i},self.resolve(i,st.template)));
+    const movable=plan.filter(p=>p.to);
+    const skipped=plan.filter(p=>!p.to);
+
+    const reasons={};
+    skipped.forEach(p=>{ reasons[p.reason]=(reasons[p.reason]||0)+1; });
+
+    const folders={};
+    movable.forEach(p=>{ folders[p.to]=(folders[p.to]||0)+1; });
+
+    return {
+      tabs:[['plan','Reorganise'],['history','Move history']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 15px;font-size:12px;cursor:pointer;'+
+          (st.tab===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({tab:v})})),
+      isPlan: st.tab==='plan', isHistory: st.tab==='history',
+      headline: st.tab==='plan'
+        ? 'applies to the '+st.items.length+' items in the current filter'
+        : st.sessions.length+' sessions · '+st.sessions.reduce((a,s)=>a+s.moves.length,0)+' moves logged',
+
+      template: st.template,
+      onTemplate:e=>self.setState({template:e.target.value}),
+      tokenChips: CATS.map(c=>{
+        const tok='%'+c.split(' ').join('_');
+        return {label:tok,
+          style:'border-radius:5px;padding:3px 9px;font-family:\'JetBrains Mono\',monospace;font-size:10.5px;cursor:pointer;border:1px solid #332D24;background:transparent;color:#8C8478',
+          click:()=>self.setState(s=>({template:s.template+(s.template&&!/\/$/.test(s.template)?'/':'')+tok}))};
+      }).concat([{label:'literal text',
+        style:'border-radius:5px;padding:3px 9px;font-size:10.5px;cursor:pointer;border:1px dashed #332D24;background:transparent;color:#6E6659',
+        click:()=>self.flash('Anything not starting with % is used literally — Shows/%Year works')}]),
+      templateNote:'A token names a category; underscores stand in for spaces. Anything else is literal, and a slash makes a level.',
+      hasError: unknown.length>0,
+      errorText: unknown.length?'No category called “'+unknown[0]+'” — check the spelling, or create it in Categories & Fields.':'',
+
+      planRows: plan.map(p=>({
+        name:p.item.name, from:p.item.from, skipped:!p.to, reason:p.reason||'',
+        nameColor: p.to?'#F2EDE4':'#7C7466',
+        to: p.to||'stays where it is',
+        toStyle:'font-family:\'JetBrains Mono\',monospace;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(p.to?'#8FCF8F':'#6E6659'),
+        dotStyle:'width:6px;height:6px;border-radius:50%;background:'+(p.to?'#6FB86F':'#C9884A'),
+        rowStyle:'display:grid;grid-template-columns:20px 1fr 1fr;align-items:center;gap:0;padding:8px 18px;border-bottom:1px solid #1F1B15;'+(p.to?'':'background:#151109')
+      })),
+
+      planStats:[
+        {n:movable.length,label:'items would move',nStyle:"font-family:'JetBrains Mono',monospace;font-size:15px;color:#8FCF8F;min-width:38px;text-align:right"},
+        {n:skipped.length,label:'skipped, left untouched',nStyle:"font-family:'JetBrains Mono',monospace;font-size:15px;color:#C9884A;min-width:38px;text-align:right"},
+        {n:Object.keys(folders).length,label:'folders created',nStyle:"font-family:'JetBrains Mono',monospace;font-size:15px;color:#CFC6B8;min-width:38px;text-align:right"}
+      ],
+      hasSkips: skipped.length>0,
+      skipReasons: Object.keys(reasons).map(r=>({n:reasons[r],
+        label: r.indexOf('missing')===0?'no '+r.slice(9).split('_').join(' ')+' tag':r})),
+      folderList: Object.keys(folders).sort().map(f=>({path:f,n:folders[f]})),
+
+      applyLabel: movable.length?'Move '+movable.length+' items':'Nothing to move',
+      applyStyle:'width:100%;border:none;border-radius:7px;padding:9px 12px;font-size:12.5px;font-weight:600;'+
+        ((movable.length&&!unknown.length)?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      apply:()=>{ if(!movable.length||unknown.length) return;
+        const id='s'+Date.now();
+        self.setState(s=>({tab:'history',
+          sessions:[{id,template:s.template,when:'just now',reverted:{},
+            // Every move gets a log row. A capped log would mean moves that
+            // happened and cannot be put back.
+            moves:movable.map((p,i)=>({id:id+'m'+i,name:p.item.name,from:p.item.from,to:p.to}))}].concat(s.sessions)}));
+        self.flash(movable.length+' moves queued — each one logged and revertible'); },
+
+      sessions: st.sessions.map(s=>{
+        const done=s.moves.filter(m=>s.reverted[m.id]).length;
+        const all=done===s.moves.length;
+        return {template:s.template, when:s.when,
+          summary: s.moves.length+' moves'+(done?' · '+done+' put back':''),
+          state: all?'fully reverted':done?'partly reverted':'applied',
+          stateStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap;'+
+            (all?'background:#1F3320;color:#8FCF8F':done?'background:#2E2616;color:#E9A23B':'background:#241F19;color:#8C8478'),
+          canRevert: !all,
+          revert:()=>{ self.setState(x=>({sessions:x.sessions.map(y=>{
+              if(y.id!==s.id) return y;
+              const r=Object.assign({},y.reverted); y.moves.forEach(m=>r[m.id]=true);
+              return Object.assign({},y,{reverted:r});
+            })}));
+            self.flash('Session put back — '+(s.moves.length-done)+' files returned to where they were'); },
+          cardStyle:'border:1px solid '+(all?'#2A3A2C':'#2A251E')+';border-radius:10px;overflow:hidden;background:#151209',
+          moves: s.moves.map(m=>{
+            const rev=!!s.reverted[m.id];
+            // A reverted row keeps its from → to. The revert is a marker on
+            // the record, not an edit of it — the log row is the evidence
+            // that the move happened at all.
+            return {name:m.name, from:m.from, to:m.to, reverted:rev, canRevert:!rev,
+              nameColor: rev?'#6E6659':'#CFC6B8',
+              toStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+
+                (rev?'#6E6659;text-decoration:line-through':'#8FCF8F'),
+              rowStyle:'display:grid;grid-template-columns:1fr 190px 18px 190px 92px;align-items:center;gap:10px;padding:8px 15px;border-bottom:1px solid #1F1B15;'+(rev?'opacity:0.6':''),
+              revert:()=>{ self.setState(x=>({sessions:x.sessions.map(y=>y.id!==s.id?y
+                  :Object.assign({},y,{reverted:Object.assign({},y.reverted,{[m.id]:true})}))}));
+                self.flash(m.name+' put back'); }};
+          })};
+      }),
+
+      toast: st.toast,
+
+      notes:[
+        {title:'THE PREVIEW IS THE FEATURE',body:'Every item resolves live as you type, and an item that cannot resolve says which tag it is missing rather than landing in an “Unknown” folder. Skipped items are left exactly where they are, so tagging them and running again needs nothing undone first.'},
+        {title:'A BAD TEMPLATE IS ONE SESSION TO UNDO',body:'Each move is logged individually with its source and destination, so a run can be put back file by file or all at once. That is why this is safe to experiment with — the alternative is restoring from a backup.'},
+        {title:'REVERTING IS ONE-SHOT',body:'A move that has been put back cannot be put back again, and the entry stays as the record that it happened. Sessions read as applied, partly reverted or fully reverted, so a half-undone run is never mistaken for a clean one.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

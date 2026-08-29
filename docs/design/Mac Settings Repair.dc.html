@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button,textarea{font-family:inherit}
+  input:focus,textarea:focus{outline:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1180px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Settings · Repair</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">The recipes the playback-issue queue offers, and the external tools they run. Both are yours to extend.</div>
+  </div>
+
+  <div style="width:1180px;height:812px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Settings</div>
+    </div>
+
+    <div style="flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:stretch;justify-content:center;gap:2px;padding:8px 12px">
+      <sc-for list="{{ sections }}" as="s" hint-placeholder-count="7">
+        <div onClick="{{ s.click }}" style="{{ s.style }}">
+          <span style="{{ s.iconStyle }}">{{ s.icon }}</span>
+          <span style="{{ s.labelStyle }}">{{ s.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:1;overflow-y:auto;padding:20px 22px 24px">
+
+          <div style="font-size:17px;font-weight:700;margin-bottom:5px">Repair</div>
+          <div style="font-size:12.5px;color:#8C8478;line-height:1.5;max-width:640px;margin-bottom:20px;text-wrap:pretty">When an item will not play, the issue queue offers the enabled recipes whose match applies, cheapest first. Every one runs on a copy with the original archived.</div>
+
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">EXTERNAL TOOLS</div>
+            <button onClick="{{ addTool }}" style="background:none;border:none;padding:0;font-size:11.5px;color:#E9A23B;cursor:pointer">+ Add tool…</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:24px">
+            <sc-for list="{{ tools }}" as="t" hint-placeholder-count="4">
+              <div style="{{ t.rowStyle }}">
+                <span style="{{ t.dotStyle }}"></span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:baseline;gap:9px">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600">{{ t.name }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ t.version }}</span>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5E5749;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.path }}</div>
+                </div>
+                <span style="{{ t.usedStyle }}">{{ t.used }}</span>
+                <button onClick="{{ t.action }}" style="{{ t.actionStyle }}">{{ t.actionLabel }}</button>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466">REPAIR RECIPES</div>
+            <button onClick="{{ addRecipe }}" style="background:none;border:none;padding:0;font-size:11.5px;color:#E9A23B;cursor:pointer">+ Add recipe…</button>
+          </div>
+          <div style="font-size:11.5px;color:#6E6659;margin-bottom:10px">Tried in this order. Drag to change which one the queue offers first.</div>
+
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ recipes }}" as="r" hint-placeholder-count="6">
+              <div onDragOver="{{ r.dragOver }}" onDrop="{{ r.drop }}" onClick="{{ r.select }}" style="{{ r.cardStyle }}">
+                <span draggable="true" onDragStart="{{ r.dragStart }}" onDragEnd="{{ r.dragEnd }}" style="{{ r.handleStyle }}" title="Drag to reorder">⠿</span>
+                <span onClick="{{ r.toggle }}" style="{{ r.boxStyle }}">{{ r.mark }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span style="{{ r.nameStyle }}">{{ r.name }}</span>
+                    <span style="{{ r.kindStyle }}">{{ r.kind }}</span>
+                    <span style="{{ r.safetyStyle }}">{{ r.safety }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">{{ r.time }}</span>
+                    <sc-if value="{{ r.missing }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;background:#3A2119;color:#D07A6A">{{ r.missingLabel }}</span>
+                    </sc-if>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.cmd }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:322px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;overflow-y:auto;padding:16px 15px 18px;display:flex;flex-direction:column;gap:15px">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:5px">RECIPE NAME</div>
+              <input value="{{ selName }}" onChange="{{ onSelName }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:7px 9px;color:#F2EDE4;font-size:13px" style-focus="border-color:#7A6A4A" />
+            </div>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">OFFER IT FOR</div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ kindChips }}" as="kc" hint-placeholder-count="4">
+                  <button onClick="{{ kc.click }}" style="{{ kc.style }}">{{ kc.label }}</button>
+                </sc-for>
+              </div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin:11px 0 5px">ONLY WHEN THE PROBE MATCHES</div>
+              <input value="{{ selMatch }}" onChange="{{ onSelMatch }}" placeholder="optional regex — moov atom not found" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:11.5px" style-focus="border-color:#7A6A4A" />
+            </div>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">TOOL</div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ toolChips }}" as="tc" hint-placeholder-count="3">
+                  <button onClick="{{ tc.click }}" style="{{ tc.style }}">{{ tc.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">COMMAND</div>
+              <textarea value="{{ selCmd }}" onChange="{{ onSelCmd }}" style="width:100%;box-sizing:border-box;height:76px;resize:vertical;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:8px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.55" style-focus="border-color:#7A6A4A"></textarea>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:7px">
+                <sc-for list="{{ tokens }}" as="tk" hint-placeholder-count="3">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:4px;background:#221D16;color:#9DBF7F;border:1px solid #332D24">{{ tk.label }}</span>
+                </sc-for>
+              </div>
+              <div style="font-size:11px;color:#6E6659;margin-top:7px;line-height:1.45;text-wrap:pretty">{{ tokenNote }}</div>
+            </div>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">WHAT IT COSTS</div>
+              <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+                <sc-for list="{{ safetyOpts }}" as="so" hint-placeholder-count="3">
+                  <button onClick="{{ so.click }}" style="{{ so.style }}">{{ so.label }}</button>
+                </sc-for>
+              </div>
+              <div style="font-size:11px;color:#6E6659;margin-top:7px;line-height:1.45;text-wrap:pretty">{{ safetyNote }}</div>
+            </div>
+
+            <div style="border-top:1px solid #2A251E;padding-top:13px;display:flex;flex-direction:column;gap:8px">
+              <button onClick="{{ testRecipe }}" style="width:100%;background:#2A241C;border:1px solid #4A4238;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#F2EDE4;cursor:pointer">Test on a file…</button>
+              <button onClick="{{ deleteRecipe }}" style="width:100%;background:transparent;border:1px solid #4A2A24;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#C97A6A;cursor:pointer" style-hover="background:#2A1512;border-color:#7A3A30">Remove recipe</button>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noSel }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:30px;text-align:center">
+            <div style="font-size:12.5px;color:#5E5749;line-height:1.55;text-wrap:pretty">Select a recipe to edit its match, command and cost.</div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1180px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1260,&quot;height&quot;:1000}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const r=(id,name,kinds,tool,safety,time,match,cmd,on)=>({id,name,kinds,tool,safety,time,match,cmd,on:on!==false});
+    return {
+      sel:'r1', drag:null, toast:null,
+      tools:[
+        {name:'ffmpeg',version:'7.1',path:'/opt/homebrew/bin/ffmpeg',found:true},
+        {name:'ffprobe',version:'7.1',path:'/opt/homebrew/bin/ffprobe',found:true},
+        {name:'mkvmerge',version:'84.0',path:'/opt/homebrew/bin/mkvmerge',found:true},
+        {name:'untrunc',version:'—',path:'not found on PATH',found:false}
+      ],
+      recipes:[
+        r('r1','Remux to faststart',['container'],'ffmpeg','copy','~40s','moov atom not found',
+          'ffmpeg -i {in} -c copy -movflags +faststart {out}'),
+        r('r2','Strip damaged stream',['stream'],'ffmpeg','copy','~50s','decode errors',
+          'ffmpeg -i {in} -map 0 -map -0:{stream} -c copy {out}'),
+        r('r3','Rebuild index',['container'],'untrunc','copy','~2m','truncated|invalid data',
+          'untrunc -s {ref} {in}'),
+        r('r4','Remux to Matroska',['container','stream'],'mkvmerge','copy','~1m','',
+          'mkvmerge -o {out} {in}'),
+        r('r5','Transcode legacy video',['codec'],'ffmpeg','encode','~14m','decoder not available',
+          'ffmpeg -i {in} -c:v hevc_videotoolbox -b:v 12M -c:a copy {out}'),
+        r('r6','Re-encode audio only',['stream'],'ffmpeg','encode','~4m','',
+          'ffmpeg -i {in} -c:v copy -c:a aac -b:a 320k {out}'),
+        r('r7','Salvage what decodes',['container','codec'],'ffmpeg','lossy','~26m','',
+          'ffmpeg -err_detect ignore_err -i {in} -c:v hevc_videotoolbox {out}',false)
+      ]
+    };
+  }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2200); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  patch(id,fn){
+    this.setState(s=>({recipes:s.recipes.map(r=>{ if(r.id!==id) return r; const n=Object.assign({},r,{kinds:r.kinds.slice()}); fn(n); return n; })}));
+  }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const sel=st.recipes.find(r=>r.id===st.sel)||null;
+    const KINDS=['container','codec','stream','index','permissions'];
+    const SAFETY={copy:['Stream copy','Nothing is re-encoded — the fastest and only lossless option. Prefer these first.'],
+                  encode:['Re-encode','Rewrites the affected stream. Costs time and a generation of quality.'],
+                  lossy:['Last resort','Salvages what decodes and loses the rest. The queue shows these last and never auto-selects them.']};
+    const toolFound=n=>{const t=st.tools.find(x=>x.name===n);return t?t.found:false;};
+
+    return {
+      // The real Settings scene is a TabView: General · Import · Playback ·
+      // Jobs · Tag Category Configuration · Library Import. Repair is the
+      // tab being added — app-level, because tools and recipes are tooling,
+      // not a library's vocabulary. Sources are deliberately absent: a
+      // source belongs to exactly one library, so it lives in the library,
+      // not here.
+      sections:[['General','⚙'],['Import','↓'],['Playback','▶'],['Jobs','◷'],
+                ['Tag Category Configuration','⌗'],['Library Import','⤓'],['Repair','⚒']]
+        .map(([label,icon])=>{
+          const on=label==='Repair';
+          return {label,icon,
+            iconStyle:'font-size:15px;line-height:1;color:'+(on?'#E9A23B':'#6E6659'),
+            labelStyle:'font-size:10.5px;text-align:center;white-space:nowrap;color:'+(on?'#F2EDE4':'#8C8478'),
+            style:'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px 13px;border-radius:7px;cursor:pointer;'+
+              (on?'background:#2A2118':''),
+            click:()=>{ if(!on) self.flash(label+' settings'); }};
+        }),
+
+      tools: st.tools.map(t=>{
+        const used=st.recipes.filter(r=>r.tool===t.name).length;
+        return {name:t.name, version:t.found?t.version:'', path:t.path,
+          used:used+' '+(used===1?'recipe':'recipes'),
+          usedStyle:'font-size:10.5px;color:#5E5749;white-space:nowrap',
+          dotStyle:'flex:none;width:7px;height:7px;border-radius:50%;background:'+(t.found?'#6FB86F':'#D07A6A'),
+          rowStyle:'display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:8px;background:#151209;border:1px solid '+(t.found?'#2A251E':'#3E2A22'),
+          actionLabel: t.found?'Test':'Locate…',
+          actionStyle:'flex:none;border-radius:6px;padding:4px 12px;font-size:11.5px;cursor:pointer;border:1px solid '+(t.found?'#332D24':'#7A3A30')+
+            ';background:transparent;color:'+(t.found?'#8C8478':'#D9A090'),
+          action:()=>self.flash(t.found?t.name+' responded — '+t.version:'Choose the '+t.name+' binary')};
+      }),
+      addTool:()=>self.flash('Point at a binary — the app records its path and version, and it becomes available to recipes'),
+
+      recipes: st.recipes.map((r,i)=>{
+        const on=st.sel===r.id, dragging=st.drag===i, missing=!toolFound(r.tool);
+        return {name:r.name, cmd:r.cmd, time:r.time, mark:r.on?'✓':'',
+          kind:r.kinds.join(' · '),
+          kindStyle:'font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:2px 7px;border-radius:4px;background:#22262E;color:#8FA6D6',
+          safety:SAFETY[r.safety][0],
+          safetyStyle:'font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;'+
+            (r.safety==='copy'?'background:#1F3320;color:#8FCF8F':r.safety==='encode'?'background:#2E2616;color:#E9A23B':'background:#3A2119;color:#D07A6A'),
+          missing, missingLabel:r.tool+' not found',
+          nameStyle:'font-size:13px;font-weight:500;color:'+(r.on?'#F2EDE4':'#7C7466'),
+          boxStyle:'flex:none;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;'+
+            (r.on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+          handleStyle:'flex:none;margin-top:2px;padding:1px 3px;font-size:12px;line-height:1;letter-spacing:-1px;cursor:grab;color:'+(dragging?'#E9A23B':'#4A4238'),
+          cardStyle:'display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:9px;cursor:pointer;'+
+            'border:1px solid '+(dragging?'#7A6428':on?'#4A3C24':'#2A251E')+';background:'+(dragging?'#221B12':on?'#1E1A12':'#151209')+';'+(r.on?'':'opacity:0.6'),
+          select:()=>self.setState({sel:r.id}),
+          toggle:e=>{e.stopPropagation();self.patch(r.id,n=>{n.on=!n.on;});},
+          dragStart:e=>{ if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(i));}
+            self.setState({drag:i}); },
+          dragOver:e=>{ e.preventDefault();
+            const from=self.state.drag;
+            if(from==null||from===i) return;
+            self.setState(s=>{const n=s.recipes.slice();const [row]=n.splice(from,1);n.splice(i,0,row);
+              return {recipes:n,drag:i};});
+          },
+          drop:e=>{e.preventDefault();self.setState({drag:null});},
+          dragEnd:()=>self.setState({drag:null})};
+      }),
+      addRecipe:()=>{
+        const id='r'+Date.now();
+        self.setState(s=>({recipes:s.recipes.concat([{id,name:'New recipe',kinds:['container'],tool:'ffmpeg',
+          safety:'copy',time:'~1m',match:'',cmd:'ffmpeg -i {in} -c copy {out}',on:false}]),sel:id}));
+        self.flash('Added, disabled until you have tested it');
+      },
+
+      hasSel: !!sel, noSel: !sel,
+      selName: sel?sel.name:'',
+      onSelName:e=>{const v=e.target.value;self.patch(sel.id,n=>{n.name=v;});},
+      selMatch: sel?sel.match:'',
+      onSelMatch:e=>{const v=e.target.value;self.patch(sel.id,n=>{n.match=v;});},
+      selCmd: sel?sel.cmd:'',
+      onSelCmd:e=>{const v=e.target.value;self.patch(sel.id,n=>{n.cmd=v;});},
+
+      kindChips: KINDS.map(k=>{
+        const on=sel&&sel.kinds.indexOf(k)>=0;
+        return {label:k,
+          style:'border-radius:5px;padding:4px 10px;font-family:\'JetBrains Mono\',monospace;font-size:10.5px;cursor:pointer;border:1px solid '+
+            (on?'#3F4A6A':'#2A251E')+';background:'+(on?'#22262E':'transparent')+';color:'+(on?'#8FA6D6':'#7C7466'),
+          click:()=>{ if(!sel) return; self.patch(sel.id,n=>{
+            const i=n.kinds.indexOf(k); if(i>=0)n.kinds.splice(i,1); else n.kinds.push(k); }); }};
+      }),
+      toolChips: st.tools.map(t=>{
+        const on=sel&&sel.tool===t.name;
+        return {label:t.found?t.name:t.name+' (missing)',
+          style:'border-radius:5px;padding:4px 10px;font-family:\'JetBrains Mono\',monospace;font-size:10.5px;cursor:pointer;border:1px solid '+
+            (on?'#7A6428':'#2A251E')+';background:'+(on?'#2E2616':'transparent')+';color:'+(on?'#E9A23B':t.found?'#7C7466':'#8A5A4A'),
+          click:()=>{ if(sel) self.patch(sel.id,n=>{n.tool=t.name;}); }};
+      }),
+      tokens:['{in}','{out}','{ref}','{stream}'].map(label=>({label})),
+      tokenNote:'Substituted at run time. {in} is a copy, never the original; {out} is re-probed and only replaces the item if it plays.',
+
+      safetyOpts: ['copy','encode','lossy'].map(k=>({label:SAFETY[k][0],
+        style:'flex:1;border:none;border-radius:5px;padding:5px 6px;font-size:11px;cursor:pointer;'+
+          ((sel&&sel.safety===k)?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        click:()=>{ if(sel) self.patch(sel.id,n=>{n.safety=k;}); }})),
+      safetyNote: sel?SAFETY[sel.safety][1]:'',
+
+      testRecipe:()=>self.flash('Runs against one file and reports the probe result — nothing is replaced'),
+      deleteRecipe:()=>{ if(!sel) return;
+        self.setState(s=>({recipes:s.recipes.filter(r=>r.id!==sel.id),sel:null}));
+        self.flash('Recipe removed'); },
+
+      toast: st.toast,
+
+      notes:[
+        {title:'RECIPES ARE DATA, NOT CODE',body:'A recipe is a match, a tool, and a command template — so adding one is a settings change rather than a release. The issue queue reads this list and offers what applies, in this order.'},
+        {title:'A NEW TAB, NOT A NEW SCOPE',body:'Repair joins the existing Settings tabs because tools and recipes are app-wide tooling. Sources are absent by construction — a source belongs to exactly one library, so it belongs in Library Properties, not here.'},
+        {title:'TOOLS ARE DECLARED SEPARATELY',body:'Each external binary is registered once with its path and version, and recipes reference it by name. A recipe whose tool is missing is flagged in place rather than failing when you run it — untrunc is shown unfound on purpose.'},
+        {title:'CHEAPEST FIRST IS A CHOICE YOU MAKE',body:'Order is the offer order, so it is drag-sortable. The cost tag tells the queue how to present each one: stream copies are lossless and safe to try, last-resort recipes are shown last and never auto-selected.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

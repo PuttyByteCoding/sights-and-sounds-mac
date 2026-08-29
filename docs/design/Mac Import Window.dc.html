@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,button{font-family:inherit}
+  input:focus{outline:none}
+  @keyframes barflow{0%{background-position:0 0}100%{background-position:28px 0}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1320px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Import Window</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">Scan a source, review what is new, stage tags on the batch — then import. Adding a source no longer ingests everything.</div>
+  </div>
+
+  <div style="width:1320px;height:872px;background:#171411;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Import — Concerts</div>
+    </div>
+
+    <div style="flex:none;padding:12px 16px 0;display:flex;align-items:center;gap:10px">
+      <sc-for list="{{ steps }}" as="step" hint-placeholder-count="4">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span style="{{ step.dotStyle }}">{{ step.num }}</span>
+            <span style="{{ step.labelStyle }}">{{ step.label }}</span>
+          </div>
+          <span style="{{ step.sepStyle }}">›</span>
+        </div>
+      </sc-for>
+      <div style="flex:1"></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6E6659">{{ scanPath }}</div>
+    </div>
+
+    <div style="flex:none;padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #2A251E">
+      <div style="display:flex;align-items:center;gap:8px;background:#211C16;border:1px solid #3A3328;border-radius:7px;padding:6px 11px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#5CB05C"></span>
+        <span style="font-size:13px;font-weight:600">Concerts SSD</span>
+        <span style="font-size:11px;color:#7C7466">online</span>
+      </div>
+      <button onClick="{{ rescan }}" style="background:#211C16;border:1px solid #3A3328;border-radius:7px;padding:7px 12px;font-size:12.5px;color:#CFC6B8;cursor:pointer" style-hover="background:#2A241C;color:#F2EDE4">Rescan</button>
+
+      <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px;margin-left:6px">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="3">
+          <button onClick="{{ f.pick }}" style="{{ f.style }}">{{ f.label }}</button>
+        </sc-for>
+      </div>
+
+      <div style="flex:1;max-width:280px;display:flex;align-items:center;gap:7px;background:#131009;border:1px solid #2E2820;border-radius:7px;padding:7px 10px;margin-left:4px">
+        <span style="font-size:12px;color:#6E6659">⌕</span>
+        <input value="{{ search }}" onChange="{{ onSearch }}" placeholder="Filter file names" style="flex:1;background:transparent;border:none;color:#F2EDE4;font-size:12.5px" />
+      </div>
+
+      <div style="flex:1"></div>
+      <button onClick="{{ openConfig }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 12px;font-size:12.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Configure boxes…</button>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+
+      <div style="width:264px;flex:none;border-right:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="padding:13px 14px 9px;display:flex;align-items:baseline;justify-content:space-between">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466">SCAN SCOPE</div>
+          <button onClick="{{ toggleAllFolders }}" style="background:none;border:none;padding:0;font-size:11px;color:#E9A23B;cursor:pointer">{{ allFoldersLabel }}</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0 8px 12px">
+          <sc-for list="{{ folderRows }}" as="fo" hint-placeholder-count="5">
+            <div onClick="{{ fo.focus }}" style="{{ fo.rowStyle }}">
+              <span onClick="{{ fo.toggle }}" style="{{ fo.boxStyle }}">{{ fo.mark }}</span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fo.name }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659;margin-top:2px">{{ fo.counts }}</div>
+              </div>
+              <span style="{{ fo.dotStyle }}"></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex:none;border-top:1px solid #2A251E;padding:11px 14px;display:flex;flex-direction:column;gap:6px">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466">EXTENSIONS</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8478;line-height:1.6;text-wrap:pretty">mp4 mkv mov avi webm flac wav</div>
+          <button onClick="{{ enableM2ts }}" style="align-self:flex-start;background:none;border:none;padding:0;font-size:11px;color:#E9A23B;cursor:pointer">{{ m2tsLabel }}</button>
+        </div>
+      </div>
+
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:none;display:grid;grid-template-columns:34px 1fr 92px 68px 76px 118px;gap:0;padding:0 14px;height:32px;align-items:center;border-bottom:1px solid #2A251E;background:#141109">
+          <span onClick="{{ toggleAllFiles }}" style="{{ headBoxStyle }}">{{ headMark }}</span>
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:#7C7466">FILE</div>
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">DURATION</div>
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">RES</div>
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">SIZE</div>
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">STATUS</div>
+        </div>
+        <div style="flex:1;overflow-y:auto">
+          <sc-for list="{{ fileRows }}" as="fi" hint-placeholder-count="12">
+            <div onClick="{{ fi.toggle }}" style="{{ fi.rowStyle }}">
+              <span style="{{ fi.boxStyle }}">{{ fi.mark }}</span>
+              <div style="min-width:0">
+                <div style="{{ fi.nameStyle }}">{{ fi.name }}</div>
+                <div style="font-size:10.5px;color:#6E6659;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ fi.folder }}</div>
+              </div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90;text-align:right">{{ fi.dur }}</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90;text-align:right">{{ fi.res }}</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8C8478;text-align:right">{{ fi.size }}</div>
+              <div style="display:flex;justify-content:flex-end"><span style="{{ fi.statusStyle }}">{{ fi.status }}</span></div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ noFiles }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:60px 20px;text-align:center;color:#6E6659;font-size:13px">No files match this scope and filter.</div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="width:340px;flex:none;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0;background:#151209">
+        <div style="flex:none;padding:13px 14px 10px;border-bottom:1px solid #2A251E">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:9px">STAGE ON IMPORT</div>
+          <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+            <sc-for list="{{ scopeTabs }}" as="s" hint-placeholder-count="2">
+              <button onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</button>
+            </sc-for>
+          </div>
+          <div style="font-size:11.5px;color:#8C8478;margin-top:9px;line-height:1.5;text-wrap:pretty">{{ scopeNote }}</div>
+        </div>
+
+        <div style="flex:1;overflow-y:auto;padding:12px 14px 16px;display:flex;flex-direction:column;gap:15px">
+          <sc-for list="{{ boxes }}" as="cat" hint-placeholder-count="4">
+            <div style="position:relative">
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                <span style="{{ cat.swatchStyle }}"></span>
+                <span style="font-size:12px;font-weight:600;color:#CFC6B8">{{ cat.name }}</span>
+                <span style="font-size:10.5px;color:#6E6659">{{ cat.rule }}</span>
+                <div style="flex:1"></div>
+                <button onClick="{{ cat.toggleSticky }}" style="{{ cat.stickyStyle }}">sticky</button>
+              </div>
+
+              <sc-if value="{{ cat.isCheckboxes }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-wrap:wrap;gap:5px">
+                  <sc-for list="{{ cat.options }}" as="op" hint-placeholder-count="5">
+                    <button onClick="{{ op.pick }}" style="{{ op.style }}">{{ op.name }}</button>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ cat.isSearch }}" hint-placeholder-val="{{ true }}">
+                <div>
+                  <input value="{{ cat.query }}" onChange="{{ cat.onInput }}" onKeyDown="{{ cat.onKey }}" onFocus="{{ cat.onFocus }}" placeholder="{{ cat.placeholder }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:7px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+                  <sc-if value="{{ cat.dropOpen }}" hint-placeholder-val="{{ false }}">
+                    <div style="position:absolute;left:0;right:0;z-index:30;margin-top:3px;background:#201B14;border:1px solid #4A4238;border-radius:7px;box-shadow:0 18px 40px rgba(0,0,0,0.65);overflow:hidden;max-height:186px;overflow-y:auto">
+                      <sc-for list="{{ cat.rows }}" as="r" hint-placeholder-count="3">
+                        <div onClick="{{ r.pick }}" style="{{ r.style }}">
+                          <sc-if value="{{ r.badge }}" hint-placeholder-val="{{ false }}">
+                            <span style="{{ r.badgeStyle }}">{{ r.badge }}</span>
+                          </sc-if>
+                          <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.label }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+                    <sc-for list="{{ cat.pills }}" as="p" hint-placeholder-count="0">
+                      <span style="{{ p.style }}">{{ p.name }}<span onClick="{{ p.remove }}" style="cursor:pointer;opacity:0.6;font-size:12px">×</span></span>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{ hasFlags }}" hint-placeholder-val="{{ true }}">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#CFC6B8;margin-bottom:6px">Flags</div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ flagRows }}" as="fl" hint-placeholder-count="1">
+                  <button onClick="{{ fl.pick }}" style="{{ fl.style }}">{{ fl.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="border-top:1px solid #2A251E;padding-top:13px">
+            <div style="font-size:12px;font-weight:600;color:#CFC6B8;margin-bottom:8px">Fields</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ fieldRows }}" as="fd" hint-placeholder-count="3">
+                <div>
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+                    <span style="font-size:11px;color:#8C8478">{{ fd.label }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">{{ fd.type }}</span>
+                    <div style="flex:1"></div>
+                    <button onClick="{{ fd.toggleSticky }}" style="{{ fd.stickyStyle }}">sticky</button>
+                  </div>
+                  <input value="{{ fd.value }}" onChange="{{ fd.onInput }}" placeholder="{{ fd.placeholder }}" style="width:100%;box-sizing:border-box;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:6px 9px;color:#F2EDE4;font-size:12.5px" style-focus="border-color:#7A6A4A" />
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:none;border-top:1px solid #2A251E;padding:11px 14px;background:#131009">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">WILL APPLY</div>
+          <div style="font-size:12px;color:#CFC6B8;line-height:1.55;text-wrap:pretty">{{ applySummary }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:none;height:62px;border-top:1px solid #2A251E;background:#1C1814;display:flex;align-items:center;padding:0 16px;gap:16px">
+      <div style="display:flex;align-items:baseline;gap:14px;font-family:'JetBrains Mono',monospace;font-size:12px">
+        <span style="color:#7FBF7F">{{ countNew }} new</span>
+        <span style="color:#6E6659">{{ countExists }} already in library</span>
+        <span style="color:#C98A6A">{{ countBlocked }} extension off</span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="font-size:12px;color:#8C8478">{{ selectionNote }}</div>
+      <button onClick="{{ startImport }}" style="{{ importBtnStyle }}">{{ importBtnLabel }}</button>
+    </div>
+
+    <sc-if value="{{ configOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeConfig }}" style="position:absolute;inset:0;background:rgba(8,7,5,0.62);z-index:70;display:flex;align-items:flex-start;justify-content:center;padding-top:96px">
+        <div onClick="{{ stop }}" style="width:440px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);overflow:hidden">
+          <div style="padding:15px 17px 11px;border-bottom:1px solid #2E2820">
+            <div style="font-size:14.5px;font-weight:600">Configure import boxes</div>
+            <div style="font-size:12px;color:#8C8478;margin-top:4px;line-height:1.5;text-wrap:pretty">Check the tag categories and flags to show as assignment boxes, and set their order. Values staged there apply to every file in the import.</div>
+          </div>
+          <div style="max-height:330px;overflow-y:auto;padding:7px 9px">
+            <sc-for list="{{ configRows }}" as="c" hint-placeholder-count="6">
+              <div style="{{ c.rowStyle }}">
+                <span style="color:#5E5749;font-size:13px;cursor:grab">≡</span>
+                <span onClick="{{ c.toggle }}" style="{{ c.boxStyle }}">{{ c.mark }}</span>
+                <span style="flex:1;font-size:12.5px">{{ c.label }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5E5749">{{ c.kind }}</span>
+                <button onClick="{{ c.up }}" style="background:none;border:none;color:#7C7466;cursor:pointer;font-size:12px;padding:2px 4px">↑</button>
+                <button onClick="{{ c.down }}" style="background:none;border:none;color:#7C7466;cursor:pointer;font-size:12px;padding:2px 4px">↓</button>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding:12px 15px;border-top:1px solid #2E2820;display:flex;justify-content:flex-end;gap:9px">
+            <button onClick="{{ closeConfig }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+            <button onClick="{{ closeConfig }}" style="background:#E9A23B;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#1A1409;cursor:pointer">Save</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ running }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(8,7,5,0.72);z-index:80;display:flex;align-items:center;justify-content:center">
+        <div style="width:480px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:22px">
+          <div style="font-size:14.5px;font-weight:600;margin-bottom:5px">Importing into Concerts</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8C8478;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ runningFile }}</div>
+          <div style="height:7px;background:#0F0C07;border-radius:4px;margin:15px 0 9px;overflow:hidden">
+            <div style="{{ progressStyle }}"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#A79E90">
+            <span>{{ progressText }}</span>
+            <span>{{ progressPct }}</span>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+            <button onClick="{{ cancelImport }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Cancel</button>
+            <button onClick="{{ backgroundImport }}" style="background:#2A241C;border:1px solid #4A4238;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#F2EDE4;cursor:pointer">Run in background</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ finished }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(8,7,5,0.72);z-index:80;display:flex;align-items:center;justify-content:center">
+        <div style="width:480px;background:#1E1A15;border:1px solid #3A3328;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.7);padding:22px">
+          <div style="font-size:14.5px;font-weight:600;margin-bottom:11px">Import finished</div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:#CFC6B8">
+            <sc-for list="{{ resultRows }}" as="rr" hint-placeholder-count="3">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;min-width:44px;text-align:right">{{ rr.n }}</span>
+                <span>{{ rr.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:11.5px;color:#8C8478;margin-top:13px;line-height:1.5;text-wrap:pretty">Thumbnails and content hashes are queued as background jobs and will fill in on their own.</div>
+          <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+            <button onClick="{{ resetAll }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 14px;font-size:12.5px;color:#A79E90;cursor:pointer">Import more</button>
+            <button onClick="{{ resetAll }}" style="background:#E9A23B;border:none;border-radius:7px;padding:7px 16px;font-size:12.5px;font-weight:600;color:#1A1409;cursor:pointer">Open in Library</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1320px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:1080}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const folders=[
+      {id:'f1',name:'2024-06-14 · Northlight Sessions',n:12,existing:3},
+      {id:'f2',name:'2023-08-02 · Riverside Amphitheater',n:9,existing:0},
+      {id:'f3',name:'2023-05-19 · The Broadside',n:7,existing:0},
+      {id:'f4',name:'2022 Archive / FM Rips',n:23,existing:19},
+      {id:'f5',name:'_unsorted',n:19,existing:2}
+    ];
+    const slugs={f1:'northlight_sessions',f2:'riverside_amp',f3:'broadside_set',f4:'fm_rip',f5:'cam_a'};
+    const res=['4K','1080p','1080p','720p','1080p','4K'];
+    const files=[]; let k=0;
+    folders.forEach(fo=>{
+      for(let i=1;i<=fo.n;i++){
+        k++;
+        const r=res[k%res.length];
+        const blocked=fo.id==='f5'&&(i===4||i===11);
+        const ext=blocked?'m2ts':'mp4';
+        const mins=38+((k*17)%92), secs=(k*23)%60;
+        files.push({
+          id:fo.id+'-'+i,
+          folderId:fo.id,
+          name:slugs[fo.id]+'_e'+String(i).padStart(2,'0')+'_'+r.toLowerCase()+'.'+ext,
+          folder:fo.name,
+          dur:String(Math.floor(mins/60))+':'+String(mins%60).padStart(2,'0')+':'+String(secs).padStart(2,'0'),
+          res:r,
+          size:(1.2+((k*7)%94)/10).toFixed(1)+' GB',
+          status: blocked?'blocked':(i<=fo.existing?'exists':'new')
+        });
+      }
+    });
+    const checked={};
+    files.forEach(f=>{ if(f.status==='new') checked[f.id]=true; });
+    const foldersChecked={}; folders.forEach(f=>foldersChecked[f.id]=true);
+    return {
+      folders, files, foldersChecked, checked,
+      statusFilter:'new', search:'', focusedFolder:'f1',
+      perFolder:false, stage:{}, sticky:{Venue:true,Year:true,'Show Date':true},
+      active:null, highlight:0, configOpen:false,
+      config:[
+        {type:'cat',value:'Band',checked:true},
+        {type:'cat',value:'Recording Type',checked:true},
+        {type:'cat',value:'Venue',checked:true},
+        {type:'cat',value:'Year',checked:true},
+        {type:'cat',value:'Taper',checked:false},
+        {type:'flag',value:'favorite',checked:true},
+        {type:'flag',value:'needsReview',checked:false}
+      ],
+      m2tsOn:false, phase:'review', progress:0, runIndex:0
+    };
+  }
+
+  componentDidMount(){ if(this.state.phase==='running') this.startTick(); }
+  componentDidUpdate(){
+    if(this.state.phase==='running'){ if(!this._t) this.startTick(); }
+    else if(this._t){ clearInterval(this._t); this._t=null; }
+  }
+
+  cats(){
+    return {
+      'Band':{hue:'#8B93E8',multi:true,mode:'search',tags:['Northlight Sessions','Riverside Collective','The Broadside Trio','Marta Quinn','Hollow Bell','Ash & Ember']},
+      'Recording Type':{hue:'#C58BB8',multi:false,mode:'checkboxes',tags:['Soundboard','Audience','FM Broadcast','Pro-shot','Matrix']},
+      'Venue':{hue:'#6FBFB0',multi:false,mode:'search',tags:['Riverside Amphitheater','The Broadside','Northlight Hall','Cedar Room']},
+      'Year':{hue:'#E9A23B',multi:false,mode:'search',tags:['2021','2022','2023','2024']},
+      'Taper':{hue:'#9DBF7F',multi:true,mode:'search',tags:['J. Alvarez','M. Okafor','unknown']}
+    };
+  }
+
+  fields(){ return [
+    {label:'Show Date',type:'date',placeholder:'YYYY-MM-DD'},
+    {label:'Source URL',type:'url',placeholder:'archive.org / etree …'},
+    {label:'Setlist Notes',type:'longText',placeholder:'Optional'}
+  ]; }
+
+  key(){ return this.state.perFolder ? this.state.focusedFolder : '__all'; }
+
+  stageFor(k){
+    const s=this.state.stage[k];
+    return s || {tags:{},flags:{},fields:{}};
+  }
+
+  mutStage(fn){
+    const k=this.key();
+    const cur=JSON.parse(JSON.stringify(this.stageFor(k)));
+    fn(cur);
+    this.setState(st=>({stage:Object.assign({},st.stage,{[k]:cur})}));
+  }
+
+  folderWords(){
+    const fo=this.state.folders.find(f=>f.id===this.state.focusedFolder);
+    if(!fo) return [];
+    return fo.name.split(/[·\-_\/\s]+/).filter(w=>w.length>2&&!/^\d{2}$/.test(w));
+  }
+
+  visibleFiles(){
+    const st=this.state;
+    const q=st.search.trim().toLowerCase();
+    return st.files.filter(f=>{
+      if(!st.foldersChecked[f.folderId]) return false;
+      if(f.status==='blocked'&&st.m2tsOn) return true;
+      if(st.statusFilter==='new'&&f.status!=='new') return false;
+      if(st.statusFilter==='exists'&&f.status!=='exists') return false;
+      if(q&&f.name.toLowerCase().indexOf(q)<0) return false;
+      return true;
+    });
+  }
+
+  importable(){
+    const st=this.state;
+    return st.files.filter(f=>st.foldersChecked[f.folderId]&&st.checked[f.id]&&(f.status==='new'||(f.status==='blocked'&&st.m2tsOn)));
+  }
+
+  startTick(){
+    clearInterval(this._t);
+    this._t=setInterval(()=>{
+      this.setState(st=>{
+        if(st.phase!=='running') return null;
+        const total=st.total||1;
+        const n=Math.min(total,Math.floor((Date.now()-st.startedAt)/40));
+        if(n>=total) return {runIndex:total,phase:'done'};
+        return {runIndex:n};
+      });
+    },40);
+  }
+
+  renderVals(){
+    const st=this.state, CATS=this.cats(), self=this;
+    const k=this.key(), stage=this.stageFor(k);
+    const vis=this.visibleFiles(), imp=this.importable();
+    const words=this.folderWords();
+
+    const steps=[{num:'1',label:'Source'},{num:'2',label:'Scan'},{num:'3',label:'Review & Stage'},{num:'4',label:'Import'}].map((s,i)=>{
+      const done=i<2, cur=i===2;
+      return {num:s.num,label:s.label,
+        dotStyle:'width:17px;height:17px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;'+(cur?'background:#E9A23B;color:#1A1409':done?'background:#2F4A2F;color:#8FCF8F':'background:#241F19;color:#6E6659'),
+        labelStyle:'font-size:12px;font-weight:'+(cur?'600':'400')+';color:'+(cur?'#F2EDE4':done?'#8C8478':'#5E5749'),
+        sepStyle:'color:#3A3328;font-size:12px;'+(i===3?'display:none':'')};
+    });
+
+    const filters=[['new','New only'],['all','All'],['exists','Already imported']].map(([v,l])=>({
+      label:l, pick:()=>self.setState({statusFilter:v}),
+      style:'border:none;border-radius:5px;padding:5px 11px;font-size:12px;cursor:pointer;'+(st.statusFilter===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478')
+    }));
+
+    const folderRows=st.folders.map(fo=>{
+      const on=st.foldersChecked[fo.id], focused=st.perFolder&&st.focusedFolder===fo.id;
+      const staged=st.stage[fo.id]&&(Object.keys(st.stage[fo.id].tags||{}).some(c=>(st.stage[fo.id].tags[c]||[]).length));
+      const nNew=st.files.filter(f=>f.folderId===fo.id&&f.status==='new').length;
+      return {name:fo.name, counts:nNew+' new · '+fo.existing+' known',
+        mark:on?'✓':'',
+        rowStyle:'display:flex;align-items:center;gap:9px;padding:7px 7px;border-radius:6px;cursor:pointer;margin-bottom:1px;'+(focused?'background:#2A2118;box-shadow:inset 2px 0 0 #E9A23B':'background:transparent'),
+        boxStyle:'flex:none;width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+(on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+        dotStyle:'flex:none;width:6px;height:6px;border-radius:50%;background:'+(staged?'#E9A23B':'transparent'),
+        toggle:e=>{e.stopPropagation();self.setState(s=>({foldersChecked:Object.assign({},s.foldersChecked,{[fo.id]:!s.foldersChecked[fo.id]})}));},
+        focus:()=>self.setState({focusedFolder:fo.id})};
+    });
+
+    const allOn=st.folders.every(f=>st.foldersChecked[f.id]);
+
+    const fileRows=vis.map(f=>{
+      const on=!!st.checked[f.id], dim=f.status!=='new'&&!(f.status==='blocked'&&st.m2tsOn);
+      const sty=f.status==='new'?'background:#1F3320;color:#8FCF8F':f.status==='blocked'?(st.m2tsOn?'background:#1F3320;color:#8FCF8F':'background:#3A2519;color:#C98A6A'):'background:#241F19;color:#7C7466';
+      return {name:f.name,folder:f.folder,dur:f.dur,res:f.res,size:f.size,
+        status:f.status==='new'?'New':f.status==='blocked'?(st.m2tsOn?'New':'ext off'):'In library',
+        mark:on?'✓':'',
+        nameStyle:"font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+(dim?'#7C7466':'#F2EDE4'),
+        rowStyle:'display:grid;grid-template-columns:34px 1fr 92px 68px 76px 118px;align-items:center;padding:6px 14px;border-bottom:1px solid #1F1B15;cursor:'+(dim?'default':'pointer')+';'+(on?'background:#1A1610':''),
+        boxStyle:'width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;'+(on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':dim?'background:transparent;border:1px solid #332E26;color:transparent':'background:transparent;border:1px solid #4A4238;color:transparent'),
+        statusStyle:'font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:4px;'+sty,
+        toggle:()=>{ if(dim) return; self.setState(s=>({checked:Object.assign({},s.checked,{[f.id]:!s.checked[f.id]})})); }};
+    });
+
+    const selectable=vis.filter(f=>f.status==='new'||(f.status==='blocked'&&st.m2tsOn));
+    const allFilesOn=selectable.length>0&&selectable.every(f=>st.checked[f.id]);
+
+    const scopeTabs=[[false,'Whole import'],[true,'Per folder']].map(([v,l])=>({
+      label:l, pick:()=>self.setState({perFolder:v}),
+      style:'flex:1;border:none;border-radius:5px;padding:5px 8px;font-size:11.5px;cursor:pointer;'+(st.perFolder===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478')
+    }));
+
+    const activeCats=st.config.filter(c=>c.type==='cat'&&c.checked).map(c=>c.value);
+
+    const boxes=activeCats.map(name=>{
+      const meta=CATS[name], sel=stage.tags[name]||[];
+      const isOpen=st.active===name;
+      const q=(isOpen?(st.query||''):'');
+      const ql=q.trim().toLowerCase();
+      const matches=meta.tags.filter(t=>t.toLowerCase().indexOf(ql)>=0&&sel.indexOf(t)<0);
+      const wordRows=ql?[]:words.filter(w=>meta.tags.indexOf(w)<0&&sel.indexOf(w)<0).slice(0,3);
+      const rows=[];
+      matches.forEach(t=>rows.push({label:t,badge:null,val:t,kind:'tag'}));
+      wordRows.forEach(w=>rows.push({label:w,badge:'folder',val:w,kind:'word'}));
+      if(ql&&!meta.tags.some(t=>t.toLowerCase()===ql)) rows.push({label:'Create “'+q.trim()+'” in '+name,badge:'NEW',val:q.trim(),kind:'create'});
+
+      const pick=(val)=>{
+        self.mutStage(cur=>{
+          const list=(cur.tags[name]||[]).slice();
+          if(meta.multi){ if(list.indexOf(val)<0) list.push(val); cur.tags[name]=list; }
+          else cur.tags[name]=[val];
+        });
+        self.setState({active:null,query:'',highlight:0});
+      };
+
+      return {
+        name, rule: meta.multi?'multiple':'one only',
+        isCheckboxes: meta.mode==='checkboxes', isSearch: meta.mode==='search',
+        placeholder:'Type to select '+name,
+        query:q, dropOpen:isOpen&&rows.length>0,
+        swatchStyle:'width:7px;height:7px;border-radius:2px;background:'+meta.hue,
+        stickyStyle:'background:'+(st.sticky[name]?'#3A2E16':'transparent')+';border:1px solid '+(st.sticky[name]?'#7A6428':'#332D24')+';border-radius:4px;padding:1px 6px;font-size:10px;color:'+(st.sticky[name]?'#E9A23B':'#5E5749')+';cursor:pointer',
+        toggleSticky:()=>self.setState(s=>({sticky:Object.assign({},s.sticky,{[name]:!s.sticky[name]})})),
+        options: meta.tags.map(t=>({name:t,
+          style:'border-radius:5px;padding:4px 9px;font-size:11.5px;cursor:pointer;border:1px solid '+(sel.indexOf(t)>=0?meta.hue:'#332D24')+';background:'+(sel.indexOf(t)>=0?meta.hue+'22':'transparent')+';color:'+(sel.indexOf(t)>=0?meta.hue:'#8C8478'),
+          pick:()=>pick(t)})),
+        pills: sel.map(t=>({name:t,
+          style:'display:inline-flex;align-items:center;gap:5px;border-radius:5px;padding:3px 7px;font-size:11.5px;background:'+meta.hue+'22;color:'+meta.hue+';border:1px solid '+meta.hue+'44',
+          remove:e=>{e.stopPropagation();self.mutStage(cur=>{cur.tags[name]=(cur.tags[name]||[]).filter(x=>x!==t);});}})),
+        rows: rows.map((r,i)=>({label:r.label,badge:r.badge,
+          badgeStyle:'font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;'+(r.badge==='NEW'?'background:#E9A23B;color:#1A1409':'background:#2E2820;color:#8C8478'),
+          style:'display:flex;align-items:center;gap:7px;padding:6px 9px;font-size:12px;cursor:pointer;'+(i===st.highlight?'background:#E9A23B;color:#1A1409':'color:#CFC6B8'),
+          pick:()=>pick(r.val)})),
+        onFocus:()=>self.setState({active:name,query:'',highlight:0}),
+        onInput:e=>self.setState({active:name,query:e.target.value,highlight:0}),
+        onKey:e=>{
+          if(e.key==='ArrowDown'){e.preventDefault();self.setState(s=>({highlight:(s.highlight+1)%Math.max(rows.length,1)}));}
+          else if(e.key==='ArrowUp'){e.preventDefault();self.setState(s=>({highlight:s.highlight<=0?rows.length-1:s.highlight-1}));}
+          else if(e.key==='Enter'){e.preventDefault();if(rows[st.highlight])pick(rows[st.highlight].val);}
+          else if(e.key==='Escape'){e.preventDefault();self.setState({active:null,query:''});}
+        }
+      };
+    });
+
+    const flagDefs={favorite:'★ Favorite',needsReview:'Needs review'};
+    const flagRows=st.config.filter(c=>c.type==='flag'&&c.checked).map(c=>{
+      const on=!!stage.flags[c.value];
+      return {label:flagDefs[c.value],
+        style:'border-radius:5px;padding:4px 9px;font-size:11.5px;cursor:pointer;border:1px solid '+(on?'#E9A23B':'#332D24')+';background:'+(on?'#3A2E16':'transparent')+';color:'+(on?'#E9A23B':'#8C8478'),
+        pick:()=>self.mutStage(cur=>{cur.flags[c.value]=!cur.flags[c.value];})};
+    });
+
+    const fieldRows=this.fields().map(fd=>({
+      label:fd.label,type:fd.type,placeholder:fd.placeholder,
+      value:stage.fields[fd.label]||'',
+      onInput:e=>{const v=e.target.value;self.mutStage(cur=>{cur.fields[fd.label]=v;});},
+      stickyStyle:'background:'+(st.sticky[fd.label]?'#3A2E16':'transparent')+';border:1px solid '+(st.sticky[fd.label]?'#7A6428':'#332D24')+';border-radius:4px;padding:1px 6px;font-size:10px;color:'+(st.sticky[fd.label]?'#E9A23B':'#5E5749')+';cursor:pointer',
+      toggleSticky:()=>self.setState(s=>({sticky:Object.assign({},s.sticky,{[fd.label]:!s.sticky[fd.label]})}))
+    }));
+
+    const applied=[];
+    activeCats.forEach(c=>{const v=stage.tags[c]||[];if(v.length)applied.push(c+': '+v.join(', '));});
+    Object.keys(stage.flags||{}).forEach(f=>{if(stage.flags[f])applied.push(flagDefs[f]);});
+    this.fields().forEach(fd=>{if(stage.fields[fd.label])applied.push(fd.label+': '+stage.fields[fd.label]);});
+
+    const configRows=st.config.map((c,i)=>({
+      label: c.type==='cat'?c.value:flagDefs[c.value], kind: c.type==='cat'?'category':'flag',
+      mark:c.checked?'✓':'',
+      rowStyle:'display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:6px;'+(i%2?'background:#211C16':'background:transparent'),
+      boxStyle:'width:15px;height:15px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;'+(c.checked?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      toggle:()=>self.setState(s=>{const n=s.config.slice();n[i]=Object.assign({},n[i],{checked:!n[i].checked});return {config:n};}),
+      up:()=>self.setState(s=>{if(i===0)return null;const n=s.config.slice();const t=n[i-1];n[i-1]=n[i];n[i]=t;return {config:n};}),
+      down:()=>self.setState(s=>{if(i===s.config.length-1)return null;const n=s.config.slice();const t=n[i+1];n[i+1]=n[i];n[i]=t;return {config:n};})
+    }));
+
+    const runTotal=st.total||imp.length;
+    const pct=runTotal?Math.round(st.runIndex/runTotal*100):0;
+
+    return {
+      steps, filters, folderRows, fileRows, scopeTabs, boxes, flagRows, fieldRows, configRows,
+      scanPath:'/Volumes/ConcertsSSD/Shows',
+      search:st.search, onSearch:e=>self.setState({search:e.target.value}),
+      allFoldersLabel: allOn?'None':'All',
+      toggleAllFolders:()=>self.setState(s=>{const n={};s.folders.forEach(f=>n[f.id]=!allOn);return {foldersChecked:n};}),
+      headMark: allFilesOn?'✓':'',
+      headBoxStyle:'width:15px;height:15px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;'+(allFilesOn?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+      toggleAllFiles:()=>self.setState(s=>{const n=Object.assign({},s.checked);selectable.forEach(f=>n[f.id]=!allFilesOn);return {checked:n};}),
+      noFiles: vis.length===0,
+      m2tsLabel: st.m2tsOn?'Disable .m2ts for this library':'2 files skipped — enable .m2ts',
+      enableM2ts:()=>self.setState(s=>({m2tsOn:!s.m2tsOn})),
+      hasFlags: flagRows.length>0,
+      scopeNote: st.perFolder?'Staging applies to the highlighted folder only. Pick a folder on the left.':'Staging applies to every selected file in this import.',
+      applySummary: applied.length?applied.join('  ·  '):'Nothing staged yet — files import untagged.',
+      countNew: st.files.filter(f=>f.status==='new').length,
+      countExists: st.files.filter(f=>f.status==='exists').length,
+      countBlocked: st.m2tsOn?0:st.files.filter(f=>f.status==='blocked').length,
+      selectionNote: imp.length+' of '+vis.length+' shown selected',
+      importBtnLabel: imp.length?'Import '+imp.length+' Files':'Nothing selected',
+      importBtnStyle:'border:none;border-radius:7px;padding:9px 20px;font-size:13px;font-weight:600;'+(imp.length?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      startImport:()=>{ if(!imp.length)return; self.setState({phase:'running',runIndex:0,total:imp.length,startedAt:Date.now()}); self.startTick(); },
+      running: st.phase==='running', finished: st.phase==='done',
+      runningFile: imp[Math.min(st.runIndex,imp.length-1)] ? imp[Math.min(st.runIndex,imp.length-1)].name : '',
+      progressStyle:'height:100%;width:'+pct+'%;background:repeating-linear-gradient(90deg,#E9A23B 0 14px,#D18F2E 14px 28px);animation:barflow 0.7s linear infinite',
+      progressText: st.runIndex+' of '+runTotal+' probed and inserted',
+      progressPct: pct+'%',
+      cancelImport:()=>{clearInterval(self._t);self.setState({phase:'review',runIndex:0,total:0});},
+      backgroundImport:()=>{clearInterval(self._t);self.setState({phase:'review',runIndex:0,total:0});},
+      resultRows:[{n:runTotal,label:'media items inserted'},{n:st.files.filter(f=>f.status==='exists').length,label:'skipped — already in library'},{n:st.m2tsOn?0:2,label:'skipped — extension not enabled'}],
+      resetAll:()=>{clearInterval(self._t);self.setState(self.seed());},
+      configOpen: st.configOpen,
+      openConfig:()=>self.setState({configOpen:true}),
+      closeConfig:()=>self.setState({configOpen:false}),
+      stop:e=>e.stopPropagation(),
+      rescan:()=>self.setState({search:'',statusFilter:'new'}),
+      notes:[
+        {title:'ADDING A SOURCE NO LONGER IMPORTS',body:'Add Source registers the folder and runs a scan. Nothing enters the library until this window is confirmed, so an unreviewed drive costs you a file list, not 4,000 rows.'},
+        {title:'STAGING REPLACES POST-HOC TAGGING',body:'Checked categories from Configure appear as assignment boxes in saved order — the web import tool\u2019s model, carried over. Sticky keeps a value across imports; clear it any time.'},
+        {title:'IDEMPOTENT BY DESIGN',body:'ImportJob keys on (sourceID, relativePath), so re-running a scan surfaces only what is new. Already-in-library rows stay visible but unselectable.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

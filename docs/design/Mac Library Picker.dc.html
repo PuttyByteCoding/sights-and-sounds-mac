@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:20px">
+
+  <div style="width:1000px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B;margin-bottom:5px">Open Library</div>
+      <div style="font-size:13px;color:#8C8478;max-width:560px;line-height:1.55;text-wrap:pretty">A dialog, not a window — it appears at launch and from File ▸ Open Library…, and goes away as soon as you pick one.</div>
+    </div>
+    <div style="flex:1"></div>
+    <div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#6E6659;margin-bottom:6px">SHOW IT AS IT APPEARS</div>
+      <div style="display:flex;background:#131009;border:1px solid #2E2820;border-radius:8px;padding:3px;gap:3px">
+        <sc-for list="{{ contextTabs }}" as="c" hint-placeholder-count="2">
+          <button onClick="{{ c.pick }}" style="{{ c.style }}">{{ c.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="{{ stageStyle }}">
+
+    <sc-if value="{{ showBehind }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:20px;border-radius:9px;background:#131009;border:1px solid #2A251E;overflow:hidden;opacity:0.5">
+        <div style="height:26px;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 10px;gap:6px">
+          <div style="width:9px;height:9px;border-radius:50%;background:#3A3328"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:#3A3328"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:#3A3328"></div>
+          <div style="flex:1;text-align:center;font-size:10px;color:#5E5749">Concerts</div>
+        </div>
+        <div style="display:flex;height:100%">
+          <div style="width:110px;background:#17130E;border-right:1px solid #241F19"></div>
+          <div style="flex:1;padding:10px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px;align-content:start">
+            <sc-for list="{{ ghostTiles }}" as="g" hint-placeholder-count="10">
+              <div style="{{ g.style }}"></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ dialogOpen }}" hint-placeholder-val="{{ true }}">
+      <div style="{{ scrimStyle }}">
+        <div style="width:620px;max-height:92%;background:#1B1712;border:1px solid #3A3328;border-radius:12px;box-shadow:0 40px 90px rgba(0,0,0,0.8);display:flex;flex-direction:column;overflow:hidden">
+
+          <div style="flex:none;padding:18px 20px 13px">
+            <div style="font-size:15px;font-weight:600">{{ title }}</div>
+            <div style="font-size:12.5px;color:#8C8478;margin-top:4px;line-height:1.5;text-wrap:pretty">{{ blurb }}</div>
+          </div>
+
+          <sc-if value="{{ hasLibraries }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:0 12px;border-top:1px solid #2A251E;border-bottom:1px solid #2A251E">
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="3">
+                <div onClick="{{ r.select }}" onDoubleClick="{{ r.openNow }}" style="{{ r.rowStyle }}">
+                  <span style="{{ r.iconStyle }}">{{ r.icon }}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="{{ r.nameStyle }}">{{ r.name }}</span>
+                      <sc-if value="{{ r.isOpen }}" hint-placeholder-val="{{ false }}">
+                        <span style="flex:none;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:#1F3320;color:#8FCF8F">OPEN</span>
+                      </sc-if>
+                      <sc-if value="{{ r.hasWarning }}" hint-placeholder-val="{{ false }}">
+                        <span style="flex:none;font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:#3A2C18;color:#D9924A">{{ r.warning }}</span>
+                      </sc-if>
+                    </div>
+                    <div style="{{ r.statsStyle }}">{{ r.stats }}</div>
+                    <div style="{{ r.pathStyle }}">{{ r.path }}</div>
+                  </div>
+                  <span style="{{ r.lastStyle }}">{{ r.last }}</span>
+                </div>
+              </sc-for>
+              <div style="font-size:11px;color:#8C8478;line-height:1.5;padding:6px 10px 10px;text-wrap:pretty">Counts are as of each library's last close. Whether a drive is plugged in is only known for a library that is open.</div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="box-sizing:border-box;flex:1;min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:30px;text-align:center;border-top:1px solid #2A251E;border-bottom:1px solid #2A251E">
+              <div style="font-size:15px;font-weight:600">No Libraries</div>
+              <div style="font-size:12.5px;color:#8C8478">Create your first library to get started.</div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ showPlacement }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:none;padding:14px 20px;background:#231E17;border-bottom:1px solid #2A251E">
+              <div style="display:flex;align-items:center;gap:13px">
+                <span style="font-size:12.5px;font-weight:600;color:#F2EDE4;white-space:nowrap">Open in</span>
+                <div style="display:flex;background:#100D08;border:1px solid #3A3328;border-radius:8px;padding:3px;gap:3px">
+                  <sc-for list="{{ placementOpts }}" as="p" hint-placeholder-count="2">
+                    <button onClick="{{ p.pick }}" style="{{ p.style }}">{{ p.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:8px;margin-top:9px">
+                <span style="{{ placementDotStyle }}"></span>
+                <span style="{{ placementNoteStyle }}">{{ placementNote }}</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="flex:none;padding:13px 16px;display:flex;align-items:center;gap:8px">
+            <sc-for list="{{ secondary }}" as="s" hint-placeholder-count="3">
+              <button onClick="{{ s.click }}" style="background:transparent;border:1px solid #332D24;border-radius:7px;padding:6px 11px;font-size:11.5px;color:#A79E90;cursor:pointer;white-space:nowrap" style-hover="border-color:#5A5142;color:#F2EDE4">{{ s.label }}</button>
+            </sc-for>
+            <div style="flex:1"></div>
+            <button onClick="{{ dismiss }}" style="background:transparent;border:1px solid #3A3328;border-radius:7px;padding:7px 15px;font-size:12.5px;color:#A79E90;cursor:pointer">{{ cancelLabel }}</button>
+            <button onClick="{{ openSelected }}" style="{{ openStyle }}">{{ openLabel }}</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ dismissed }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:40px">
+        <div style="text-align:center;max-width:400px">
+          <div style="font-size:13.5px;color:#CFC6B8;line-height:1.6;text-wrap:pretty">{{ dismissedText }}</div>
+          <button onClick="{{ reopen }}" style="margin-top:16px;background:transparent;border:1px solid #3A3328;border-radius:7px;padding:8px 15px;font-size:12.5px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Show the dialog again</button>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1000px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:290px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1080,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = {
+    context:'launch', open:true, sel:'concerts', placement:'new', dismissedText:null,
+    // The registry caches a summary each time a library closes, so the rows
+    // are informative without opening every file at launch. Anything that
+    // can change while closed — whether a drive is plugged in — is only
+    // shown for a library that is actually open.
+    libraries:[
+      {id:'concerts',name:'Concerts',icon:'♫',last:'Yesterday at 18:40',
+       items:'9,847 items',size:'41.7 TB',sources:3,cats:6,tags:693,offline:1,
+       path:'~/Library/Application Support/Sights and Sounds/Concerts.sqlite'},
+      {id:'learning',name:'Learning',icon:'▤',last:'20 August 2026',
+       items:'412 items',size:'0.9 TB',sources:1,cats:4,tags:88,offline:0,
+       path:'~/Library/Application Support/Sights and Sounds/Learning.sqlite'},
+      {id:'home',name:'Home Videos',icon:'▦',last:'12 August 2026',
+       items:'3,380 items',size:'6.2 TB',sources:2,cats:4,tags:214,offline:0,
+       path:'/Volumes/FamilyDrive/Home Videos.sqlite'}
+    ]
+  };
+
+  /// Invoked from a library window, that library is already open behind the
+  /// dialog — which is the only situation where "this window" means anything.
+  fromMenu(){ return this.state.context==='menu'; }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const menu=this.fromMenu();
+    const libs=st.libraries.map(l=>Object.assign({},l,{open:menu&&l.id==='concerts'}));
+    const sel=libs.find(l=>l.id===st.sel)||null;
+    const selOpen=!!(sel&&sel.open);
+
+    return {
+      contextTabs:[['launch','At launch'],['menu','File ▸ Open Library…']].map(([v,label])=>({label,
+        style:'border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;'+
+          (st.context===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        // Land on something you can actually open — never on the library
+        // already sitting behind the dialog.
+        pick:()=>self.setState({context:v,open:true,dismissedText:null,placement:'new',
+          sel:v==='menu'?'learning':'concerts'})})),
+
+      stageStyle:'position:relative;width:1000px;height:600px;border-radius:12px;overflow:hidden;border:1px solid #2E2820;background:'+
+        (menu?'#0E0C08':'radial-gradient(circle at 50% 40%,#171310,#0B0A08)'),
+      showBehind: menu,
+      ghostTiles: Array.from({length:10},(_,i)=>({
+        style:'width:100%;aspect-ratio:16/9;border-radius:4px;background:linear-gradient('+(112+i*14)+'deg,#241F19,#151209)'})),
+
+      dialogOpen: st.open,
+      scrimStyle:'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;'+
+        (menu?'background:rgba(8,7,5,0.55)':''),
+
+      title: menu?'Open Library':'Sights and Sounds',
+      blurb: menu
+        ? 'Pick a library to open. Everything already open stays as it is.'
+        : 'Pick a library to open. Each one is a separate file with its own vocabulary, sources and media.',
+
+      hasLibraries: libs.length>0, isEmpty: libs.length===0,
+      rows: libs.map(l=>{
+        const on=st.sel===l.id;
+        return {name:l.name, icon:l.icon, path:l.path, isOpen:l.open,
+          stats: l.items+'  ·  '+l.size+'  ·  '+l.sources+' '+(l.sources===1?'source':'sources')+
+                 '  ·  '+l.cats+' categories  ·  '+l.tags+' tags',
+          // Only a library that is open can be trusted about its drives.
+          hasWarning: l.open&&l.offline>0,
+          warning: l.offline+' SOURCE OFFLINE',
+          last: l.open?'open now':l.last,
+          iconStyle:'flex:none;width:34px;height:34px;border-radius:8px;background:'+(on?'#3A2E16':'#221D16')+
+            ';display:flex;align-items:center;justify-content:center;font-size:15px;color:'+(on?'#E9A23B':'#8C8478'),
+          nameStyle:'font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(on?'#F2EDE4':'#CFC6B8'),
+          statsStyle:"font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+(on?'#A79E90':'#8C8478'),
+          pathStyle:"font-family:'JetBrains Mono',monospace;font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:"+(on?'#A79E90':'#8C8478'),
+          lastStyle:'flex:none;font-size:11px;white-space:nowrap;color:'+(on?'#A79E90':'#6E6659'),
+          rowStyle:'display:flex;align-items:flex-start;gap:11px;padding:10px;border-radius:8px;cursor:pointer;margin:4px 0;'+
+            (on?'background:#2A2118':''),
+          select:()=>self.setState({sel:l.id}),
+          openNow:()=>self.open(l)};
+      }),
+
+      // Only meaningful when something is on screen to replace AND the pick
+      // is not the thing already open.
+      showPlacement: menu&&!selOpen,
+      placementOpts:[['new','A new window'],['this','This window']].map(([v,label])=>({label,
+        style:'border:none;border-radius:6px;padding:6px 16px;font-size:12px;cursor:pointer;'+
+          (st.placement===v?'background:#E9A23B;color:#1A1409;font-weight:600':'background:transparent;color:#A79E90'),
+        pick:()=>self.setState({placement:v})})),
+      // The consequence gets its own line and a colour — replacing a window
+      // closes something, and that should not read like a footnote.
+      placementDotStyle:'flex:none;margin-top:5px;width:6px;height:6px;border-radius:50%;background:'+
+        (st.placement==='new'?'#6FB86F':'#D9924A'),
+      placementNoteStyle:'font-size:12px;line-height:1.45;text-wrap:pretty;color:'+
+        (st.placement==='new'?'#A79E90':'#E8CFA8'),
+      placementNote: st.placement==='new'
+        ? 'Concerts stays open. Two libraries side by side, each window keeping its own filter and queue.'
+        : 'Concerts closes and its window is reused. Nothing is lost, but you will have to reopen it.',
+
+      secondary:[
+        ['New Library…',()=>self.setState({dismissedText:'The new-library flow takes over from here — name, template, category review, then Create.',open:false})],
+        ['Add Existing…',()=>self.setState({dismissedText:'The system file panel opens over this dialog to pick a .sqlite library file.',open:false})],
+        ['Create Demo Library…',()=>self.setState({dismissedText:'Generating a demo library with synthetic media — the dialog waits, then lists it.',open:false})]
+      ].map(([label,click])=>({label,click})),
+
+      cancelLabel: menu?'Cancel':'Quit',
+      openLabel: !sel?'Open':selOpen?'Bring Forward':'Open '+sel.name,
+      openStyle:'border:none;border-radius:7px;padding:7px 17px;font-size:12.5px;font-weight:600;'+
+        (sel?'background:#E9A23B;color:#1A1409;cursor:pointer':'background:#2A241C;color:#5E5749;cursor:default'),
+      openSelected:()=>{ if(sel) self.open(sel); },
+      dismiss:()=>self.setState({open:false,
+        dismissedText: menu?'Cancelled. The dialog closes and nothing changes — Concerts is still open behind it.'
+                           :'Quit. Nothing was opened, and the app closes.'}),
+
+      dismissed: !st.open,
+      dismissedText: st.dismissedText||'',
+      reopen:()=>self.setState({open:true,dismissedText:null}),
+
+      notes:[
+        {title:'IT LEAVES WHEN IT IS DONE',body:'A launcher that stays open becomes a place features accumulate. This one has a single job — choose a library — and closes the moment you have.'},
+        {title:'THE SUMMARY IS CACHED, NOT COMPUTED',body:'The registry records each library’s counts when it closes, so the rows say something useful without opening every file and waking every drive at launch. Anything that can change while a library is shut — whether its sources are plugged in — is shown only for one that is open.'},
+        {title:'TWO WAYS IN, ONE DIALOG',body:'At launch it is the first thing you see, and Cancel reads Quit because there is nothing behind it. From File ▸ Open Library… the same dialog appears over your work, Cancel means cancel, and the window-placement choice appears — because only then is there a window to replace.'},
+        {title:'A NEW WINDOW BY DEFAULT',body:'Opening a library never disturbs what you are already looking at, which is also how a document-based Mac app behaves. Reusing the current window is available and says exactly which library it will close, since that is the destructive-feeling one.'}
+      ]
+    };
+  }
+
+  open(l){
+    const menu=this.fromMenu();
+    if(menu&&l.id==='concerts'){
+      this.setState({open:false,sel:l.id,
+        dismissedText:'The dialog closes and the '+l.name+' window comes forward. It was already open, so nothing was loaded twice.'});
+      return;
+    }
+    this.setState({open:false,sel:l.id,
+      dismissedText: menu
+        ? (this.state.placement==='new'
+            ? 'The dialog closes and '+l.name+' opens in a second window, beside Concerts.'
+            : 'The dialog closes, Concerts closes with it, and '+l.name+' takes over that window.')
+        : 'The dialog closes and '+l.name+' opens in its window. Sights and Sounds is running.'});
+  }
+}
+</script>
+</body>
+</html>

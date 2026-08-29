@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit}
+  @keyframes barflow{0%{background-position:0 0}100%{background-position:28px 0}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1240px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Background Tasks</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">One window across every open library. Each library runs one job at a time — the lanes are what makes that legible.</div>
+  </div>
+
+  <div style="width:1240px;height:838px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Background Tasks</div>
+    </div>
+
+    <div style="height:48px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:10px">
+      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+        <sc-for list="{{ stateTabs }}" as="s" hint-placeholder-count="5">
+          <button onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</button>
+        </sc-for>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C8478;padding:0 4px">{{ headline }}</div>
+      <div style="flex:1"></div>
+      <button onClick="{{ clearDone }}" style="background:transparent;border:1px solid #332D24;border-radius:7px;padding:6px 12px;font-size:12px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">Clear finished</button>
+      <button onClick="{{ togglePauseAll }}" style="{{ pauseAllStyle }}">{{ pauseAllLabel }}</button>
+    </div>
+
+    <sc-if value="{{ pausedBanner }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;display:flex;align-items:center;gap:9px;padding:9px 16px;background:#2A2118;border-bottom:1px solid #4A3C24">
+        <span style="font-size:12px;color:#E9A23B">❙❙</span>
+        <span style="font-size:12.5px;color:#E8CFA8">Background tasks are paused — queued work waits, the running job finishes.</span>
+      </div>
+    </sc-if>
+
+    <div style="flex:none;padding:14px 16px 4px;display:flex;gap:12px">
+      <sc-for list="{{ lanes }}" as="ln" hint-placeholder-count="3">
+        <div style="{{ ln.cardStyle }}">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+            <span style="{{ ln.dotStyle }}"></span>
+            <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ln.name }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#6E6659">{{ ln.queued }}</span>
+            <button onClick="{{ ln.pause }}" style="{{ ln.pauseStyle }}">{{ ln.pauseLabel }}</button>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:7px;min-width:0;margin-bottom:7px">
+            <span style="{{ ln.currentStyle }}">{{ ln.current }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5E5749;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ln.currentKind }}</span>
+          </div>
+          <div style="height:5px;background:#100D08;border-radius:3px;overflow:hidden;margin-bottom:6px">
+            <div style="{{ ln.barStyle }}"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6E6659">
+            <span>{{ ln.detail }}</span><span>{{ ln.pct }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:none;display:grid;grid-template-columns:22px 1fr 132px 118px 92px 116px;align-items:center;height:30px;padding:0 16px;border-bottom:1px solid #2A251E;background:#141109;margin-top:10px;scrollbar-gutter:stable;overflow-y:scroll">
+          <div></div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">JOB</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">LIBRARY</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466">PROGRESS</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">ELAPSED</div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.11em;color:#7C7466;text-align:right">STATE</div>
+        </div>
+        <div style="flex:1;overflow-y:scroll;scrollbar-gutter:stable">
+          <sc-for list="{{ jobRows }}" as="j" hint-placeholder-count="12">
+            <div onClick="{{ j.click }}" style="{{ j.rowStyle }}">
+              <span style="{{ j.iconStyle }}">{{ j.icon }}</span>
+              <div style="min-width:0">
+                <div style="display:flex;align-items:baseline;gap:8px;min-width:0">
+                  <span style="{{ j.nameStyle }}">{{ j.name }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5E5749;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ j.kind }}</span>
+                </div>
+                <div style="{{ j.summaryStyle }}">{{ j.summary }}</div>
+              </div>
+              <div style="font-size:11.5px;color:#8C8478;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ j.library }}</div>
+              <div>
+                <sc-if value="{{ j.hasBar }}" hint-placeholder-val="{{ false }}">
+                  <div style="height:4px;background:#241F19;border-radius:2px;overflow:hidden;width:92px">
+                    <div style="{{ j.barStyle }}"></div>
+                  </div>
+                </sc-if>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6E6659;margin-top:3px">{{ j.progress }}</div>
+              </div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8478;text-align:right">{{ j.elapsed }}</div>
+              <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px">
+                <sc-if value="{{ j.canCancel }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ j.cancel }}" style="background:transparent;border:1px solid #332D24;border-radius:5px;padding:2px 8px;font-size:10.5px;color:#8C8478;cursor:pointer;white-space:nowrap" style-hover="border-color:#7A3A30;color:#D9A090">Cancel</button>
+                </sc-if>
+                <span style="{{ j.stateStyle }}">{{ j.state }}</span>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ noJobs }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:70px 20px;text-align:center">
+              <div style="font-size:14px;font-weight:600;color:#8C8478;margin-bottom:6px">Nothing here</div>
+              <div style="font-size:12.5px;color:#6E6659">Workers sleep until there is work. This is the normal state.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="width:322px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;overflow-y:auto;padding:15px 15px 18px;display:flex;flex-direction:column;gap:15px">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#E9A23B;margin-bottom:5px">{{ selKind }}</div>
+              <div style="font-size:12.5px;color:#CFC6B8;line-height:1.5;text-wrap:pretty">{{ selWhat }}</div>
+            </div>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:7px">TIMELINE</div>
+              <div style="display:flex;flex-direction:column;gap:1px">
+                <sc-for list="{{ selTimeline }}" as="tl" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+                    <span style="{{ tl.dotStyle }}"></span>
+                    <span style="flex:1;font-size:12px;color:#A79E90">{{ tl.label }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8478">{{ tl.value }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <sc-if value="{{ selHasError }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">ERROR</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.6;color:#D9A090;background:#0F0C07;border:1px solid #3E2A22;border-radius:7px;padding:10px 11px;white-space:pre-wrap">{{ selError }}</div>
+              </div>
+            </sc-if>
+
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#7C7466;margin-bottom:6px">PAYLOAD</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.6;color:#8C8478;background:#0F0C07;border:1px solid #2A251E;border-radius:7px;padding:10px 11px;white-space:pre-wrap">{{ selPayload }}</div>
+            </div>
+
+            <div style="border-top:1px solid #2A251E;padding-top:13px;display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ selActions }}" as="a" hint-placeholder-count="2">
+                <button onClick="{{ a.click }}" style="{{ a.style }}">{{ a.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noSel }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:30px;text-align:center">
+            <div style="font-size:12.5px;color:#5E5749;line-height:1.55;text-wrap:pretty">Select a job to see its timeline, payload and any error.</div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1240px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:280px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1320,&quot;height&quot;:1040}}">
+class Component extends DCLogic {
+  state = this.seed();
+
+  seed(){
+    const j=(id,kind,lib,state,cur,total,elapsed,summary,extra)=>Object.assign(
+      {id,kind,lib,state,cur,total,elapsed,summary},extra||{});
+    return {
+      filter:'all', sel:'j1', pausedAt:{}, pausedMs:{}, toast:null, t0:Date.now(),
+      libs:[
+        {id:'concerts',name:'Concerts'},
+        {id:'learning',name:'Learning'},
+        {id:'home',name:'Home Videos'}
+      ],
+      jobs:[
+        j('j1','thumbnails.sweep','concerts','running',6412,9847,'4m 12s','generating missing thumbnails'),
+        j('j2','contentHash.sweep','concerts','queued',0,727,'—','727 items without a hash'),
+        j('j3','duplicates.fingerprintSweep','concerts','queued',0,8904,'—','comparing captured fingerprints'),
+        j('j4','operations.ocr','learning','running',88,412,'1m 44s','scanning slides for on-screen text'),
+        j('j5','import.scan','home','running',1204,3380,'2m 05s','/Volumes/FamilyDrive/2019'),
+        j('j6','writeback.run','concerts','failed',312,540,'6m 31s','writing tags into files',
+          {error:'operation not permitted\n  /Volumes/ConcertsSSD/Shows/2022 Archive/fm_rip_1998.avi\n  volume mounted read-only — 228 items not written'}),
+        j('j7','operations.encode','concerts','succeeded',1,1,'26m 09s','hevc · northlight_sessions_2024_01'),
+        j('j8','fingerprints.capture','concerts','succeeded',9847,9847,'41m 18s','chromaprint over the library'),
+        j('j9','validation.sweep','learning','succeeded',412,412,'0m 52s','no problems found'),
+        j('j10','operations.reorganize','home','cancelled',44,1902,'0m 31s','template move · stopped by hand'),
+        j('j11','operations.clipExport','concerts','succeeded',6,6,'3m 40s','6 clips to ~/Movies/Clips'),
+        j('j12','duplicates.hashSweep','home','queued',0,3380,'—','grouping identical content hashes'),
+        j('j13','operations.remux','concerts','failed',0,1,'0m 04s','faststart remux',
+          {error:'moov atom not found\n  ash_ember_2024_05_1080p.mp4\n  try Rebuild index instead'}),
+        j('j14','thumbnails.sweep','learning','succeeded',412,412,'1m 12s','all thumbnails present')
+      ]
+    };
+  }
+
+  isPaused(lib){ return !!this.state.pausedAt[lib]; }
+
+  /// Elapsed time for one lane with paused spans subtracted — so progress
+  /// freezes where it reached and continues from there, rather than the
+  /// clock running on invisibly behind a stopped bar.
+  laneDrift(lib){
+    const st=this.state;
+    const banked=st.pausedMs[lib]||0;
+    const open=st.pausedAt[lib]?(Date.now()-st.pausedAt[lib]):0;
+    return Math.max(0,(Date.now()-st.t0-banked-open)/1000);
+  }
+
+  setPaused(lib,pause){
+    this.setState(s=>{
+      const at=Object.assign({},s.pausedAt), ms=Object.assign({},s.pausedMs);
+      if(pause){ if(!at[lib]) at[lib]=Date.now(); }
+      else if(at[lib]){ ms[lib]=(ms[lib]||0)+(Date.now()-at[lib]); delete at[lib]; }
+      return {pausedAt:at,pausedMs:ms};
+    });
+  }
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2200); }
+
+  componentDidMount(){
+    // Progress is derived from a clock, so a remount cannot strand a bar.
+    this._tick=setInterval(()=>this.forceUpdate(),1000);
+  }
+  componentWillUnmount(){ clearTimeout(this._t); clearInterval(this._tick); }
+
+  renderVals(){
+    const st=this.state, self=this;
+    // The kind strings are identifiers; these are what the existing view
+    // puts on screen, and they stay the primary label.
+    const NAMES={'import.scan':'Import','contentHash.sweep':'Content hashing','thumbnails.sweep':'Thumbnail generation',
+      'duplicates.hashSweep':'Duplicate check (hashes)','fingerprints.capture':'Audio fingerprinting',
+      'duplicates.fingerprintSweep':'Duplicate check (fingerprints)','operations.clipExport':'Clip export',
+      'operations.remux':'Remux','operations.encode':'Encode','operations.blockRemoval':'Block removal',
+      'operations.ocr':'Text scan (OCR)','operations.join':'Join','operations.reorganize':'Reorganize',
+      'writeback.run':'Tag write-back','writeback.restore':'Tag restore','validation.sweep':'Validation'};
+    const ICON={queued:['◷','#7C7466'],running:['◐','#E9A23B'],succeeded:['✓','#6FB86F'],
+                failed:['✕','#D07A6A'],cancelled:['–','#5E5749']};
+    const KIND={ingest:'#6FBFB0',duplicates:'#C58BB8',operations:'#8B93E8',writeback:'#E9A23B',validation:'#9DBF7F'};
+    const family=k=>k.indexOf('import')===0||k.indexOf('thumbnails')===0||k.indexOf('contentHash')===0?'ingest'
+      :k.indexOf('duplicates')===0||k.indexOf('fingerprints')===0?'duplicates'
+      :k.indexOf('writeback')===0?'writeback'
+      :k.indexOf('validation')===0?'validation':'operations';
+    const STATE={running:['running','#E9A23B'],queued:['queued','#7C7466'],succeeded:['done','#6FB86F'],
+                 failed:['failed','#D07A6A'],cancelled:['cancelled','#5E5749']};
+
+    // A running job creeps forward from the seeded value; everything else is
+    // static. Elapsed seconds only matter for the illusion of liveness.
+    const progressOf=jb=>{
+      if(jb.state!=='running') return jb.cur;
+      const step=Math.floor(self.laneDrift(jb.lib))*Math.max(1,Math.round(jb.total/900));
+      return Math.min(jb.total-1,jb.cur+step);
+    };
+    const allPaused=st.libs.every(l=>self.isPaused(l.id));
+
+    const visible=st.jobs.filter(jb=>st.filter==='all'
+      ||(st.filter==='active'&&(jb.state==='running'||jb.state==='queued'))
+      ||(st.filter==='failed'&&(jb.state==='failed'||jb.state==='cancelled'))
+      ||(st.filter==='done'&&jb.state==='succeeded'));
+    const sel=st.jobs.find(x=>x.id===st.sel)||null;
+    const libName=id=>(st.libs.find(l=>l.id===id)||{}).name||id;
+
+    const lanes=st.libs.map(l=>{
+      const running=st.jobs.find(x=>x.lib===l.id&&x.state==='running');
+      const queued=st.jobs.filter(x=>x.lib===l.id&&x.state==='queued').length;
+      const paused=self.isPaused(l.id);
+      const cur=running?progressOf(running):0;
+      const pct=running?Math.round(cur/running.total*100):0;
+      // This slot is queue depth. Whether anything is *running* is the line
+      // below — a lane with a live job must never read "idle".
+      return {name:l.name, queued: queued?queued+' queued':'no queue',
+        dotStyle:'flex:none;width:7px;height:7px;border-radius:50%;background:'+
+          (paused?'#7C7466':running?'#E9A23B':'#3A3328')+(running&&!paused?';animation:pulse 1.6s ease-in-out infinite':''),
+        cardStyle:'flex:1;min-width:0;padding:12px 13px;border-radius:9px;background:#151209;border:1px solid '+
+          (running&&!paused?'#4A3C24':'#2A251E'),
+        current: running?(NAMES[running.kind]||running.kind):'no job running',
+        currentKind: running?running.kind:'',
+        currentStyle:'font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(running?'#CFC6B8':'#5E5749'),
+        detail: running?(cur.toLocaleString()+' of '+running.total.toLocaleString()):(paused?'paused':'waiting for work'),
+        pct: running?(paused?'paused':pct+'%'):'',
+        barStyle:'height:100%;width:'+(running?pct:0)+'%;background:'+
+          (paused?'#4A4238':'repeating-linear-gradient(90deg,#E9A23B 0 14px,#D18F2E 14px 28px);animation:barflow 0.7s linear infinite'),
+        pauseLabel: paused?'Resume':'Pause',
+        pauseStyle:'flex:none;border-radius:5px;padding:2px 9px;font-size:10.5px;cursor:pointer;border:1px solid '+
+          (paused?'#7A6428':'#332D24')+';background:'+(paused?'#3A2E16':'transparent')+';color:'+(paused?'#E9A23B':'#8C8478'),
+        pause:()=>self.setPaused(l.id,!paused)};
+    });
+
+    return {
+      stateTabs:[['all','All'],['active','Active'],['failed','Failed'],['done','Finished']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 13px;font-size:12px;cursor:pointer;'+
+          (st.filter===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({filter:v})})),
+      headline: st.jobs.filter(x=>x.state==='running').length+' running · '+
+                st.jobs.filter(x=>x.state==='queued').length+' queued · '+
+                st.jobs.filter(x=>x.state==='failed').length+' failed',
+      clearDone:()=>{ self.setState(s=>({jobs:s.jobs.filter(x=>x.state!=='succeeded'&&x.state!=='cancelled')}));
+        self.flash('Finished jobs cleared from the list'); },
+      pauseAllLabel: allPaused?'Resume all workers':'Pause all workers',
+      pauseAllStyle:'border-radius:7px;padding:6px 13px;font-size:12px;cursor:pointer;border:1px solid '+
+        (allPaused?'#7A6428':'#332D24')+';background:'+(allPaused?'#3A2E16':'transparent')+';color:'+(allPaused?'#E9A23B':'#A79E90'),
+      togglePauseAll:()=>{ st.libs.forEach(l=>self.setPaused(l.id,!allPaused));
+        self.flash(allPaused?'Workers resumed':'Workers paused — running jobs finish their current item first'); },
+
+      lanes,
+
+      jobRows: visible.map(jb=>{
+        const on=st.sel===jb.id, fam=family(jb.kind), cur=progressOf(jb);
+        const running=jb.state==='running', paused=running&&self.isPaused(jb.lib);
+        const ic=ICON[paused?'queued':jb.state];
+        return {kind:jb.kind, name:NAMES[jb.kind]||jb.kind, library:libName(jb.lib),
+          summary: jb.error?jb.error.split('\n')[0]:jb.summary,
+          summaryStyle:'font-size:10.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:'+(jb.error?'#C9857A':'#6E6659'),
+          nameStyle:'font-size:12.5px;white-space:nowrap;color:'+KIND[fam],
+          icon:ic[0], iconStyle:'font-size:11px;color:'+ic[1]+(running&&!paused?';animation:pulse 1.4s ease-in-out infinite':''),
+          canCancel: jb.state==='running'||jb.state==='queued',
+          cancel:e=>{e.stopPropagation();
+            self.setState(s=>({jobs:s.jobs.map(x=>x.id===jb.id?Object.assign({},x,{state:'cancelled'}):x)}));
+            self.flash(jb.state==='running'?'Cancelling after the current item':'Removed from the queue');},
+          hasBar: running||jb.state==='queued',
+          barStyle:'height:100%;width:'+(running?Math.round(cur/jb.total*100):0)+'%;background:'+(paused?'#4A4238':'#E9A23B'),
+          progress: jb.total>1?cur.toLocaleString()+' / '+jb.total.toLocaleString():'',
+          elapsed: jb.elapsed,
+          state: paused?'paused':STATE[jb.state][0],
+          stateStyle:'font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap;background:'+
+            (paused?'#241F19':STATE[jb.state][1]+'1C')+';color:'+(paused?'#8C8478':STATE[jb.state][1]),
+          rowStyle:'display:grid;grid-template-columns:22px 1fr 132px 118px 92px 116px;align-items:center;gap:0;padding:9px 16px;border-bottom:1px solid #1F1B15;cursor:pointer;'+
+            (on?'background:#241E16;box-shadow:inset 2px 0 0 #E9A23B':''),
+          click:()=>self.setState({sel:jb.id})};
+      }),
+      noJobs: visible.length===0,
+
+      hasSel: !!sel, noSel: !sel,
+      pausedBanner: allPaused,
+      selKind: sel?(NAMES[sel.kind]||sel.kind)+'  ·  '+sel.kind:'',
+      selWhat: sel?sel.summary:'',
+      selTimeline: sel?[
+        {label:'Created',value:'09:14:02',dotStyle:'width:7px;height:7px;border-radius:50%;background:#5E5749'},
+        {label:'Started',value:sel.state==='queued'?'—':'09:14:03',
+         dotStyle:'width:7px;height:7px;border-radius:50%;background:'+(sel.state==='queued'?'#3A3328':'#6FB86F')},
+        {label:'Finished',value:(sel.state==='running'||sel.state==='queued')?'—':'09:20:34',
+         dotStyle:'width:7px;height:7px;border-radius:50%;background:'+
+           (sel.state==='succeeded'?'#6FB86F':sel.state==='failed'?'#D07A6A':'#3A3328')}
+      ]:[],
+      selHasError: !!(sel&&sel.error),
+      selError: sel&&sel.error?sel.error:'',
+      selPayload: sel?'{\n  "kind": "'+sel.kind+'",\n  "library": "'+libName(sel.lib)+'",\n  "total": '+sel.total+'\n}':'',
+      selActions: (()=>{
+        if(!sel) return [];
+        const btn=(label,primary,click)=>({label,click,
+          style:'width:100%;border-radius:7px;padding:8px 12px;font-size:12.5px;cursor:pointer;'+
+            (primary?'background:#E9A23B;border:none;color:#1A1409;font-weight:600'
+                   :'background:transparent;border:1px solid #3A3328;color:#A79E90')});
+        if(sel.state==='running') return [btn('Cancel job',false,()=>{
+          self.setState(s=>({jobs:s.jobs.map(x=>x.id===sel.id?Object.assign({},x,{state:'cancelled'}):x)}));
+          self.flash('Cancelled after the current item'); })];
+        if(sel.state==='queued') return [btn('Run next',true,()=>self.flash('Moved to the front of this library\u2019s queue')),
+          btn('Remove from queue',false,()=>{
+            self.setState(s=>({jobs:s.jobs.filter(x=>x.id!==sel.id),sel:null}));
+            self.flash('Removed'); })];
+        if(sel.state==='failed'||sel.state==='cancelled') return [btn('Retry',true,()=>{
+          self.setState(s=>({jobs:s.jobs.map(x=>x.id===sel.id?Object.assign({},x,{state:'queued',cur:0,elapsed:'—'}):x)}));
+          self.flash('Requeued'); }),
+          btn('Copy error',false,()=>self.flash('Error copied'))];
+        return [btn('Run again',false,()=>{
+          self.setState(s=>({jobs:s.jobs.map(x=>x.id===sel.id?Object.assign({},x,{state:'queued',cur:0,elapsed:'—'}):x)}));
+          self.flash('Requeued'); })];
+      })(),
+
+      toast: st.toast,
+
+      notes:[
+        {title:'ONE LANE PER LIBRARY',body:'The runner executes one job at a time per library, so three open libraries mean three lanes and never a race. The existing view already groups by library for the same reason; the lanes lift the currently-running job out of each group so the state of the machine reads at a glance, and the table below stays chronological across all of them.'},
+        {title:'PAUSING IS POLITE',body:'Pausing lets the running job finish its current item rather than tearing it down mid-write, and its lane keeps its progress so resuming does not start over. Workers otherwise sleep until woken — an empty window is the healthy state, not a broken one.'},
+        {title:'FAILURES KEEP THEIR EVIDENCE',body:'A failed job holds its error, its payload and its timeline, so retrying is a decision rather than a guess. The read-only-volume writeback failure here is the useful case: 312 of 540 items were written, and a retry resumes rather than repeats.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

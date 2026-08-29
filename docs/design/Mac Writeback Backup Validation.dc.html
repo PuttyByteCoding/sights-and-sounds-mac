@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0B0A08;}
+  a{color:#E9A23B;text-decoration:none}
+  a:hover{color:#F5BD6A;text-decoration:underline}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#3A3328;border-radius:6px;border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0B0A08;font-family:Archivo,system-ui,sans-serif;color:#F2EDE4;padding:36px;display:flex;flex-direction:column;align-items:center;min-width:max-content;gap:22px">
+
+  <div style="width:1280px;display:flex;align-items:baseline;gap:14px">
+    <div style="font-size:13px;font-weight:600;letter-spacing:0.11em;text-transform:uppercase;color:#E9A23B">Write-back · Backup · Validation</div>
+    <div style="font-size:13px;color:#8C8478;text-wrap:pretty">The three things that touch your files rather than the database. Each one archives what it is about to change.</div>
+  </div>
+
+  <div style="width:1280px;height:858px;background:#131009;border:1px solid #2E2820;border-radius:11px;box-shadow:0 40px 90px rgba(0,0,0,0.6);display:flex;flex-direction:column;overflow:hidden;position:relative">
+
+    <div style="height:40px;flex:none;background:#1C1814;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:9px;position:relative">
+      <div style="width:12px;height:12px;border-radius:50%;background:#E05A50"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#DFA43B"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#5CB05C"></div>
+      <div style="position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#CFC6B8;pointer-events:none">Maintenance — Concerts</div>
+    </div>
+
+    <div style="height:48px;flex:none;background:#1A1610;border-bottom:1px solid #2A251E;display:flex;align-items:center;padding:0 14px;gap:10px">
+      <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+          <button onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}</button>
+        </sc-for>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8C8478;padding:0 4px">{{ headline }}</div>
+    </div>
+
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="flex:none;padding:17px 20px 13px;border-bottom:1px solid #2A251E">
+          <div style="font-size:17px;font-weight:700;margin-bottom:5px">{{ title }}</div>
+          <div style="font-size:12.5px;color:#8C8478;line-height:1.55;max-width:660px;text-wrap:pretty">{{ blurb }}</div>
+        </div>
+
+        <sc-if value="{{ hasScope }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;padding:12px 20px;border-bottom:1px solid #241F19;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478">SCOPE</span>
+            <div style="display:flex;background:#100D08;border:1px solid #2E2820;border-radius:7px;padding:2px;gap:2px">
+              <sc-for list="{{ scopeOpts }}" as="s" hint-placeholder-count="2">
+                <button onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</button>
+              </sc-for>
+            </div>
+            <span style="font-size:11.5px;color:#8C8478">{{ scopeNote }}</span>
+          </div>
+        </sc-if>
+
+        <div style="flex:1;overflow-y:auto;padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px;min-height:0">
+
+          <sc-if value="{{ hasMapping }}" hint-placeholder-val="{{ false }}">
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478;margin-bottom:9px">WHAT GOES WHERE</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ mapping }}" as="m" hint-placeholder-count="5">
+                  <div style="{{ m.style }}">
+                    <span onClick="{{ m.toggle }}" style="{{ m.boxStyle }}">{{ m.mark }}</span>
+                    <span style="{{ m.dotStyle }}"></span>
+                    <span style="{{ m.catStyle }}">{{ m.cat }}</span>
+                    <span style="color:#8C8478;font-size:12px">→</span>
+                    <sc-if value="{{ m.on }}" hint-placeholder-val="{{ true }}">
+                      <input value="{{ m.field }}" onChange="{{ m.onField }}" placeholder="{{ m.placeholder }}" style="width:168px;background:#0F0C07;border:1px solid #332D24;border-radius:6px;padding:4px 9px;color:#F2EDE4;font-family:'JetBrains Mono',monospace;font-size:11.5px" style-focus="border-color:#7A6A4A" />
+                    </sc-if>
+                    <span style="{{ m.hintStyle }}">{{ m.hint }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="font-size:11.5px;color:#8C8478;margin-top:9px;line-height:1.45;text-wrap:pretty">{{ mappingNote }}</div>
+            </div>
+          </sc-if>
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478;margin-bottom:9px">{{ listLabel }}</div>
+            <div style="border:1px solid #2A251E;border-radius:9px;overflow:hidden">
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+                <div style="{{ r.rowStyle }}">
+                  <span style="{{ r.dotStyle }}"></span>
+                  <div style="min-width:0">
+                    <div style="{{ r.nameStyle }}">{{ r.name }}</div>
+                    <div style="{{ r.metaStyle }}">{{ r.meta }}</div>
+                  </div>
+                  <div style="min-width:0;text-align:right">
+                    <div style="{{ r.valStyle }}">{{ r.val }}</div>
+                    <sc-if value="{{ r.hasWas }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8C8478;margin-top:3px;text-decoration:line-through;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.was }}</div>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ r.hasAction }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ r.action }}" style="{{ r.actionStyle }}">{{ r.actionLabel }}</button>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <sc-if value="{{ noRows }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:50px 20px;text-align:center;background:#151209">
+                  <div style="font-size:13.5px;font-weight:600;color:#8FCF8F;margin-bottom:5px">{{ emptyTitle }}</div>
+                  <div style="font-size:12px;color:#6E6659;line-height:1.5;text-wrap:pretty">{{ emptyNote }}</div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:none;height:62px;border-top:1px solid #2A251E;background:#1C1814;display:flex;align-items:center;padding:0 20px;gap:14px">
+          <div style="font-size:12.5px;color:#CFC6B8;min-width:0;text-wrap:pretty">{{ footer }}</div>
+          <div style="flex:1"></div>
+          <sc-for list="{{ actions }}" as="a" hint-placeholder-count="2">
+            <button onClick="{{ a.click }}" style="{{ a.style }}">{{ a.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="width:310px;flex:none;background:#151209;border-left:1px solid #2A251E;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:1;overflow-y:auto;padding:15px 15px 18px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478;margin-bottom:8px">{{ sideTitle }}</div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <sc-for list="{{ stats }}" as="s" hint-placeholder-count="3">
+                <div style="display:flex;align-items:baseline;gap:9px">
+                  <span style="{{ s.nStyle }}">{{ s.n }}</span>
+                  <span style="font-size:11.5px;color:#8C8478">{{ s.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478;margin-bottom:8px">{{ historyLabel }}</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <sc-for list="{{ history }}" as="h" hint-placeholder-count="3">
+                <div style="padding:10px 11px;border:1px solid #2A251E;border-radius:8px;background:#0F0C07">
+                  <div style="display:flex;align-items:baseline;gap:8px">
+                    <span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.what }}</span>
+                    <span style="{{ h.stateStyle }}">{{ h.state }}</span>
+                  </div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8C8478;margin-top:4px">{{ h.when }}</div>
+                  <sc-if value="{{ h.canRevert }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ h.revert }}" style="margin-top:8px;background:transparent;border:1px solid #332D24;border-radius:6px;padding:4px 11px;font-size:11px;color:#A79E90;cursor:pointer" style-hover="border-color:#5A5142;color:#F2EDE4">{{ h.revertLabel }}</button>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid #2A251E;padding-top:13px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.13em;color:#8C8478;margin-bottom:8px">BEFORE ANYTHING IS WRITTEN</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <sc-for list="{{ safety }}" as="sf" hint-placeholder-count="3">
+                <div style="display:flex;align-items:flex-start;gap:9px">
+                  <span style="flex:none;margin-top:5px;width:6px;height:6px;border-radius:50%;background:#6FB86F"></span>
+                  <span style="flex:1;font-size:11.5px;color:#A79E90;line-height:1.45;text-wrap:pretty">{{ sf.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;bottom:78px;left:50%;transform:translateX(-50%);z-index:90;background:#221D16;border:1px solid #4A4238;border-radius:8px;padding:9px 16px;font-size:12.5px;color:#F2EDE4;box-shadow:0 18px 40px rgba(0,0,0,0.6)">{{ toast }}</div>
+    </sc-if>
+
+  </div>
+
+  <div style="width:1280px;display:flex;gap:14px;flex-wrap:wrap">
+    <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3">
+      <div style="flex:1;min-width:290px;background:#151209;border:1px solid #2A251E;border-radius:9px;padding:13px 15px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.11em;color:#E9A23B;margin-bottom:5px">{{ n.title }}</div>
+        <div style="font-size:12.5px;color:#A79E90;line-height:1.55;text-wrap:pretty">{{ n.body }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1360,&quot;height&quot;:1050}}">
+class Component extends DCLogic {
+  handle(kind){ this.setState(s=>({handled:Object.assign({},s.handled,{[kind]:true})})); }
+
+  state = {tab:'writeback', scope:'selection', toast:null, purged:false, reverted:{}, handled:{},
+    wb:{'Band':{on:true,field:'ARTIST'},'Recording Type':{on:false,field:''},
+        'Venue':{on:true,field:''},'Year':{on:true,field:'DATE'},'Taper':{on:true,field:''}}};
+
+  flash(m){ this.setState({toast:m}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2400); }
+  componentWillUnmount(){ clearTimeout(this._t); }
+
+  renderVals(){
+    const st=this.state, self=this;
+    const mono="font-family:'JetBrains Mono',monospace;";
+    const row=(dot,name,meta,val,extra)=>Object.assign({
+      name,meta,val,hasWas:false,hasAction:false,
+      dotStyle:'flex:none;width:7px;height:7px;border-radius:50%;background:'+dot,
+      rowStyle:'display:grid;grid-template-columns:16px minmax(0,1fr) minmax(0,1fr) 96px;align-items:center;gap:12px;padding:10px 13px;border-bottom:1px solid #1F1B15;background:#151209',
+      nameStyle:mono+'font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#CFC6B8',
+      metaStyle:'font-size:10.5px;color:#8C8478;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
+      valStyle:mono+'font-size:11.5px;color:#8FCF8F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'},extra||{});
+
+    const btn=(label,click,primary,danger)=>({label,click,
+      style:'border-radius:7px;padding:9px 17px;font-size:12.5px;font-weight:'+(primary?'600':'400')+';cursor:pointer;'+
+        (danger?'background:#8A3428;border:none;color:#FFEDE8'
+         :primary?'background:#E9A23B;border:none;color:#1A1409'
+         :'background:transparent;border:1px solid #3A3328;color:#A79E90')});
+
+    const nSel=st.scope==='selection'?312:9847;
+    // Middle truncation, as the source does — the volume and the filename are
+    // the two ends that identify a file; the centre is the part you can lose.
+    const midPath=p=>{
+      const seg=p.split('/'), file=seg.pop();
+      return seg.length>3 ? seg.slice(0,3).join('/')+'/…/'+file : p;
+    };
+    const F=(id,kind,path,detail,act,msg,dot)=>({id,kind,path,detail,act,msg,dot});
+    const FINDINGS=[
+      F('f1','missingFile','/Volumes/RoadDrive/Taped 2024/road_capture_0714.mp4',
+        'the row exists, the file is gone','Review','Opens Browse at this item','#D07A6A'),
+      F('f2','missingFile','/Volumes/RoadDrive/Taped 2024/road_capture_0715.mp4',
+        'the row exists, the file is gone','Review','Opens Browse at this item','#D07A6A'),
+      F('f3','orphanFile','/Volumes/ConcertsSSD/Shows/_unsorted/new_capture_08_28.mp4',
+        'on disk, no row — never imported','Import','Queued for import','#C9884A'),
+      F('f4','orphanFile','/Volumes/ConcertsSSD/Shows/_unsorted/handheld_0902.mov',
+        'on disk, no row — never imported','Import','Queued for import','#C9884A'),
+      F('f5','sizeMismatch','/Volumes/ConcertsSSD/Shows/2024 Shows/northlight_sessions_e02_4k.mp4',
+        'row says 11.8 GB, disk says 11.2 GB','Re-probe','Queued a re-probe','#6B96D6')
+    ];
+    const findings=FINDINGS.filter(f=>!st.handled[f.id]).length;
+    const staged=st.purged?0:128;
+
+    const CFG={
+      writeback:{
+        title:'Write tags into the files',
+        blurb:'Copy what the library knows into the media files themselves, so another player — or you, in ten years, without this app — can still read it.',
+        hasScope:true, hasMapping:true,
+        listLabel:'WHAT WOULD CHANGE · FIRST 5 OF '+nSel.toLocaleString(),
+        rows:[
+          row('#6FB86F','northlight_sessions_e01_4k.mp4','ARTIST',
+            'Northlight Sessions',{hasWas:true,was:'(empty)'}),
+          row('#6FB86F','northlight_sessions_e01_4k.mp4','DATE','2024',{hasWas:true,was:'(empty)'}),
+          row('#E9A23B','riverside_collective_0412.mp4','ARTIST',
+            'Riverside Collective',{hasWas:true,was:'Riverside Collectiv',
+            valStyle:mono+'font-size:11.5px;color:#E9A23B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'}),
+          row('#6FB86F','broadside_trio_proshot.mp4','ARTIST','The Broadside Trio',{hasWas:true,was:'(empty)'}),
+          row('#8C8478','fm_rip_1998_02.avi','ARTIST','skipped',
+            {metaStyle:'font-size:10.5px;color:#C9884A;margin-top:3px',
+             valStyle:mono+'font-size:11.5px;color:#8C8478'})
+        ],
+        stats:[[nSel.toLocaleString(),'items in scope'],['1,204','tags to write'],['1','value would be overwritten']],
+        historyLabel:'RECENT RUNS',
+        footer: nSel.toLocaleString()+' items · 1,204 tags · 1 existing value replaced',
+        actions:[btn('Preview only',()=>self.flash('Nothing written — the plan above is the preview'),false),
+                 btn('Write tags',()=>self.flash('Queued — snapshots captured first, then written'),true)],
+        safety:['Every file’s existing embedded tags are snapshotted before it is touched.',
+                'A run can be reverted whole, restoring the tags each file had before it.',
+                'Files whose container will not accept a tag are skipped and listed, never rewritten.']},
+
+      backup:{
+        title:'Back up the library',
+        blurb:'A library is one file, so a backup is a copy of it. This does not touch your media — only the database holding tags, fields and history.',
+        listLabel:'BACKUPS ON DISK',
+        rows:[
+          row('#6FB86F','Concerts 2026-08-27 09-14.sqlite-backup','48.2 MB · 9,847 items','2 days ago',
+            {hasAction:true,actionLabel:'Restore',actionStyle:'border-radius:6px;padding:4px 11px;font-size:11px;cursor:pointer;background:transparent;border:1px solid #332D24;color:#A79E90',
+             action:()=>self.flash('Current file archived first, then replaced')}),
+          row('#6FB86F','Concerts 2026-08-24 18-02.sqlite-backup','47.9 MB · 9,801 items','5 days ago',
+            {hasAction:true,actionLabel:'Restore',actionStyle:'border-radius:6px;padding:4px 11px;font-size:11px;cursor:pointer;background:transparent;border:1px solid #332D24;color:#A79E90',
+             action:()=>self.flash('Current file archived first, then replaced')}),
+          row('#8C8478','Concerts 2026-08-12 07-40.sqlite-backup','44.1 MB · 9,204 items','17 days ago',
+            {hasAction:true,actionLabel:'Restore',actionStyle:'border-radius:6px;padding:4px 11px;font-size:11px;cursor:pointer;background:transparent;border:1px solid #332D24;color:#A79E90',
+             action:()=>self.flash('Current file archived first, then replaced')})
+        ],
+        stats:[['3','backups kept'],['48.2 MB','most recent'],['2 days','since the last one']],
+        historyLabel:'RESTORE HISTORY',
+        footer:'Backing up copies one file. Your media is never included.',
+        actions:[btn('Reveal in Finder',()=>self.flash('Opens the backup folder'),false),
+                 btn('Back up now',()=>self.flash('Copied — 48.2 MB'),true)],
+        safety:['Restoring archives the current file first; it is never deleted.',
+                'Close this library’s windows before restoring.',
+                'Media files are untouched by both backup and restore.']},
+
+      validation:{
+        title:'Validate the library',
+        blurb:'Compare what the database believes against what is actually on disk. Findings are reported, never fixed silently.',
+        // One row per finding, as the existing view does — path, detail, and
+        // one honest action each. Not aggregated by kind.
+        listLabel:'FINDINGS · LATEST SWEEP',
+        rows:FINDINGS.filter(f=>!st.handled[f.id]).map(f=>row(f.dot,midPath(f.path),f.detail,f.kind,
+          {valStyle:mono+'font-size:11px;color:'+f.dot+';text-align:right',
+           metaStyle:'font-size:10.5px;color:#8C8478;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
+           nameStyle:mono+'font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#CFC6B8',
+           hasAction:true,actionLabel:f.act,
+           actionStyle:'border-radius:6px;padding:4px 11px;font-size:11px;cursor:pointer;background:transparent;border:1px solid #332D24;color:#A79E90',
+           action:()=>{self.handle(f.id);self.flash(f.msg);}})),
+        emptyTitle:'No Findings', emptyNote:'Run a sweep to compare the library against the disk.',
+        stats:[[String(findings),'findings showing'],[String(staged),'rows staged for deletion'],
+               [staged?'1.9 TB':'0 B','those files occupy']],
+        historyLabel:'RECENT SWEEPS',
+        footer: st.purged
+          ? 'Purged 128 rows · 126 files deleted · 2 could not be deleted'
+          : findings+' findings · a sweep only observes, it never repairs',
+        actions:[
+          // Once purged there is nothing staged, so the action goes with it.
+          st.purged
+            ? {label:'Nothing staged',click:()=>{},
+               style:'border-radius:7px;padding:9px 17px;font-size:12.5px;background:#2A241C;border:none;color:#5E5749;cursor:default'}
+            : btn('Purge '+staged+' staged rows',()=>{self.setState({purged:true});
+                self.flash('126 files deleted · 2 failed · 128 rows removed');},false,true),
+          btn('Run Sweep',()=>{self.setState({purged:false,handled:{}});
+            self.flash('Sweeping — comparing every row against the disk');},true)],
+        safety:['A sweep only reads. Findings are the latest run, recomputed cheaply — not a history.',
+                'Purging touches only rows already flagged for deletion, and reports files it could not delete rather than assuming.',
+                'Items on an offline source are skipped by a purge entirely, so an unplugged drive cannot lose anything.']}
+    };
+
+    const cfg=CFG[st.tab];
+
+    const HISTORY={
+      writeback:[
+        {what:'1,204 tags across 312 items',when:'Today at 09:41',state:'applied',can:true,label:'Restore embedded tags'},
+        {what:'88 tags across 24 items',when:'27 August at 15:12',state:'applied',can:true,label:'Restore embedded tags'},
+        {what:'2,640 tags across 690 items',when:'24 August at 11:03',state:'reverted',can:false,label:''}
+      ],
+      backup:[
+        {what:'Restored from 24 August',when:'26 August at 08:20',state:'applied',can:false,label:''}
+      ],
+      validation:[
+        {what:'Full sweep · '+FINDINGS.length+' findings',when:'Today at 06:00',state:'applied',can:false,label:''},
+        {what:'Full sweep · 9 findings',when:'Yesterday at 06:00',state:'applied',can:false,label:''}
+      ]
+    };
+
+    return {
+      tabs:[['writeback','Write-back'],['backup','Backup'],['validation','Validation']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 15px;font-size:12px;cursor:pointer;'+
+          (st.tab===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({tab:v})})),
+      headline: st.tab==='writeback'?'1,204 tags would be written'
+        : st.tab==='backup'?'last backed up 2 days ago'
+        : findings?findings+' findings from the latest sweep':'nothing left from the latest sweep',
+
+      title: cfg.title, blurb: cfg.blurb,
+      hasScope: !!cfg.hasScope,
+      scopeOpts:[['selection','The 312 selected'],['library','The whole library']].map(([v,label])=>({label,
+        style:'border:none;border-radius:5px;padding:5px 13px;font-size:11.5px;cursor:pointer;'+
+          (st.scope===v?'background:#2E2820;color:#F2EDE4;font-weight:600':'background:transparent;color:#8C8478'),
+        pick:()=>self.setState({scope:v})})),
+      scopeNote: st.scope==='selection'
+        ? 'Only what you picked in Browse.'
+        : 'Every item, including ones already carrying the same values — those are skipped rather than rewritten.',
+
+      hasMapping: !!cfg.hasMapping,
+      // Editable here as well as in Categories & Fields — it is the same
+      // setting, and this is where you find out it is wrong.
+      mapping:[['Band','#8B93E8'],['Recording Type','#C58BB8'],['Venue','#6FBFB0'],['Year','#E9A23B'],['Taper','#9DBF7F']]
+        .map(([cat,hue])=>{
+          const on=st.wb[cat]!==undefined?st.wb[cat].on:false;
+          const field=st.wb[cat]?st.wb[cat].field:'';
+          return {cat, on, field, mark:on?'✓':'',
+            placeholder:'auto — '+cat.toUpperCase().split(' ').join(''),
+            hint: on?(field?'standard field':'custom field, named after the category'):'not written into files',
+            hintStyle:'font-size:11px;color:#8C8478',
+            catStyle:'width:118px;flex:none;font-size:12.5px;color:'+(on?'#F2EDE4':'#8C8478'),
+            dotStyle:'flex:none;width:6px;height:6px;border-radius:2px;background:'+(on?hue:'#3A3328'),
+            boxStyle:'flex:none;width:14px;height:14px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;'+
+              (on?'background:#E9A23B;color:#1A1409;border:1px solid #E9A23B':'background:transparent;border:1px solid #4A4238;color:transparent'),
+            toggle:()=>self.setState(s=>({wb:Object.assign({},s.wb,{[cat]:{on:!on,field:field}})})),
+            onField:e=>{const v=e.target.value;self.setState(s=>({wb:Object.assign({},s.wb,{[cat]:{on:true,field:v}})}));},
+            style:'display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:8px;background:#151209;border:1px solid '+(on?'#2A251E':'#241F19')};
+        }),
+      mappingNote:'The same setting as Categories & Fields — changing it here changes it there. A blank field writes a custom one named after the category; a standard key like ARTIST or DATE goes into the container’s own tag.',
+
+      listLabel: cfg.listLabel, rows: cfg.rows, noRows: cfg.rows.length===0,
+      emptyTitle: cfg.emptyTitle||'', emptyNote: cfg.emptyNote||'',
+
+      sideTitle: st.tab==='validation'?'THIS SWEEP':'SUMMARY',
+      stats: cfg.stats.map(([n,label])=>({n,label,
+        nStyle:mono+'font-size:13px;color:#E9A23B;min-width:66px;text-align:right'})),
+
+      historyLabel: cfg.historyLabel,
+      history: HISTORY[st.tab].map((h,i)=>({what:h.what, when:h.when, state:h.state,
+        stateStyle:'font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap;'+
+          (h.state==='reverted'?'background:#241F19;color:#A79E90':'background:#1F3320;color:#8FCF8F'),
+        canRevert: h.can&&!st.reverted[st.tab+i], revertLabel:h.label,
+        revert:()=>{ self.setState(s=>({reverted:Object.assign({},s.reverted,{[st.tab+i]:true})}));
+          self.flash('Restoring each file’s tags from its snapshot'); }})),
+
+      safety: cfg.safety.map(label=>({label})),
+      footer: cfg.footer, actions: cfg.actions,
+      toast: st.toast,
+
+      notes:[
+        {title:'THE LIBRARY IS THE TRUTH, THE FILE IS THE COPY',body:'Tags live in the database; write-back pushes them into the media so the work survives without this app. Because it is a copy rather than the original, a run can be reverted from the snapshot taken before it — and a value that already differed is shown struck through so you see what you are about to replace.'},
+        {title:'A BACKUP IS ONE FILE',body:'One library, one SQLite file, so backing up is a copy and restoring is a swap — with the current file archived first, never deleted. Media is not included, which is what keeps a backup 48 MB instead of 41 TB.'},
+        {title:'VALIDATION REPORTS, IT DOES NOT REPAIR',body:'One row per finding — its path, what is wrong, and the single action that resolves it — across the three kinds the sweep can produce. The table holds the latest sweep only, so findings are observations recomputed cheaply rather than a history to manage. Purging is the one destructive action, touches only rows already flagged, and reports the files it could not delete rather than assuming it succeeded.'},
+        {title:'THREE VIEWS, ONE WINDOW',body:'Write-back, backup and validation exist separately in the app today. They are grouped here because they share a promise — each archives what it is about to change — and because you reach for them in the same mood. Move history stays with Organise, where the moves are made.'}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
