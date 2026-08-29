@@ -46,6 +46,20 @@ import Testing
         #expect(again.id == created.id)
     }
 
+    @Test func favoriteAndNotesRoundTrip() throws {
+        let f = try FilterFixture()
+        try f.library.setTagFavorite(f.bandA.id, true)
+        try f.library.setTagNotes(f.bandA.id, "founding lineup only")
+        var fetched = try f.library.writer.read { try Tag.fetchOne($0, key: f.bandA.id) }
+        #expect(fetched?.isFavorite == true)
+        #expect(fetched?.notes == "founding lineup only")
+        try f.library.setTagFavorite(f.bandA.id, false)
+        try f.library.setTagNotes(f.bandA.id, "")
+        fetched = try f.library.writer.read { try Tag.fetchOne($0, key: f.bandA.id) }
+        #expect(fetched?.isFavorite == false)
+        #expect(fetched?.notes == "")
+    }
+
     @Test func renameRefusesCollision() throws {
         let f = try FilterFixture()
         try f.library.renameTag(f.bandA.id, to: "Band Alpha")

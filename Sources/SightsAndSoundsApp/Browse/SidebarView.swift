@@ -268,7 +268,17 @@ private struct TagFilterRow: View {
             }
         }
         .buttonStyle(.plain)
+        // Edit in place — the Categories window stays the bulk editor;
+        // a tag you can see shouldn't need a trip there (#108).
+        .contextMenu {
+            Button("Edit Tag…") { showEditor = true }
+        }
+        .popover(isPresented: $showEditor, arrowEdge: .trailing) {
+            TagEditorView(tag: tag)
+        }
     }
+
+    @State private var showEditor = false
 
     @ViewBuilder private var slotIcon: some View {
         switch model.filter.slot(of: tag.id) {
