@@ -62,6 +62,22 @@ extension LibraryDatabase {
         }
     }
 
+    public func setTagFavorite(_ tagID: UUID, _ favorite: Bool) throws {
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE tag SET isFavorite = ? WHERE id = ?",
+                arguments: [favorite, tagID])
+        }
+    }
+
+    public func setTagNotes(_ tagID: UUID, _ notes: String) throws {
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE tag SET notes = ? WHERE id = ?",
+                arguments: [notes, tagID])
+        }
+    }
+
     // MARK: - Aliases
 
     public func addAlias(_ alias: String, toTag tagID: UUID) throws {
