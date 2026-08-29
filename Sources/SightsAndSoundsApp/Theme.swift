@@ -264,10 +264,32 @@ enum Fonts {
         _ = monoFamily
     }
 
+    /// SPM's generated `Bundle.module` calls `fatalError` when the
+    /// resource bundle is absent — which is the wrong failure mode
+    /// entirely for a font, where the fallback is perfectly legible. This
+    /// finds the same bundle and returns nil instead.
+    ///
+    /// Three locations, because the app runs three ways: inside a .app
+    /// (`Contents/Resources`), as a bare `swift run` executable (beside
+    /// the binary), and under the test runner (beside the xctest bundle).
+    private static let resourceBundle: Bundle? = {
+        let name = "SightsAndSounds_SightsAndSoundsApp.bundle"
+        let candidates = [
+            Bundle.main.resourceURL,
+            Bundle.main.bundleURL,
+            Bundle(for: BundleToken.self).resourceURL,
+            Bundle(for: BundleToken.self).bundleURL.deletingLastPathComponent(),
+        ]
+        for base in candidates.compactMap({ $0 }) {
+            if let bundle = Bundle(url: base.appendingPathComponent(name)) { return bundle }
+        }
+        return nil
+    }()
+
     private static func register(_ resource: String, family: String) -> String? {
         // `.copy` in the manifest preserves the Fonts/ directory, so the
         // subdirectory is part of the lookup.
-        guard let url = Bundle.module.url(
+        guard let url = resourceBundle?.url(
             forResource: resource, withExtension: "ttf", subdirectory: "Fonts") else {
             AppLogNote.fontMissing(resource)
             return nil
@@ -299,6 +321,9 @@ enum Fonts {
 private extension CFError {
     var domainCode: CFIndex { CFErrorGetCode(self) }
 }
+
+/// Only exists to give `Bundle(for:)` a class in this module to locate.
+private final class BundleToken {}
 
 /// Font problems are worth a log line and nothing more — the fallback is
 /// legible, so this is never fatal.

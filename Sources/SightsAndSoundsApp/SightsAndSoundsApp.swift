@@ -7,7 +7,13 @@ import SightsAndSoundsKit
 struct SightsAndSoundsApp: App {
     @State private var model = AppModel()
 
+    static let pickerWindowID = "picker"
+
     init() {
+        // Before the first view draws, so nothing renders a frame in the
+        // system face and reflows once Archivo arrives.
+        Fonts.registerAll()
+
         // Tooltips: the macOS default initial delay (~1.5 s) makes every
         // `.help()` feel unresponsive. Shorter, but deliberately not
         // instant so tooltips don't flash while mousing across a toolbar.
@@ -26,9 +32,22 @@ struct SightsAndSoundsApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
-            LibraryListView()
+        // The picker is a DIALOG, not the app's root window (spec 01): it
+        // appears at launch and from File ▸ Open Library…, and goes away
+        // as soon as a library is chosen. A `Window`, not a `WindowGroup`
+        // — there is only ever one, and choosing twice should return to
+        // the one already up rather than stack a second.
+        Window("Sights and Sounds", id: Self.pickerWindowID) {
+            LibraryPickerView()
                 .environment(model)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+        .commands {
+            CommandGroup(after: .newItem) {
+                OpenLibraryCommand()
+                    .environment(model)
+            }
         }
 
         // One library per window — several can be open at once, each backed
@@ -37,6 +56,11 @@ struct SightsAndSoundsApp: App {
             if let libraryID {
                 LibraryWindowView(libraryID: libraryID)
                     .environment(model)
+                    // The picker's OPEN badge, its Bring Forward, and the
+                    // summary cache all key off this.
+                    .onAppear { model.libraryWindowAppeared(libraryID) }
+                    .onDisappear { model.libraryWindowDisappeared(libraryID) }
+                    .focusedSceneValue(\.openLibraryID, libraryID)
             }
         }
 
@@ -113,6 +137,85 @@ final class AppModel {
         guard let appDatabase else { return }
         do { libraries = try appDatabase.libraries() } catch {
             loadError = "Could not read libraries: \(error)"
+        }
+    }
+
+    // MARK: - The library picker
+
+    /// Which way the picker was reached. It decides three things: the
+    /// title, whether cancel reads Quit, and whether the placement band
+    /// appears — because only from the menu is there a window to replace.
+    enum PickerContext { case launch, menu }
+
+    var pickerContext: PickerContext = .launch
+    /// The library whose window "This window" would close. Nil from
+    /// launch, and nil from the menu when no library window has focus.
+    var pickerOriginLibraryID: UUID?
+
+    /// Libraries with a window on screen. Drives the `OPEN` badge, the
+    /// Bring Forward primary, and the default selection landing on
+    /// something you can actually open.
+    private(set) var openLibraryIDs: Set<UUID> = []
+
+    /// Offline source counts, for open libraries only. A shut library
+    /// cannot be asked whether its drives are plugged in without opening
+    /// it and stat-ing every root — the slow case the cached summary
+    /// exists to avoid.
+    private(set) var offlineSourceCounts: [UUID: Int] = [:]
+
+    func libraryWindowAppeared(_ libraryID: UUID) {
+        openLibraryIDs.insert(libraryID)
+        refreshOfflineCount(for: libraryID)
+    }
+
+    func libraryWindowDisappeared(_ libraryID: UUID) {
+        openLibraryIDs.remove(libraryID)
+        offlineSourceCounts[libraryID] = nil
+        // The one moment the counts are both current and free: the handle
+        // is open and the user is done with it.
+        cacheSummary(for: libraryID)
+    }
+
+    /// Snapshot a library's counts into the registry so the picker can
+    /// show them without opening the file. Off the main actor — a
+    /// `SUM(fileSize)` over a large library is not a main-thread read.
+    ///
+    /// The handle is deliberately left open: a job may still be running
+    /// against it, and the runner is the owner of that lifetime.
+    func cacheSummary(for libraryID: UUID) {
+        guard let appDatabase, let library = try? library(for: libraryID) else { return }
+        Task.detached(priority: .utility) {
+            do {
+                try appDatabase.cacheSummary(try library.summary(), for: libraryID)
+            } catch {
+                // Never surfaced: a stale row summary is a cosmetic loss,
+                // and this runs as a window is going away.
+                AppLog.shared.warning("app", "Could not cache the library summary: \(error)")
+            }
+            await MainActor.run { self.refresh() }
+        }
+    }
+
+    /// Re-observe every open library's sources. Called when the picker
+    /// appears — the badge has to be right at the moment it is read, and
+    /// a drive can be unplugged while the dialog is not up.
+    func refreshOpenLibraryStatus() {
+        for id in openLibraryIDs { refreshOfflineCount(for: id) }
+    }
+
+    private func refreshOfflineCount(for libraryID: UUID) {
+        guard let library = try? library(for: libraryID) else { return }
+        Task.detached(priority: .utility) {
+            let access: any FileAccess = LiveFileAccess()
+            guard let sources = try? await library.writer.read({ try Source.fetchAll($0) }) else { return }
+            let offline = sources.filter { $0.enabled && !$0.isOnline(using: access) }.count
+            await MainActor.run {
+                // Only for a library still open: the window may have closed
+                // while this was in flight, and a stale count would badge a
+                // row the spec says cannot be badged.
+                guard self.openLibraryIDs.contains(libraryID) else { return }
+                self.offlineSourceCounts[libraryID] = offline
+            }
         }
     }
 
@@ -243,6 +346,43 @@ final class AppModel {
     }
 }
 
+/// The library window that has focus, published to the menu bar so File ▸
+/// Open Library… knows which window "This window" would replace. A scene
+/// value, not a window value: the command lives on the menu bar, which is
+/// outside every window.
+struct OpenLibraryFocusKey: FocusedValueKey {
+    typealias Value = UUID
+}
+
+extension FocusedValues {
+    var openLibraryID: UUID? {
+        get { self[OpenLibraryFocusKey.self] }
+        set { self[OpenLibraryFocusKey.self] = newValue }
+    }
+}
+
+/// File ▸ Open Library… — the second way into the picker.
+///
+/// It reads the focused library window so the dialog can name what "This
+/// window" would close. With no library window focused there is nothing
+/// to replace, so the placement band stays away and the dialog behaves as
+/// it does at launch, apart from cancel still meaning cancel.
+struct OpenLibraryCommand: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.openLibraryID) private var focusedLibraryID
+
+    var body: some View {
+        Button("Open Library…") {
+            model.pickerContext = .menu
+            model.pickerOriginLibraryID = focusedLibraryID
+            model.refresh()
+            openWindow(id: SightsAndSoundsApp.pickerWindowID)
+        }
+        .keyboardShortcut("o", modifiers: .command)
+    }
+}
+
 /// Identifies one item to play, plus the filtered listing it came from
 /// so the player's arrows can walk it. Setting one on a BrowseModel
 /// swaps that library window over to the embedded player.
@@ -250,43 +390,6 @@ struct PlayerRequest: Codable, Hashable {
     var libraryID: UUID
     var itemID: UUID
     var playlist: [UUID] = []
-}
-
-struct LibraryListView: View {
-    @Environment(AppModel.self) private var model
-    @State private var showingNewLibrary = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if let error = model.loadError {
-                Text(error).foregroundStyle(.red).padding()
-            }
-            if model.libraries.isEmpty {
-                ContentUnavailableView(
-                    "No Libraries",
-                    systemImage: "books.vertical",
-                    description: Text("Create your first library to get started."))
-            } else {
-                List(model.libraries) { library in
-                    LibraryRow(library: library)
-                }
-            }
-        }
-        .frame(minWidth: 520, minHeight: 360)
-        .navigationTitle("Sights and Sounds")
-        .toolbar {
-            Button("New Library…", systemImage: "plus") { showingNewLibrary = true }
-                .help("Create a new library from a template")
-            AddExistingLibraryButton()
-            DemoLibraryButton()
-            TasksWindowButton()
-            LogWindowButton()
-        }
-        .sheet(isPresented: $showingNewLibrary) {
-            NewLibraryFlow()
-                .environment(model)
-        }
-    }
 }
 
 /// Name + template → category review → create. The review step edits a
@@ -409,86 +512,6 @@ struct NewLibraryFlow: View {
         } catch {
             creationError = "\(error)"
         }
-    }
-}
-
-
-struct LibraryRow: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
-    let library: LibraryRef
-    @State private var statusText: String?
-    @State private var confirmRestore: URL?
-    @State private var confirmRemove = false
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(library.name).font(.headline)
-                Text(statusText ?? library.filePath)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Open") { openWindow(id: "library", value: library.id) }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) { openWindow(id: "library", value: library.id) }
-        .contextMenu {
-            Button("Properties…", systemImage: "info.circle") {
-                openWindow(id: "properties", value: library.id)
-            }
-            Divider()
-            Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") { backUp() }
-            Button("Restore from Backup…", systemImage: "clock.arrow.circlepath") { pickBackup() }
-            Divider()
-            Button("Remove from List…", systemImage: "minus.circle") { confirmRemove = true }
-        }
-        .confirmationDialog(
-            "Remove “\(library.name)” from this list? The library file on disk is NOT deleted — Add Existing… brings it back, never as a duplicate. Close this library's windows before removing.",
-            isPresented: $confirmRemove
-        ) {
-            Button("Remove from List", role: .destructive) {
-                model.removeLibrary(id: library.id)
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .confirmationDialog(
-            "Replace “\(library.name)” with this backup? The current file is archived first (never deleted). Close this library's windows before restoring.",
-            isPresented: Binding(get: { confirmRestore != nil }, set: { if !$0 { confirmRestore = nil } })
-        ) {
-            Button("Restore", role: .destructive) {
-                guard let url = confirmRestore else { return }
-                do {
-                    try model.restoreLibrary(id: library.id, from: url)
-                    statusText = "Restored from \(url.lastPathComponent)"
-                } catch {
-                    statusText = "Restore failed: \(error)"
-                }
-            }
-            Button("Cancel", role: .cancel) { confirmRestore = nil }
-        }
-    }
-
-    private func backUp() {
-        do {
-            let open = try model.library(for: library.id)
-            let url = try open.backup(into: LibraryDatabase.defaultBackupDirectory())
-            statusText = "Backed up to \(url.path)"
-        } catch {
-            statusText = "Backup failed: \(error)"
-        }
-    }
-
-    private func pickBackup() {
-        let panel = NSOpenPanel()
-        panel.title = "Choose a backup to restore"
-        panel.directoryURL = LibraryDatabase.defaultBackupDirectory()
-            .appendingPathComponent(library.name, isDirectory: true)
-        panel.allowedContentTypes = [.init(filenameExtension: "sqlite")].compactMap { $0 }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        confirmRestore = url
     }
 }
 
