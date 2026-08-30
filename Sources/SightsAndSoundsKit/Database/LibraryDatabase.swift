@@ -648,6 +648,14 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // "Run next" needs somewhere to write. Priority reorders the
+        // queue and never pre-empts: the runner is serialized on purpose.
+        migrator.registerMigration("jobPriority") { db in
+            try db.alter(table: "job") { t in
+                t.add(column: "priority", .integer).notNull().defaults(to: 0)
+            }
+        }
+
         return migrator
     }
 

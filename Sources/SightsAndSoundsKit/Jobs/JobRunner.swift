@@ -28,6 +28,56 @@ public actor JobRunner {
         return record
     }
 
+    /// Push a queued job to the front of this library's lane.
+    ///
+    /// It **reorders; it never interrupts** — the runner is serialized on
+    /// purpose and a job that is already writing finishes. The new
+    /// priority is one above the current maximum among queued rows
+    /// rather than a fixed number, so two Run nexts in a row keep their
+    /// relative order.
+    @discardableResult
+    public func runNext(_ jobID: UUID) throws -> Bool {
+        try library.writer.write { db in
+            guard let record = try JobRecord.fetchOne(db, key: jobID),
+                  record.state == .queued
+            else { return false }
+            let top = try Int.fetchOne(
+                db,
+                sql: "SELECT COALESCE(MAX(priority), 0) FROM job WHERE state = ?",
+                arguments: [JobState.queued.rawValue]) ?? 0
+            try db.execute(
+                sql: "UPDATE job SET priority = ? WHERE id = ?",
+                arguments: [top + 1, jobID])
+            return true
+        }
+    }
+
+    /// Re-enqueue a finished job's kind and payload as a NEW record.
+    ///
+    /// Retrying must not rewrite history: the failure stays in the list
+    /// with its error, and the retry is its own row.
+    @discardableResult
+    public func retry(_ jobID: UUID) throws -> JobRecord? {
+        guard let original = try library.writer.read({ try JobRecord.fetchOne($0, key: jobID) })
+        else { return nil }
+        let record = JobRecord(kind: original.kind, payload: original.payload)
+        try library.writer.write { try record.insert($0) }
+        return record
+    }
+
+    /// Drop the finished-and-uninteresting rows: succeeded and cancelled.
+    /// **Failed rows survive** — their evidence is the entire point of
+    /// keeping them.
+    @discardableResult
+    public func deleteFinished() throws -> Int {
+        try library.writer.write { db in
+            try db.execute(
+                sql: "DELETE FROM job WHERE state IN (?, ?)",
+                arguments: [JobState.succeeded.rawValue, JobState.cancelled.rawValue])
+            return db.changesCount
+        }
+    }
+
     /// Enqueue unless a job of this kind is already queued or running —
     /// the signal-driven pattern: signals arrive freely, work never
     /// duplicates. Returns nil when a pending job made this a no-op.
@@ -73,13 +123,15 @@ public actor JobRunner {
 
     // MARK: - Internals
 
-    // Ordered by createdAt with rowid as the tiebreak: several jobs can
-    // share a millisecond timestamp, and rowid preserves insertion order.
+    // Highest priority first, then createdAt with rowid as the tiebreak:
+    // several jobs can share a millisecond timestamp, and rowid preserves
+    // insertion order. Priority is what "Run next" writes; it decides
+    // what starts NEXT and never what stops.
     private func nextQueued() throws -> JobRecord? {
         try library.writer.read { db in
             try JobRecord
                 .filter(sql: "state = ?", arguments: [JobState.queued.rawValue])
-                .order(sql: "createdAt, rowid")
+                .order(sql: "priority DESC, createdAt, rowid")
                 .fetchOne(db)
         }
     }
