@@ -29,7 +29,7 @@ struct SidebarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if !model.filter.slottedTerms.isEmpty { clearFilterButton }
+                if isNarrowed { filterStatus }
                 mediaTypeSection
                 sourcesSection
                 categorySections
@@ -46,35 +46,140 @@ struct SidebarView: View {
         .background { Theme.Surface.sidebar.ignoresSafeArea() }
     }
 
-    // MARK: - Clear filter
+    // MARK: - Filter status
 
-    private var clearFilterButton: some View {
-        Button {
-            model.filter.clearSlots()
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: "xmark")
-                    .font(Theme.ui(10, .semibold))
-                Text("Clear filter · \(slotCountLabel)")
-                    .font(Theme.ui(12))
+    /// Everything currently narrowing the listing, in one block at the
+    /// top of the sidebar.
+    ///
+    /// It is deliberately wider than the chip bar over the grid. Chips
+    /// are the three-way slots — the things you cycle. This also counts
+    /// the reasons a listing is smaller that have no chip and no
+    /// obviously visible control: the folder you clicked three
+    /// disclosure triangles ago, the search text in a field at the other
+    /// end of the window, and the offline items the banner is hiding.
+    /// "Why am I seeing 12 items" is the question, and every answer to
+    /// it belongs in one place.
+    private var filterStatus: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Filter").modifier(Theme.sectionLabel(Theme.Accent.amber))
                 Spacer(minLength: 0)
+                Button("Clear all") { clearEverything() }
+                    .buttonStyle(.plain)
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .help("Clear the filter slots, the folder, the search text and the offline toggle")
             }
-            .foregroundStyle(Theme.Accent.amber)
-            .padding(.vertical, 7)
-            .padding(.horizontal, 9)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control)
-                    .fill(Theme.Surface.selectedRow)
-                    .stroke(Theme.Border.activeCard, lineWidth: 1))
-            .contentShape(Rectangle())
+
+            // The count is the headline: visible against everything the
+            // current media kinds could show.
+            Text("\(model.visibleItems.count) of \(model.counts.total) items")
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.Text.secondary)
+
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(model.filter.slottedTerms, id: \.term) { entry in
+                    if let label = model.chipLabel(for: entry.term) {
+                        statusRow(
+                            mark: entry.slot.mark,
+                            color: entry.slot.color,
+                            text: "\(label.group) · \(label.value)",
+                            strikethrough: entry.slot == .excluded,
+                            help: entry.slot.legend
+                        ) {
+                            model.filter.setSlot(nil, for: entry.term)
+                        }
+                    }
+                }
+                if let folder = model.selectedFolderPath {
+                    statusRow(
+                        symbol: "folder",
+                        color: Theme.Accent.amber,
+                        text: folder.isEmpty ? "(root)" : folder,
+                        help: "Only items in this folder and below"
+                    ) {
+                        model.selectFolder(nil)
+                    }
+                }
+                if !model.searchDisplayText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    statusRow(
+                        symbol: "magnifyingglass",
+                        color: Theme.Status.blue,
+                        text: "\u{201C}\(model.searchDisplayText)\u{201D}",
+                        help: "Matches name, path, notes and on-screen text"
+                    ) {
+                        model.setSearchText("")
+                    }
+                }
+                if model.hideOfflineItems {
+                    statusRow(
+                        symbol: "externaldrive.badge.xmark",
+                        color: Theme.Status.orange,
+                        text: "\(model.offlineItems.count) offline hidden",
+                        help: "Items on an unplugged source are hidden from the listing"
+                    ) {
+                        model.hideOfflineItems = false
+                    }
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Theme.Surface.selectedRow)
+                .stroke(Theme.Border.activeCard, lineWidth: 1))
         .padding(.bottom, 9)
     }
 
-    private var slotCountLabel: String {
-        let count = model.filter.slottedTerms.count
-        return "\(count) \(count == 1 ? "slot" : "slots")"
+    /// One reason the listing is narrower, and the way to undo just that
+    /// one — each row removes itself, so a filter can be unpicked a
+    /// piece at a time rather than only cleared whole.
+    private func statusRow(
+        mark: String? = nil, symbol: String? = nil, color: Color, text: String,
+        strikethrough: Bool = false, help: String, remove: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 6) {
+            Group {
+                if let mark {
+                    Text(mark).font(Theme.ui(10, .bold))
+                } else if let symbol {
+                    Image(systemName: symbol).font(Theme.ui(9))
+                }
+            }
+            .foregroundStyle(color)
+            .frame(width: 12)
+            Text(text)
+                .font(Theme.ui(11.5))
+                .foregroundStyle(Theme.Text.secondary)
+                .strikethrough(strikethrough)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Button(action: remove) {
+                Image(systemName: "xmark")
+                    .font(Theme.ui(8))
+                    .foregroundStyle(Theme.Text.disabled)
+            }
+            .buttonStyle(.plain)
+        }
+        .help(help)
+    }
+
+    /// Anything at all narrowing the listing — the block appears only
+    /// when there is something to explain.
+    private var isNarrowed: Bool {
+        !model.filter.slottedTerms.isEmpty
+            || model.selectedFolderPath != nil
+            || !model.searchDisplayText.trimmingCharacters(in: .whitespaces).isEmpty
+            || model.hideOfflineItems
+    }
+
+    /// Clear all clears everything the block lists, including the two
+    /// things `clearFilter` alone would leave behind.
+    private func clearEverything() {
+        model.clearFilter()
+        model.hideOfflineItems = false
     }
 
     // MARK: - Media type
