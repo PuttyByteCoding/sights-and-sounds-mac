@@ -18,6 +18,16 @@ public struct EncodeJob: Job {
             }
         }
 
+        /// A rough target bitrate for the estimate. CRF encoding has no
+        /// fixed rate, so this is what 1080p typically lands at with
+        /// these settings — the order of magnitude, not a promise.
+        public var estimatedBitsPerSecond: Int {
+            switch self {
+            case .h264: 6_000_000
+            case .hevc: 3_500_000
+            }
+        }
+
         var videoArguments: [String] {
             switch self {
             case .h264:

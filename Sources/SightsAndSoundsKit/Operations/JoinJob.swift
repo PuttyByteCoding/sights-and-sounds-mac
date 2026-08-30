@@ -11,9 +11,16 @@ public struct JoinJob: Job {
     public struct Payload: Codable, Sendable {
         public var sourceID: UUID
         public var folderPath: String
-        public init(sourceID: UUID, folderPath: String) {
+        /// An explicit part order. Nil keeps the folder default — name
+        /// order, which is what a folder join answers; a selection
+        /// carries the order it was dragged into, because that is a
+        /// different question.
+        public var itemIDs: [UUID]?
+
+        public init(sourceID: UUID, folderPath: String, itemIDs: [UUID]? = nil) {
             self.sourceID = sourceID
             self.folderPath = folderPath
+            self.itemIDs = itemIDs
         }
     }
 
@@ -27,10 +34,56 @@ public struct JoinJob: Job {
         fileAccess = LiveFileAccess()
     }
 
-    public static func enqueue(on runner: JobRunner, sourceID: UUID, folderPath: String) async throws -> JobRecord {
+    @discardableResult
+    public static func enqueue(
+        on runner: JobRunner, sourceID: UUID, folderPath: String, itemIDs: [UUID]? = nil
+    ) async throws -> JobRecord {
         try await runner.enqueue(
             JoinJob.self,
-            payload: JSONEncoder().encode(Payload(sourceID: sourceID, folderPath: folderPath)))
+            payload: JSONEncoder().encode(
+                Payload(sourceID: sourceID, folderPath: folderPath, itemIDs: itemIDs)))
+    }
+
+    /// Why a join would be refused — checked BEFORE the job is queued,
+    /// so the refusal is a panel and not a failed row in Background
+    /// Tasks half an hour later.
+    ///
+    /// The concat demuxer needs identical codecs, dimensions and sample
+    /// rates. This reads the probe columns the library already has, so
+    /// it costs nothing; ffmpeg still gets the last word at run time,
+    /// with its own error.
+    public struct CompatibilityReport: Sendable, Equatable {
+        public var mismatches: [String]
+        public var isJoinable: Bool { mismatches.isEmpty }
+
+        /// The named fix, because "refused" without a next step is just
+        /// a wall.
+        public static let remedy = """
+            Concatenating without re-encoding requires identical codecs, dimensions and \
+            sample rates. Transcode the odd one out first — Encode a Copy will do it — \
+            then join the results.
+            """
+    }
+
+    public static func compatibility(of parts: [MediaItem]) -> CompatibilityReport {
+        guard parts.count > 1 else {
+            return CompatibilityReport(mismatches: ["joining needs at least 2 items selected"])
+        }
+        var mismatches: [String] = []
+        func distinct<T: Hashable>(_ values: [T?], _ label: String) {
+            let present = Set(values.compactMap { $0 })
+            if present.count > 1 {
+                mismatches.append(
+                    "\(label): \(present.map { "\($0)" }.sorted().joined(separator: " vs "))")
+            }
+        }
+        distinct(parts.map(\.videoCodec), "video codec")
+        distinct(parts.map(\.audioCodec), "audio codec")
+        distinct(parts.map { $0.width.map { w in "\(w)" } }, "width")
+        distinct(parts.map { $0.height.map { h in "\(h)" } }, "height")
+        distinct(parts.map { $0.sampleRate.map { r in "\(r) Hz" } }, "sample rate")
+        distinct(parts.map { $0.audioChannels.map { c in "\(c) ch" } }, "channels")
+        return CompatibilityReport(mismatches: mismatches)
     }
 
     struct NotEnoughParts: Error, CustomStringConvertible {
@@ -45,7 +98,7 @@ public struct JoinJob: Job {
         let library = context.library
         let folder = MediaPath.normalize(payload.folderPath)
         let sourceIDValue = payload.sourceID
-        let parts = try await library.writer.read { db -> [MediaItem] in
+        let discovered = try await library.writer.read { db -> [MediaItem] in
             try MediaItem.fetchAll(
                 db,
                 sql: """
@@ -56,6 +109,15 @@ public struct JoinJob: Job {
                 """,
                 arguments: [sourceIDValue, folder])
         }
+        // An explicit order wins, and only over parts that are actually
+        // in the folder — a stale selection cannot smuggle in a file
+        // from somewhere else.
+        var ordered = discovered
+        if let itemIDs = payload.itemIDs {
+            let byID = Dictionary(uniqueKeysWithValues: discovered.map { ($0.id, $0) })
+            ordered = itemIDs.compactMap { byID[$0] }
+        }
+        let parts = ordered
         guard parts.count >= 2 else { throw NotEnoughParts() }
         guard let source = try await library.writer.read({
             try Source.fetchOne($0, key: sourceIDValue)

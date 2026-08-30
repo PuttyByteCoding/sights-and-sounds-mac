@@ -46,6 +46,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
+    /// The rest of what Vision is told. Five of these were hard-coded in
+    /// the job; the Operations window is the one place OCR is *produced*
+    /// rather than read, so it is the one place they belong.
+    public var ocr: OcrSettings
+
     public static let defaultVideoExtensions = [
         "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
     ]
@@ -68,7 +73,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         ocrSampleIntervalSeconds: Double = 5,
-        ocrBudgetSecondsPerRun: Double = 600
+        ocrBudgetSecondsPerRun: Double = 600,
+        ocr: OcrSettings = OcrSettings()
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -85,6 +91,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.videoAnchor = videoAnchor
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
+        self.ocr = ocr
     }
 
     public init(from decoder: Decoder) throws {
@@ -116,6 +123,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
             Double.self, forKey: .ocrBudgetSecondsPerRun) ?? defaults.ocrBudgetSecondsPerRun
+        ocr = try container.decodeIfPresent(OcrSettings.self, forKey: .ocr) ?? defaults.ocr
     }
 }
 
@@ -144,6 +152,91 @@ public struct InfoBarSettings: Codable, Equatable, Sendable {
             ?? defaults.showsPosition
         showsDownload = try container.decodeIfPresent(Bool.self, forKey: .showsDownload)
             ?? defaults.showsDownload
+    }
+}
+
+/// What Vision is told when it reads a frame.
+///
+/// The job hard-coded `.accurate` and `usesLanguageCorrection = false`;
+/// everything else was not expressible at all. Each of these maps to a
+/// `VNRecognizeTextRequest` property or to the sampling loop, and each
+/// one changes what a scan costs — which is why the window shows the
+/// frame count beside them.
+public struct OcrSettings: Codable, Equatable, Sendable {
+    public enum RecognitionLevel: String, Codable, Sendable, CaseIterable {
+        /// Slower, better with awkward type.
+        case accurate
+        /// Roughly an order of magnitude faster, and enough for large
+        /// burned-in captions.
+        case fast
+
+        public var displayName: String {
+            switch self {
+            case .accurate: "Accurate"
+            case .fast: "Fast"
+            }
+        }
+    }
+
+    /// Where in the frame to look, as fractions of the frame. Full frame
+    /// by default; a stage banner lives up top and a caption at the
+    /// bottom, and narrowing the region is the cheapest accuracy win
+    /// there is.
+    public struct Region: Codable, Equatable, Sendable {
+        public var x: Double
+        public var y: Double
+        public var width: Double
+        public var height: Double
+
+        public init(x: Double = 0, y: Double = 0, width: Double = 1, height: Double = 1) {
+            self.x = x
+            self.y = y
+            self.width = width
+            self.height = height
+        }
+
+        public static let full = Region()
+        public var isFull: Bool { self == .full }
+    }
+
+    public var recognitionLevel: RecognitionLevel
+    /// As a share of frame height. Lower catches captions and credits;
+    /// it also catches noise.
+    public var minimumTextHeight: Double
+    public var region: Region
+    /// Vision guesses at plausible misreads. Off is literal — better
+    /// when the text is a band name it will not know.
+    public var usesLanguageCorrection: Bool
+    /// The same banner across 200 frames is 200 identical lines unless
+    /// they are collapsed.
+    public var collapseRepeats: Bool
+
+    public init(
+        recognitionLevel: RecognitionLevel = .accurate,
+        minimumTextHeight: Double = 0.03,
+        region: Region = .full,
+        usesLanguageCorrection: Bool = false,
+        collapseRepeats: Bool = true
+    ) {
+        self.recognitionLevel = recognitionLevel
+        self.minimumTextHeight = minimumTextHeight
+        self.region = region
+        self.usesLanguageCorrection = usesLanguageCorrection
+        self.collapseRepeats = collapseRepeats
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = OcrSettings()
+        recognitionLevel = try container.decodeIfPresent(
+            RecognitionLevel.self, forKey: .recognitionLevel) ?? defaults.recognitionLevel
+        minimumTextHeight = try container.decodeIfPresent(
+            Double.self, forKey: .minimumTextHeight) ?? defaults.minimumTextHeight
+        region = try container.decodeIfPresent(Region.self, forKey: .region) ?? defaults.region
+        usesLanguageCorrection = try container.decodeIfPresent(
+            Bool.self, forKey: .usesLanguageCorrection) ?? defaults.usesLanguageCorrection
+        collapseRepeats = try container.decodeIfPresent(
+            Bool.self, forKey: .collapseRepeats) ?? defaults.collapseRepeats
     }
 }
 
