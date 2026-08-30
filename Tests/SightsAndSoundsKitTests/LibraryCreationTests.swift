@@ -176,3 +176,53 @@ import Testing
         #expect(ordered[0].actionsJSON.contains(#"stripPrefix"#))
     }
 }
+
+/// Creating a library ends by reading it back: a mismatch is cheaper to
+/// know now than after a week of tagging.
+@Suite struct CreationVerificationTests {
+
+    @Test func aCreatedLibraryMatchesItsPlan() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-verify-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let plan = LibraryTemplate.concerts.plan(named: "Verified")
+        let library = try LibraryCreator.create(
+            at: dir.appendingPathComponent("Verified.sqlite"), plan: plan)
+        let actual = try library.creationVerification()
+        #expect(actual.matches(.expected(from: plan)))
+    }
+
+    /// An excluded category is never created — its tags and fields
+    /// simply never exist, which the expectation has to agree with.
+    @Test func excludingACategoryExcludesItsTagsFromBothSides() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-verify-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        var plan = LibraryTemplate.concerts.plan(named: "Partial")
+        plan.categories[0].include = false
+        let library = try LibraryCreator.create(
+            at: dir.appendingPathComponent("Partial.sqlite"), plan: plan)
+        let actual = try library.creationVerification()
+        #expect(actual.matches(.expected(from: plan)))
+        #expect(actual.categories == plan.categories.count - 1)
+    }
+
+    /// A template seeds each category's hue, so the first window to draw
+    /// a swatch is not inventing one.
+    @Test func templatesSeedDistinctHues() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-verify-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let plan = LibraryTemplate.concerts.plan(named: "Hues")
+        let library = try LibraryCreator.create(
+            at: dir.appendingPathComponent("Hues.sqlite"), plan: plan)
+        let indexes = try library.vocabulary().map(\.category.colorIndex)
+        #expect(Set(indexes).count == indexes.count)
+    }
+}

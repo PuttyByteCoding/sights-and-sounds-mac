@@ -69,6 +69,9 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
     public var sortOrder: Int
     public var notes: String
     public var hiddenFromBrowse: Bool
+    /// The hue this category will carry. Seeded by the template so the
+    /// first window that draws a swatch is not inventing one.
+    public var colorIndex: Int
     public var sectionLabel: String?
     public var textFormat: TextFormat
     public var separatorsToSpaces: Bool
@@ -88,6 +91,7 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
         sortOrder: Int = 0,
         notes: String = "",
         hiddenFromBrowse: Bool = false,
+        colorIndex: Int = 0,
         sectionLabel: String? = nil,
         textFormat: TextFormat = .noFormatting,
         separatorsToSpaces: Bool = false,
@@ -105,6 +109,7 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
         self.sortOrder = sortOrder
         self.notes = notes
         self.hiddenFromBrowse = hiddenFromBrowse
+        self.colorIndex = colorIndex
         self.sectionLabel = sectionLabel
         self.textFormat = textFormat
         self.separatorsToSpaces = separatorsToSpaces
@@ -143,6 +148,7 @@ extension PlannedCategory {
         sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         hiddenFromBrowse = try container.decodeIfPresent(Bool.self, forKey: .hiddenFromBrowse) ?? false
+        colorIndex = try container.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
         sectionLabel = try container.decodeIfPresent(String.self, forKey: .sectionLabel)
         textFormat = try container.decodeIfPresent(TextFormat.self, forKey: .textFormat) ?? .noFormatting
         separatorsToSpaces = try container.decodeIfPresent(Bool.self, forKey: .separatorsToSpaces) ?? false

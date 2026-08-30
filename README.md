@@ -298,6 +298,11 @@ follow. Full context, locked decisions and the 11-phase plan live in
     the vocabulary, so a new category gets its filter and tagging
     commands for free; unavailable commands stay listed with their
     requirement; and an empty field shows what was last used.
+  - Spec 11, New library: four steps — Name · Vocabulary · Review · Source
+    — where the review step edits the whole plan (behaviour, display
+    style, formatting, write-back, tags, tag fields) instead of a name and
+    a checkbox, order sets which category takes the cursor, and creation
+    ends by reading the library back and comparing counts.
 
 ### Demo library
 
