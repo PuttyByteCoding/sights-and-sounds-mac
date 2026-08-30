@@ -68,6 +68,53 @@ struct FilterSlotChip: View {
     }
 }
 
+/// The four-way state picker on a filter summary row.
+///
+/// Both summaries — the block at the top of the sidebar and the chip bar
+/// over the grid — could only ever *remove* a term. Moving one from
+/// required to optional meant going back to its row in the category tree
+/// and cycling it, which is a long way to walk to fix a mis-click.
+///
+/// A menu rather than another click-cycle: `MediaFilter.cycle` says a
+/// four-state cycle you can only walk forwards is "a guessing game every
+/// time you overshoot", and a summary row is exactly where you go to
+/// correct an overshoot. Naming the states is the cure for that.
+///
+/// The label is the caller's, so the sidebar keeps its glyph and the chip
+/// bar its dot; only the menu behind them is shared — the same reason the
+/// colours and glyphs above live in one file.
+struct SlotMenu<Label: View>: View {
+    let slot: MediaFilter.TagSlot
+    let set: (MediaFilter.TagSlot?) -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Menu {
+            ForEach(MediaFilter.TagSlot.allCases, id: \.self) { option in
+                Button {
+                    set(option)
+                } label: {
+                    // The tick is the only thing naming the current state
+                    // once the menu is covering the row's own glyph.
+                    if option == slot {
+                        SwiftUI.Label(option.name, systemImage: "checkmark")
+                    } else {
+                        Text(option.name)
+                    }
+                }
+            }
+            Divider()
+            Button("Remove From Filter", role: .destructive) { set(nil) }
+        } label: {
+            label()
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("\(slot.name) — \(slot.legend). Click to change.")
+    }
+}
+
 extension StatusFlag {
     /// The one place a status flag is named — the sidebar row, the chip
     /// above the grid and any tooltip read the same string. Unchanged
