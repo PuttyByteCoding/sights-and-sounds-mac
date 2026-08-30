@@ -87,8 +87,42 @@ struct SidebarView: View {
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.Text.secondary)
 
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(model.filter.slottedTerms, id: \.term) { entry in
+            // Pinning this block cost the tree height, and the cost grew
+            // with every slot added — so the more you filtered, the less
+            // tree you could see, which is backwards. Past three rows it
+            // scrolls inside itself instead of pushing anything down.
+            ScrollView {
+                narrowingRows
+            }
+            .frame(maxHeight: Self.filterRowHeight * CGFloat(Self.filterRowsBeforeScroll))
+            .scrollDisabled(narrowingRowCount <= Self.filterRowsBeforeScroll)
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Theme.Surface.selectedRow)
+                .stroke(Theme.Border.activeCard, lineWidth: 1))
+        .padding(.bottom, 9)
+    }
+
+    /// How tall the pinned filter block is allowed to grow before it
+    /// scrolls. Three rows: enough to read a typical filter at a glance,
+    /// few enough that the tree underneath stays usable.
+    private static let filterRowsBeforeScroll = 3
+    private static let filterRowHeight: CGFloat = 25
+
+    /// Everything currently narrowing the listing, one removable row each.
+    private var narrowingRowCount: Int {
+        model.filter.slottedTerms.count
+            + (model.selectedFolderPath == nil ? 0 : 1)
+            + (model.searchDisplayText.trimmingCharacters(in: .whitespaces).isEmpty ? 0 : 1)
+            + (model.hideOfflineItems ? 1 : 0)
+    }
+
+    @ViewBuilder private var narrowingRows: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(model.filter.slottedTerms, id: \.term) { entry in
                     if let label = model.chipLabel(for: entry.term) {
                         statusRow(
                             slot: entry.slot,
@@ -133,14 +167,7 @@ struct SidebarView: View {
                     }
                 }
             }
-        }
-        .padding(9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.control)
-                .fill(Theme.Surface.selectedRow)
-                .stroke(Theme.Border.activeCard, lineWidth: 1))
-        .padding(.bottom, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One reason the listing is narrower, and the way to undo just that
@@ -317,11 +344,14 @@ struct SidebarView: View {
                     toggle: { toggle(entry.category.id, in: &expandedCategories) })
                 if expandedCategories.contains(entry.category.id) {
                     if entry.tags.count > 8 {
-                        TagQueryField(text: query(for: entry.category.id))
+                        TagQueryField(
+                            text: query(for: entry.category.id),
+                            // With thousands of tags, typing is the only
+                            // realistic way to find one — so the field
+                            // takes the keyboard the moment it appears.
+                            focusOnAppear: true)
                     }
-                    ForEach(visibleTags(of: entry)) { tag in
-                        TagFilterRow(tag: tag)
-                    }
+                    tagList(of: entry)
                     // Missing is a filter value like any other: required
                     // on Venue is the untagged worklist, excluded is
                     // "only fully tagged shows".
@@ -333,6 +363,37 @@ struct SidebarView: View {
                 }
             }
             .padding(.top, 11)
+        }
+    }
+
+    /// How many tag rows a category shows before the list gets its own
+    /// scroll box, and how tall one row is.
+    private static let tagRowsBeforeScroll = 20
+    private static let tagRowHeight: CGFloat = 24
+
+    /// The tag rows of an expanded category.
+    ///
+    /// Past `tagRowsBeforeScroll` they move into a fixed-height box built
+    /// LAZILY — which is the half that matters. A category with 3,000
+    /// tags was constructing 3,000 rows into the sidebar's scroll view on
+    /// every expansion: the height was the visible symptom, the build was
+    /// the slowness. A capped frame alone would have hidden the rows
+    /// while still making all of them.
+    ///
+    /// Short categories stay inline. A scroll box around four rows is
+    /// furniture for nothing.
+    @ViewBuilder
+    private func tagList(of entry: CategoryTags) -> some View {
+        let tags = visibleTags(of: entry)
+        if tags.count > Self.tagRowsBeforeScroll {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(tags) { TagFilterRow(tag: $0) }
+                }
+            }
+            .frame(height: Self.tagRowHeight * CGFloat(Self.tagRowsBeforeScroll))
+        } else {
+            ForEach(tags) { TagFilterRow(tag: $0) }
         }
     }
 
@@ -574,6 +635,12 @@ private struct KindRow: View {
 /// which tag rows are SHOWN, never the media query itself.
 private struct TagQueryField: View {
     @Binding var text: String
+    /// Expanding a category is a statement of intent to find one tag in
+    /// it. Taking the keyboard here means the next keystroke narrows the
+    /// list instead of falling through to the grid's single-key map.
+    var focusOnAppear = false
+
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -584,6 +651,8 @@ private struct TagQueryField: View {
                 .textFieldStyle(.plain)
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.secondary)
+                .focused($focused)
+                .onAppear { if focusOnAppear { focused = true } }
             if !text.isEmpty {
                 Button {
                     text = ""
