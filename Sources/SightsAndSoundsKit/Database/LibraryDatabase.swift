@@ -617,6 +617,28 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // Display style, and the end of default focus.
+        //
+        // A single-select category rendered as checkboxes is the wrong
+        // control, and radio was the missing one — so the boolean becomes
+        // a three-way choice. Focus goes entirely: it is the first
+        // visible category by sort order, which removes a setting, a
+        // validation rule and the exclusivity cascade that enforced an
+        // unrepresentable conflict.
+        migrator.registerMigration("categoryDisplayStyle") { db in
+            try db.alter(table: "tagCategory") { t in
+                t.add(column: "displayStyle", .text).notNull().defaults(to: "search")
+            }
+            try db.execute(sql: """
+                UPDATE tagCategory SET displayStyle = 'checkboxes'
+                WHERE displayAsCheckboxes
+                """)
+            try db.alter(table: "tagCategory") { t in
+                t.drop(column: "displayAsCheckboxes")
+                t.drop(column: "isDefaultFocus")
+            }
+        }
+
         return migrator
     }
 

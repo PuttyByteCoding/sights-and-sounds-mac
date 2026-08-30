@@ -167,7 +167,7 @@ struct BrowseView: View {
                     Button("Categories", systemImage: "tag.square") {
                         openAux(.categories)
                     }
-                    .help("Edit this library's categories and tags")
+                    .help("Author this library's vocabulary — categories, tags, aliases and fields")
                 }
                 ToolbarItem {
                     Button {

@@ -16,7 +16,7 @@ struct AuxWindowRequest: Codable, Hashable {
 
         var title: String {
             switch self {
-            case .categories: "Categories"
+            case .categories: "Categories & Fields"
             case .duplicates: "Duplicates"
             case .moveHistory: "Move History"
             case .reorganize: "Reorganize"

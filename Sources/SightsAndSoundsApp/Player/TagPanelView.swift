@@ -45,12 +45,20 @@ struct TagPanelView: View {
                                 Text(label).modifier(Theme.sectionLabel())
                             }
                         }
-                        if entry.category.displayAsCheckboxes {
+                        switch entry.category.displayStyle {
+                        case .checkboxes, .radio:
                             CheckboxCategoryView(
                                 entry: entry,
-                                isAltTarget: entry.id == model.checkboxCategory?.id)
-                        } else {
-                            PillCategoryView(entry: entry)
+                                isAltTarget: entry.id == model.checkboxCategory?.id,
+                                single: entry.category.displayStyle == .radio)
+                        case .search:
+                            PillCategoryView(
+                                entry: entry,
+                                // Focus is the FIRST visible category, not
+                                // a flag a category carries — which is one
+                                // setting and one whole class of conflict
+                                // fewer.
+                                takesFocus: entry.id == model.focusCategoryID)
                         }
                     }
                 }
@@ -88,6 +96,9 @@ private struct CheckboxCategoryView: View {
     @Environment(PlayerModel.self) private var model
     let entry: CategoryTags
     let isAltTarget: Bool
+    /// A radio category shows the same list; picking replaces rather
+    /// than adds, which `assignTag` already enforces for single-select.
+    var single = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -98,7 +109,7 @@ private struct CheckboxCategoryView: View {
                     model.toggleTag(tag.id)
                 } label: {
                     HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                        RoundedRectangle(cornerRadius: single ? 7 : Theme.Radius.chip)
                             .fill(on ? hue : .clear)
                             .stroke(on ? hue : Theme.Border.subtleButtonHover, lineWidth: 1)
                             .frame(width: 13, height: 13)
@@ -132,6 +143,7 @@ private struct CheckboxCategoryView: View {
 private struct PillCategoryView: View {
     @Environment(PlayerModel.self) private var model
     let entry: CategoryTags
+    var takesFocus = false
     @State private var draft = ""
     @FocusState private var fieldFocused: Bool
 
@@ -225,7 +237,7 @@ private struct PillCategoryView: View {
             }
         }
         .task(id: model.item?.id) {
-            if entry.category.isDefaultFocus { fieldFocused = true }
+            if takesFocus { fieldFocused = true }
         }
     }
 }

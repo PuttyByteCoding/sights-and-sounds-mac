@@ -23,12 +23,11 @@ public enum VocabularyIO {
                 PlannedCategory(
                     name: category.name,
                     allowMultiple: category.allowMultiple,
-                    displayAsCheckboxes: category.displayAsCheckboxes,
+                    displayStyle: category.displayStyle,
                     sortOrder: category.sortOrder,
                     notes: category.notes,
                     hiddenFromBrowse: category.hiddenFromBrowse,
                     sectionLabel: category.sectionLabel,
-                    isDefaultFocus: category.isDefaultFocus,
                     textFormat: category.textFormat,
                     separatorsToSpaces: category.separatorsToSpaces,
                     writebackEnabled: category.writebackEnabled,
@@ -95,12 +94,11 @@ public enum VocabularyIO {
                 category = TagCategory(
                     name: planned.name,
                     allowMultiple: planned.allowMultiple,
-                    displayAsCheckboxes: planned.displayAsCheckboxes,
+                    displayStyle: planned.displayStyle,
                     sortOrder: planned.sortOrder,
                     notes: planned.notes,
                     hiddenFromBrowse: planned.hiddenFromBrowse,
                     sectionLabel: planned.sectionLabel,
-                    isDefaultFocus: false,  // imports never steal focus
                     textFormat: planned.textFormat,
                     separatorsToSpaces: planned.separatorsToSpaces,
                     writebackEnabled: planned.writebackEnabled,

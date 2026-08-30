@@ -21,21 +21,20 @@ import Testing
         let band = concerts.categories[0]
         #expect(band.allowMultiple && band.writebackField == "ARTIST")
         let recType = concerts.categories[1]
-        #expect(!recType.allowMultiple && recType.displayAsCheckboxes)
+        #expect(!recType.allowMultiple && recType.displayStyle == .checkboxes)
         #expect(recType.tags.contains { $0.name == "Soundboard" && $0.aliases == ["SBD"] })
         #expect(concerts.categories[2].sectionLabel == "Show Info")
         #expect(concerts.categories[3].writebackField == "DATE")
 
         let learning = LibraryTemplate.learning.plan(named: "L")
         #expect(learning.categories.map(\.name) == ["Subject", "Course", "Instructor", "Watched"])
-        #expect(learning.categories[0].isDefaultFocus)
         #expect(learning.itemFields.contains { $0.name == "Lesson Number" && $0.dataType == .number })
         // The two-value workflow flag.
         #expect(learning.categories[3].tags.count == 2)
 
         let home = LibraryTemplate.homeVideos.plan(named: "H")
         #expect(home.categories.map(\.name) == ["People", "Occasion", "Location"])
-        #expect(home.categories[0].allowMultiple && home.categories[0].displayAsCheckboxes)
+        #expect(home.categories[0].allowMultiple && home.categories[0].displayStyle == .checkboxes)
 
         #expect(LibraryTemplate.empty.plan(named: "E").categories.isEmpty)
     }
@@ -57,10 +56,6 @@ import Testing
         plan = LibraryTemplate.concerts.plan(named: "C")
         plan.categories[0].name = "  "
         #expect(plan.validationErrors().contains { $0.contains("empty name") })
-
-        plan = LibraryTemplate.concerts.plan(named: "C")
-        plan.categories[1].isDefaultFocus = true  // Band already has it
-        #expect(plan.validationErrors().contains { $0.contains("default focus") })
 
         plan = LibraryTemplate.concerts.plan(named: "")
         #expect(plan.validationErrors().contains { $0.contains("needs a name") })
@@ -158,7 +153,7 @@ import Testing
 
     @Test func analysisRulesPersistWithOrderIntact() throws {
         let library = try LibraryDatabase.openInMemory()
-        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b", "extensionOverrides", "categoryColors", "segmentRoles"])
+        #expect(try library.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b", "extensionOverrides", "categoryColors", "segmentRoles", "categoryDisplayStyle"])
 
         let rules = [
             AnalysisRule(

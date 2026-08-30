@@ -25,6 +25,21 @@ extension LibraryDatabase {
                 .fetchOne(db) {
                 return existing
             }
+            // An alias IS a name. A tag whose name matches an existing
+            // alias must resolve to that tag rather than being created
+            // as a rival spelling of it — which is exactly what import
+            // and paste kept producing.
+            if let aliased = try Tag.fetchOne(
+                db,
+                sql: """
+                SELECT tag.* FROM tag \
+                JOIN tagAlias ON tagAlias.tagID = tag.id \
+                WHERE tag.tagCategoryID = ? AND tagAlias.alias = ? \
+                LIMIT 1
+                """,
+                arguments: [categoryID, name]) {
+                return aliased
+            }
             let tag = Tag(tagCategoryID: categoryID, name: name)
             try tag.insert(db)
             return tag
@@ -165,16 +180,14 @@ extension LibraryDatabase {
 
     // MARK: - Categories
 
-    /// Update a category's configuration. Setting `isDefaultFocus` clears
-    /// it on every other category — at most one holds it (the write path
-    /// enforces what the old PUT endpoint enforced).
+    /// Update a category's configuration.
+    ///
+    /// The focus-exclusivity cascade that used to live here is gone with
+    /// `isDefaultFocus`: focus is the first visible category by sort
+    /// order, so there is no longer a setting two categories can hold at
+    /// once and no cascade to enforce it.
     public func updateCategory(_ category: TagCategory) throws {
         try writer.write { db in
-            if category.isDefaultFocus {
-                try db.execute(
-                    sql: "UPDATE tagCategory SET isDefaultFocus = 0 WHERE id <> ?",
-                    arguments: [category.id])
-            }
             try category.update(db)
         }
     }
@@ -187,9 +200,6 @@ extension LibraryDatabase {
     /// to keep one; change one later with `updateCategory`.
     public func createCategory(_ category: TagCategory) throws {
         try writer.write { db in
-            if category.isDefaultFocus {
-                try db.execute(sql: "UPDATE tagCategory SET isDefaultFocus = 0")
-            }
             var category = category
             if category.colorIndex == 0 {
                 category.colorIndex = try Int.fetchOne(
@@ -205,6 +215,218 @@ extension LibraryDatabase {
     public func deleteCategory(_ categoryID: UUID) throws {
         _ = try writer.write { db in
             try TagCategory.deleteOne(db, key: categoryID)
+        }
+    }
+
+    // MARK: - Merging
+
+    /// Where merged tags land: one of the picks, or a new tag they all
+    /// fold into.
+    public enum MergeTarget: Sendable {
+        case existing(UUID)
+        case newTag(named: String)
+    }
+
+    /// Fold several tags into one, in a single transaction.
+    ///
+    /// Taggings re-point, the discarded spellings become aliases of the
+    /// target (so search and import still resolve them), and the source
+    /// rows are deleted. In a single-select category an item that
+    /// carried two of the merged tags ends with one, not two — the
+    /// insert is `ignore`-conflicted on the (item, tag) key, which is
+    /// what collapses them.
+    ///
+    /// This is deliberately NOT `DuplicateReview.mergeableTags`: that
+    /// merges tags between two media ITEMS during duplicate resolution,
+    /// which is a different operation on different rows.
+    @discardableResult
+    public func mergeTags(
+        _ sourceIDs: [UUID], into target: MergeTarget, keepNamesAsAliases: Bool = true
+    ) throws -> Tag {
+        try writer.write { db in
+            let sources = try Tag.fetchAll(db, keys: sourceIDs)
+            guard let first = sources.first else { throw DatabaseError(message: "nothing to merge") }
+            let categoryID = first.tagCategoryID
+            guard sources.allSatisfy({ $0.tagCategoryID == categoryID }) else {
+                throw DatabaseError(message: "tags from two categories cannot merge")
+            }
+            guard let category = try TagCategory.fetchOne(db, key: categoryID) else {
+                throw DatabaseError(message: "no such category")
+            }
+
+            let keeper: Tag
+            switch target {
+            case .existing(let id):
+                guard let existing = try Tag.fetchOne(db, key: id),
+                      existing.tagCategoryID == categoryID
+                else { throw DatabaseError(message: "the target is not in this category") }
+                keeper = existing
+            case .newTag(let rawName):
+                let name = TagNameFormatter.format(
+                    rawName.trimmingCharacters(in: .whitespaces), for: category)
+                guard !name.isEmpty else { throw DatabaseError(message: "empty tag name") }
+                if let existing = try Tag
+                    .filter(sql: "tagCategoryID = ? AND name = ?", arguments: [categoryID, name])
+                    .fetchOne(db) {
+                    keeper = existing
+                } else {
+                    let created = Tag(tagCategoryID: categoryID, name: name)
+                    try created.insert(db)
+                    keeper = created
+                }
+            }
+
+            for source in sources where source.id != keeper.id {
+                // Re-point taggings. `ignore` is what collapses an item
+                // that carried both spellings into one tagging.
+                try db.execute(
+                    sql: """
+                    INSERT OR IGNORE INTO mediaItemTag (mediaItemID, tagID) \
+                    SELECT mediaItemID, ? FROM mediaItemTag WHERE tagID = ?
+                    """,
+                    arguments: [keeper.id, source.id])
+                // The discarded spelling, and anything already pointing
+                // at it, become aliases of the keeper.
+                if keepNamesAsAliases {
+                    try TagAlias(tagID: keeper.id, alias: source.name)
+                        .insert(db, onConflict: .ignore)
+                    try db.execute(
+                        sql: """
+                        INSERT OR IGNORE INTO tagAlias (tagID, alias) \
+                        SELECT ?, alias FROM tagAlias WHERE tagID = ?
+                        """,
+                        arguments: [keeper.id, source.id])
+                }
+                // Cascades take the taggings, aliases and field values
+                // still hanging off the source row.
+                try Tag.deleteOne(db, key: source.id)
+            }
+            return keeper
+        }
+    }
+
+    /// Convert a tag into an alias of another: the taggings move, the
+    /// name is kept as a way to find the survivor. The gentler half of
+    /// "delete" — offered above it for exactly that reason.
+    public func convertTagToAlias(_ tagID: UUID, of targetID: UUID) throws {
+        try mergeTags([tagID], into: .existing(targetID), keepNamesAsAliases: true)
+    }
+
+    // MARK: - Counts and order
+
+    /// Items per tag for one category, in one grouped query. The table
+    /// shows a use count per row, and a count per row is the N+1 that
+    /// makes a thousand-tag category unopenable.
+    public func tagUsageCounts(inCategory categoryID: UUID) throws -> [UUID: Int] {
+        try writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT tag.id AS id, COUNT(mediaItemTag.mediaItemID) AS n FROM tag \
+                LEFT JOIN mediaItemTag ON mediaItemTag.tagID = tag.id \
+                WHERE tag.tagCategoryID = ? GROUP BY tag.id
+                """,
+                arguments: [categoryID])
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0["id"] as UUID, $0["n"] as Int) })
+        }
+    }
+
+    /// Write a whole order at once — drag-reorder is one write of every
+    /// row's position, not N saves racing each other.
+    public func setCategoryOrder(_ ids: [UUID]) throws {
+        try writer.write { db in
+            for (index, id) in ids.enumerated() {
+                try db.execute(
+                    sql: "UPDATE tagCategory SET sortOrder = ? WHERE id = ?",
+                    arguments: [index * 10, id])
+            }
+        }
+    }
+
+    public func setTagOrder(_ ids: [UUID]) throws {
+        try writer.write { db in
+            for (index, id) in ids.enumerated() {
+                try db.execute(
+                    sql: "UPDATE tag SET sortOrder = ? WHERE id = ?",
+                    arguments: [index * 10, id])
+            }
+        }
+    }
+
+    // MARK: - Fields
+
+    /// Field definitions for one scope. Tag fields belong to a category;
+    /// item fields belong to the library — the schema CHECK says a field
+    /// is one or the other, never both.
+    public func fields(scope: FieldScope, categoryID: UUID? = nil) throws -> [FieldDefinition] {
+        try writer.read { db in
+            switch scope {
+            case .tag:
+                guard let categoryID else { return [] }
+                return try FieldDefinition
+                    .filter(sql: "scope = ? AND tagCategoryID = ?",
+                            arguments: [FieldScope.tag.rawValue, categoryID])
+                    .order(sql: "sortOrder, name").fetchAll(db)
+            case .mediaItem:
+                return try FieldDefinition
+                    .filter(sql: "scope = ?", arguments: [FieldScope.mediaItem.rawValue])
+                    .order(sql: "sortOrder, name").fetchAll(db)
+            }
+        }
+    }
+
+    @discardableResult
+    public func createField(_ field: FieldDefinition) throws -> FieldDefinition {
+        try writer.write { db in
+            var field = field
+            let name = field.name.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { throw DatabaseError(message: "empty field name") }
+            field.name = name
+            try field.insert(db)
+            return field
+        }
+    }
+
+    public func updateField(_ field: FieldDefinition) throws {
+        try writer.write { db in
+            var field = field
+            field.name = field.name.trimmingCharacters(in: .whitespaces)
+            guard !field.name.isEmpty else { throw DatabaseError(message: "empty field name") }
+            try field.update(db)
+        }
+    }
+
+    /// Delete a field and every value stored under it (values cascade).
+    public func deleteField(_ fieldID: UUID) throws {
+        _ = try writer.write { db in
+            try FieldDefinition.deleteOne(db, key: fieldID)
+        }
+    }
+
+    /// A tag's field values, keyed by definition. The tag inspector
+    /// edits these; upsert keeps the numeric mirror in step, which is
+    /// what makes ordering by a number field numeric.
+    public func fieldValues(ofTag tagID: UUID) throws -> [UUID: String] {
+        try writer.read { db in
+            let rows = try TagFieldValue
+                .filter(sql: "tagID = ?", arguments: [tagID]).fetchAll(db)
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0.fieldDefinitionID, $0.value) })
+        }
+    }
+
+    /// Set (or clear, with an empty value) one field value on a tag.
+    public func setFieldValue(
+        _ value: String, ofTag tagID: UUID, field: FieldDefinition
+    ) throws {
+        try writer.write { db in
+            let trimmed = value.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else {
+                try db.execute(
+                    sql: "DELETE FROM tagFieldValue WHERE tagID = ? AND fieldDefinitionID = ?",
+                    arguments: [tagID, field.id])
+                return
+            }
+            try TagFieldValue(tagID: tagID, definition: field, value: trimmed).upsert(db)
         }
     }
 

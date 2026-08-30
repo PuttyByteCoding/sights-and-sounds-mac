@@ -493,7 +493,7 @@ struct NewLibraryFlow: View {
 
     private func categorySummary(_ category: PlannedCategory) -> String {
         var parts: [String] = [category.allowMultiple ? "multiple" : "single"]
-        if category.displayAsCheckboxes { parts.append("checkboxes") }
+        if category.displayStyle != .search { parts.append(category.displayStyle.displayName.lowercased()) }
         if !category.tags.isEmpty { parts.append("\(category.tags.count) tags") }
         if let field = category.writebackField { parts.append("→ \(field)") }
         return parts.joined(separator: " · ")

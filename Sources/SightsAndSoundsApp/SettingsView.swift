@@ -511,8 +511,9 @@ private struct ConfigurationSheet: View {
     /// category manager's summary vocabulary.
     private func summary(of category: TagCategory) -> String {
         var parts = [category.allowMultiple ? "multiple per item" : "single per item"]
-        if category.displayAsCheckboxes { parts.append("checkboxes") }
-        if category.isDefaultFocus { parts.append("default focus") }
+        if category.displayStyle != .search {
+            parts.append(category.displayStyle.displayName.lowercased())
+        }
         if category.hiddenFromBrowse { parts.append("hidden from browse") }
         switch category.textFormat {
         case .noFormatting: break

@@ -39,10 +39,6 @@ public struct LibraryPlan: Sendable, Equatable, Codable {
                 errors.append("Duplicate category name '\(trimmed)'.")
             }
         }
-        if included.filter(\.isDefaultFocus).count > 1 {
-            errors.append("At most one category can be the default focus.")
-        }
-
         var fieldSeen: Set<String> = []
         for field in itemFields where field.include {
             let trimmed = field.name.trimmingCharacters(in: .whitespaces)
@@ -69,12 +65,11 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
     public let originalName: String
 
     public var allowMultiple: Bool
-    public var displayAsCheckboxes: Bool
+    public var displayStyle: TagDisplayStyle
     public var sortOrder: Int
     public var notes: String
     public var hiddenFromBrowse: Bool
     public var sectionLabel: String?
-    public var isDefaultFocus: Bool
     public var textFormat: TextFormat
     public var separatorsToSpaces: Bool
     public var writebackEnabled: Bool
@@ -89,12 +84,11 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
         include: Bool = true,
         name: String,
         allowMultiple: Bool = true,
-        displayAsCheckboxes: Bool = false,
+        displayStyle: TagDisplayStyle = .search,
         sortOrder: Int = 0,
         notes: String = "",
         hiddenFromBrowse: Bool = false,
         sectionLabel: String? = nil,
-        isDefaultFocus: Bool = false,
         textFormat: TextFormat = .noFormatting,
         separatorsToSpaces: Bool = false,
         writebackEnabled: Bool = true,
@@ -107,18 +101,55 @@ public struct PlannedCategory: Sendable, Equatable, Identifiable, Codable {
         self.name = name
         self.originalName = name
         self.allowMultiple = allowMultiple
-        self.displayAsCheckboxes = displayAsCheckboxes
+        self.displayStyle = displayStyle
         self.sortOrder = sortOrder
         self.notes = notes
         self.hiddenFromBrowse = hiddenFromBrowse
         self.sectionLabel = sectionLabel
-        self.isDefaultFocus = isDefaultFocus
         self.textFormat = textFormat
         self.separatorsToSpaces = separatorsToSpaces
         self.writebackEnabled = writebackEnabled
         self.writebackField = writebackField
         self.tags = tags
         self.fields = fields
+    }
+}
+
+extension PlannedCategory {
+    private enum LegacyKeys: String, CodingKey {
+        case displayAsCheckboxes
+    }
+
+    /// A vocabulary file written before the display style existed still
+    /// loads: `displayAsCheckboxes: true` means checkboxes, and the
+    /// default-focus flag is simply ignored — focus is the first visible
+    /// category now, so there is nothing to carry.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        include = try container.decodeIfPresent(Bool.self, forKey: .include) ?? true
+        name = try container.decode(String.self, forKey: .name)
+        originalName = try container.decodeIfPresent(String.self, forKey: .originalName) ?? name
+        allowMultiple = try container.decodeIfPresent(Bool.self, forKey: .allowMultiple) ?? true
+        if let style = try container.decodeIfPresent(TagDisplayStyle.self, forKey: .displayStyle) {
+            displayStyle = style
+        } else {
+            let checkboxes = legacy.flatMap {
+                (try? $0.decodeIfPresent(Bool.self, forKey: .displayAsCheckboxes)) ?? nil
+            } ?? false
+            displayStyle = checkboxes ? .checkboxes : .search
+        }
+        sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        hiddenFromBrowse = try container.decodeIfPresent(Bool.self, forKey: .hiddenFromBrowse) ?? false
+        sectionLabel = try container.decodeIfPresent(String.self, forKey: .sectionLabel)
+        textFormat = try container.decodeIfPresent(TextFormat.self, forKey: .textFormat) ?? .noFormatting
+        separatorsToSpaces = try container.decodeIfPresent(Bool.self, forKey: .separatorsToSpaces) ?? false
+        writebackEnabled = try container.decodeIfPresent(Bool.self, forKey: .writebackEnabled) ?? true
+        writebackField = try container.decodeIfPresent(String.self, forKey: .writebackField)
+        tags = try container.decodeIfPresent([PlannedTag].self, forKey: .tags) ?? []
+        fields = try container.decodeIfPresent([PlannedTagField].self, forKey: .fields) ?? []
     }
 }
 

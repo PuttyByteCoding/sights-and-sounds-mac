@@ -193,11 +193,10 @@ public enum DemoLibrarySeeder {
             for (hue, planned) in plan.categories.filter(\.include).enumerated() {
                 let category = TagCategory(
                     name: planned.name, allowMultiple: planned.allowMultiple,
-                    displayAsCheckboxes: planned.displayAsCheckboxes,
+                    displayStyle: planned.displayStyle,
                     sortOrder: planned.sortOrder, notes: planned.notes,
                     colorIndex: hue,
                     sectionLabel: planned.sectionLabel,
-                    isDefaultFocus: planned.isDefaultFocus,
                     textFormat: planned.textFormat,
                     separatorsToSpaces: planned.separatorsToSpaces,
                     writebackEnabled: planned.writebackEnabled,
