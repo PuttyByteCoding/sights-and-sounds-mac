@@ -36,6 +36,12 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// under each thumbnail.
     public var grid: GridSettings
 
+    /// How many tag suggestions the tagging field offers at once.
+    /// Enough to scan, few enough to arrow through — and a matter of
+    /// screen height, which is why it is a setting rather than a number
+    /// baked into the view.
+    public var tagSuggestionLimit: Int
+
     /// The order a library window opens with. `.random` deals a fresh
     /// shuffle each time a window opens, which is what makes it useful
     /// for surfacing things you have not seen.
@@ -76,6 +82,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         keyMap: KeyMapStyle = .mac,
         grid: GridSettings = GridSettings(),
         defaultOrdering: DefaultOrdering = .path,
+        tagSuggestionLimit: Int = 15,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         ocrSampleIntervalSeconds: Double = 5,
@@ -94,6 +101,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.keyMap = keyMap
         self.grid = grid
         self.defaultOrdering = defaultOrdering
+        self.tagSuggestionLimit = tagSuggestionLimit
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
@@ -126,6 +134,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
         // before this setting existed still has to load.
         defaultOrdering = try container.decodeIfPresent(
             DefaultOrdering.self, forKey: .defaultOrdering) ?? defaults.defaultOrdering
+        // Clamped on the way in: a hand-edited settings.json saying 0 or
+        // 5000 should not make the field useless or unscrollable.
+        tagSuggestionLimit = min(50, max(3, try container.decodeIfPresent(
+            Int.self, forKey: .tagSuggestionLimit) ?? defaults.tagSuggestionLimit))
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)

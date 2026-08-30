@@ -240,3 +240,34 @@ import Testing
         #expect(grid.activeIndex == 0)
     }
 }
+
+/// The tag-suggestion limit, and its clamp.
+@Suite struct TagSuggestionLimitTests {
+
+    @Test func defaultsToFifteen() {
+        #expect(AppSettings().tagSuggestionLimit == 15)
+    }
+
+    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(decoded.tagSuggestionLimit == 15)
+    }
+
+    /// Hand-edited nonsense is clamped rather than obeyed: zero would
+    /// make the field useless, and thousands would make it unscrollable.
+    @Test func aHandEditedValueIsClamped() throws {
+        let low = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagSuggestionLimit": 0}"#.utf8))
+        let high = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagSuggestionLimit": 5000}"#.utf8))
+        #expect(low.tagSuggestionLimit == 3)
+        #expect(high.tagSuggestionLimit == 50)
+    }
+
+    @Test func aSaneValueSurvives() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagSuggestionLimit": 25}"#.utf8))
+        #expect(decoded.tagSuggestionLimit == 25)
+    }
+}

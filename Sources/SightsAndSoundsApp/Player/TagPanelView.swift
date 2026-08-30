@@ -145,23 +145,81 @@ private struct PillCategoryView: View {
     let entry: CategoryTags
     var takesFocus = false
     @State private var draft = ""
+    /// Which suggestion the arrows have landed on. Nil means none — and
+    /// nil is exactly what makes Enter create rather than apply.
+    @State private var highlighted: Int?
+    @State private var creating = false
     @FocusState private var fieldFocused: Bool
 
     private var applied: [Tag] {
         model.itemTags.first { $0.id == entry.id }?.tags ?? []
     }
 
+    private var query: String { draft.trimmingCharacters(in: .whitespaces) }
+
     private var suggestions: [Tag] {
-        let query = draft.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return [] }
         let appliedIDs = Set(applied.map(\.id))
         return entry.tags
-            .filter { !appliedIDs.contains($0.id) && $0.name.localizedCaseInsensitiveContains(query) }
-            .prefix(6)
+            .filter { tag in
+                guard !appliedIDs.contains(tag.id) else { return false }
+                if tag.name.localizedCaseInsensitiveContains(query) { return true }
+                // An alias IS a name: typing SBD must offer Soundboard.
+                return (model.panelAliases[tag.id] ?? [])
+                    .contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+            .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
             .map { $0 }
     }
 
+    /// A tag named exactly what was typed, selected on sight so Enter
+    /// applies it instead of offering to create a duplicate.
+    private var exactMatchIndex: Int? {
+        suggestions.firstIndex {
+            $0.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+        }
+    }
+
+    /// What Enter acts on: the arrowed-to row, else the exact match.
+    private var activeIndex: Int? { highlighted ?? exactMatchIndex }
+
+    /// Nothing selected and something typed — Enter will make a new tag,
+    /// and the field says so rather than letting you find out.
+    private var willCreate: Bool { !query.isEmpty && activeIndex == nil }
+
     private var hue: Color { Theme.categoryHue(entry.category.colorIndex) }
+
+    /// Walk the suggestions. Coming off either end clears the selection
+    /// rather than wrapping, because "nothing selected" is a real state
+    /// here — it is the one where Enter creates.
+    private func move(_ delta: Int) -> KeyPress.Result {
+        guard !suggestions.isEmpty else { return .ignored }
+        switch (highlighted, delta) {
+        case (nil, 1): highlighted = 0
+        case (nil, -1): highlighted = suggestions.count - 1
+        case (let current?, _):
+            let next = current + delta
+            highlighted = suggestions.indices.contains(next) ? next : nil
+        default: break
+        }
+        return .handled
+    }
+
+    /// Enter: apply what is selected, or create when nothing is.
+    private func commit() {
+        guard !query.isEmpty else { return }
+        if let index = activeIndex, suggestions.indices.contains(index) {
+            apply(suggestions[index])
+        } else {
+            creating = true
+        }
+    }
+
+    private func apply(_ tag: Tag) {
+        model.toggleTag(tag.id)
+        draft = ""
+        highlighted = nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -195,42 +253,58 @@ private struct PillCategoryView: View {
                 }
             }
 
-            TextField("Add \(entry.category.name)…", text: $draft)
-                .textFieldStyle(.plain)
-                .font(Theme.ui(12))
-                .padding(.vertical, 5)
-                .padding(.horizontal, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.control)
-                        .fill(Theme.Surface.well)
-                        .stroke(
-                            fieldFocused ? Theme.Border.activeControl : Theme.Border.standard,
-                            lineWidth: 1))
-                .focused($fieldFocused)
-                .onSubmit {
-                    let raw = draft.trimmingCharacters(in: .whitespaces)
-                    guard !raw.isEmpty else { return }
-                    model.addTag(named: raw, categoryID: entry.category.id)
-                    draft = ""
+            HStack(spacing: 6) {
+                TextField("Add \(entry.category.name)…", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(12))
+                    .focused($fieldFocused)
+                    .onSubmit(commit)
+                    .onChange(of: draft) { _, _ in
+                        // A new query invalidates the old highlight.
+                        highlighted = nil
+                    }
+                    .onChange(of: fieldFocused) { _, focused in
+                        if focused { model.zone = .tags }
+                    }
+                    // Arrows before the field sees them: a single-line
+                    // field does nothing with up and down, and shifted
+                    // arrows still walk the playlist.
+                    .onKeyPress(.upArrow) { move(-1) }
+                    .onKeyPress(.downArrow) { move(1) }
+                if willCreate {
+                    Text("(New Tag)")
+                        .font(Theme.mono(9.5))
+                        .foregroundStyle(Theme.Accent.amber)
                 }
-                .onChange(of: fieldFocused) { _, focused in
-                    if focused { model.zone = .tags }
-                }
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(Theme.Surface.well)
+                    .stroke(
+                        fieldFocused ? Theme.Border.activeControl : Theme.Border.standard,
+                        lineWidth: 1))
 
-            ForEach(suggestions) { tag in
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, tag in
+                let active = index == activeIndex
                 Button {
-                    model.toggleTag(tag.id)
-                    draft = ""
+                    apply(tag)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus")
                             .font(Theme.ui(9))
                             .foregroundStyle(hue)
                         Text(tag.name)
-                            .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.secondary)
+                            .font(Theme.ui(11.5, active ? .medium : .regular))
+                            .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
                         Spacer(minLength: 0)
                     }
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(active ? hue.opacity(0.16) : .clear))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -238,6 +312,14 @@ private struct PillCategoryView: View {
         }
         .task(id: model.item?.id) {
             if takesFocus { fieldFocused = true }
+        }
+        .sheet(isPresented: $creating) {
+            NewTagSheet(categoryID: entry.category.id, initialName: query) { tag in
+                model.toggleTag(tag.id)
+                draft = ""
+                highlighted = nil
+            }
+            .environment(model)
         }
     }
 }
