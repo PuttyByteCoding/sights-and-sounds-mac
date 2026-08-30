@@ -388,7 +388,15 @@ private struct PlayerContent: View {
                 leftColumn
                 if model.showsRail {
                     VerticalResizeHandle(
-                        onDrag: { dragRail($0) }, onEnd: { endPanelDrag() })
+                        onDrag: { dragRail($0) }, onEnd: { endPanelDrag() },
+                        // The rail is two panels; a double-click shuts
+                        // whichever are open, and Tab's zone list follows
+                        // because `togglePanel` moves focus off a panel
+                        // it just closed.
+                        onDoubleClick: {
+                            if model.panels.tags { model.togglePanel(.tags) }
+                            if model.panels.segments { model.togglePanel(.segments) }
+                        })
                     SegmentsAndTagsRail(width: effectiveRailWidth)
                 }
             }
@@ -419,12 +427,14 @@ private struct PlayerContent: View {
                 }
             if model.panels.text {
                 HorizontalResizeHandle(
-                    onDrag: { dragText($0) }, onEnd: { endPanelDrag() })
+                    onDrag: { dragText($0) }, onEnd: { endPanelDrag() },
+                    onDoubleClick: { model.togglePanel(.text) })
                 OcrLinesPanel(height: effectiveTextHeight)
             }
             if model.panels.queue, !model.playlist.isEmpty {
                 HorizontalResizeHandle(
-                    onDrag: { dragQueue($0) }, onEnd: { endPanelDrag() })
+                    onDrag: { dragQueue($0) }, onEnd: { endPanelDrag() },
+                    onDoubleClick: { model.togglePanel(.queue) })
                 QueuePanel(height: effectiveQueueHeight)
             }
         }
@@ -1352,9 +1362,13 @@ private struct ClipAuthoringBar: View {
 
 /// Edge-drag handles, sidebar-style. They sit on the PANEL side of the
 /// tap-to-refocus boundary so resizing never fights the focus gesture.
+/// A resize handle also collapses what it borders on double-click — the
+/// divider convention every splittable macOS window has, and the reason
+/// nobody drags a panel all the way shut by hand.
 private struct VerticalResizeHandle: View {
     let onDrag: (CGFloat) -> Void
     let onEnd: () -> Void
+    var onDoubleClick: (() -> Void)?
 
     var body: some View {
         Rectangle()
@@ -1365,6 +1379,7 @@ private struct VerticalResizeHandle: View {
             .onHover { inside in
                 if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
             }
+            .onTapGesture(count: 2) { onDoubleClick?() }
             .gesture(
                 // Global space: the handle itself moves as the panel
                 // resizes, so LOCAL translation is measured against a
@@ -1380,6 +1395,7 @@ private struct VerticalResizeHandle: View {
 private struct HorizontalResizeHandle: View {
     let onDrag: (CGFloat) -> Void
     let onEnd: () -> Void
+    var onDoubleClick: (() -> Void)?
 
     var body: some View {
         Rectangle()
@@ -1390,6 +1406,7 @@ private struct HorizontalResizeHandle: View {
             .onHover { inside in
                 if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
             }
+            .onTapGesture(count: 2) { onDoubleClick?() }
             .gesture(
                 // Global space — same moving-origin flicker as the
                 // vertical handle.
