@@ -282,6 +282,11 @@ follow. Full context, locked decisions and the 11-phase plan live in
     field is about to overwrite, struck through, because it is a wipe and
     rewrite; backups are listed with their size and identity; findings
     stay per-finding with one honest action each.
+  - Spec 12, Library properties: Info stays Get Info — identity, contents,
+    coverage as proportion bars, history, each number with a button to the
+    thing it is about — and a Configuration tab holds what only a library
+    can own: its name, its `separatorCharacters`, and extension overrides
+    that replace the app-wide lists rather than extending them.
 
 ### Demo library
 

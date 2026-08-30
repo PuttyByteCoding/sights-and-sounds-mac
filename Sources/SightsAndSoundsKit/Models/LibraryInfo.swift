@@ -26,11 +26,18 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
     /// Venue, a Learning library stages Course.
     public var importBoxes: String?
 
+    /// Which characters `separatorsToSpaces` converts. Library-wide on
+    /// purpose: a category chooses WHETHER to apply separators, never
+    /// which — nobody wants a hyphen to split Band names but not Venue
+    /// names.
+    public var separatorCharacters: String
+
     public init(
         libraryID: UUID = UUID(), name: String, createdAt: Date = Date(),
         videoExtensionsOverride: [String]? = nil,
         audioExtensionsOverride: [String]? = nil,
-        importBoxes: String? = nil
+        importBoxes: String? = nil,
+        separatorCharacters: String = "-._"
     ) {
         self.id = 1
         self.libraryID = libraryID
@@ -39,6 +46,7 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
         self.videoExtensionsOverride = videoExtensionsOverride
         self.audioExtensionsOverride = audioExtensionsOverride
         self.importBoxes = importBoxes
+        self.separatorCharacters = separatorCharacters
     }
 
     /// The effective import sets for this library.

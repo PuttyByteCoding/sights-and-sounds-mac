@@ -175,3 +175,40 @@ import Testing
         #expect(clusters.first?.first == "Encore")
     }
 }
+
+/// One separator set per library — a category decides whether separators
+/// apply, never which ones.
+@Suite struct SeparatorCharacterTests {
+
+    @Test func theLibraryOwnsTheSeparatorSet() throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Sep")
+        #expect(try library.info()?.separatorCharacters == "-._")
+    }
+
+    @Test func formattingUsesTheLibrarysSet() {
+        // The default set splits all three.
+        #expect(
+            TagNameFormatter.format(
+                "dave-matthews.band_live", textFormat: .noFormatting,
+                separatorsToSpaces: true)
+                == "dave matthews band live")
+        // A narrower set leaves the others alone.
+        #expect(
+            TagNameFormatter.format(
+                "dave-matthews.band_live", textFormat: .noFormatting,
+                separatorsToSpaces: true, separatorCharacters: "-")
+                == "dave matthews.band_live")
+    }
+
+    /// A category that does not convert separators is untouched by the
+    /// set, whatever it is — the hyphen stays, and title case only
+    /// capitalises across whitespace (ported behaviour).
+    @Test func aCategoryThatDoesNotConvertIsUnaffected() {
+        #expect(
+            TagNameFormatter.format(
+                "dave-matthews", textFormat: .titleCase, separatorsToSpaces: false,
+                separatorCharacters: "-._")
+                == "Dave-matthews")
+    }
+}
