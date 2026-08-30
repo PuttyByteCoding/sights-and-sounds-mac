@@ -18,7 +18,8 @@ extension LibraryDatabase {
                 throw DatabaseError(message: "no such category")
             }
             let name = TagNameFormatter.format(
-                rawName.trimmingCharacters(in: .whitespaces), for: category)
+                rawName.trimmingCharacters(in: .whitespaces), for: category,
+                separatorCharacters: try LibraryInfo.fetchOne(db)?.separatorCharacters ?? "-._")
             guard !name.isEmpty else { throw DatabaseError(message: "empty tag name") }
             if let existing = try Tag
                 .filter(sql: "tagCategoryID = ? AND name = ?", arguments: [categoryID, name])
@@ -55,7 +56,8 @@ extension LibraryDatabase {
                   let category = try TagCategory.fetchOne(db, key: tag.tagCategoryID)
             else { throw DatabaseError(message: "no such tag") }
             let name = TagNameFormatter.format(
-                rawName.trimmingCharacters(in: .whitespaces), for: category)
+                rawName.trimmingCharacters(in: .whitespaces), for: category,
+                separatorCharacters: try LibraryInfo.fetchOne(db)?.separatorCharacters ?? "-._")
             guard !name.isEmpty else { throw DatabaseError(message: "empty tag name") }
             var updated = tag
             updated.name = name
@@ -263,7 +265,8 @@ extension LibraryDatabase {
                 keeper = existing
             case .newTag(let rawName):
                 let name = TagNameFormatter.format(
-                    rawName.trimmingCharacters(in: .whitespaces), for: category)
+                    rawName.trimmingCharacters(in: .whitespaces), for: category,
+                    separatorCharacters: try LibraryInfo.fetchOne(db)?.separatorCharacters ?? "-._")
                 guard !name.isEmpty else { throw DatabaseError(message: "empty tag name") }
                 if let existing = try Tag
                     .filter(sql: "tagCategoryID = ? AND name = ?", arguments: [categoryID, name])

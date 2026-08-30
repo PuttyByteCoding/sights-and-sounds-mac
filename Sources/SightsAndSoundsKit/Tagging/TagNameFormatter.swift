@@ -9,10 +9,13 @@ public enum TagNameFormatter {
     /// `.`, `_` to spaces, collapsing runs, trimming — so
     /// "dave--matthews_.band" + titleCase → "Dave Matthews Band".
     public static func format(
-        _ name: String, textFormat: TextFormat, separatorsToSpaces: Bool = false
+        _ name: String, textFormat: TextFormat, separatorsToSpaces: Bool = false,
+        separatorCharacters: String = "-._"
     ) -> String {
         guard !name.isEmpty else { return name }
-        let working = separatorsToSpaces ? convertSeparatorsToSpaces(name) : name
+        let working = separatorsToSpaces
+            ? convertSeparatorsToSpaces(name, separators: Set(separatorCharacters))
+            : name
         switch textFormat {
         case .allLowercase: return working.lowercased()
         case .allUppercase: return working.uppercased()
@@ -21,14 +24,21 @@ public enum TagNameFormatter {
         }
     }
 
-    /// Convenience: normalize for a category's configuration.
-    public static func format(_ name: String, for category: TagCategory) -> String {
-        format(name, textFormat: category.textFormat, separatorsToSpaces: category.separatorsToSpaces)
+    /// Convenience: normalize for a category's configuration. The
+    /// separator SET is the library's, because a category decides
+    /// whether separators apply and never which ones.
+    public static func format(
+        _ name: String, for category: TagCategory, separatorCharacters: String = "-._"
+    ) -> String {
+        format(
+            name, textFormat: category.textFormat,
+            separatorsToSpaces: category.separatorsToSpaces,
+            separatorCharacters: separatorCharacters)
     }
 
-    private static let separators: Set<Character> = ["-", ".", "_"]
-
-    private static func convertSeparatorsToSpaces(_ s: String) -> String {
+    private static func convertSeparatorsToSpaces(
+        _ s: String, separators: Set<Character>
+    ) -> String {
         var result = ""
         result.reserveCapacity(s.count)
         var lastWasSpace = false

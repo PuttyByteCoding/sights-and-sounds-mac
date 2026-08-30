@@ -678,6 +678,15 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // One separator set per library. A category decides whether to
+        // convert separators, never which ones — a hyphen that splits
+        // Band names but not Venue names is nobody's intention.
+        migrator.registerMigration("separatorCharacters") { db in
+            try db.alter(table: "libraryInfo") { t in
+                t.add(column: "separatorCharacters", .text).notNull().defaults(to: "-._")
+            }
+        }
+
         return migrator
     }
 
