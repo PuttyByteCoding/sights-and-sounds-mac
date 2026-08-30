@@ -124,9 +124,21 @@ private struct PathSettingRow: View {
 }
 
 private struct GeneralSettingsPane: View {
+    @State private var defaultOrdering = AppSettingsStore.shared.current.defaultOrdering
+
     var body: some View {
         Form {
             ScopeHeader(scope: .app)
+            Section("Browse") {
+                Picker("Open libraries sorted by", selection: $defaultOrdering) {
+                    ForEach(DefaultOrdering.allCases, id: \.self) { order in
+                        Text(order.displayName).tag(order)
+                    }
+                }
+                Text("Applies to each library window as it opens; the Sort menu changes the window you are in. Random deals a new shuffle every time a window opens, which is the way to be shown things you have not watched.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             PathSettingRow(
                 title: "Backups",
                 help: "Where Back Up Now writes dated library copies",
@@ -147,6 +159,9 @@ private struct GeneralSettingsPane: View {
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+        .onChange(of: defaultOrdering) {
+            AppSettingsStore.shared.update { $0.defaultOrdering = defaultOrdering }
+        }
     }
 }
 

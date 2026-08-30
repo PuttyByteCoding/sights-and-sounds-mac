@@ -104,6 +104,54 @@ import Testing
 /// Saved tile views, and the two older shapes of this section that must
 /// keep loading: the per-field booleans (#99's predecessor) and the
 /// placements that replaced them.
+/// The order a library window opens with.
+@Suite struct DefaultOrderingTests {
+
+    /// The reason this is a stored CHOICE and not a stored MediaOrdering:
+    /// a persisted `.random(seed:)` would deal the same shuffle at every
+    /// launch, which is the opposite of what picking random is for.
+    @Test func randomDealsAFreshSeedEveryTime() {
+        let seeds = (0..<8).map { _ -> Int in
+            guard case .random(let seed) = DefaultOrdering.random.ordering() else {
+                return -1
+            }
+            return seed
+        }
+        #expect(!seeds.contains(-1))
+        #expect(Set(seeds).count > 1)
+    }
+
+    /// Everything else is stable — only random is meant to move.
+    @Test func theOtherChoicesAreStable() {
+        for choice in DefaultOrdering.allCases where choice != .random {
+            #expect(choice.ordering() == choice.ordering())
+        }
+    }
+
+    @Test func everyChoiceMapsToItsOrdering() {
+        #expect(DefaultOrdering.path.ordering() == .relativePath)
+        #expect(DefaultOrdering.name.ordering() == .fileName)
+        #expect(DefaultOrdering.fullPath.ordering() == .fullPath)
+        #expect(DefaultOrdering.largestFirst.ordering() == .fileSize(ascending: false))
+        #expect(DefaultOrdering.longestFirst.ordering() == .duration(ascending: false))
+    }
+
+    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
+        let json = #"{"startVideosMuted": false}"#
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        #expect(decoded.defaultOrdering == .path)
+        #expect(!decoded.startVideosMuted)
+    }
+
+    @Test func theChoiceRoundTrips() throws {
+        var settings = AppSettings()
+        settings.defaultOrdering = .random
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+        #expect(decoded.defaultOrdering == .random)
+    }
+}
+
 @Suite struct TileViewSettingsTests {
 
     @Test func aFreshInstallGetsTheShippedViews() {
