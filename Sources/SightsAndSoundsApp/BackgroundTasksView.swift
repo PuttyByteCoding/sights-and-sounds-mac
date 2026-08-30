@@ -65,6 +65,7 @@ struct BackgroundTasksView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 560)
+        .defaultToolbarShowsLabels()
         .background(Theme.Surface.content)
         .overlay(alignment: .bottom) {
             if let toast {

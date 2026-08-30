@@ -59,6 +59,7 @@ struct AuxiliaryWindowView: View {
                 ProgressView()
             }
         }
+        .defaultToolbarShowsLabels()
         .task {
             guard model == nil else { return }
             do {

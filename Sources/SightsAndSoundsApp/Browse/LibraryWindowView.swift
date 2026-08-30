@@ -235,38 +235,49 @@ struct BrowseView: View {
             CommandPalette().environment(model)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let status = model.thumbnailQueue {
-                ThumbnailQueueBar(status: status)
-            }
+            GridFooter(status: model.thumbnailQueue)
         }
         .task { await model.watchThumbnailQueue() }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { windowWidth = $0 }
+        .defaultToolbarShowsLabels()
         .frame(minWidth: 900, minHeight: 560)
     }
 }
 
-/// The footer under the grid while a thumbnail sweep runs: this
-/// library's at-a-glance progress. The Background Tasks window stays
-/// the cross-library view.
-private struct ThumbnailQueueBar: View {
-    let status: BrowseModel.ThumbnailQueueStatus
+/// The window's status strip: sweep progress on the left while one runs,
+/// the tile-size slider on the right — where Finder, Photos and every
+/// other grid put it, and reachable without opening a popover.
+///
+/// It is always present rather than appearing with the sweep, because a
+/// strip that comes and goes reflows the grid under the pointer. The
+/// slider drives `GridDisplaySettings` directly, so cells resize live and
+/// settings.json is written only when the drag settles — the same
+/// contract View Options uses, and the same one control in two places
+/// must share or they fight over the file.
+private struct GridFooter: View {
+    let status: BrowseModel.ThumbnailQueueStatus?
+
+    private var display: GridDisplaySettings { GridDisplaySettings.shared }
 
     var body: some View {
         HStack(spacing: 10) {
-            if let total = status.total, total > 0 {
-                ProgressView(value: Double(status.current), total: Double(total))
-                    .frame(width: 160)
-                Text("Generating thumbnails: \(status.current) of \(total)")
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Thumbnail sweep queued…")
+            if let status {
+                if let total = status.total, total > 0 {
+                    ProgressView(value: Double(status.current), total: Double(total))
+                        .frame(width: 160)
+                    Text("Generating thumbnails: \(status.current) of \(total)")
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Thumbnail sweep queued…")
+                }
+                if status.failed > 0 {
+                    Text("\(status.failed) failed")
+                        .foregroundStyle(.orange)
+                }
             }
-            if status.failed > 0 {
-                Text("\(status.failed) failed")
-                    .foregroundStyle(.orange)
-            }
-            Spacer()
+            Spacer(minLength: 12)
+            sizeSlider
         }
         .font(.caption)
         .monospacedDigit()
@@ -274,6 +285,29 @@ private struct ThumbnailQueueBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)
+    }
+
+    private var sizeSlider: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.grid.3x3")
+                .font(Theme.ui(9))
+                .foregroundStyle(Theme.Text.disabled)
+            Slider(
+                value: Binding(
+                    get: { display.grid.thumbnailSize },
+                    set: { display.grid.thumbnailSize = $0 }),
+                in: 120...400,
+                onEditingChanged: { editing in
+                    // Live while dragging; the file only on settle.
+                    if !editing { display.persist() }
+                })
+                .controlSize(.mini)
+                .frame(width: 116)
+            Image(systemName: "square")
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.disabled)
+        }
+        .help("Tile size — the same setting as View Options")
     }
 }
 
