@@ -285,11 +285,18 @@ final class BrowseModel {
     private(set) var itemMissingCategories: [UUID: [String]] = [:]
     private(set) var duplicateFlaggedIDs: Set<UUID> = []
 
+    /// Per-tag counts under the ACTIVE filter — "if I added this, how
+    /// many would survive". Empty while nothing is filtered, in which
+    /// case the sidebar falls back to `counts.byTag`, which answers the
+    /// other question: what is behind this tag in the library.
+    private(set) var filteredTagCounts: [UUID: Int] = [:]
+
     private struct ListingPayload: Sendable {
         var items: [MediaItem]
         var tags: [UUID: [TagPill]]
         var missingCategories: [UUID: [String]]
         var duplicateIDs: Set<UUID>
+        var filteredTagCounts: [UUID: Int]
     }
 
     /// Everything a tile needs about one item that is not on its row.
@@ -328,7 +335,12 @@ final class BrowseModel {
                     "browse",
                     "listing query \(String(format: "%.1f", elapsed))ms — \(rows.count) items")
                 var payload = ListingPayload(
-                    items: rows, tags: [:], missingCategories: [:], duplicateIDs: [])
+                    items: rows, tags: [:], missingCategories: [:], duplicateIDs: [],
+                    // Faceted counts ride along with the listing they
+                    // describe, on the same generation — so the numbers
+                    // and the grid can never be from different filters.
+                    filteredTagCounts: try library.filteredTagCounts(
+                        kinds: kinds, filter: filter))
                 if grid.needsTagData {
                     let vocabulary = try library.vocabulary()
                         .filter { !$0.category.hiddenFromBrowse }
@@ -387,6 +399,7 @@ final class BrowseModel {
                     self.itemTags = payload.tags
                     self.itemMissingCategories = payload.missingCategories
                     self.duplicateFlaggedIDs = payload.duplicateIDs
+                    self.filteredTagCounts = payload.filteredTagCounts
                     self.errorMessage = nil
                 case .failure(let error):
                     self.errorMessage = "\(error)"

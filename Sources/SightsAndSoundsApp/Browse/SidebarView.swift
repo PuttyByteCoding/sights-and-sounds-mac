@@ -25,6 +25,22 @@ struct SidebarView: View {
     @State private var tagQueries: [UUID: String] = [:]
     // What the sidebar said back when it refused a click.
     @State private var refusal: String?
+    // How each category's tags are ordered. Session-scoped like the sets
+    // above: which way you want a category sorted is a fact about the
+    // hunt you are on, not about the library.
+    @State private var tagSorts: [UUID: TagSort] = [:]
+
+    /// The two orders a category's tags can take.
+    enum TagSort: String, CaseIterable {
+        case alphabetical, count
+
+        var displayName: String {
+            switch self {
+            case .alphabetical: "Name"
+            case .count: "Count"
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -344,12 +360,15 @@ struct SidebarView: View {
                     toggle: { toggle(entry.category.id, in: &expandedCategories) })
                 if expandedCategories.contains(entry.category.id) {
                     if entry.tags.count > 8 {
-                        TagQueryField(
-                            text: query(for: entry.category.id),
-                            // With thousands of tags, typing is the only
-                            // realistic way to find one — so the field
-                            // takes the keyboard the moment it appears.
-                            focusOnAppear: true)
+                        HStack(spacing: 6) {
+                            TagQueryField(
+                                text: query(for: entry.category.id),
+                                // With thousands of tags, typing is the
+                                // only realistic way to find one — so the
+                                // field takes the keyboard as it appears.
+                                focusOnAppear: true)
+                            sortMenu(for: entry.category.id)
+                        }
                     }
                     tagList(of: entry)
                     // Missing is a filter value like any other: required
@@ -364,6 +383,32 @@ struct SidebarView: View {
             }
             .padding(.top, 11)
         }
+    }
+
+    /// Name or count, per category. Only offered where the query field
+    /// is — under nine tags the order is not a problem worth a control.
+    private func sortMenu(for categoryID: UUID) -> some View {
+        let current = tagSorts[categoryID] ?? .alphabetical
+        return Menu {
+            Picker("Sort", selection: Binding(
+                get: { current },
+                set: { tagSorts[categoryID] = $0 })
+            ) {
+                ForEach(TagSort.allCases, id: \.self) { sort in
+                    Text(sort.displayName).tag(sort)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: current == .count
+                ? "arrow.down.circle" : "textformat.abc")
+                .font(Theme.ui(10))
+                .foregroundStyle(Theme.Text.disabled)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Order these tags by name or by how many items they hold")
     }
 
     /// How many tag rows a category shows before the list gets its own
@@ -463,12 +508,55 @@ struct SidebarView: View {
     private func visibleTags(of entry: CategoryTags) -> [Tag] {
         let query = tagQueries[entry.category.id, default: ""]
             .trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return entry.tags }
-        return entry.tags.filter { tag in
-            model.filter.slot(of: tag.id) != nil
-                || tag.name.localizedCaseInsensitiveContains(query)
-                || (model.tagAliases[tag.id] ?? [])
-                    .contains { $0.localizedCaseInsensitiveContains(query) }
+        let matching: [Tag]
+        if query.isEmpty {
+            matching = entry.tags
+        } else {
+            matching = entry.tags.filter { tag in
+                model.filter.slot(of: tag.id) != nil
+                    || tag.name.localizedCaseInsensitiveContains(query)
+                    || (model.tagAliases[tag.id] ?? [])
+                        .contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+        }
+        return sorted(matching, by: tagSorts[entry.category.id] ?? .alphabetical)
+    }
+
+    /// Tags a filter leaves nothing for sink to the bottom, whichever
+    /// sort is chosen.
+    ///
+    /// That rule is not part of the sort, it is on top of it: down a list
+    /// of thousands, "which of these still have videos" is the question,
+    /// and the answer should not be scattered through the alphabet. A
+    /// slotted tag never sinks — a tag you are actively filtering ON must
+    /// stay where you can click it, even when it is the reason the count
+    /// is zero.
+    private func sorted(_ tags: [Tag], by sort: TagSort) -> [Tag] {
+        let counts = model.filteredTagCounts
+        guard !counts.isEmpty else {
+            return sort == .count ? byCount(tags) : tags
+        }
+        func isEmpty(_ tag: Tag) -> Bool {
+            model.filter.slot(of: tag.id) == nil && (counts[tag.id] ?? 0) == 0
+        }
+        let live = sort == .count ? byCount(tags.filter { !isEmpty($0) })
+            : tags.filter { !isEmpty($0) }
+        let spent = sort == .count ? byCount(tags.filter(isEmpty)) : tags.filter(isEmpty)
+        return live + spent
+    }
+
+    /// Biggest first, ties broken by name so the order is total — an
+    /// unstable sort down a long list reshuffles on every refresh.
+    private func byCount(_ tags: [Tag]) -> [Tag] {
+        let counts = model.filteredTagCounts
+        func count(_ tag: Tag) -> Int {
+            counts[tag.id] ?? model.counts.byTag[tag.id] ?? 0
+        }
+        return tags.sorted {
+            let (a, b) = (count($0), count($1))
+            return a == b
+                ? $0.name.localizedStandardCompare($1.name) == .orderedAscending
+                : a > b
         }
     }
 }
@@ -831,10 +919,15 @@ private struct TagFilterRow: View {
     @State private var showEditor = false
 
     var body: some View {
+        // Filtered count while a filter is on — "if I added this, how
+        // many would survive" — and the library-wide count otherwise.
+        let unfiltered = model.counts.byTag[tag.id] ?? 0
+        let narrowed = model.filteredTagCounts[tag.id]
         SlotRow(
             term: .tag(tag.id),
             label: tag.name,
-            count: model.counts.byTag[tag.id] ?? 0,
+            count: narrowed ?? unfiltered,
+            unfilteredCount: narrowed == nil ? nil : unfiltered,
             hidden: tag.hiddenByDefault,
             optionClick: { showEditor = true })
             .popover(isPresented: $showEditor, arrowEdge: .trailing) {
@@ -851,6 +944,10 @@ private struct SlotRow: View {
     let term: FilterTerm
     let label: String
     let count: Int
+    /// What this row counts when nothing is filtered, for the tooltip.
+    /// Non-nil only when `count` is the narrowed number, so the row can
+    /// say "12 of 70" on hover without spending sidebar width on it.
+    var unfilteredCount: Int?
     var italic = false
     var hidden = false
     var optionClick: (() -> Void)?
@@ -872,7 +969,11 @@ private struct SlotRow: View {
             Text(label)
                 .font(Theme.ui(12.5, slot == nil ? .regular : .medium))
                 .italic(italic)
-                .strikethrough(slot == .excluded)
+                // Struck when excluded, and struck when the current
+                // filter leaves it nothing — both mean "this row will
+                // not give you items", which is the thing worth seeing
+                // at a glance down a long list.
+                .strikethrough(slot == .excluded || (unfilteredCount != nil && count == 0))
                 .foregroundStyle(nameColor(slot))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -896,8 +997,20 @@ private struct SlotRow: View {
     }
 
     private var helpText: String {
-        let base = "Click cycles forward, right-click steps back"
-        return optionClick == nil ? base : base + ". ⌥-click to edit the tag"
+        var parts: [String] = []
+        // The narrowing lives here rather than on the row: the sidebar is
+        // narrow and one category can run to thousands of rows, so a
+        // second number on every line is noise exactly where it is least
+        // affordable.
+        if let unfilteredCount {
+            parts.append(
+                count == unfilteredCount
+                    ? "\(count) items — the filter takes none of them away"
+                    : "\(count) of \(unfilteredCount) items survive the current filter")
+        }
+        parts.append("Click cycles forward, right-click steps back")
+        if optionClick != nil { parts.append("⌥-click to edit the tag") }
+        return parts.joined(separator: ". ")
     }
 }
 
