@@ -157,16 +157,33 @@ private struct PillCategoryView: View {
 
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
 
-    private var suggestions: [Tag] {
+    /// A suggested tag, and the alias that put it there when the tag's
+    /// own name did not match. Carried rather than recomputed at draw
+    /// time so the row can say WHY it is being offered — "Soundboard
+    /// (SBD)" answers a question a bare "Soundboard" leaves open.
+    private struct Suggestion: Identifiable {
+        let tag: Tag
+        let matchedAlias: String?
+        var id: UUID { tag.id }
+    }
+
+    private var suggestions: [Suggestion] {
         guard !query.isEmpty else { return [] }
         let appliedIDs = Set(applied.map(\.id))
         return entry.tags
-            .filter { tag in
-                guard !appliedIDs.contains(tag.id) else { return false }
-                if tag.name.localizedCaseInsensitiveContains(query) { return true }
+            .compactMap { tag -> Suggestion? in
+                guard !appliedIDs.contains(tag.id) else { return nil }
+                // The name winning means no alias is shown, even if one
+                // would also have matched: the parenthetical exists to
+                // explain a row you would not otherwise expect.
+                if tag.name.localizedCaseInsensitiveContains(query) {
+                    return Suggestion(tag: tag, matchedAlias: nil)
+                }
                 // An alias IS a name: typing SBD must offer Soundboard.
-                return (model.panelAliases[tag.id] ?? [])
-                    .contains { $0.localizedCaseInsensitiveContains(query) }
+                guard let alias = (model.panelAliases[tag.id] ?? [])
+                    .first(where: { $0.localizedCaseInsensitiveContains(query) })
+                else { return nil }
+                return Suggestion(tag: tag, matchedAlias: alias)
             }
             .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
             .map { $0 }
@@ -176,7 +193,8 @@ private struct PillCategoryView: View {
     /// applies it instead of offering to create a duplicate.
     private var exactMatchIndex: Int? {
         suggestions.firstIndex {
-            $0.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+            $0.tag.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+                || ($0.matchedAlias?.localizedCaseInsensitiveCompare(query) == .orderedSame)
         }
     }
 
@@ -209,7 +227,7 @@ private struct PillCategoryView: View {
     private func commit() {
         guard !query.isEmpty else { return }
         if let index = activeIndex, suggestions.indices.contains(index) {
-            apply(suggestions[index])
+            apply(suggestions[index].tag)
         } else {
             creating = true
         }
@@ -286,18 +304,25 @@ private struct PillCategoryView: View {
                         fieldFocused ? Theme.Border.activeControl : Theme.Border.standard,
                         lineWidth: 1))
 
-            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, tag in
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
                 let active = index == activeIndex
                 Button {
-                    apply(tag)
+                    apply(suggestion.tag)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus")
                             .font(Theme.ui(9))
                             .foregroundStyle(hue)
-                        Text(tag.name)
+                        Text(suggestion.tag.name)
                             .font(Theme.ui(11.5, active ? .medium : .regular))
                             .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
+                        // Why this row is here, when the name alone does
+                        // not explain it.
+                        if let alias = suggestion.matchedAlias {
+                            Text("(\(alias))")
+                                .font(Theme.mono(9.5))
+                                .foregroundStyle(Theme.Text.disabled)
+                        }
                         Spacer(minLength: 0)
                     }
                     .padding(.vertical, 2)
