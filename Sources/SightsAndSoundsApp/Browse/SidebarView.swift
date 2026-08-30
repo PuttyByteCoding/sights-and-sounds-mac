@@ -370,15 +370,17 @@ struct SidebarView: View {
                             sortMenu(for: entry.category.id)
                         }
                     }
-                    tagList(of: entry)
                     // Missing is a filter value like any other: required
                     // on Venue is the untagged worklist, excluded is
                     // "only fully tagged shows".
-                    SlotRow(
-                        term: .missingCategory(entry.category.id),
-                        label: "Missing — no \(entry.category.name) tag",
-                        count: model.counts.missingByCategory[entry.category.id] ?? 0,
-                        italic: true)
+                    //
+                    // ABOVE the tags, not below them. It belongs to the
+                    // category rather than to any tag in it, and under a
+                    // category of three thousand it was a scroll box and
+                    // then some distance further down — findable only if
+                    // you already knew it was there.
+                    missingRow(for: entry)
+                    tagList(of: entry)
                 }
             }
             .padding(.top, 11)
@@ -409,6 +411,20 @@ struct SidebarView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Order these tags by name or by how many items they hold")
+    }
+
+    /// "Missing — no <Category> tag": the items carrying nothing from
+    /// this category. Filtered like the tags around it, so it narrows
+    /// instead of standing still while everything else moves.
+    private func missingRow(for entry: CategoryTags) -> some View {
+        let unfiltered = model.counts.missingByCategory[entry.category.id] ?? 0
+        let narrowed = model.filteredMissingCounts[entry.category.id]
+        return SlotRow(
+            term: .missingCategory(entry.category.id),
+            label: "Missing — no \(entry.category.name) tag",
+            count: narrowed ?? unfiltered,
+            unfilteredCount: narrowed == nil ? nil : unfiltered,
+            italic: true)
     }
 
     /// How many tag rows a category shows before the list gets its own

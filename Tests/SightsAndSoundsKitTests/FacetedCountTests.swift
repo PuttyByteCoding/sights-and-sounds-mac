@@ -83,3 +83,43 @@ import Testing
         #expect(try f.library.filteredTagCounts(kinds: .video, filter: MediaFilter()).isEmpty)
     }
 }
+
+/// The "Missing — no <Category> tag" rows, counted under the filter.
+@Suite struct FilteredMissingCountTests {
+
+    /// It narrows with everything else rather than standing still on a
+    /// library-wide number while the tags around it move.
+    @Test func missingNarrowsWithTheFilter() throws {
+        let f = try FilterFixture()
+        let unfiltered = try f.library.browseCounts(kinds: .video)
+            .missingByCategory[f.recordingType.id] ?? 0
+        let filter = MediaFilter(required: [.tag(f.bandA.id)])
+        let narrowed = try f.library.filteredMissingCategoryCounts(
+            kinds: .video, filter: filter)[f.recordingType.id]
+
+        #expect(narrowed != nil)
+        #expect(narrowed! <= unfiltered)
+        // The genuine intersection: Band A items with no Recording Type.
+        let actual = try f.library.mediaItems(
+            matching: MediaFilter(
+                required: [.tag(f.bandA.id), .missingCategory(f.recordingType.id)]),
+            kinds: .video).count
+        #expect(narrowed == actual)
+    }
+
+    /// Every category is present with a number, so a row can never fall
+    /// back to its library-wide count and look as if the filter missed it.
+    @Test func everyCategoryIsAccountedFor() throws {
+        let f = try FilterFixture()
+        let counts = try f.library.filteredMissingCategoryCounts(
+            kinds: .video, filter: MediaFilter(required: [.tag(f.bandA.id)]))
+        #expect(counts.keys.contains(f.band.id))
+        #expect(counts.keys.contains(f.recordingType.id))
+    }
+
+    @Test func anEmptyFilterReturnsNothingToOverride() throws {
+        let f = try FilterFixture()
+        #expect(try f.library.filteredMissingCategoryCounts(
+            kinds: .video, filter: MediaFilter()).isEmpty)
+    }
+}

@@ -79,6 +79,36 @@ extension LibraryDatabase {
         }
     }
 
+    /// The `Missing — no <Category> tag` rows, counted under the active
+    /// filter, so they narrow alongside the tags they sit with. Without
+    /// this they stayed on library-wide numbers while every tag around
+    /// them moved, which reads as a row that has stopped working.
+    ///
+    /// One query per category, like `missingByCategory`: there are a
+    /// handful of categories, and the predicate is correlated to
+    /// `mediaItem.id`, so it has to run against the outer table rather
+    /// than a derived one.
+    public func filteredMissingCategoryCounts(
+        kinds: MediaKinds, filter: MediaFilter
+    ) throws -> [UUID: Int] {
+        guard !filter.isEmpty else { return [:] }
+        let compiled = FilterCompiler.compile(filter: filter, kinds: kinds)
+        return try writer.read { db in
+            var counts: [UUID: Int] = [:]
+            for id in try UUID.fetchAll(db, sql: "SELECT id FROM tagCategory") {
+                counts[id] = try Int.fetchOne(
+                    db,
+                    sql: """
+                    SELECT COUNT(*) FROM mediaItem \
+                    WHERE mediaItem.id IN (SELECT id FROM (\(compiled.sql))) \
+                    AND \(FilterCompiler.Baseline.missingCategory)
+                    """,
+                    arguments: compiled.arguments + StatementArguments([id])) ?? 0
+            }
+            return counts
+        }
+    }
+
     /// Every sidebar count in one read. One pass rather than a query per
     /// row: at library size, a count per tag row is the N+1 that made the
     /// web app's browse panel take seconds to open.
