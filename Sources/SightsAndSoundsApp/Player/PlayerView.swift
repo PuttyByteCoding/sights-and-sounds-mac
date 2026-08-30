@@ -138,12 +138,21 @@ struct PlayerView: View {
         // (an NSTextView), so checking the first responder covers them
         // all without threading focus state through each field.
         //
-        // Two exceptions, both deliberate. F-keys never insert text. And
-        // the NUMPAD seeks: rewinding four seconds mid-word is the whole
+        // Three exceptions, all deliberate. F-keys never insert text. The
+        // NUMPAD seeks: rewinding four seconds mid-word is the whole
         // reason the numpad is in the map, and the digits are separable
         // from the top row that is spelling the tag. Arrow keys carry the
         // same numeric-pad flag and belong to the text cursor, so the
-        // exception is limited to characters that actually type digits.
+        // digit exception is limited to characters that actually type.
+        //
+        // And a SHIFTED arrow walks the playlist. Bare arrows stay with
+        // the cursor — that is why the web map put the playlist on the
+        // shifted ones in the first place — but with the tag panel up,
+        // its autocomplete field owns the keyboard for as long as the
+        // panel is open, and suspending every arrow left no way at all to
+        // reach the next item without closing the panel or grabbing the
+        // mouse. Shift is the way through, in both maps, and it costs
+        // only extending a selection by one character.
         if NSApp.keyWindow?.firstResponder is NSTextView {
             if let scalar = press.key.character.unicodeScalars.first,
                (0xF704...0xF70C).contains(scalar.value) {
@@ -153,6 +162,11 @@ struct PlayerView: View {
             if press.modifiers.contains(.numericPad), let character = press.characters.first,
                character.isNumber || character == "-" {
                 return model.handle(character: character, shift: false, numpad: true)
+            }
+            if press.modifiers.contains(.shift),
+               press.key == .leftArrow || press.key == .rightArrow {
+                press.key == .leftArrow ? model.goPrevious() : model.goNext()
+                return true
             }
             return false
         }
