@@ -17,8 +17,10 @@ import Testing
             .contains { $0.message.contains("empty") })
         #expect(OrganizeTemplate.validate("plain/text", categoryNames: categories)
             .contains { $0.message.contains("no tokens") })
+        // An unknown token names the category and points at the window
+        // that would fix it.
         #expect(OrganizeTemplate.validate("%Venue", categoryNames: categories)
-            .contains { $0.message.contains("Unknown token") })
+            .contains { $0.message.contains("No category called \"Venue\"") })
         #expect(OrganizeTemplate.validate("%Band//%Year", categoryNames: categories)
             .contains { $0.message.contains("empty path segment") })
     }

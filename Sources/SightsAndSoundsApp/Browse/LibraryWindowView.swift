@@ -186,11 +186,8 @@ struct BrowseView: View {
                             openWindow(id: "properties", value: model.libraryID)
                         }
                         Divider()
-                        Button("Move History…", systemImage: "arrow.turn.up.right") {
-                            openAux(.moveHistory)
-                        }
-                        Button("Reorganize by Template…", systemImage: "folder.badge.gearshape") {
-                            openAux(.reorganize)
+                        Button("Organise…", systemImage: "folder.badge.gearshape") {
+                            openAux(.organise)
                         }
                         Button("Validate Library…", systemImage: "checkmark.seal") {
                             openAux(.validation)

@@ -9,8 +9,7 @@ struct AuxWindowRequest: Codable, Hashable {
     enum Kind: String, Codable, CaseIterable {
         case categories
         case review
-        case moveHistory
-        case reorganize
+        case organise
         case validation
         case importMedia
         case operations
@@ -19,8 +18,7 @@ struct AuxWindowRequest: Codable, Hashable {
             switch self {
             case .categories: "Categories & Fields"
             case .review: "Review"
-            case .moveHistory: "Move History"
-            case .reorganize: "Reorganize"
+            case .organise: "Organise"
             case .validation: "Validation"
             case .importMedia: "Import"
             case .operations: "Operations"
@@ -91,8 +89,7 @@ struct AuxiliaryWindowView: View {
             switch request.kind {
             case .categories: CategoryManagerView()
             case .review: ReviewView()
-            case .moveHistory: MoveHistoryView()
-            case .reorganize: ReorganizeView()
+            case .organise: OrganiseView()
             case .validation: ValidationView()
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
