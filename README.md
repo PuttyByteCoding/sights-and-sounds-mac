@@ -231,6 +231,14 @@ follow. Full context, locked decisions and the 11-phase plan live in
     one per category, uniform frames per kind with pillarboxing. Offline
     items are badged and desaturated rather than blocked, with a banner
     and a real hide/show toggle; selection and a floating bulk bar.
+  - Spec 03, player: Esc unwinds one layer and Tab walks video → tags →
+    segments → queue, with the focused zone ringed and named in a footer.
+    One keyboard map chosen once (`?` compares both and is the permanent
+    cheat sheet); the numpad keeps seeking while you type. Songs, clips
+    and hide blocks share one segments rail — `segmentRole` makes a song
+    and a clip one record — and on-screen text moves to a bottom drawer
+    whose lines tag the playing item only. Triage is a mode, and the only
+    place a flag key advances.
 
 ### Demo library
 
