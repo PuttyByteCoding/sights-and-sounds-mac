@@ -31,6 +31,57 @@ public struct BrowseCounts: Sendable, Equatable {
 }
 
 extension LibraryDatabase {
+    /// Per-tag counts under the ACTIVE filter: "if I added this, how many
+    /// would survive". The number to show while filtering, where
+    /// `browseCounts` answers the different question of what is behind a
+    /// tag in the library as a whole.
+    ///
+    /// Each category's tags are counted with **that category's own terms
+    /// removed** — see `MediaFilter.removingCategory`. Without it,
+    /// requiring Band ▸ Phish makes every other Band tag read zero,
+    /// the column collapses, and switching to Dead becomes impossible
+    /// because Dead looks empty. It is also why an excluded tag still
+    /// reports a real number instead of the zero its own exclusion
+    /// guarantees.
+    ///
+    /// One query per category, like `missingByCategory` above and for the
+    /// same reason: there are a handful of categories, and the
+    /// alternative is fetching every link and counting in memory.
+    ///
+    /// A tag with nothing surviving is present with a zero, never absent.
+    /// The sidebar sinks and strikes zeros, and "no matching items" is a
+    /// different fact from "no data" — only one of them should be shown.
+    public func filteredTagCounts(kinds: MediaKinds, filter: MediaFilter) throws -> [UUID: Int] {
+        guard !filter.isEmpty else { return [:] }
+        return try writer.read { db in
+            var byCategory: [UUID: [UUID]] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT id, tagCategoryID FROM tag") {
+                byCategory[row["tagCategoryID"] as UUID, default: []]
+                    .append(row["id"] as UUID)
+            }
+
+            var counts: [UUID: Int] = [:]
+            for (categoryID, tagIDs) in byCategory where !tagIDs.isEmpty {
+                let scoped = filter.removingCategory(categoryID, tagIDs: Set(tagIDs))
+                let compiled = FilterCompiler.compile(filter: scoped, kinds: kinds)
+                // The subquery's placeholders come first textually, so its
+                // arguments bind before the category id appended here.
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT mediaItemTag.tagID AS id, COUNT(*) AS n FROM mediaItemTag \
+                    JOIN (\(compiled.sql)) AS matched ON matched.id = mediaItemTag.mediaItemID \
+                    JOIN tag ON tag.id = mediaItemTag.tagID AND tag.tagCategoryID = ? \
+                    GROUP BY mediaItemTag.tagID
+                    """,
+                    arguments: compiled.arguments + StatementArguments([categoryID]))
+                for row in rows { counts[row["id"] as UUID] = row["n"] as Int }
+                for id in tagIDs where counts[id] == nil { counts[id] = 0 }
+            }
+            return counts
+        }
+    }
+
     /// Every sidebar count in one read. One pass rather than a query per
     /// row: at library size, a count per tag row is the N+1 that made the
     /// web app's browse panel take seconds to open.
