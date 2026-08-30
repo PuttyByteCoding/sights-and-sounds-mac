@@ -6,8 +6,12 @@ import SightsAndSoundsKit
 /// The playback surface, embedded in the library window it was opened
 /// from: custom transport (system controls can't host scrub previews),
 /// the ported keyboard map, waveform timelines for audio, and
-/// resume/watch-state recording. `onClose` hands the window back to
-/// the browse grid (Back button, or Esc).
+/// resume/watch-state recording. `onClose` hands the window back to the
+/// browse grid (Back button, or Esc from the video zone).
+///
+/// The player owns playback and the keys. Tagging, segments, on-screen
+/// text and the queue are separate panels around it — the 4,382-line
+/// lesson from the web app's player component.
 struct PlayerView: View {
     @Environment(AppModel.self) private var app
     let request: PlayerRequest
@@ -15,12 +19,15 @@ struct PlayerView: View {
 
     @State private var model: PlayerModel?
     @State private var openError: String?
+    @State private var showKeyMap = false
     @FocusState private var focused: Bool
 
     var body: some View {
         Group {
             if let model {
-                PlayerContent(refocus: { focused = true })
+                PlayerContent(
+                    refocus: { focused = true },
+                    showKeyMap: $showKeyMap)
                     .environment(model)
                     .navigationTitle(model.title)
             } else if let openError {
@@ -46,12 +53,18 @@ struct PlayerView: View {
         .focused($focused)
         // With the sidebar alive beside the player, any click out there
         // takes keyboard focus with it — and the key map dies silently.
-        // Closing the tag panel is the moment tagging hands control back.
-        .onChange(of: model?.showTagPanel ?? false) { _, showing in
-            if !showing { focused = true }
+        // Releasing to the video zone is the moment a panel hands the
+        // keyboard back.
+        .onChange(of: model?.zone ?? .video) { _, zone in
+            if zone == .video { focused = true }
         }
         .onKeyPress(phases: [.down, .repeat]) { press in
             handle(press) ? .handled : .ignored
+        }
+        .sheet(isPresented: $showKeyMap) {
+            if let model {
+                KeyMapSheet().environment(model)
+            }
         }
         .task {
             guard model == nil else { return }
@@ -76,37 +89,88 @@ struct PlayerView: View {
     ]
 
     private func handle(_ press: KeyPress) -> Bool {
-        // Esc leaves the player even when the item failed to open.
+        guard let model else {
+            // Esc leaves the player even when the item failed to open.
+            if press.key == .escape { onClose(); return true }
+            return false
+        }
+        let style = model.keyMap
+
+        // Esc unwinds EXACTLY ONE layer, in this order: an open mark, the
+        // focus zone, then the player. Never two — clearing a selection
+        // and leaving in one press is how you lose work you could see.
         if press.key == .escape {
-            if let model, model.showTagPanel {
-                model.showTagPanel = false
-            } else {
-                onClose()
+            if model.pendingSegmentStart != nil || model.pendingBlockStart != nil {
+                model.cancelSegmentMark()
+                model.pendingBlockStart = nil
+                return true
             }
+            if model.zone != .video {
+                model.zone = .video
+                focused = true
+                return true
+            }
+            onClose()
             return true
         }
-        guard let model else { return false }
+
+        // Tab walks video → tags → segments → queue, skipping whatever is
+        // collapsed. The footer names where it landed.
+        if press.key == .tab {
+            model.moveZone(
+                reverse: press.modifiers.contains(.shift), available: model.availableZones)
+            focused = true
+            return true
+        }
 
         // While a text input owns the keyboard, the single-key map is
         // suspended — "d" spells a tag name, it doesn't delete (#105).
         // Every SwiftUI text field types through an AppKit field editor
         // (an NSTextView), so checking the first responder covers them
-        // all without threading focus state through each field. Esc
-        // (above) stays live, and so do F-key bindings — function keys
-        // never insert text.
+        // all without threading focus state through each field.
+        //
+        // Two exceptions, both deliberate. F-keys never insert text. And
+        // the NUMPAD seeks: rewinding four seconds mid-word is the whole
+        // reason the numpad is in the map, and the digits are separable
+        // from the top row that is spelling the tag. Arrow keys carry the
+        // same numeric-pad flag and belong to the text cursor, so the
+        // exception is limited to characters that actually type digits.
         if NSApp.keyWindow?.firstResponder is NSTextView {
             if let scalar = press.key.character.unicodeScalars.first,
                (0xF704...0xF70C).contains(scalar.value) {
                 let index = Int(scalar.value - 0xF704) + 1
                 return model.handleBoundKey("F\(index)")
             }
+            if press.modifiers.contains(.numericPad), let character = press.characters.first,
+               character.isNumber || character == "-" {
+                return model.handle(character: character, shift: false, numpad: true)
+            }
             return false
         }
 
-        switch press.key {
-        case .leftArrow: model.goPrevious(); return true
-        case .rightArrow: model.goNext(); return true
-        default: break
+        // Walking the playlist: bare arrows on the Mac map, shifted on
+        // the web map. In the segments zone the arrows pick rows instead
+        // — the zone is what the keys are pointed at.
+        let shift = press.modifiers.contains(.shift)
+        if press.key == .leftArrow || press.key == .rightArrow || press.key == .upArrow
+            || press.key == .downArrow {
+            if model.zone == .segments,
+               press.key == .upArrow || press.key == .downArrow {
+                model.stepSegmentSelection(press.key == .downArrow ? 1 : -1)
+                return true
+            }
+            guard press.key == .leftArrow || press.key == .rightArrow else { return false }
+            let arrow: PlayerKeyMap.Arrow = press.key == .leftArrow ? .left : .right
+            guard let step = PlayerKeyMap.playlistStep(arrow: arrow, shift: shift, style: style)
+            else { return false }
+            step < 0 ? model.goPrevious() : model.goNext()
+            return true
+        }
+
+        if press.key == .return, model.zone == .segments,
+           let row = model.selectedSegment {
+            model.playSegment(row)
+            return true
         }
 
         guard let character = press.characters.first else { return false }
@@ -119,19 +183,43 @@ struct PlayerView: View {
             return false
         }
 
-        // Ctrl+{ / Ctrl+}: clip in/out points (the old map's clip keys).
-        if press.modifiers.contains(.control) {
-            if character == "{" { model.setClipIn(); return true }
-            if character == "}" { model.setClipOut(); return true }
+        // `?` is the keyboard map — chooser and permanent cheat sheet.
+        if character == "?" {
+            showKeyMap = true
+            return true
         }
-        // Plain { }: hide-block open/close taps, ported.
-        if character == "{" { model.blockTap(open: true); return true }
-        if character == "}" { model.blockTap(open: false); return true }
+
+        // Segment marks. `C` closes as a clip rather than a song, and is
+        // consulted only while a mark is open — with nothing marked it
+        // belongs to whatever binding claims it.
+        let control = press.modifiers.contains(.control)
+        if let mark = PlayerKeyMap.segmentMark(
+            character: character, control: control, style: style) {
+            switch mark {
+            case .open:
+                model.openSegmentMark()
+                return true
+            case .close:
+                model.closeSegmentMark(as: .song)
+                return true
+            case .closeAsClip:
+                if model.pendingSegmentStart != nil {
+                    model.closeSegmentMark(as: .clip)
+                    return true
+                }
+            }
+        }
+
+        // Plain { }: hide-block open/close taps, ported. A hide block is
+        // an instruction to an edit, not a segment record, so it keeps
+        // its own keys in both maps.
+        if !control, character == "{" { model.blockTap(open: true); return true }
+        if !control, character == "}" { model.blockTap(open: false); return true }
 
         // T: tag panel (fixed key, matching the old map).
         if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
            character.lowercased() == "t" {
-            model.showTagPanel.toggle()
+            model.togglePanel(.tags)
             return true
         }
 
@@ -145,6 +233,14 @@ struct PlayerView: View {
         if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
            character.isLetter, model.handleBoundKey(String(character)) {
             return true
+        }
+
+        // Triage: the fixed flag keys mark and ADVANCE, but only inside
+        // the mode, and only on the map that claims them. Outside it they
+        // fall through to the plain toggles below and stay put.
+        if model.triageMode, press.modifiers.isDisjoint(with: [.shift, .command, .control]),
+           let action = PlayerKeyMap.triageAction(character: character, style: style) {
+            return model.triageMark(action)
         }
 
         // M/L: mute and loop toggles — after the binding check, so a
@@ -162,10 +258,12 @@ struct PlayerView: View {
 
         return model.handle(
             character: character,
-            shift: press.modifiers.contains(.shift),
+            shift: shift,
             numpad: press.modifiers.contains(.numericPad))
     }
 }
+
+// MARK: - Layout
 
 private struct PlayerContent: View {
     @Environment(PlayerModel.self) private var model
@@ -174,8 +272,8 @@ private struct PlayerContent: View {
     /// video/transport area only — never the tag panel, whose text
     /// fields need to keep the focus they take.
     let refocus: () -> Void
+    @Binding var showKeyMap: Bool
     @State private var showBindingsEditor = false
-    @State private var showTextPanel = false
 
     /// Panel sizes: draggable, clamped so the video always keeps a
     /// floor, persisted so they survive item switches (the .id(request)
@@ -192,64 +290,62 @@ private struct PlayerContent: View {
     private static let videoFloor: CGFloat = 150
     private static let handleThickness: CGFloat = 5  // 1 pt line + 2×2 padding
     @State private var contentSize: CGSize = .zero
-    @State private var chromeHeight: CGFloat = 0  // info bar + transport
+    @State private var chromeHeight: CGFloat = 0  // transport block
 
-    // Convention: a panel beside the video is draggable, persisted, and
-    // clamped by the video floor — never fixed-width (#94). The two
-    // right-side panels resolve JOINTLY: when both together exceed the
-    // available width, both scale down proportionally rather than one
-    // pushing the video below its floor.
-    private var rightPanelWidths: (tag: CGFloat, text: CGFloat) {
-        let tagShown = model.showTagPanel, textShown = showTextPanel
-        var tag = tagShown ? CGFloat(layout.tagPanelWidth) : 0
-        var text = textShown ? CGFloat(layout.textPanelWidth) : 0
-        guard contentSize.width > 0 else { return (tag, text) }
-        let available = max(0, contentSize.width - Self.videoFloor
-            - (tagShown ? Self.handleThickness : 0)
-            - (textShown ? Self.handleThickness : 0))
-        let total = tag + text
-        if total > available, total > 0 {
-            let scale = available / total
-            tag = (tag * scale).rounded()
-            text = (text * scale).rounded()
-        }
-        return (tag, text)
+    /// The right side is ONE rail now, so there is one width to resolve
+    /// against the video floor rather than two panels scaling jointly.
+    private var effectiveRailWidth: CGFloat {
+        guard model.showsRail else { return 0 }
+        let stored = CGFloat(layout.railWidth)
+        guard contentSize.width > 0 else { return stored }
+        let ceiling = max(220, contentSize.width - Self.videoFloor - Self.handleThickness)
+        return min(stored, ceiling)
     }
 
-    private var effectiveTagPanelWidth: CGFloat { rightPanelWidths.tag }
-    private var effectiveTextPanelWidth: CGFloat { rightPanelWidths.text }
+    private var verticalCeiling: CGFloat {
+        max(0, contentSize.height - Self.videoFloor - chromeHeight)
+    }
 
-    private var queueCeiling: CGFloat {
-        max(0, contentSize.height - Self.videoFloor - chromeHeight - Self.handleThickness)
+    /// Drawers share what is left under the video floor; whichever one is
+    /// being dragged is clamped against the other's current height.
+    private func drawerCeiling(excluding other: CGFloat) -> CGFloat {
+        max(0, verticalCeiling - other - Self.handleThickness * 2)
+    }
+
+    private var effectiveTextHeight: CGFloat {
+        guard model.panels.text else { return 0 }
+        guard contentSize.height > 0, chromeHeight > 0 else {
+            return CGFloat(layout.textDrawerHeight)
+        }
+        return min(CGFloat(layout.textDrawerHeight), drawerCeiling(excluding: rawQueueHeight))
+    }
+
+    private var rawQueueHeight: CGFloat {
+        model.panels.queue && !model.playlist.isEmpty ? CGFloat(layout.queueHeight) : 0
     }
 
     private var effectiveQueueHeight: CGFloat {
-        guard contentSize.height > 0, chromeHeight > 0 else {
-            return CGFloat(layout.queueHeight)
-        }
-        return min(CGFloat(layout.queueHeight), queueCeiling)
+        guard rawQueueHeight > 0 else { return 0 }
+        guard contentSize.height > 0, chromeHeight > 0 else { return rawQueueHeight }
+        return min(rawQueueHeight, drawerCeiling(excluding: effectiveTextHeight))
     }
 
-    private func dragTagPanel(_ translation: CGFloat) {
-        let base = dragBase ?? effectiveTagPanelWidth
+    private func dragRail(_ translation: CGFloat) {
+        let base = dragBase ?? effectiveRailWidth
         dragBase = base
-        let ceiling = max(0, contentSize.width - Self.videoFloor
-            - Self.handleThickness - (showTextPanel ? effectiveTextPanelWidth + Self.handleThickness : 0))
-        layout.tagPanelWidth = Double(
-            min(max(220, base - translation), max(220, ceiling)).rounded())
+        let ceiling = max(220, contentSize.width - Self.videoFloor - Self.handleThickness)
+        layout.railWidth = Double(min(max(220, base - translation), ceiling).rounded())
     }
 
-    private func dragTextPanel(_ translation: CGFloat) {
-        let base = dragBase ?? effectiveTextPanelWidth
+    private func dragText(_ translation: CGFloat) {
+        let base = dragBase ?? effectiveTextHeight
         dragBase = base
-        let ceiling = max(0, contentSize.width - Self.videoFloor
-            - Self.handleThickness - (model.showTagPanel ? effectiveTagPanelWidth + Self.handleThickness : 0))
-        layout.textPanelWidth = Double(
-            min(max(240, base - translation), max(240, ceiling)).rounded())
+        let ceiling = max(80, drawerCeiling(excluding: effectiveQueueHeight))
+        layout.textDrawerHeight = Double(min(max(80, base - translation), ceiling).rounded())
     }
 
     /// The smallest queue that shows a whole cell: minimum thumbnail
-    /// (24) + the metadata reserve for the enabled fields + chrome.
+    /// (24) + the metadata reserve for the enabled values + chrome.
     private var queueMinHeight: CGFloat {
         QueueCell.metadataHeight(for: GridDisplaySettings.shared.grid) + 42
     }
@@ -258,22 +354,13 @@ private struct PlayerContent: View {
         let base = dragBase ?? effectiveQueueHeight
         dragBase = base
         let floor = queueMinHeight
-        layout.queueHeight = Double(
-            min(max(floor, base - translation), max(floor, queueCeiling)).rounded())
+        let ceiling = max(floor, drawerCeiling(excluding: effectiveTextHeight))
+        layout.queueHeight = Double(min(max(floor, base - translation), ceiling).rounded())
     }
 
     private func endPanelDrag() {
         dragBase = nil
         AppSettingsStore.shared.update { $0.playerLayout = layout }
-    }
-
-    private var queueShown: Binding<Bool> {
-        Binding(
-            get: { layout.showsQueue },
-            set: { shown in
-                layout.showsQueue = shown
-                AppSettingsStore.shared.update { $0.playerLayout = layout }
-            })
     }
 
     /// The exact rendered size: aspect-fit into the available area, but
@@ -296,169 +383,138 @@ private struct PlayerContent: View {
     }
 
     var body: some View {
-        @Bindable var model = model
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                // Video hugs the top-left; black fills right and below.
-                // Placeholder and error states stay centered.
-                ZStack(alignment: .topLeading) {
-                    Color.black
-                    if let error = model.loadError {
-                        ContentUnavailableView(
-                            "Cannot Play", systemImage: "play.slash",
-                            description: Text(error))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if model.isAudio {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 64))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        GeometryReader { geometry in
-                            let fitted = fittedVideoSize(in: geometry.size)
-                            PlayerSurface(player: model.player)
-                                .frame(width: fitted?.width, height: fitted?.height)
-                                // Live Text rides the PAUSED frame only —
-                                // resume, seek or item switch tears it
-                                // down with the condition. The overlay
-                                // shares the surface's exact fitted rect,
-                                // so it follows the anchor for free. A
-                                // plain click on EMPTY (non-text) area
-                                // resumes; text clicks and drags belong
-                                // to the selection (#93).
-                                .overlay {
-                                    if !model.isPlaying, !model.isAudio {
-                                        PausedFrameTextOverlay(
-                                            fileURL: model.fileURL,
-                                            seconds: model.currentSeconds,
-                                            onEmptyClick: { model.play() })
-                                    }
-                                }
-                                // The anchor setting (#92): placement
-                                // only — the fitted-size math is
-                                // untouched.
-                                .frame(
-                                    maxWidth: .infinity, maxHeight: .infinity,
-                                    alignment: AppSettingsStore.shared.current.videoAnchor.alignment)
-                        }
-                    }
-                }
-                // Click the video to pause/resume (#93) — same action as
-                // Space. While the Live Text overlay is up it consumes
-                // its own clicks (text/selection); only empty-area
-                // clicks reach back here via onEmptyClick.
-                .onTapGesture { model.togglePlayPause() }
-                VStack(spacing: 0) {
-                    InfoBar()
-                    TransportBar(queueShown: queueShown)
-                        .padding(10)
-                        .background(.bar)
-                }
-                // The fixed strips' height comes out of the vertical
-                // budget before the video floor is measured.
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
-                    chromeHeight = $0
-                }
-                if layout.showsQueue, !model.playlist.isEmpty {
-                    HorizontalResizeHandle(
-                        onDrag: { dragQueue($0) }, onEnd: { endPanelDrag() })
-                    QueuePanel(height: effectiveQueueHeight)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                leftColumn
+                if model.showsRail {
+                    VerticalResizeHandle(
+                        onDrag: { dragRail($0) }, onEnd: { endPanelDrag() })
+                    SegmentsAndTagsRail(width: effectiveRailWidth)
                 }
             }
-            .simultaneousGesture(TapGesture().onEnded { refocus() })
-            if model.showTagPanel {
-                VerticalResizeHandle(
-                    onDrag: { dragTagPanel($0) }, onEnd: { endPanelDrag() })
-                TagPanelView(width: effectiveTagPanelWidth)
-            }
-            if showTextPanel {
-                VerticalResizeHandle(
-                    onDrag: { dragTextPanel($0) }, onEnd: { endPanelDrag() })
-                OcrLinesPanel(width: effectiveTextPanelWidth)
-            }
+            FocusFooter()
         }
+        .background(Theme.Surface.content)
         .onGeometryChange(for: CGSize.self, of: { $0.size }) { contentSize = $0 }
-        .toolbar {
-            Button("Tags", systemImage: "tag") {
-                model.showTagPanel.toggle()
-            }
-            .help("Tag panel (T)")
-            Button("On-Screen Text", systemImage: "text.viewfinder") {
-                showTextPanel.toggle()
-            }
-            .help("Scanned on-screen text — timestamped, copyable, click to seek. Pause the video to select text on the frame itself.")
-            Button("Key Bindings", systemImage: "keyboard") { showBindingsEditor = true }
-                .help("Bind keys to tags")
-        }
+        .toolbar { toolbarItems }
         .sheet(isPresented: $showBindingsEditor) {
             KeyBindingsEditor()
                 .environment(model)
         }
+        .onChange(of: model.panels) { _, panels in
+            layout.panels = panels
+            AppSettingsStore.shared.update { $0.playerLayout = layout }
+        }
     }
-}
 
-/// The info strip between the video and the transport: position in the
-/// filtered listing, tag pills (right-click to edit), favorite star,
-/// and Save a Copy. Which elements show is a Playback setting, read per
-/// render — like every setting, changes apply without relaunch.
-private struct InfoBar: View {
-    @Environment(PlayerModel.self) private var model
-    @State private var editingTag: Tag?
+    private var leftColumn: some View {
+        VStack(spacing: 0) {
+            videoStage
+                .simultaneousGesture(TapGesture().onEnded { refocus() })
+            TransportBlock()
+                // The fixed strip's height comes out of the vertical
+                // budget before the video floor is measured.
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+                    chromeHeight = $0
+                }
+            if model.panels.text {
+                HorizontalResizeHandle(
+                    onDrag: { dragText($0) }, onEnd: { endPanelDrag() })
+                OcrLinesPanel(height: effectiveTextHeight)
+            }
+            if model.panels.queue, !model.playlist.isEmpty {
+                HorizontalResizeHandle(
+                    onDrag: { dragQueue($0) }, onEnd: { endPanelDrag() })
+                QueuePanel(height: effectiveQueueHeight)
+            }
+        }
+    }
 
-    var body: some View {
-        let settings = AppSettingsStore.shared.current.infoBar
-        if settings.showsAnything, let item = model.item {
-            HStack(spacing: 12) {
-                if settings.showsPosition, !model.playlist.isEmpty,
-                   let index = model.playlist.firstIndex(of: item.id) {
-                    Text("\(index + 1) of \(model.playlist.count)")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .help("Position in the filtered listing this item was opened from")
-                }
-                if settings.showsFavorite {
-                    Button {
-                        model.perform(.toggleFavorite)
-                    } label: {
-                        Image(systemName: item.isFavorite ? "star.fill" : "star")
-                            .foregroundStyle(item.isFavorite ? Color.yellow : Color.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(item.isFavorite ? "Favorite — click to remove (F)" : "Mark favorite (F)")
-                }
-                if settings.showsTags {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(model.itemTags.flatMap(\.tags)) { tag in
-                                Text(tag.name)
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(.quaternary, in: Capsule())
-                                    .contextMenu {
-                                        Button("Edit…") { editingTag = tag }
-                                    }
+    private var videoStage: some View {
+        // Video hugs the top-left; the stage fills right and below.
+        // Placeholder and error states stay centered.
+        ZStack(alignment: .topLeading) {
+            Theme.Surface.stage
+            if let error = model.loadError {
+                ContentUnavailableView(
+                    "Cannot Play", systemImage: "play.slash",
+                    description: Text(error))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.isAudio {
+                Image(systemName: "waveform")
+                    .font(.system(size: 64))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                GeometryReader { geometry in
+                    let fitted = fittedVideoSize(in: geometry.size)
+                    PlayerSurface(player: model.player)
+                        .frame(width: fitted?.width, height: fitted?.height)
+                        // Live Text rides the PAUSED frame only — resume,
+                        // seek or item switch tears it down with the
+                        // condition. The overlay shares the surface's
+                        // exact fitted rect, so it follows the anchor for
+                        // free. A plain click on EMPTY (non-text) area
+                        // resumes; text clicks and drags belong to the
+                        // selection (#93).
+                        .overlay {
+                            if !model.isPlaying, !model.isAudio {
+                                PausedFrameTextOverlay(
+                                    fileURL: model.fileURL,
+                                    seconds: model.currentSeconds,
+                                    onEmptyClick: { model.play() })
                             }
                         }
-                    }
+                        // The anchor setting (#92): placement only — the
+                        // fitted-size math is untouched.
+                        .frame(
+                            maxWidth: .infinity, maxHeight: .infinity,
+                            alignment: AppSettingsStore.shared.current.videoAnchor.alignment)
                 }
-                Spacer()
-                if settings.showsDownload {
+            }
+        }
+        // Click the video to pause/resume (#93) — same action as Space.
+        // While the Live Text overlay is up it consumes its own clicks
+        // (text/selection); only empty-area clicks reach back here.
+        .onTapGesture {
+            model.zone = .video
+            model.togglePlayPause()
+        }
+        .zoneRing(.video)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        ToolbarItem {
+            // The flags live here, once. They used to be mirrored in the
+            // info strip under the video as well; one name, one place.
+            if let item = model.item {
+                FlagButtons(item: item)
+            }
+        }
+        ToolbarItem {
+            TriageButton()
+        }
+        ToolbarItem {
+            PanelToggles()
+        }
+        ToolbarItem {
+            Menu {
+                Button("Keyboard Map…", systemImage: "questionmark.square") {
+                    showKeyMap = true
+                }
+                Button("Key Bindings…", systemImage: "keyboard") { showBindingsEditor = true }
+                Divider()
+                if AppSettingsStore.shared.current.infoBar.showsDownload {
                     Button("Save a Copy…", systemImage: "square.and.arrow.down") {
-                        saveCopy(of: item)
+                        saveCopy()
                     }
                     .disabled(model.fileURL == nil)
-                    .help("Copy the media file to a location you choose")
                 }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.bar)
-            .sheet(item: $editingTag) { tag in
-                RenameTagSheet(tag: tag) { newName in
-                    model.renameTag(tag.id, to: newName)
-                }
-            }
+            .help("Keyboard map, key bindings, save a copy")
         }
     }
 
@@ -466,8 +522,8 @@ private struct InfoBar: View {
     /// The copy runs off the main actor — media files are large. An
     /// embedded clip resolves to its PARENT's file, so the copy is the
     /// whole parent; exporting just the range stays the clip-export job.
-    private func saveCopy(of item: MediaItem) {
-        guard let sourceURL = model.fileURL else { return }
+    private func saveCopy() {
+        guard let item = model.item, let sourceURL = model.fileURL else { return }
         let panel = NSSavePanel()
         panel.title = "Save a Copy"
         panel.nameFieldStringValue = item.fileName
@@ -487,43 +543,505 @@ private struct InfoBar: View {
     }
 }
 
-/// One-field rename, saving through the kit's normalized write path.
-private struct RenameTagSheet: View {
-    let tag: Tag
-    let onSave: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
+/// The 1 pt amber inset ring on whichever zone holds focus. "Where do my
+/// keys go" is answerable without pressing anything.
+private struct ZoneRing: ViewModifier {
+    @Environment(PlayerModel.self) private var model
+    let zone: PlayerZone
 
-    init(tag: Tag, onSave: @escaping (String) -> Void) {
-        self.tag = tag
-        self.onSave = onSave
-        _name = State(initialValue: tag.name)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Rename Tag").font(.headline)
-            TextField("Name", text: $name)
-                .onSubmit { save() }
-            HStack {
-                Button("Cancel") { dismiss() }
-                Spacer()
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+    func body(content: Content) -> some View {
+        content.overlay {
+            if model.zone == zone {
+                Rectangle()
+                    .strokeBorder(Theme.Accent.amber, lineWidth: 1)
+                    .allowsHitTesting(false)
             }
         }
-        .padding()
-        .frame(width: 300)
-    }
-
-    private func save() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        onSave(trimmed)
-        dismiss()
     }
 }
+
+extension View {
+    fileprivate func zoneRing(_ zone: PlayerZone) -> some View {
+        modifier(ZoneRing(zone: zone))
+    }
+}
+
+// MARK: - Transport
+
+/// The scrubber with its segment lanes, then one row of controls. The
+/// hide-block menu that used to sit here is gone: the segments rail is
+/// the one place ranges are listed.
+private struct TransportBlock: View {
+    @Environment(PlayerModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if let start = model.pendingSegmentStart {
+                MarkingIndicator(start: start)
+            }
+            if model.pendingClipStart != nil || model.pendingClipEnd != nil {
+                ClipAuthoringBar()
+            }
+            ScrubberView()
+            controlRow
+        }
+        .padding(10)
+        .background(Theme.Surface.sidebar)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
+    }
+
+    private var controlRow: some View {
+        HStack(spacing: 14) {
+            transportButton("backward.end.fill", help: "Previous item (\(model.keyMap.labels.previousNext))") {
+                model.goPrevious()
+            }
+            Button {
+                model.togglePlayPause()
+            } label: {
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title2)
+                    .foregroundStyle(Theme.Text.primary)
+            }
+            .buttonStyle(.plain)
+            .help("Play/Pause (Space, 5)")
+            transportButton("forward.end.fill", help: "Next item (\(model.keyMap.labels.previousNext))") {
+                model.goNext()
+            }
+            transportButton(
+                model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                help: model.isMuted ? "Unmute (M)" : "Mute (M)",
+                on: model.isMuted
+            ) { model.toggleMute() }
+            transportButton(
+                "repeat", help: model.isLooping ? "Looping — click to play once (L)" : "Loop (L)",
+                on: model.isLooping
+            ) { model.toggleLoop() }
+
+            Text(timeText)
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.Text.quaternary)
+
+            Spacer()
+
+            // Marking, from the transport rather than only from the
+            // keyboard — the keys are faster, the buttons are findable.
+            Button(model.pendingSegmentStart == nil ? "Mark in" : "Mark out") {
+                model.pendingSegmentStart == nil
+                    ? model.openSegmentMark()
+                    : model.closeSegmentMark(as: .song)
+            }
+            .buttonStyle(SecondaryButtonStyle(compact: true))
+            .help("Open a segment at the playhead (\(model.keyMap.labels.segmentOpen)), close it (\(model.keyMap.labels.segmentClose)); C closes it as a clip")
+
+            Menu {
+                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
+                    Button(String(format: "%g×", rate)) {
+                        model.playbackRate = Float(rate)
+                    }
+                }
+            } label: {
+                Text(String(format: "%g×", model.playbackRate))
+                    .font(Theme.mono(11))
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 58)
+            .help("Playback speed")
+        }
+    }
+
+    private func transportButton(
+        _ symbol: String, help: String, on: Bool = false, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.tertiary)
+                .frame(width: 20)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private var timeText: String {
+        TransportBarTime.format(model.currentSeconds)
+            + " / " + TransportBarTime.format(model.durationSeconds)
+    }
+}
+
+/// An open mark, stated plainly with the key that closes it.
+private struct MarkingIndicator: View {
+    @Environment(PlayerModel.self) private var model
+    let start: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(Theme.Accent.amber).frame(width: 7, height: 7)
+            Text("marking from \(TransportBarTime.format(start)) — \(model.keyMap.labels.segmentClose) to close")
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.Accent.amber)
+            Spacer()
+            Button("Cancel · esc") { model.cancelSegmentMark() }
+                .buttonStyle(.plain)
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.quaternary)
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+/// The keyboard map's four flags, as toolbar toggles. This is now their
+/// only home — the info strip under the video is gone.
+private struct FlagButtons: View {
+    @Environment(PlayerModel.self) private var model
+    let item: MediaItem
+
+    var body: some View {
+        HStack(spacing: 6) {
+            flag(.favorite, on: item.isFavorite, "★", "Favorite (F)")
+            flag(.needsReview, on: item.needsReview, "⟳", "Needs review (R)")
+            flag(.playbackIssue, on: item.playbackIssue, "⚠", "Playback issue (W)")
+            flag(.markedForDeletion, on: item.markedForDeletion, "⌫", "Marked for deletion (D)")
+        }
+    }
+
+    private func flag(
+        _ flag: PlayerToggleFlag, on: Bool, _ glyph: String, _ help: String
+    ) -> some View {
+        Button {
+            model.perform(action(for: flag))
+        } label: {
+            Text(glyph)
+                .font(Theme.ui(12))
+                .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.disabled)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(on ? Theme.Surface.iconTileSelected : .clear)
+                        .stroke(on ? Theme.Accent.amber : Theme.Border.subtleButton, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func action(for flag: PlayerToggleFlag) -> PlayerAction {
+        switch flag {
+        case .favorite: .toggleFavorite
+        case .needsReview: .toggleNeedsReview
+        case .markedForDeletion: .toggleMarkedForDeletion
+        case .playbackIssue: .togglePlaybackIssue
+        }
+    }
+}
+
+/// Triage mode: the only place a flag key advances.
+private struct TriageButton: View {
+    @Environment(PlayerModel.self) private var model
+
+    var body: some View {
+        Button {
+            model.triageMode.toggle()
+            model.zone = .video
+        } label: {
+            Text(model.triageMode ? "Triage on · \(model.triageCount) done" : "Triage pass")
+                .font(Theme.ui(12))
+                .foregroundStyle(model.triageMode ? Theme.Accent.amber : Theme.Text.tertiary)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.button)
+                        .fill(model.triageMode ? Theme.Surface.iconTileSelected : .clear)
+                        .stroke(
+                            model.triageMode ? Theme.Border.activeControl : Theme.Border.subtleButton,
+                            lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help("\(model.keyMap.labels.triage) mark the item and move to the next one. Outside the mode they toggle and stay put.")
+    }
+}
+
+/// Which panels are up. Each is a toggle, and Tab only visits what is
+/// actually on screen.
+private struct PanelToggles: View {
+    @Environment(PlayerModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 2) {
+            toggle(.tags, "Tags")
+            toggle(.segments, "Segments")
+            toggle(.queue, "Queue")
+            toggle(.text, "Text")
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Theme.Surface.segmentTrack)
+                .stroke(Theme.Border.standard, lineWidth: 1))
+    }
+
+    private func toggle(_ panel: PlayerPanel, _ label: String) -> some View {
+        let on = model.panels[panel]
+        return Button {
+            model.togglePanel(panel)
+        } label: {
+            Text(label)
+                .font(Theme.ui(11.5, on ? .semibold : .regular))
+                .foregroundStyle(on ? Theme.Text.primary : Theme.Text.quaternary)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(on ? Theme.Surface.segmentSelected : .clear))
+        }
+        .buttonStyle(.plain)
+        .help(panel == .text ? "On-screen text — timestamped, click to seek" : "\(label) panel")
+    }
+}
+
+// MARK: - Footer
+
+/// 30 pt across the bottom: which zone has the keys, what they do there,
+/// and where you are in the listing. The hints read their key labels
+/// from the chosen map, so they cannot disagree with it.
+private struct FocusFooter: View {
+    @Environment(PlayerModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(model.availableZones, id: \.self) { zone in
+                Button {
+                    model.zone = zone
+                } label: {
+                    Text(zone.displayName)
+                        .font(Theme.mono(9.5))
+                        .foregroundStyle(
+                            model.zone == zone ? Theme.Accent.amber : Theme.Text.disabled)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(model.zone == zone
+                                    ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile))
+                }
+                .buttonStyle(.plain)
+            }
+            Rectangle().fill(Theme.Border.standard).frame(width: 1, height: 14)
+            Text(hint)
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.disabled)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if AppSettingsStore.shared.current.infoBar.showsPosition,
+               let item = model.item, !model.playlist.isEmpty,
+               let index = model.playlist.firstIndex(of: item.id) {
+                Text("\(index + 1) of \(model.playlist.count)")
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .help("Position in the filtered listing this item was opened from")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .background(Theme.Surface.toolbar)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
+    }
+
+    private var hint: String {
+        let labels = model.keyMap.labels
+        return model.zone == .video
+            ? "\(labels.segmentOpen) \(labels.segmentClose) segment · \(labels.triage) triage · numpad seek · Tab moves focus"
+            : "Esc releases to video · numpad seek still works · Tab moves focus"
+    }
+}
+
+// MARK: - The right rail
+
+/// Tags over segments, one rail. They share the height and never resolve
+/// against each other — the rail's floor is the tag panel's floor.
+private struct SegmentsAndTagsRail: View {
+    @Environment(PlayerModel.self) private var model
+    let width: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.panels.tags {
+                TagPanelView()
+                    .frame(maxHeight: .infinity)
+                    .layoutPriority(model.panels.segments ? 1.35 : 1)
+                    .zoneRing(.tags)
+            }
+            if model.panels.tags, model.panels.segments {
+                Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            }
+            if model.panels.segments {
+                SegmentsPanel()
+                    .frame(maxHeight: .infinity)
+                    .layoutPriority(1)
+                    .zoneRing(.segments)
+            }
+        }
+        .frame(width: width)
+        .background(Theme.Surface.raised)
+    }
+}
+
+/// Songs, clips and hide blocks in one list. They read as the same thing
+/// — a named range on the timeline — and are deliberately not the same
+/// record: a song can be tagged and browsed, a hide block is an
+/// instruction to an edit job and never reaches the grid.
+private struct SegmentsPanel: View {
+    @Environment(PlayerModel.self) private var model
+    @State private var renaming: UUID?
+    @State private var draftName = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Segments").modifier(Theme.sectionLabel())
+                Spacer()
+                Text(model.segments.isEmpty
+                    ? "" : "\(model.songCount) songs · \(model.clipCount) clips")
+                    .font(Theme.mono(9.5))
+                    .foregroundStyle(Theme.Text.disabled)
+                ZoneBadge(zone: .segments)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            if model.segments.isEmpty {
+                Text("No songs or clips yet. Press \(model.keyMap.labels.segmentOpen) to open a segment, \(model.keyMap.labels.segmentClose) to close it.")
+                    .font(Theme.ui(12))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 22)
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    VStack(spacing: 1) {
+                        ForEach(model.segments) { row in
+                            SegmentRowView(
+                                row: row,
+                                renaming: $renaming,
+                                draftName: $draftName)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SegmentRowView: View {
+    @Environment(PlayerModel.self) private var model
+    let row: SegmentRow
+    @Binding var renaming: UUID?
+    @Binding var draftName: String
+
+    var body: some View {
+        let selected = model.selectedSegmentID == row.id
+        HStack(spacing: 8) {
+            Text(row.kind.badge)
+                .font(Theme.mono(9, .bold))
+                .foregroundStyle(hue)
+                .padding(.vertical, 1.5)
+                .padding(.horizontal, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.chip).fill(hue.opacity(0.15)))
+            if renaming == row.id {
+                TextField("Name", text: $draftName)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(12))
+                    .onSubmit {
+                        model.renameSegment(row.id, to: draftName)
+                        renaming = nil
+                    }
+            } else {
+                Text(row.name)
+                    .font(Theme.ui(12))
+                    .foregroundStyle(selected ? Theme.Text.primary : Theme.Text.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 4)
+            Text("\(TransportBarTime.format(row.start))–\(TransportBarTime.format(row.end))")
+                .font(Theme.mono(9.5))
+                .foregroundStyle(Theme.Text.disabled)
+            Button {
+                model.playSegment(row)
+            } label: {
+                Image(systemName: "play.fill").font(Theme.ui(9))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Text.tertiary)
+            .help("Play from \(TransportBarTime.format(row.start))")
+            Button {
+                model.removeSegment(row)
+            } label: {
+                Image(systemName: "xmark").font(Theme.ui(9))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Text.disabled)
+            .help(row.kind == .hide
+                ? "Remove this hide block — the file is untouched"
+                : "Remove this segment — the range's name, not the media")
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .background(selected ? Theme.Surface.selectedSegment : .clear)
+        .overlay(alignment: .leading) {
+            if selected {
+                Rectangle()
+                    .fill(Theme.Accent.amber)
+                    .frame(width: Theme.Border.selectionInsetWidth)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.selectedSegmentID = row.id
+            model.zone = .segments
+        }
+        .onTapGesture(count: 2) {
+            guard row.isRenameable else { return }
+            draftName = row.name
+            renaming = row.id
+        }
+    }
+
+    private var hue: Color {
+        switch row.kind {
+        case .song: Theme.Segment.song
+        case .clip: Theme.Segment.clip
+        case .hide: Theme.Segment.hide
+        }
+    }
+}
+
+/// The Tab badge on a panel header — amber while that zone holds focus.
+struct ZoneBadge: View {
+    @Environment(PlayerModel.self) private var model
+    let zone: PlayerZone
+
+    var body: some View {
+        let active = model.zone == zone
+        Text("Tab")
+            .font(Theme.mono(9))
+            .foregroundStyle(active ? Theme.Accent.amber : Theme.Text.disabled)
+            .padding(.vertical, 1)
+            .padding(.horizontal, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(active ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile))
+    }
+}
+
+// MARK: - Video surface
 
 /// AVPlayerLayer host — the raw video surface with no system chrome.
 private struct PlayerSurface: NSViewRepresentable {
@@ -560,152 +1078,11 @@ private struct PlayerSurface: NSViewRepresentable {
     }
 }
 
-private struct TransportBar: View {
-    @Environment(PlayerModel.self) private var model
-    @Binding var queueShown: Bool
-
-    var body: some View {
-        @Bindable var model = model
-        VStack(spacing: 6) {
-            if model.pendingClipStart != nil || model.pendingClipEnd != nil {
-                ClipAuthoringBar()
-            }
-            ScrubberView()
-            HStack(spacing: 14) {
-                Button {
-                    model.goPrevious()
-                } label: { Image(systemName: "backward.end.fill") }
-                    .help("Previous item (←)")
-                Button {
-                    model.togglePlayPause()
-                } label: {
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2)
-                }
-                .help("Play/Pause (Space, 5)")
-                Button {
-                    model.goNext()
-                } label: { Image(systemName: "forward.end.fill") }
-                    .help("Next item (→)")
-                Button {
-                    model.toggleMute()
-                } label: {
-                    Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .frame(width: 20)
-                }
-                .help(model.isMuted ? "Unmute (M)" : "Mute (M)")
-                Button {
-                    model.toggleLoop()
-                } label: {
-                    Image(systemName: "repeat")
-                        .foregroundStyle(model.isLooping ? Color.accentColor : Color.secondary)
-                        .frame(width: 20)
-                }
-                .help(model.isLooping ? "Looping — click to play once (L)" : "Loop (L)")
-                Button {
-                    queueShown.toggle()
-                } label: {
-                    Image(systemName: "rectangle.bottomthird.inset.filled")
-                        .foregroundStyle(queueShown ? Color.accentColor : Color.secondary)
-                        .frame(width: 20)
-                }
-                .help(queueShown ? "Hide the play queue" : "Show the play queue")
-
-                Text(timeText)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if let item = model.item {
-                    FlagButtons(item: item)
-                }
-
-                if !model.hideBlocks.isEmpty || model.pendingBlockStart != nil {
-                    Menu {
-                        if let start = model.pendingBlockStart {
-                            Text("Block open at \(TransportBarTime.format(start)) — } closes it")
-                        }
-                        ForEach(model.hideBlocks) { block in
-                            Button(role: .destructive) {
-                                model.deleteBlock(block.id)
-                            } label: {
-                                Text("Remove \(TransportBarTime.format(block.startSeconds)) – \(TransportBarTime.format(block.endSeconds))")
-                            }
-                        }
-                    } label: {
-                        Label("\(model.hideBlocks.count)", systemImage: "eye.slash")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 56)
-                    .help("Hide blocks: { opens at the playhead, } closes. They skip during playback; export an edited copy from the browse grid.")
-                }
-                Menu {
-                    ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
-                        Button(String(format: "%g×", rate)) {
-                            model.playbackRate = Float(rate)
-                        }
-                    }
-                } label: {
-                    Text(String(format: "%g×", model.playbackRate))
-                        .monospacedDigit()
-                }
-                .menuStyle(.borderlessButton)
-                .frame(width: 64)
-                .help("Playback speed")
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var timeText: String {
-        format(model.currentSeconds) + " / " + format(model.durationSeconds)
-    }
-
-    private func format(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let total = Int(seconds)
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
-    }
-}
-
-/// The keyboard map's four flags, mirrored as toolbar toggles.
-private struct FlagButtons: View {
-    @Environment(PlayerModel.self) private var model
-    let item: MediaItem
-
-    var body: some View {
-        HStack(spacing: 10) {
-            flag(.favorite, on: item.isFavorite, "star", "Favorite (F)")
-            flag(.needsReview, on: item.needsReview, "eye.trianglebadge.exclamationmark", "Needs review (R)")
-            flag(.playbackIssue, on: item.playbackIssue, "play.slash", "Playback issue (W)")
-            flag(.markedForDeletion, on: item.markedForDeletion, "trash", "Marked for deletion (D)")
-        }
-    }
-
-    private func flag(_ flag: PlayerToggleFlag, on: Bool, _ symbol: String, _ help: String) -> some View {
-        Button {
-            model.perform(action(for: flag))
-        } label: {
-            Image(systemName: on ? symbol + ".fill" : symbol)
-                .foregroundStyle(on ? Color.accentColor : Color.secondary)
-        }
-        .help(help)
-    }
-
-    private func action(for flag: PlayerToggleFlag) -> PlayerAction {
-        switch flag {
-        case .favorite: .toggleFavorite
-        case .needsReview: .toggleNeedsReview
-        case .markedForDeletion: .toggleMarkedForDeletion
-        case .playbackIssue: .togglePlaybackIssue
-        }
-    }
-}
+// MARK: - Scrubber
 
 /// The timeline: waveform-backed for audio, hover previews for video,
-/// click/drag to seek, clip range shaded.
+/// click/drag to seek, and the segment lanes — songs above the waveform,
+/// clips below, hide blocks shaded across it.
 private struct ScrubberView: View {
     @Environment(PlayerModel.self) private var model
 
@@ -759,59 +1136,102 @@ private struct ScrubberView: View {
     private func track(width: CGFloat) -> some View {
         // CGFloat throughout — mixed Double/CGFloat arithmetic is ambiguous
         // to the CI toolchain (Xcode 16).
-        let progress: CGFloat = model.durationSeconds > 0
-            ? CGFloat((model.currentSeconds / model.durationSeconds).clamped01) : 0
+        // Read every model value ONCE, here: the Canvas draw closure is
+        // not main-actor isolated, and reaching into an @Observable model
+        // from inside it does not compile (and would be a data race if it
+        // did).
+        let duration = model.durationSeconds
+        let progress: CGFloat = duration > 0
+            ? CGFloat((model.currentSeconds / duration).clamped01) : 0
+        let segments = model.segments
+        let selectedID = model.selectedSegmentID
+        let clipRange: (Double, Double)? = model.item?.clipStartSeconds.map {
+            ($0, model.item?.clipEndSeconds ?? duration)
+        }
+        let markStart = model.pendingSegmentStart
         Canvas { context, size in
+            // Lanes: songs occupy the top 8 pt, clips the bottom 8, and
+            // the waveform keeps the middle. Selecting a rail row lights
+            // its bar, and vice versa.
+            let laneHeight: CGFloat = 8
+            let middle = CGRect(
+                x: 0, y: laneHeight, width: size.width, height: size.height - laneHeight * 2)
+
             // Base track / waveform.
             if let peaks, !peaks.isEmpty {
-                let barWidth = size.width / CGFloat(peaks.count)
+                let barWidth = middle.width / CGFloat(peaks.count)
                 for (index, peak) in peaks.enumerated() {
-                    let barHeight = max(1, CGFloat(peak) * size.height)
+                    let barHeight = max(1, CGFloat(peak) * middle.height)
                     let rect = CGRect(
                         x: CGFloat(index) * barWidth,
-                        y: (size.height - barHeight) / 2,
+                        y: middle.minY + (middle.height - barHeight) / 2,
                         width: max(barWidth - 0.5, 0.5),
                         height: barHeight)
                     let played = CGFloat(index) / CGFloat(peaks.count) <= progress
                     context.fill(
                         Path(rect),
-                        with: .color(played ? .accentColor : .secondary.opacity(0.45)))
+                        with: .color(played ? Theme.Accent.amber : Theme.Text.disabled))
                 }
             } else {
-                let track = CGRect(x: 0, y: size.height / 2 - 2, width: size.width, height: 4)
-                context.fill(Path(roundedRect: track, cornerRadius: 2), with: .color(.secondary.opacity(0.3)))
-                let played = CGRect(x: 0, y: size.height / 2 - 2, width: size.width * progress, height: 4)
-                context.fill(Path(roundedRect: played, cornerRadius: 2), with: .color(.accentColor))
+                let track = CGRect(
+                    x: 0, y: middle.midY - 2, width: size.width, height: 4)
+                context.fill(
+                    Path(roundedRect: track, cornerRadius: 2),
+                    with: .color(Theme.Border.raised))
+                let played = CGRect(
+                    x: 0, y: middle.midY - 2, width: size.width * progress, height: 4)
+                context.fill(
+                    Path(roundedRect: played, cornerRadius: 2),
+                    with: .color(Theme.Accent.amber))
             }
 
-            // Hide blocks: dim shading — these ranges skip live and the
-            // removal edit cuts them.
-            if model.durationSeconds > 0 {
-                for block in model.hideBlocks {
-                    let x0 = size.width * CGFloat((block.startSeconds / model.durationSeconds).clamped01)
-                    let x1 = size.width * CGFloat((block.endSeconds / model.durationSeconds).clamped01)
+            guard duration > 0 else { return }
+            func x(_ seconds: Double) -> CGFloat {
+                size.width * CGFloat((seconds / duration).clamped01)
+            }
+
+            for row in segments {
+                let x0 = x(row.start), x1 = x(row.end)
+                let selected = selectedID == row.id
+                switch row.kind {
+                case .hide:
+                    // Hide blocks shade the whole height: they skip during
+                    // playback, so they are not a lane, they are a gap.
                     context.fill(
                         Path(CGRect(x: x0, y: 0, width: x1 - x0, height: size.height)),
-                        with: .color(.red.opacity(0.18)))
+                        with: .color(Theme.Segment.hide.opacity(selected ? 0.34 : 0.18)))
+                case .song, .clip:
+                    let hue = row.kind == .song ? Theme.Segment.song : Theme.Segment.clip
+                    let y = row.kind == .song ? 0 : size.height - laneHeight
+                    context.fill(
+                        Path(roundedRect: CGRect(
+                            x: x0, y: y, width: max(2, x1 - x0), height: laneHeight - 2),
+                            cornerRadius: 2),
+                        with: .color(hue.opacity(selected ? 1 : 0.55)))
                 }
             }
 
-            // Clip range shading.
-            if let item = model.item, model.durationSeconds > 0,
-               let start = item.clipStartSeconds {
-                let end = item.clipEndSeconds ?? model.durationSeconds
-                let x0 = size.width * CGFloat((start / model.durationSeconds).clamped01)
-                let x1 = size.width * CGFloat((end / model.durationSeconds).clamped01)
+            // The clip range of the item being PLAYED (when the item is
+            // itself a clip), shaded behind everything.
+            if let (start, end) = clipRange {
                 context.fill(
-                    Path(CGRect(x: x0, y: 0, width: x1 - x0, height: size.height)),
-                    with: .color(.accentColor.opacity(0.12)))
+                    Path(CGRect(x: x(start), y: 0, width: x(end) - x(start), height: size.height)),
+                    with: .color(Theme.Accent.amber.opacity(0.12)))
+            }
+
+            // An open mark, from its start to the playhead.
+            if let start = markStart {
+                context.fill(
+                    Path(CGRect(
+                        x: x(start), y: 0,
+                        width: max(1, size.width * progress - x(start)), height: size.height)),
+                    with: .color(Theme.Accent.amber.opacity(0.16)))
             }
 
             // Playhead.
-            let x = size.width * progress
             context.fill(
-                Path(CGRect(x: x - 0.75, y: 0, width: 1.5, height: size.height)),
-                with: .color(.primary))
+                Path(CGRect(x: size.width * progress - 0.75, y: 0, width: 1.5, height: size.height)),
+                with: .color(Theme.Text.primary))
         }
     }
 
@@ -828,10 +1248,12 @@ private struct ScrubberView: View {
                     .shadow(radius: 3)
             }
             Text(TransportBarTime.format(seconds))
-                .font(.caption.monospacedDigit())
-                .padding(.horizontal, 4)
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.Text.primary)
+                .padding(.horizontal, 5)
                 .padding(.vertical, 1)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 3))
+                .background(
+                    RoundedRectangle(cornerRadius: 3).fill(Theme.Surface.iconTile))
         }
         .offset(x: overlayX(fraction: fraction, width: width), y: -78)
         .allowsHitTesting(false)
@@ -882,34 +1304,39 @@ extension CGFloat {
     }
 }
 
-
-/// The in-progress clip range: shown while either point is set, saved
-/// once both are (⌃{ sets in, ⌃} sets out).
+/// The in-progress clip range from the older two-point authoring path:
+/// shown while either point is set, saved once both are.
 private struct ClipAuthoringBar: View {
     @Environment(PlayerModel.self) private var model
     @State private var name = ""
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "scissors")
-            Text(rangeText).font(.callout.monospacedDigit())
+            Image(systemName: "scissors").foregroundStyle(Theme.Segment.clip)
+            Text(rangeText)
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.Text.secondary)
             if model.pendingClipReady {
                 TextField("Clip name", text: $name)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(12))
                     .frame(width: 180)
                 Button("Save Clip") {
                     model.savePendingClip(named: name)
                     name = ""
                 }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
                 .keyboardShortcut(.return, modifiers: .command)
             } else {
-                Text("set the other point (⌃{ / ⌃})")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("set the other point")
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Text.disabled)
             }
             Spacer()
             Button("Cancel") { model.cancelPendingClip() }
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.quaternary)
         }
         .padding(.horizontal, 4)
     }
@@ -921,6 +1348,8 @@ private struct ClipAuthoringBar: View {
     }
 }
 
+// MARK: - Handles
+
 /// Edge-drag handles, sidebar-style. They sit on the PANEL side of the
 /// tap-to-refocus boundary so resizing never fights the focus gesture.
 private struct VerticalResizeHandle: View {
@@ -929,7 +1358,7 @@ private struct VerticalResizeHandle: View {
 
     var body: some View {
         Rectangle()
-            .fill(.quaternary)
+            .fill(Theme.Border.standard)
             .frame(width: 1)
             .padding(.horizontal, 2)
             .contentShape(Rectangle())
@@ -954,7 +1383,7 @@ private struct HorizontalResizeHandle: View {
 
     var body: some View {
         Rectangle()
-            .fill(.quaternary)
+            .fill(Theme.Border.standard)
             .frame(height: 1)
             .padding(.vertical, 2)
             .contentShape(Rectangle())
@@ -969,12 +1398,14 @@ private struct HorizontalResizeHandle: View {
                     .onEnded { _ in onEnd() })
     }
 }
-/// The play queue: ONE fully-visible row of grid-style cells —
-/// letterboxed thumbnail on top, the grid's enabled metadata fields
-/// beneath — scrolling horizontally, current item ringed and kept
-/// centered. Cell math is deterministic: the metadata reserve is
-/// computed from the enabled fields and the thumbnail takes the rest,
-/// so nothing can clip at any divider height. The queue reflects the
+
+// MARK: - Queue
+
+/// The play queue: ONE fully-visible row of tiles — the browse grid's
+/// tile at a different size — scrolling horizontally, current item ringed
+/// and kept centered. Cell math is deterministic: the metadata reserve is
+/// computed from the active view and the thumbnail takes the rest, so
+/// nothing can clip at any divider height. The queue reflects the
 /// playlist SNAPSHOT the player opened with.
 private struct QueuePanel: View {
     @Environment(PlayerModel.self) private var model
@@ -994,7 +1425,10 @@ private struct QueuePanel: View {
                             grid: grid,
                             isCurrent: item.id == model.item?.id)
                             .id(item.id)
-                            .onTapGesture { model.load(itemID: item.id) }
+                            .onTapGesture {
+                                model.zone = .queue
+                                model.load(itemID: item.id)
+                            }
                     }
                 }
                 .padding(6)
@@ -1013,7 +1447,8 @@ private struct QueuePanel: View {
         // Natural content height — never taller than its cells, never
         // clipping them.
         .frame(height: thumbHeight + metadataHeight + 18)
-        .background(.bar)
+        .background(Theme.Surface.toolbar)
+        .zoneRing(.queue)
     }
 }
 
@@ -1068,9 +1503,110 @@ private struct QueueCell: View {
     }
 }
 
+// MARK: - The keyboard map
+
+/// Both maps side by side: the chooser, and thereafter the cheat sheet.
+/// Only four rows differ, and they are the highlighted ones.
+private struct KeyMapSheet: View {
+    @Environment(PlayerModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var choice = AppSettingsStore.shared.current.keyMap
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Keyboard map")
+                    .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
+                    .foregroundStyle(Theme.Text.primary)
+                Text("Two maps disagree on four rows. Pick one — the hints throughout the window follow it.")
+                    .font(Theme.ui(12))
+                    .foregroundStyle(Theme.Text.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+
+            HStack(spacing: 0) {
+                Text("").frame(maxWidth: .infinity, alignment: .leading)
+                header("Web map", style: .web)
+                header("Mac map", style: .mac)
+            }
+            .padding(.horizontal, 16)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(KeyMapStyle.comparison) { row in
+                        HStack(spacing: 0) {
+                            Text(row.label)
+                                .font(Theme.ui(12.5))
+                                .foregroundStyle(
+                                    row.differs ? Theme.Text.primary : Theme.Text.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            cell(row.web, differs: row.differs, active: choice == .web)
+                            cell(row.mac, differs: row.differs, active: choice == .mac)
+                        }
+                        .padding(.vertical, 7)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                Text("Rows that differ are highlighted. Everything else is identical in both maps.")
+                    .font(Theme.ui(11.5))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("Done") {
+                    AppSettingsStore.shared.update { $0.keyMap = choice }
+                    dismiss()
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+            .padding(16)
+        }
+        .frame(width: 560, height: 480)
+        .background(Theme.Surface.dialog)
+    }
+
+    private func header(_ label: String, style: KeyMapStyle) -> some View {
+        Button {
+            choice = style
+        } label: {
+            Text(label)
+                .font(Theme.ui(11.5, choice == style ? .semibold : .regular))
+                .foregroundStyle(choice == style ? Theme.Accent.amber : Theme.Text.quaternary)
+                .frame(width: 150)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(choice == style ? Theme.Surface.selectedRow : .clear)
+                        .stroke(
+                            choice == style ? Theme.Border.activeCard : Theme.Border.subtleButton,
+                            lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func cell(_ keys: String, differs: Bool, active: Bool) -> some View {
+        Text(keys)
+            .font(Theme.mono(11.5))
+            .foregroundStyle(
+                differs ? (active ? Theme.Accent.amber : Theme.Text.quaternary)
+                    : Theme.Text.disabled)
+            .frame(width: 150)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(differs && active ? Theme.Surface.selectedRow : .clear))
+    }
+}
+
 extension VideoAnchor {
-    /// The setting's placement as a SwiftUI alignment — the app-side
-    /// mapping for the kit-side enum.
+    /// Where the fitted video sits inside the stage (#92). Placement
+    /// only — the fitted-size math never reads this.
     var alignment: Alignment {
         switch self {
         case .topLeft: .topLeading

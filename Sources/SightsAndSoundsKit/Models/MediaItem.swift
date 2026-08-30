@@ -8,6 +8,36 @@ public enum MediaKind: Int, Codable, Sendable, CaseIterable {
     case audio = 1
 }
 
+/// What a named range inside a parent's file is called. A song and a clip
+/// are the same record — `createEmbeddedClip` writes both — and only the
+/// label differs, so the label is a column rather than a second table.
+///
+/// A hide block is deliberately NOT here: it is an instruction to an edit
+/// job, not an item, and it must never appear in the grid.
+public enum SegmentRole: String, Codable, Sendable, CaseIterable {
+    case song, clip
+
+    public var displayName: String {
+        switch self {
+        case .song: "Song"
+        case .clip: "Clip"
+        }
+    }
+
+    /// The mono chip on the segment row.
+    public var badge: String { rawValue.uppercased() }
+
+    /// What a new one is called before anyone renames it. The rail
+    /// accepts the range first and the name after — blocking the close on
+    /// a text field loses the range, which is the expensive half.
+    public var defaultName: String {
+        switch self {
+        case .song: "New song"
+        case .clip: "New clip"
+        }
+    }
+}
+
 /// The core entity. One row per media file in a library.
 ///
 /// What lives here vs. in a side table follows one line: **columns the
@@ -88,6 +118,10 @@ public struct MediaItem: Codable, Equatable, Identifiable, Sendable, FetchableRe
     public var clipStartSeconds: Double?
     public var clipEndSeconds: Double?
     public var isClip: Bool
+    /// Song or clip, on a child row only. Both are named ranges the
+    /// player's segments rail lists and the grid can show; the role is
+    /// what the rail's chip reads.
+    public var segmentRole: SegmentRole?
     public var isExportedClip: Bool
     public var isEdited: Bool
     /// True once an embedded clip row has been exported to a standalone
@@ -134,6 +168,7 @@ public struct MediaItem: Codable, Equatable, Identifiable, Sendable, FetchableRe
         clipStartSeconds: Double? = nil,
         clipEndSeconds: Double? = nil,
         isClip: Bool = false,
+        segmentRole: SegmentRole? = nil,
         isExportedClip: Bool = false,
         isEdited: Bool = false,
         clipExported: Bool = false,
@@ -176,6 +211,7 @@ public struct MediaItem: Codable, Equatable, Identifiable, Sendable, FetchableRe
         self.clipStartSeconds = clipStartSeconds
         self.clipEndSeconds = clipEndSeconds
         self.isClip = isClip
+        self.segmentRole = segmentRole
         self.isExportedClip = isExportedClip
         self.isEdited = isEdited
         self.clipExported = clipExported

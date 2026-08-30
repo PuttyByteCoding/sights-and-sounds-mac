@@ -603,6 +603,20 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // A song and a clip are the same record — a named range inside
+        // the parent's file — so the difference between them is a label,
+        // not a table. Existing embedded rows were all authored through
+        // the clip keys, so they are clips.
+        migrator.registerMigration("segmentRoles") { db in
+            try db.alter(table: "mediaItem") { t in
+                t.add(column: "segmentRole", .text)
+            }
+            try db.execute(sql: """
+                UPDATE mediaItem SET segmentRole = 'clip'
+                WHERE parentMediaItemID IS NOT NULL
+                """)
+        }
+
         return migrator
     }
 
