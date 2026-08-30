@@ -23,7 +23,22 @@ public struct ImportJob: Job {
 
     public struct Payload: Codable, Sendable {
         public var sourceID: UUID
-        public init(sourceID: UUID) { self.sourceID = sourceID }
+        /// The files to import. `nil` imports everything the scan finds,
+        /// which is what a plain "scan this source" still means; a list
+        /// is what the review window sends once someone has looked at it.
+        public var relativePaths: [String]?
+        /// What to apply to every row this payload inserts. Per-folder
+        /// staging is several payloads, one per folder — not a second
+        /// code path.
+        public var staging: ImportStaging?
+
+        public init(
+            sourceID: UUID, relativePaths: [String]? = nil, staging: ImportStaging? = nil
+        ) {
+            self.sourceID = sourceID
+            self.relativePaths = relativePaths
+            self.staging = staging
+        }
     }
 
     let payload: Payload
@@ -36,12 +51,18 @@ public struct ImportJob: Job {
         self.fileAccess = LiveFileAccess()
     }
 
-    /// Enqueue an import for a source.
+    /// Enqueue an import for a source. With no list, it imports
+    /// everything it finds — the pre-review behaviour, kept for "scan
+    /// all sources".
     @discardableResult
-    public static func enqueue(on runner: JobRunner, sourceID: UUID) async throws -> JobRecord {
+    public static func enqueue(
+        on runner: JobRunner, sourceID: UUID,
+        relativePaths: [String]? = nil, staging: ImportStaging? = nil
+    ) async throws -> JobRecord {
         try await runner.enqueue(
             ImportJob.self,
-            payload: JSONEncoder().encode(Payload(sourceID: sourceID)))
+            payload: JSONEncoder().encode(
+                Payload(sourceID: sourceID, relativePaths: relativePaths, staging: staging)))
     }
 
     public func run(_ context: JobContext) async throws {
@@ -80,6 +101,14 @@ public struct ImportJob: Job {
             }
             .sorted { $0.relative < $1.relative }
 
+        // A named list narrows what this run inserts. The comparison is
+        // NOCASE like the schema's unique index, so a list written from
+        // one case can't miss the file it named.
+        let requested = payload.relativePaths.map { Set($0.map { $0.lowercased() }) }
+        let selected = requested.map { wanted in
+            candidates.filter { wanted.contains($0.relative.lowercased()) }
+        } ?? candidates
+
         let existing = try await library.writer.read { db in
             Set(try String.fetchAll(
                 db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?",
@@ -88,11 +117,11 @@ public struct ImportJob: Job {
 
         var inserted = 0
         var skipped = 0
-        await context.reportProgress(current: 0, total: candidates.count)
+        await context.reportProgress(current: 0, total: selected.count)
 
-        for (index, candidate) in candidates.enumerated() {
+        for (index, candidate) in selected.enumerated() {
             try await context.checkCancellation()
-            defer { Task { await context.reportProgress(current: index + 1, total: candidates.count) } }
+            defer { Task { await context.reportProgress(current: index + 1, total: selected.count) } }
 
             // NOCASE-unique paths: compare case-insensitively like the schema.
             if existing.contains(where: { $0.caseInsensitiveCompare(candidate.relative) == .orderedSame }) {
@@ -122,6 +151,12 @@ public struct ImportJob: Job {
                 ingestDate: Date(),
                 needsReview: true)  // auto-set on import; the user clears it
             try await library.writer.write { try item.insert($0) }
+            // Staging applies through the ordinary write paths, so a
+            // single-select category still replaces rather than
+            // accumulating — the rule cannot be skipped by importing.
+            if let staging = payload.staging {
+                try staging.apply(to: item.id, in: library)
+            }
             inserted += 1
         }
 

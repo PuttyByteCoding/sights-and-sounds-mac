@@ -21,10 +21,16 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
     public var videoExtensionsOverride: [String]?
     public var audioExtensionsOverride: [String]?
 
+    /// The import window's assignment boxes, as JSON. Per library
+    /// because the vocabulary is: a Concerts library stages Band and
+    /// Venue, a Learning library stages Course.
+    public var importBoxes: String?
+
     public init(
         libraryID: UUID = UUID(), name: String, createdAt: Date = Date(),
         videoExtensionsOverride: [String]? = nil,
-        audioExtensionsOverride: [String]? = nil
+        audioExtensionsOverride: [String]? = nil,
+        importBoxes: String? = nil
     ) {
         self.id = 1
         self.libraryID = libraryID
@@ -32,6 +38,7 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
         self.createdAt = createdAt
         self.videoExtensionsOverride = videoExtensionsOverride
         self.audioExtensionsOverride = audioExtensionsOverride
+        self.importBoxes = importBoxes
     }
 
     /// The effective import sets for this library.

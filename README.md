@@ -239,6 +239,18 @@ follow. Full context, locked decisions and the 11-phase plan live in
     and a clip one record — and on-screen text moves to a bottom drawer
     whose lines tag the playing item only. Triage is a mode, and the only
     place a flag key advances.
+  - Spec 04, Categories & Fields: three panes — categories in their order,
+    a tag table with use counts and sortable headers, and an always-present
+    inspector. `Similar only` clusters the spellings of one name; merging
+    keeps the discarded ones as aliases; write-back becomes a picker over
+    the thirteen standard keys; field definitions get a UI at last.
+    `displayStyle` replaces the checkbox boolean and `isDefaultFocus` is
+    gone — focus is the first visible category.
+  - Spec 05, Import: four steps — Source › Scan › Review & Stage › Import.
+    Scanning produces a list and writes nothing (probing stays lazy, and
+    the skipped-extension histogram says what was not listed); nothing
+    enters the library until the list is confirmed; tag staging boxes
+    apply per import or per folder, and sticky boxes keep their value.
 
 ### Demo library
 
