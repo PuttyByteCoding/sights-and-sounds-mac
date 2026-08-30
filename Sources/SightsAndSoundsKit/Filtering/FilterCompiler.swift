@@ -10,7 +10,9 @@ import GRDB
 /// Baseline predicates applied to every listing, before the filter's own
 /// terms (all standing rules from the web app, plus the Phase 1 source
 /// model):
-///   - `kind = ?` — the media-kind hard filter every surface must apply.
+///   - `kind IN (…)` — the media-kind hard filter every surface must
+///     apply. A listing may name several kinds, but never none: the gate
+///     is `MediaKinds`, which cannot be empty.
 ///   - `clipExported = 0` — embedded clip rows already exported to a
 ///     standalone file are hidden everywhere.
 ///   - the item's source is enabled — a disabled source's items leave
@@ -22,7 +24,7 @@ public enum FilterCompiler {
     }
 
     public static func compile(
-        filter: MediaFilter, kind: MediaKind,
+        filter: MediaFilter, kinds: MediaKinds,
         ordering: MediaOrdering = .relativePath
     ) -> Compiled {
         var joinArgs: [any DatabaseValueConvertible] = []
@@ -75,14 +77,9 @@ public enum FilterCompiler {
             """
         }
 
-        clauses.append("mediaItem.kind = ?")
-        whereArgs.append(kind.rawValue)
-        clauses.append("mediaItem.clipExported = 0")
-        clauses.append(
-            """
-            EXISTS (SELECT 1 FROM source \
-            WHERE source.id = mediaItem.sourceID AND source.enabled)
-            """)
+        let baseline = Baseline.sql(kinds)
+        clauses.append(baseline.sql)
+        whereArgs.append(contentsOf: baseline.args)
 
         // Required: AND each term.
         for term in filter.required {
@@ -150,6 +147,90 @@ public enum FilterCompiler {
         return Compiled(sql: sql, arguments: StatementArguments(joinArgs + whereArgs + orderArgs))
     }
 
+    // MARK: - Baseline
+
+    /// The predicates every listing shares — and, just as importantly,
+    /// every *count* that labels one. A sidebar count derived from a
+    /// different baseline than the grid it sits beside is a number that
+    /// lies, so both read these.
+    public enum Baseline {
+        /// The media-kind hard filter. `MediaKinds` cannot be empty, so
+        /// this can never compile to a no-op.
+        public static func kindClause(_ kinds: MediaKinds) -> String {
+            let placeholders = Array(repeating: "?", count: kinds.ordered.count)
+                .joined(separator: ", ")
+            return "mediaItem.kind IN (\(placeholders))"
+        }
+
+        /// An embedded clip row whose range has been exported to its own
+        /// file is hidden everywhere.
+        public static let liveRows = "mediaItem.clipExported = 0"
+
+        /// A disabled source's items leave every listing — distinct from
+        /// *offline*, which hides nothing.
+        public static let enabledSource = """
+            EXISTS (SELECT 1 FROM source \
+            WHERE source.id = mediaItem.sourceID AND source.enabled)
+            """
+
+        /// All three, ANDed, with the kind arguments to bind.
+        public static func sql(
+            _ kinds: MediaKinds
+        ) -> (sql: String, args: [any DatabaseValueConvertible]) {
+            (
+                "\(kindClause(kinds)) AND \(liveRows) AND \(enabledSource)",
+                kinds.ordered.map(\.rawValue)
+            )
+        }
+
+        /// What a structural status flag means in SQL. One name, one
+        /// place: the filter term and the sidebar's count of that flag
+        /// are the same predicate, so "Clip (any)" cannot come to mean
+        /// two different things.
+        public static func status(_ flag: StatusFlag) -> String {
+            switch flag {
+            case .needsReview: "mediaItem.needsReview"
+            case .playbackIssue: "mediaItem.playbackIssue"
+            case .markedForDeletion: "mediaItem.markedForDeletion"
+            case .favorite: "mediaItem.isFavorite"
+            case .clip:
+                """
+                (mediaItem.parentMediaItemID IS NOT NULL \
+                OR mediaItem.isClip OR mediaItem.isExportedClip)
+                """
+            case .embedded: "mediaItem.parentMediaItemID IS NOT NULL"
+            case .exported: "mediaItem.isExportedClip"
+            case .edited: "mediaItem.isEdited"
+            }
+        }
+
+        /// Items carrying a hidden-by-default tag leave every listing
+        /// unless the filter explicitly names that tag. The listing
+        /// itself builds this with its own exemption list; the counts
+        /// use these two forms so a sidebar number and the grid beside
+        /// it agree about what is hidden.
+        public static let notHidden = """
+            NOT EXISTS (SELECT 1 FROM mediaItemTag AS hiddenLink             JOIN tag AS hiddenTag ON hiddenTag.id = hiddenLink.tagID             WHERE hiddenLink.mediaItemID = mediaItem.id             AND hiddenTag.hiddenByDefault)
+            """
+
+        /// The same rule for a per-tag count, where the tag being counted
+        /// is by definition named by the filter that would show it — so
+        /// a hidden tag's own row reports what requiring it would show.
+        public static let notHiddenExceptCountedTag = """
+            NOT EXISTS (SELECT 1 FROM mediaItemTag AS hiddenLink             JOIN tag AS hiddenTag ON hiddenTag.id = hiddenLink.tagID             WHERE hiddenLink.mediaItemID = mediaItem.id             AND hiddenTag.hiddenByDefault             AND hiddenLink.tagID <> mediaItemTag.tagID)
+            """
+
+        /// What "this item has no tag in that category" means in SQL —
+        /// shared by the `missingCategory` term and the sidebar's
+        /// `Missing — no <Category> tag` count.
+        public static let missingCategory = """
+            NOT EXISTS (SELECT 1 FROM mediaItemTag \
+            JOIN tag ON tag.id = mediaItemTag.tagID \
+            WHERE mediaItemTag.mediaItemID = mediaItem.id \
+            AND tag.tagCategoryID = ?)
+            """
+    }
+
     // MARK: - Term translation
 
     private static func termSQL(_ term: FilterTerm) -> (sql: String, args: [any DatabaseValueConvertible]) {
@@ -184,34 +265,10 @@ public enum FilterCompiler {
             )
 
         case .missingCategory(let categoryID):
-            return (
-                """
-                NOT EXISTS (SELECT 1 FROM mediaItemTag \
-                JOIN tag ON tag.id = mediaItemTag.tagID \
-                WHERE mediaItemTag.mediaItemID = mediaItem.id \
-                AND tag.tagCategoryID = ?)
-                """,
-                [categoryID]
-            )
+            return (Baseline.missingCategory, [categoryID])
 
         case .status(let flag):
-            switch flag {
-            case .needsReview: return ("mediaItem.needsReview", [])
-            case .playbackIssue: return ("mediaItem.playbackIssue", [])
-            case .markedForDeletion: return ("mediaItem.markedForDeletion", [])
-            case .favorite: return ("mediaItem.isFavorite", [])
-            case .clip:
-                return (
-                    """
-                    (mediaItem.parentMediaItemID IS NOT NULL \
-                    OR mediaItem.isClip OR mediaItem.isExportedClip)
-                    """,
-                    []
-                )
-            case .embedded: return ("mediaItem.parentMediaItemID IS NOT NULL", [])
-            case .exported: return ("mediaItem.isExportedClip", [])
-            case .edited: return ("mediaItem.isEdited", [])
-            }
+            return (Baseline.status(flag), [])
         }
     }
 

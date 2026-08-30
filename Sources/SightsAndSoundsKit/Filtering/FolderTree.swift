@@ -60,40 +60,81 @@ public enum FolderTreeBuilder {
 }
 
 extension MediaFilter {
-    /// The tag's current slot in this filter, if any.
-    public enum TagSlot: Sendable { case required, optional, excluded }
+    /// Which of the three slots a term currently sits in, if any.
+    public enum TagSlot: Sendable, CaseIterable {
+        case required, optional, excluded
+    }
 
-    public func slot(of tagID: UUID) -> TagSlot? {
-        if required.contains(.tag(tagID)) { return .required }
-        if optional.contains(.tag(tagID)) { return .optional }
-        if excluded.contains(.tag(tagID)) { return .excluded }
+    public func slot(of term: FilterTerm) -> TagSlot? {
+        if required.contains(term) { return .required }
+        if optional.contains(term) { return .optional }
+        if excluded.contains(term) { return .excluded }
         return nil
     }
 
-    /// The browse panel's click cycle for a tag:
-    /// none → required → excluded → none.
-    public mutating func cycleTag(_ tagID: UUID) {
-        switch slot(of: tagID) {
-        case nil:
-            required.append(.tag(tagID))
-        case .required:
-            required.removeAll { $0 == .tag(tagID) }
-            excluded.append(.tag(tagID))
-        case .optional:
-            optional.removeAll { $0 == .tag(tagID) }
-            excluded.append(.tag(tagID))
-        case .excluded:
-            excluded.removeAll { $0 == .tag(tagID) }
+    public func slot(of tagID: UUID) -> TagSlot? { slot(of: .tag(tagID)) }
+
+    /// Move a term to a slot, or (nil) take it out of the filter. Always
+    /// removes it from the other two first, so a term can never occupy
+    /// two slots at once.
+    public mutating func setSlot(_ slot: TagSlot?, for term: FilterTerm) {
+        required.removeAll { $0 == term }
+        optional.removeAll { $0 == term }
+        excluded.removeAll { $0 == term }
+        switch slot {
+        case .required: required.append(term)
+        case .optional: optional.append(term)
+        case .excluded: excluded.append(term)
+        case nil: break
         }
     }
 
-    /// Toggle a status-flag requirement on or off.
-    public mutating func toggleStatus(_ flag: StatusFlag) {
-        if required.contains(.status(flag)) {
-            required.removeAll { $0 == .status(flag) }
-        } else {
-            required.append(.status(flag))
+    /// The browse panel's click cycle, over all four states:
+    /// none → required → optional → excluded → none.
+    ///
+    /// `reverse` is the right-click, and it is not optional garnish: a
+    /// four-state cycle you can only walk forwards is a guessing game
+    /// every time you overshoot.
+    public mutating func cycle(_ term: FilterTerm, reverse: Bool = false) {
+        let order: [TagSlot?] = [nil, .required, .optional, .excluded]
+        let current = order.firstIndex(of: slot(of: term)) ?? 0
+        let next = (current + (reverse ? order.count - 1 : 1)) % order.count
+        setSlot(order[next], for: term)
+    }
+
+    public mutating func cycleTag(_ tagID: UUID, reverse: Bool = false) {
+        cycle(.tag(tagID), reverse: reverse)
+    }
+
+    /// Every live slot, in the order the sidebar sets them — what the
+    /// chip bar above the grid lists. Folder terms are excluded: the
+    /// tree shows where you are, and a chip removing it would be a
+    /// second, competing control over the same state.
+    public var slottedTerms: [(term: FilterTerm, slot: TagSlot)] {
+        let lists: [(TagSlot, [FilterTerm])] = [
+            (.required, required), (.optional, optional), (.excluded, excluded),
+        ]
+        return lists.flatMap { slot, terms in
+            terms.compactMap { term in
+                switch term {
+                case .folder, .subtree: nil
+                default: (term, slot)
+                }
+            }
         }
+    }
+
+    /// Clear the three slots, keeping the folder selection and the
+    /// search text — "Clear all" on the chip bar clears the chips.
+    public mutating func clearSlots() {
+        let folders = required.filter {
+            if case .folder = $0 { return true }
+            if case .subtree = $0 { return true }
+            return false
+        }
+        required = folders
+        optional = []
+        excluded = []
     }
 
     /// Replace any folder/subtree term with the given subtree selection

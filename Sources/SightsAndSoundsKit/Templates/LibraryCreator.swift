@@ -29,7 +29,9 @@ public enum LibraryCreator {
         try library.ensureInfo(name: plan.name)
 
         try library.writer.write { db in
-            for planned in plan.categories where planned.include {
+            // The colour is dealt in plan order, so a new library's
+            // categories never open with two of them the same hue.
+            for (hue, planned) in plan.categories.filter(\.include).enumerated() {
                 let category = TagCategory(
                     name: planned.name.trimmingCharacters(in: .whitespaces),
                     allowMultiple: planned.allowMultiple,
@@ -37,6 +39,7 @@ public enum LibraryCreator {
                     sortOrder: planned.sortOrder,
                     notes: planned.notes,
                     hiddenFromBrowse: planned.hiddenFromBrowse,
+                    colorIndex: hue,
                     sectionLabel: planned.sectionLabel,
                     isDefaultFocus: planned.isDefaultFocus,
                     textFormat: planned.textFormat,

@@ -179,10 +179,21 @@ extension LibraryDatabase {
         }
     }
 
+    /// Create a category.
+    ///
+    /// A category created without a colour (`colorIndex` at its default of
+    /// 0) is dealt the next hue in rotation, so the fifth category added
+    /// by hand is not the same colour as the first. Pass a non-zero index
+    /// to keep one; change one later with `updateCategory`.
     public func createCategory(_ category: TagCategory) throws {
         try writer.write { db in
             if category.isDefaultFocus {
                 try db.execute(sql: "UPDATE tagCategory SET isDefaultFocus = 0")
+            }
+            var category = category
+            if category.colorIndex == 0 {
+                category.colorIndex = try Int.fetchOne(
+                    db, sql: "SELECT COALESCE(MAX(colorIndex) + 1, 0) FROM tagCategory") ?? 0
             }
             try category.insert(db)
         }
@@ -194,6 +205,21 @@ extension LibraryDatabase {
     public func deleteCategory(_ categoryID: UUID) throws {
         _ = try writer.write { db in
             try TagCategory.deleteOne(db, key: categoryID)
+        }
+    }
+
+    // MARK: - Bulk item edits
+
+    /// Mark items reviewed (or send them back to the queue). The browse
+    /// grid's bulk bar is the only caller today; it lives here because a
+    /// flag every surface reads should have one write path.
+    public func setNeedsReview(_ itemIDs: [UUID], _ needsReview: Bool) throws {
+        guard !itemIDs.isEmpty else { return }
+        try writer.write { db in
+            let placeholders = Array(repeating: "?", count: itemIDs.count).joined(separator: ", ")
+            try db.execute(
+                sql: "UPDATE mediaItem SET needsReview = ? WHERE id IN (\(placeholders))",
+                arguments: StatementArguments([needsReview] + itemIDs.map { $0 as any DatabaseValueConvertible }))
         }
     }
 

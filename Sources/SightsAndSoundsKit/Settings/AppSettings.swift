@@ -136,129 +136,170 @@ public struct InfoBarSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// Where one thumbnail-metadata field renders (#99): not at all,
-/// under the thumbnail, or overlaid in a corner of it.
+/// Where one thumbnail-metadata field rendered before saved tile views
+/// (#99): not at all, under the thumbnail, or overlaid in a corner.
+///
+/// Kept only to read a settings.json written by an earlier build — the
+/// decoder folds those placements into a view named `Custom` so nobody's
+/// configuration resets. Nothing writes it any more.
 public enum FieldPlacement: String, Codable, Sendable, CaseIterable {
     case hidden, under, topLeft, topRight, bottomLeft, bottomRight
 
-    public var displayName: String {
+    /// Where the same field sits in the eleven-slot layout.
+    var tileSlot: TileSlot? {
         switch self {
-        case .hidden: "Hidden"
-        case .under: "Under"
-        case .topLeft: "Top Left"
-        case .topRight: "Top Right"
-        case .bottomLeft: "Bottom Left"
-        case .bottomRight: "Bottom Right"
+        case .hidden: nil
+        case .under: .below
+        case .topLeft: .topLeft
+        case .topRight: .topRight
+        case .bottomLeft: .bottomLeft
+        case .bottomRight: .bottomRight
         }
     }
-
-    public var isCorner: Bool { self != .hidden && self != .under }
 }
 
-/// The browse grid's display configuration. Defaults reproduce the
-/// original grid: filename, duration, file size, favorite star and the
-/// needs-review glyph under the thumbnail, 200 pt cells. Decode maps
-/// the previous per-field BOOLEANS (showsFileName …) to under/hidden so
-/// nobody's configuration resets.
+/// The browse grid's display configuration: how big the tiles are, what
+/// they say, and whether they keep a uniform frame.
+///
+/// What they say is a list of named **views** rather than one set of
+/// switches, because the answer changes with the task — triaging,
+/// tagging, or just looking — and `V` cycles them. Decode carries
+/// forward both older shapes: the per-field booleans of the first grid,
+/// and the placements that replaced them.
 public struct GridSettings: Codable, Equatable, Sendable {
     /// Adaptive column minimum, in points (the maximum tracks at 1.4x).
     public var thumbnailSize: Double
-    public var fileName: FieldPlacement
-    public var path: FieldPlacement
-    public var tags: FieldPlacement
-    public var missingCategories: FieldPlacement
-    public var importDate: FieldPlacement
-    public var viewCount: FieldPlacement
-    public var deleted: FieldPlacement
-    public var duplicate: FieldPlacement
-    public var clip: FieldPlacement
-    public var duration: FieldPlacement
-    public var fileSize: FieldPlacement
-    public var favorite: FieldPlacement
-    public var dimensions: FieldPlacement
-    public var reviewed: FieldPlacement
+    /// Tiles keep one frame per media kind; anything narrower pillarboxes
+    /// inside it. Turn this on when you are actually reviewing phone
+    /// footage and the ragged grid is the point.
+    public var fitToAspect: Bool
+    public var views: [TileView]
+    /// nil = the first view.
+    public var activeViewID: UUID?
 
     public init(
         thumbnailSize: Double = 200,
-        fileName: FieldPlacement = .under,
-        path: FieldPlacement = .hidden,
-        tags: FieldPlacement = .hidden,
-        missingCategories: FieldPlacement = .hidden,
-        importDate: FieldPlacement = .hidden,
-        viewCount: FieldPlacement = .hidden,
-        deleted: FieldPlacement = .hidden,
-        duplicate: FieldPlacement = .hidden,
-        clip: FieldPlacement = .hidden,
-        duration: FieldPlacement = .under,
-        fileSize: FieldPlacement = .under,
-        favorite: FieldPlacement = .under,
-        dimensions: FieldPlacement = .hidden,
-        reviewed: FieldPlacement = .under
+        fitToAspect: Bool = false,
+        views: [TileView] = TileView.shipped,
+        activeViewID: UUID? = nil
     ) {
         self.thumbnailSize = thumbnailSize
-        self.fileName = fileName
-        self.path = path
-        self.tags = tags
-        self.missingCategories = missingCategories
-        self.importDate = importDate
-        self.viewCount = viewCount
-        self.deleted = deleted
-        self.duplicate = duplicate
-        self.clip = clip
-        self.duration = duration
-        self.fileSize = fileSize
-        self.favorite = favorite
-        self.dimensions = dimensions
-        self.reviewed = reviewed
+        self.fitToAspect = fitToAspect
+        self.views = views.isEmpty ? TileView.shipped : views
+        self.activeViewID = activeViewID
     }
 
+    /// Never nil: a settings file naming a view that has since been
+    /// deleted falls back to the first rather than to an empty tile.
+    public var activeView: TileView {
+        views.first { $0.id == activeViewID } ?? views[0]
+    }
+
+    public var activeIndex: Int {
+        views.firstIndex { $0.id == activeViewID } ?? 0
+    }
+
+    /// True when the active view shows a field needing the per-item tag
+    /// join — the grid's batch queries run only then.
+    public var needsTagData: Bool {
+        let view = activeView
+        return view.contains(.tags) || view.contains(.missingTags)
+            || view.placements.contains { placement in
+                placement.entries.contains {
+                    if case .tagsIn = $0.value { return true }
+                    return false
+                }
+            }
+    }
+
+    public var needsDuplicateData: Bool { activeView.contains(.duplicate) }
+
+    private enum CodingKeys: String, CodingKey {
+        case thumbnailSize, fitToAspect, views, activeViewID
+    }
+
+    /// Both older shapes of this section, read but never written.
     private enum LegacyKeys: String, CodingKey {
         case showsFileName, showsPath, showsTags, showsMissingCategories
         case showsImportDate, showsViewCount, showsDeleted, showsDuplicate
         case showsClip, showsDuration, showsFileSize, showsFavorite
         case showsDimensions, showsReviewed
+        case fileName, path, tags, missingCategories, importDate, viewCount
+        case deleted, duplicate, clip, duration, fileSize, favorite
+        case dimensions, reviewed
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
         let defaults = GridSettings()
         thumbnailSize = try container.decodeIfPresent(Double.self, forKey: .thumbnailSize)
             ?? defaults.thumbnailSize
-
-        func placement(
-            _ key: CodingKeys, _ legacyKey: LegacyKeys, _ fallback: FieldPlacement
-        ) -> FieldPlacement {
-            if let stored = (try? container.decodeIfPresent(FieldPlacement.self, forKey: key))
-                ?? nil {
-                return stored
-            }
-            if let old = (try? legacy.decodeIfPresent(Bool.self, forKey: legacyKey)) ?? nil {
-                return old ? .under : .hidden
-            }
-            return fallback
+        fitToAspect = try container.decodeIfPresent(Bool.self, forKey: .fitToAspect)
+            ?? defaults.fitToAspect
+        let stored = try container.decodeIfPresent([TileView].self, forKey: .views)
+        if let stored, !stored.isEmpty {
+            views = stored
+            activeViewID = try container.decodeIfPresent(UUID.self, forKey: .activeViewID)
+            return
         }
-
-        fileName = placement(.fileName, .showsFileName, defaults.fileName)
-        path = placement(.path, .showsPath, defaults.path)
-        tags = placement(.tags, .showsTags, defaults.tags)
-        missingCategories = placement(
-            .missingCategories, .showsMissingCategories, defaults.missingCategories)
-        importDate = placement(.importDate, .showsImportDate, defaults.importDate)
-        viewCount = placement(.viewCount, .showsViewCount, defaults.viewCount)
-        deleted = placement(.deleted, .showsDeleted, defaults.deleted)
-        duplicate = placement(.duplicate, .showsDuplicate, defaults.duplicate)
-        clip = placement(.clip, .showsClip, defaults.clip)
-        duration = placement(.duration, .showsDuration, defaults.duration)
-        fileSize = placement(.fileSize, .showsFileSize, defaults.fileSize)
-        favorite = placement(.favorite, .showsFavorite, defaults.favorite)
-        dimensions = placement(.dimensions, .showsDimensions, defaults.dimensions)
-        reviewed = placement(.reviewed, .showsReviewed, defaults.reviewed)
+        // No views yet: fold whatever the older file said into one named
+        // view, so a grid someone configured keeps saying what it said.
+        let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
+        let carried = legacy.flatMap { Self.carriedForward(from: $0) }
+        views = TileView.shipped + (carried.map { [$0] } ?? [])
+        activeViewID = carried?.id
     }
 
-    /// True when a field needing the per-item tag join is visible
-    /// anywhere — the grid's batch queries run only then.
-    public var needsTagData: Bool { tags != .hidden || missingCategories != .hidden }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(thumbnailSize, forKey: .thumbnailSize)
+        try container.encode(fitToAspect, forKey: .fitToAspect)
+        try container.encode(views, forKey: .views)
+        try container.encodeIfPresent(activeViewID, forKey: .activeViewID)
+    }
+
+    /// The fourteen fields of the previous two shapes, in the order they
+    /// were listed, as one view.
+    private static func carriedForward(
+        from legacy: KeyedDecodingContainer<LegacyKeys>
+    ) -> TileView? {
+        let fields: [(LegacyKeys, LegacyKeys, TileValue)] = [
+            (.fileName, .showsFileName, .fileName),
+            (.path, .showsPath, .path),
+            (.tags, .showsTags, .tags),
+            (.missingCategories, .showsMissingCategories, .missingTags),
+            (.importDate, .showsImportDate, .importDate),
+            (.viewCount, .showsViewCount, .viewCount),
+            (.deleted, .showsDeleted, .markedForDeletion),
+            (.duplicate, .showsDuplicate, .duplicate),
+            (.clip, .showsClip, .clip),
+            (.duration, .showsDuration, .duration),
+            (.fileSize, .showsFileSize, .fileSize),
+            (.favorite, .showsFavorite, .favorite),
+            (.dimensions, .showsDimensions, .format),
+            (.reviewed, .showsReviewed, .needsReview),
+        ]
+        var slots: [TileSlot: [TileValue]] = [:]
+        var sawAnything = false
+        for (key, booleanKey, value) in fields {
+            var placement: FieldPlacement?
+            if let stored = (try? legacy.decodeIfPresent(FieldPlacement.self, forKey: key)) ?? nil {
+                placement = stored
+            } else if let old = (try? legacy.decodeIfPresent(Bool.self, forKey: booleanKey)) ?? nil {
+                placement = old ? .under : .hidden
+            }
+            guard let placement else { continue }
+            sawAnything = true
+            if let slot = placement.tileSlot { slots[slot, default: []].append(value) }
+        }
+        guard sawAnything else { return nil }
+        return TileView(
+            name: "Custom",
+            placements: TileSlot.allCases.compactMap { slot in
+                guard let values = slots[slot] else { return nil }
+                return TileView.placement(slot, values)
+            })
+    }
 }
 
 /// The player's resizable-panel layout. Clamps live at the drag sites;

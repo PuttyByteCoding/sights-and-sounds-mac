@@ -220,6 +220,17 @@ follow. Full context, locked decisions and the 11-phase plan live in
     launch and from File ▸ Open Library… (⌘O), and goes away as soon as a
     library is chosen. Cached per-library counts in the registry, so the
     app opens without opening every library file and waking every drive.
+  - Spec 02, browse window: the three-way filter gets a vocabulary (green
+    `+` required, blue `~` optional, red `−` excluded, a four-state cycle
+    you can walk both ways) with a `Missing — no <Category> tag` row per
+    category, a chip bar over the grid and a legend under the sidebar.
+    Media type becomes a multi-select filter — the kind guard moves into
+    the query as `MediaKinds`, which cannot be empty. Sidebar counts come
+    from one batch sharing the listing's baseline. Tiles are drawn by
+    named, `V`-cycled **saved views**: eleven slots, nineteen values plus
+    one per category, uniform frames per kind with pillarboxing. Offline
+    items are badged and desaturated rather than blocked, with a banner
+    and a real hide/show toggle; selection and a floating bulk bar.
 
 ### Demo library
 

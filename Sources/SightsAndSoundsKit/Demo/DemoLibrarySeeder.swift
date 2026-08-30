@@ -190,11 +190,12 @@ public enum DemoLibrarySeeder {
     private static func writePlan(_ plan: LibraryPlan, into library: LibraryDatabase) throws -> Int {
         var written = 0
         try library.writer.write { db in
-            for planned in plan.categories where planned.include {
+            for (hue, planned) in plan.categories.filter(\.include).enumerated() {
                 let category = TagCategory(
                     name: planned.name, allowMultiple: planned.allowMultiple,
                     displayAsCheckboxes: planned.displayAsCheckboxes,
                     sortOrder: planned.sortOrder, notes: planned.notes,
+                    colorIndex: hue,
                     sectionLabel: planned.sectionLabel,
                     isDefaultFocus: planned.isDefaultFocus,
                     textFormat: planned.textFormat,

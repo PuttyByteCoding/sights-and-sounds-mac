@@ -46,14 +46,14 @@ import Testing
         }
         if let bandTag {
             let hits = try library.mediaItems(
-                matching: MediaFilter(required: [.tag(bandTag.id)]), kind: .video)
+                matching: MediaFilter(required: [.tag(bandTag.id)]), kinds: .video)
             for hit in hits {
                 #expect(hit.relativePath.contains(DemoVocabulary.bands[0]))
             }
         }
 
         // The folder tree has the shows/<year> shape.
-        let tree = FolderTreeBuilder.build(from: try library.folderCounts(kind: .video))
+        let tree = FolderTreeBuilder.build(from: try library.folderCounts(kinds: .video))
         #expect(tree.contains { $0.name == "shows" })
 
         // Field values landed and the vocabulary is entirely synthetic.

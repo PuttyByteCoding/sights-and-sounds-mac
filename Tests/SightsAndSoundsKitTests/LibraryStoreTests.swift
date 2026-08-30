@@ -20,13 +20,13 @@ import Testing
         let url = dir.appendingPathComponent("Concerts.sqlite")
 
         let first = try LibraryDatabase.open(at: url)
-        #expect(try first.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b", "extensionOverrides"])
+        #expect(try first.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b", "extensionOverrides", "categoryColors"])
         let category = TagCategory(name: "Band")
         try first.writer.write { try category.insert($0) }
 
         // Reopen the same file: migrations recognized, data intact.
         let second = try LibraryDatabase.open(at: url)
-        #expect(try second.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b", "extensionOverrides"])
+        #expect(try second.appliedMigrations() == ["phase0", "phase1", "phase2", "phase4", "phase5", "phase6", "phase7", "phase7b", "phase7c", "phase7d", "phase8", "phase8b", "extensionOverrides", "categoryColors"])
         let reread = try second.writer.read { try TagCategory.fetchOne($0) }
         #expect(reread == category)
     }
@@ -65,7 +65,7 @@ import Testing
         #expect(try learning.writer.read { try TagCategory.fetchAll($0).map(\.name) } == ["Subject"])
 
         // And the filter surface is scoped the same way.
-        let concertNames = try concerts.mediaItems(matching: MediaFilter(), kind: .video).map(\.fileName)
+        let concertNames = try concerts.mediaItems(matching: MediaFilter(), kinds: .video).map(\.fileName)
         #expect(concertNames == ["x.mp4"])
     }
 

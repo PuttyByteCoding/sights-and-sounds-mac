@@ -152,11 +152,11 @@ import Testing
 
         // Search reaches the recognized text.
         let hits = try library.mediaItems(
-            matching: MediaFilter(searchText: "riverbend"), kind: .video)
+            matching: MediaFilter(searchText: "riverbend"), kinds: .video)
         #expect(hits.map(\.id) == [item.id])
         // And search that matches nothing returns nothing.
         #expect(try library.mediaItems(
-            matching: MediaFilter(searchText: "zzz-nothing"), kind: .video).isEmpty)
+            matching: MediaFilter(searchText: "zzz-nothing"), kinds: .video).isEmpty)
     }
 
     @Test func searchMatchesNameNotesAndEscapesWildcards() throws {
