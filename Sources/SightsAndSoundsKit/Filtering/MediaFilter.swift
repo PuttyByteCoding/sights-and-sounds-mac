@@ -65,30 +65,6 @@ public struct MediaFilter: Hashable, Sendable {
             && searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// This filter with one category's own terms dropped — its tag terms
-    /// and its `missingCategory` term.
-    ///
-    /// The basis of faceted counts. Counting a category's tags under the
-    /// whole filter makes every tag in the category you just filtered on
-    /// read zero: nothing carries both Phish and Dead, so the Band column
-    /// collapses and you can no longer switch between them. Removing the
-    /// facet's own constraint is what keeps a category browsable while it
-    /// is being filtered.
-    public func removingCategory(_ categoryID: UUID, tagIDs: Set<UUID>) -> MediaFilter {
-        func keep(_ term: FilterTerm) -> Bool {
-            switch term {
-            case .tag(let id): !tagIDs.contains(id)
-            case .missingCategory(let id): id != categoryID
-            default: true
-            }
-        }
-        var copy = self
-        copy.required = required.filter(keep)
-        copy.optional = optional.filter(keep)
-        copy.excluded = excluded.filter(keep)
-        return copy
-    }
-
     /// Tag ids referenced anywhere in the filter. A hidden-by-default tag
     /// that is explicitly referenced is exempt from auto-hide suppression.
     public var referencedTagIDs: Set<UUID> {
