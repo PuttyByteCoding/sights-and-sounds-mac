@@ -48,7 +48,7 @@ public struct RepairJob: Job {
         guard let item = try await library.writer.read({
             try MediaItem.fetchOne($0, key: payload.itemID)
         }) else { throw ClipError.itemNotFound }
-        guard item.parentMediaItemID == nil else { throw ClipError.notAClip }
+        guard item.parentMediaItemID == nil else { throw RepairError.cannotRepairClip }
         guard let fileURL = try library.resolvedFileURL(for: item, fileAccess: fileAccess),
               fileAccess.isReachable(fileURL)
         else { throw MoveError.sourceUnavailable }
@@ -108,9 +108,9 @@ public struct RepairJob: Job {
             updated.durationSeconds = probe.durationSeconds ?? updated.durationSeconds
             updated.bitrate = probe.bitrate ?? updated.bitrate
             try updated.update(db)
-            try db.execute(
-                sql: "DELETE FROM playbackIssueEvidence WHERE mediaItemID = ?",
-                arguments: [item.id])
+            try PlaybackIssueEvidence
+                .filter(sql: "mediaItemID = ?", arguments: [item.id])
+                .deleteAll(db)
         }
         await context.reportProgress(current: 3, total: 3)
         await context.setSummary(
@@ -121,6 +121,7 @@ public struct RepairJob: Job {
 public enum RepairError: Error, CustomStringConvertible {
     case toolMissing(String)
     case resultUnplayable
+    case cannotRepairClip
 
     public var description: String {
         switch self {
@@ -128,6 +129,8 @@ public enum RepairError: Error, CustomStringConvertible {
             "\(tool) not found — install it and try again; the original is untouched"
         case .resultUnplayable:
             "the repaired file did not probe as playable — the original is untouched"
+        case .cannotRepairClip:
+            "a clip has no file of its own — repair the item it was cut from"
         }
     }
 }
