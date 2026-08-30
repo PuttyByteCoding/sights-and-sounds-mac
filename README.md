@@ -251,6 +251,12 @@ follow. Full context, locked decisions and the 11-phase plan live in
     the skipped-extension histogram says what was not listed); nothing
     enters the library until the list is confirmed; tag staging boxes
     apply per import or per folder, and sticky boxes keep their value.
+  - Spec 06, Background tasks: a lane per library (which is what a runner
+    is) above one chronological table, a detail inspector that keeps a
+    failure's full error and payload, and pause per lane as well as
+    globally. `Run next` reorders a queue and never pre-empts; Retry files
+    a new row and leaves the failure in place; Clear finished keeps
+    failures.
 
 ### Demo library
 
