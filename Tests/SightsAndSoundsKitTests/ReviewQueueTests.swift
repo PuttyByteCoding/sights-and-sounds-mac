@@ -142,3 +142,45 @@ private struct PretendFiles: FileAccess {
     func moveFile(at url: URL, to destination: URL) throws {}
     func removeFile(at url: URL) throws {}
 }
+
+/// Tools declared once, recipes that arrive disabled, and a narrower
+/// match than a whole failure kind.
+@Suite struct RepairConfigurationTests {
+
+    @Test func aDisabledRecipeIsNeverOffered() throws {
+        let app = try AppDatabase.openInMemory()
+        try app.seedRepairRecipes()
+        var recipe = try app.repairRecipes()[0]
+        recipe.enabled = false
+        try app.saveRepairRecipe(recipe)
+        let offered = try app.repairRecipes(
+            forFailureKind: recipe.matchesFailureKind, probeOutput: "moov atom not found")
+        #expect(!offered.contains { $0.id == recipe.id })
+    }
+
+    /// A pattern narrows a recipe below a whole failure kind — and a
+    /// recipe with one is not offered when there is nothing to match
+    /// against.
+    @Test func aMatchPatternNarrowsARecipe() throws {
+        let app = try AppDatabase.openInMemory()
+        try app.saveRepairRecipe(RepairRecipe(
+            name: "untrunc", matchPattern: "moov atom not found",
+            tool: "untrunc", argumentTemplate: ["{input}", "{output}"],
+            estimate: "minutes"))
+        #expect(try app.repairRecipes(
+            forFailureKind: nil, probeOutput: "moov atom not found").count == 1)
+        #expect(try app.repairRecipes(
+            forFailureKind: nil, probeOutput: "something else").isEmpty)
+        #expect(try app.repairRecipes(forFailureKind: nil).isEmpty)
+    }
+
+    @Test func aToolRemembersWhereItWasAndWhetherItIsThere() throws {
+        let app = try AppDatabase.openInMemory()
+        try app.saveExternalTool(ExternalTool(name: "untrunc"))
+        #expect(try app.externalTools().first?.isAvailable == false)
+        try app.saveExternalTool(
+            ExternalTool(name: "untrunc", path: "/usr/local/bin/untrunc", version: "1.0"))
+        #expect(try app.externalTools().first?.isAvailable == true)
+        #expect(try app.externalTools().first?.version == "1.0")
+    }
+}
