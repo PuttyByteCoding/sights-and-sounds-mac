@@ -270,6 +270,12 @@ follow. Full context, locked decisions and the 11-phase plan live in
     reads-only is a chip on each row, the command is shown, a join is
     refused with the mismatch named before anything is written, and OCR's
     six knobs get the one place they belong.
+  - Spec 09, Organise: the reorganise plan and the move history become two
+    tabs of one window, because the history is what makes running a
+    template safe. The plan is shown two ways — per file, and as the
+    folders it would create — token chips write themselves into the
+    template, skip reasons aggregate without hiding rows, and every move
+    carries a `sessionID` so a run is one Put all back.
 
 ### Demo library
 

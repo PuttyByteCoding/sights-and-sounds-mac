@@ -52,7 +52,15 @@ public enum OrganizeTemplate {
         for token in tokens where seen.insert(token.lowercased()).inserted {
             let folded = token.replacingOccurrences(of: "_", with: " ").lowercased()
             if !known.contains(folded) {
-                errors.append(ValidationError(message: "Unknown token: %\(token)"))
+                // Name the category and point somewhere useful: an
+                // unknown token is almost always a spelling, and the
+                // remedy is one window away.
+                let name = token.replacingOccurrences(of: "_", with: " ")
+                errors.append(ValidationError(
+                    message: """
+                        No category called "\(name)" — check the spelling, or create it in \
+                        Categories & Fields.
+                        """))
             }
         }
         return errors

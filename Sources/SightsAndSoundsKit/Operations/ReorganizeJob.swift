@@ -11,6 +11,31 @@ public struct ReorganizePlanEntry: Sendable, Equatable {
     public let reason: String?
 }
 
+extension Array where Element == ReorganizePlanEntry {
+    /// The shape of the result: which folders the plan creates, and how
+    /// many items land in each.
+    ///
+    /// The row list answers "what happens to this file"; this answers
+    /// "what will my drive look like", which is the question a template
+    /// is being written to answer. Same plan, grouped — derived once,
+    /// not recomputed per render.
+    public var foldersCreated: [(folder: String, count: Int)] {
+        Dictionary(grouping: compactMap(\.toFolder), by: { $0 })
+            .map { ($0.key, $0.value.count) }
+            .sorted { $0.folder.localizedStandardCompare($1.folder) == .orderedAscending }
+    }
+
+    /// Skip reasons with their counts, so a template's weakness reads at
+    /// a glance while the row list still shows every item.
+    public var skipReasons: [(reason: String, count: Int)] {
+        Dictionary(grouping: filter { $0.toFolder == nil }.map { $0.reason ?? "skipped" }, by: { $0 })
+            .map { ($0.key, $0.value.count) }
+            .sorted { $0.count > $1.count }
+    }
+
+    public var movableCount: Int { count { $0.toFolder != nil } }
+}
+
 extension LibraryDatabase {
     /// Dry-run: what a template would do to the given items. Pure — no
     /// file I/O — so the preview is free.
@@ -100,6 +125,9 @@ public struct ReorganizeJob: Job {
         var moved = 0
         var skipped = 0
         var failed = 0
+        // Every move in this run shares one session id: the run is the
+        // unit anyone puts back.
+        let sessionID = UUID()
         await context.reportProgress(current: 0, total: plan.count)
 
         for (index, entry) in plan.enumerated() {
@@ -115,6 +143,7 @@ public struct ReorganizeJob: Job {
                 _ = try library.moveFile(
                     itemID: entry.itemID,
                     to: "\(toFolder)/\(entry.fileName)",
+                    sessionID: sessionID,
                     fileAccess: fileAccess)
                 moved += 1
             } catch {

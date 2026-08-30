@@ -50,6 +50,7 @@ extension LibraryDatabase {
     @discardableResult
     public func moveFile(
         itemID: UUID, to requestedPath: String,
+        sessionID: UUID? = nil,
         fileAccess: any FileAccess = LiveFileAccess()
     ) throws -> FileMoveLog {
         guard let item = try writer.read({ try MediaItem.fetchOne($0, key: itemID) }) else {
@@ -79,7 +80,8 @@ extension LibraryDatabase {
         AppLog.shared.info("moves", "moved \(fromPath) → \(toPath)")
         let log = FileMoveLog(
             mediaItemID: item.id, sourceID: source.id,
-            fileName: item.fileName, fromPath: fromPath, toPath: toPath)
+            fileName: item.fileName, fromPath: fromPath, toPath: toPath,
+            sessionID: sessionID)
         try writer.write { db in
             var updated = item
             updated.setRelativePath(toPath)
@@ -120,10 +122,89 @@ extension LibraryDatabase {
         }
     }
 
+    /// The move log. `limit` is a DISPLAY default — the rows themselves
+    /// are complete, because a large run that contained moves nobody can
+    /// put back is the failure this whole path exists to prevent.
     public func moveLogs(limit: Int = 200) throws -> [FileMoveLog] {
         try writer.read { db in
             try FileMoveLog.order(sql: "movedAt DESC").limit(limit).fetchAll(db)
         }
+    }
+
+    /// One run of moves, as the history lists them.
+    public struct MoveSession: Sendable, Identifiable, Equatable {
+        public var id: UUID
+        public var movedAt: Date
+        public var logs: [FileMoveLog]
+
+        /// A half-undone run must never be mistaken for a clean one.
+        public enum State: String, Sendable {
+            case applied, partlyReverted, fullyReverted
+
+            public var displayName: String {
+                switch self {
+                case .applied: "applied"
+                case .partlyReverted: "partly reverted"
+                case .fullyReverted: "fully reverted"
+                }
+            }
+        }
+
+        public var state: State {
+            let reverted = logs.count { $0.revertedAt != nil }
+            if reverted == 0 { return .applied }
+            return reverted == logs.count ? .fullyReverted : .partlyReverted
+        }
+
+        public var revertibleCount: Int { logs.count { $0.revertedAt == nil } }
+    }
+
+    /// Moves grouped into runs, newest first. A move with no session id —
+    /// staging, a manual move — is its own single-move session, which is
+    /// exactly what it is.
+    public func moveSessions(limit: Int = 200) throws -> [MoveSession] {
+        let logs = try moveLogs(limit: limit)
+        var sessions: [UUID: MoveSession] = [:]
+        var order: [UUID] = []
+        for log in logs {
+            let key = log.sessionID ?? log.id
+            if sessions[key] == nil {
+                sessions[key] = MoveSession(id: key, movedAt: log.movedAt, logs: [])
+                order.append(key)
+            }
+            sessions[key]?.logs.append(log)
+            if let existing = sessions[key], log.movedAt > existing.movedAt {
+                sessions[key]?.movedAt = log.movedAt
+            }
+        }
+        return order.compactMap { sessions[$0] }
+    }
+
+    /// Put a whole run back. Already-reverted rows are skipped rather
+    /// than throwing on the first one — half a session put back by hand
+    /// must not block putting the rest back.
+    @discardableResult
+    public func revertSession(
+        _ sessionID: UUID, fileAccess: any FileAccess = LiveFileAccess()
+    ) throws -> (reverted: Int, failures: [String]) {
+        let logs = try writer.read { db in
+            try FileMoveLog
+                .filter(sql: "(sessionID = ? OR id = ?) AND revertedAt IS NULL",
+                        arguments: [sessionID, sessionID])
+                .order(sql: "movedAt DESC")
+                .fetchAll(db)
+        }
+        var reverted = 0
+        var failures: [String] = []
+        for log in logs {
+            do {
+                try revertMove(log.id, fileAccess: fileAccess)
+                reverted += 1
+            } catch {
+                failures.append("\(log.fileName): \(error)")
+            }
+        }
+        return (reverted, failures)
     }
 
     // MARK: - Staging

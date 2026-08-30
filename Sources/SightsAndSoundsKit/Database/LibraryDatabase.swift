@@ -669,6 +669,15 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Moves belong to runs. A run is the unit anyone undoes, and
+        // grouping by template and timestamp breaks the moment two runs
+        // share a template a minute apart.
+        migrator.registerMigration("moveSessions") { db in
+            try db.alter(table: "fileMoveLog") { t in
+                t.add(column: "sessionID", .blob)
+            }
+        }
+
         return migrator
     }
 
