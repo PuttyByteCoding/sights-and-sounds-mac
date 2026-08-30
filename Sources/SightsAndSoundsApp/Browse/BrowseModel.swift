@@ -426,8 +426,12 @@ final class BrowseModel {
         }
     }
 
-    /// Scan a source for new files. Serialized by the job runner; progress
-    /// surfaces beside the source row; the grid refreshes when done.
+    /// Scan a source and import everything new under it, unreviewed.
+    ///
+    /// This is the whole-source path — "Scan" from a source row, or a
+    /// mount waking up. Reviewing a list before anything enters the
+    /// library is the Import window's job; this one is for when you
+    /// already know what is on the drive.
     func importSource(_ source: Source) {
         guard importStatus[source.id] == nil else { return }
         importStatus[source.id] = "queued…"

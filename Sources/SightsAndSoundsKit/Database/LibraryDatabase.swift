@@ -639,6 +639,15 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // The import window's assignment boxes: which categories and
+        // fields it offers, in what order, and which keep their value
+        // for the next import. Per library, because the vocabulary is.
+        migrator.registerMigration("importBoxes") { db in
+            try db.alter(table: "libraryInfo") { t in
+                t.add(column: "importBoxes", .text)
+            }
+        }
+
         return migrator
     }
 
