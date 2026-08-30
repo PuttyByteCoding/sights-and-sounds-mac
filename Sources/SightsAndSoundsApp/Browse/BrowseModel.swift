@@ -291,12 +291,18 @@ final class BrowseModel {
     /// other question: what is behind this tag in the library.
     private(set) var filteredTagCounts: [UUID: Int] = [:]
 
+    /// The `Missing — no <Category> tag` rows under the active filter,
+    /// so they narrow with the tags they sit beside instead of staying
+    /// on library-wide numbers.
+    private(set) var filteredMissingCounts: [UUID: Int] = [:]
+
     private struct ListingPayload: Sendable {
         var items: [MediaItem]
         var tags: [UUID: [TagPill]]
         var missingCategories: [UUID: [String]]
         var duplicateIDs: Set<UUID>
         var filteredTagCounts: [UUID: Int]
+        var filteredMissingCounts: [UUID: Int]
     }
 
     /// Everything a tile needs about one item that is not on its row.
@@ -340,6 +346,8 @@ final class BrowseModel {
                     // describe, on the same generation — so the numbers
                     // and the grid can never be from different filters.
                     filteredTagCounts: try library.filteredTagCounts(
+                        kinds: kinds, filter: filter),
+                    filteredMissingCounts: try library.filteredMissingCategoryCounts(
                         kinds: kinds, filter: filter))
                 if grid.needsTagData {
                     let vocabulary = try library.vocabulary()
@@ -400,6 +408,7 @@ final class BrowseModel {
                     self.itemMissingCategories = payload.missingCategories
                     self.duplicateFlaggedIDs = payload.duplicateIDs
                     self.filteredTagCounts = payload.filteredTagCounts
+                    self.filteredMissingCounts = payload.filteredMissingCounts
                     self.errorMessage = nil
                 case .failure(let error):
                     self.errorMessage = "\(error)"
