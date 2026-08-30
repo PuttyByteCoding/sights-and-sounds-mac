@@ -16,7 +16,7 @@ public struct TagWriteResult: Sendable {
 public enum TagWriters {
     // MARK: - Tool probes
 
-    static func toolPath(_ name: String) -> String? {
+    public static func toolPath(_ name: String) -> String? {
         let candidates = ["/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)"]
         let env = ProcessInfo.processInfo.environment["PATH"] ?? ""
         let pathCandidates = env.split(separator: ":").map { String($0) + "/\(name)" }

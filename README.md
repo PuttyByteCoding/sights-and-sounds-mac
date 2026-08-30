@@ -257,6 +257,13 @@ follow. Full context, locked decisions and the 11-phase plan live in
     globally. `Run next` reorders a queue and never pre-empts; Retry files
     a new row and leaves the failure in place; Clear finished keeps
     failures.
+  - Spec 07, Review: duplicates, the delete list and playback issues in
+    one window, because all three are a flagged queue with evidence and a
+    batch confirm. The purge count becomes a reviewable list (and
+    `purgeDeleted` takes an explicit set, with the flag still the guard);
+    a playback issue keeps the probe output captured when it failed; and
+    repair recipes are data — a match, a tool, a command and a risk label
+    — run on a copy that is re-probed before the original is archived.
 
 ### Demo library
 

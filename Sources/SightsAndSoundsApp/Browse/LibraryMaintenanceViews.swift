@@ -70,50 +70,19 @@ struct MoveHistoryView: View {
     }
 }
 
-/// The purge flow: count what's staged, confirm in plain words, report
-/// what happened. Only flagged rows are ever touched.
+/// Purging moved into the Review window, where the marked files can
+/// actually be seen. A count in a confirmation dialog was not
+/// reviewable: you could not tell what the 47 items were, and the mark
+/// could be four months old.
 struct PurgeButton: View {
+    @Environment(\.openWindow) private var openWindow
     @Environment(BrowseModel.self) private var model
-    @State private var confirming = false
-    @State private var flaggedCount = 0
-    @State private var resultText: String?
 
     var body: some View {
-        Button("Purge Deleted Items…", systemImage: "trash") {
-            flaggedCount = (try? model.library.writer.read {
-                try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount($0)
-            }) ?? 0
-            confirming = true
+        Button("Review Marked Items…", systemImage: "trash") {
+            openWindow(
+                id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: .review))
         }
-        .confirmationDialog(
-            flaggedCount == 0
-                ? "No items are marked for deletion."
-                : "Permanently delete \(flaggedCount) marked items and their staged files? This cannot be undone.",
-            isPresented: $confirming
-        ) {
-            if flaggedCount > 0 {
-                Button("Delete \(flaggedCount) Items", role: .destructive) { purge() }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .alert("Purge Complete", isPresented: .constant(resultText != nil)) {
-            Button("OK") { resultText = nil }
-        } message: {
-            Text(resultText ?? "")
-        }
-    }
-
-    private func purge() {
-        do {
-            let outcome = try model.library.purgeDeleted()
-            var text = "\(outcome.rowsDeleted) items removed, \(outcome.filesDeleted) files deleted."
-            if !outcome.fileFailures.isEmpty {
-                text += " \(outcome.fileFailures.count) files could not be deleted and their items were kept."
-            }
-            resultText = text
-            model.refreshAll()
-        } catch {
-            resultText = "Purge failed: \(error)"
-        }
+        .help("The delete list, with each file, why it is there, and what it reclaims")
     }
 }

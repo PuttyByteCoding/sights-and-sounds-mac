@@ -55,6 +55,17 @@ extension LibraryDatabase {
         }
     }
 
+    /// Both copies are wanted. The pair leaves the queue without either
+    /// file being staged, and — like `rejected` — the row survives so
+    /// the sweeps cannot re-flag it.
+    public func keepBothCandidate(_ candidateID: UUID) throws {
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE duplicateCandidate SET status = 'keptBoth' WHERE id = ?",
+                arguments: [candidateID])
+        }
+    }
+
     public func rejectCandidate(_ candidateID: UUID) throws {
         try writer.write { db in
             try db.execute(

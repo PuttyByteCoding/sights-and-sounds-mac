@@ -656,6 +656,19 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // The evidence behind a playback issue, captured when the flag
+        // is set. Beside the item rather than on it: only the review
+        // queue reads it.
+        migrator.registerMigration("playbackIssueEvidence") { db in
+            try db.create(table: "playbackIssueEvidence") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("capturedAt", .datetime).notNull()
+                t.column("probeOutput", .text).notNull()
+                t.column("failureKind", .text)
+            }
+        }
+
         return migrator
     }
 
