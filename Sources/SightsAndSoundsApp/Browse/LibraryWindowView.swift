@@ -189,8 +189,8 @@ struct BrowseView: View {
                         Button("Organise…", systemImage: "folder.badge.gearshape") {
                             openAux(.organise)
                         }
-                        Button("Validate Library…", systemImage: "checkmark.seal") {
-                            openAux(.validation)
+                        Button("Maintenance…", systemImage: "checkmark.seal") {
+                            openAux(.maintenance)
                         }
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             do {

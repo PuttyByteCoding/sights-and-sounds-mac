@@ -10,7 +10,7 @@ struct AuxWindowRequest: Codable, Hashable {
         case categories
         case review
         case organise
-        case validation
+        case maintenance
         case importMedia
         case operations
 
@@ -19,7 +19,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .categories: "Categories & Fields"
             case .review: "Review"
             case .organise: "Organise"
-            case .validation: "Validation"
+            case .maintenance: "Maintenance"
             case .importMedia: "Import"
             case .operations: "Operations"
             }
@@ -90,7 +90,7 @@ struct AuxiliaryWindowView: View {
             case .categories: CategoryManagerView()
             case .review: ReviewView()
             case .organise: OrganiseView()
-            case .validation: ValidationView()
+            case .maintenance: MaintenanceView()
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
             }
