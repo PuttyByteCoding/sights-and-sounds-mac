@@ -183,12 +183,15 @@ struct BrowseView: View {
                         : "Duplicates, the delete list and playback issues")
                 }
                 ToolbarItem {
+                    Button("Recently Watched", systemImage: "clock.arrow.circlepath") {
+                        openAux(.watched)
+                    }
+                    .help("What you have played, and where you stopped")
+                }
+                ToolbarItem {
                     Menu {
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
-                        }
-                        Button("Recently Watched…", systemImage: "clock.arrow.circlepath") {
-                            openAux(.watched)
                         }
                         Divider()
                         Button("Organise…", systemImage: "folder.badge.gearshape") {
