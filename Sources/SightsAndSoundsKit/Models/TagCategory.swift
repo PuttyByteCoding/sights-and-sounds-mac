@@ -10,6 +10,31 @@ public enum TextFormat: Int, Codable, Sendable, CaseIterable {
     case allUppercase = 3
 }
 
+/// How a category's tags are offered for picking.
+///
+/// It was a boolean — checkboxes or not — which could not express the
+/// control a single-select category actually wants. A category that
+/// allows one value rendered as checkboxes is the wrong control, and
+/// radio was the missing one.
+public enum TagDisplayStyle: String, Codable, Sendable, CaseIterable {
+    /// Autocomplete field plus pills. The default, and the only sane
+    /// choice for a category with hundreds of tags.
+    case search
+    /// Every tag as a toggle. Small fixed sets only — this is also what
+    /// makes a category eligible for the Alt+1…9 keys.
+    case checkboxes
+    /// Every tag as a radio: one value, visible options.
+    case radio
+
+    public var displayName: String {
+        switch self {
+        case .search: "Search"
+        case .checkboxes: "Checkboxes"
+        case .radio: "Radio"
+        }
+    }
+}
+
 /// A classification within one library's vocabulary — Band, Venue, Subject.
 /// Not a loose bundle: it carries rules about how many values apply, how
 /// they display, and how they write back to file metadata (which is why
@@ -22,9 +47,10 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
     /// May an item carry several tags from this category (Band: yes,
     /// Year: no)?
     public var allowMultiple: Bool
-    /// Render as a checkbox list of every tag instead of pill+autocomplete;
-    /// also makes the category eligible for keyboard toggles.
-    public var displayAsCheckboxes: Bool
+    /// How this category's tags are offered — search, checkboxes or
+    /// radio. Checkboxes is also what makes a category eligible for the
+    /// player's Alt+1…9 keys.
+    public var displayStyle: TagDisplayStyle
     public var sortOrder: Int
     public var notes: String
     /// Hide from the browse filter panel (still available in editing).
@@ -38,9 +64,6 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
     /// Section separator above this category in the browse panel:
     /// nil = none, "" = plain divider, non-empty = labeled header.
     public var sectionLabel: String?
-    /// The tag editor focuses this category's input on open. At most one
-    /// category has it — enforced by the write path, as in the old app.
-    public var isDefaultFocus: Bool
     public var textFormat: TextFormat
     /// Convert `-`/`.`/`_` to spaces (collapsing runs) before `textFormat`
     /// applies — "dave-matthews-band" + titleCase → "Dave Matthews Band".
@@ -51,17 +74,19 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
     /// standard-field key (ARTIST, DATE, …).
     public var writebackField: String?
 
+    /// Checkbox categories are the ones the player's Alt+1…9 keys reach.
+    public var displayAsCheckboxes: Bool { displayStyle == .checkboxes }
+
     public init(
         id: UUID = UUID(),
         name: String,
         allowMultiple: Bool = true,
-        displayAsCheckboxes: Bool = false,
+        displayStyle: TagDisplayStyle = .search,
         sortOrder: Int = 0,
         notes: String = "",
         hiddenFromBrowse: Bool = false,
         colorIndex: Int = 0,
         sectionLabel: String? = nil,
-        isDefaultFocus: Bool = false,
         textFormat: TextFormat = .noFormatting,
         separatorsToSpaces: Bool = false,
         writebackEnabled: Bool = true,
@@ -70,13 +95,12 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
         self.id = id
         self.name = name
         self.allowMultiple = allowMultiple
-        self.displayAsCheckboxes = displayAsCheckboxes
+        self.displayStyle = displayStyle
         self.sortOrder = sortOrder
         self.notes = notes
         self.hiddenFromBrowse = hiddenFromBrowse
         self.colorIndex = colorIndex
         self.sectionLabel = sectionLabel
-        self.isDefaultFocus = isDefaultFocus
         self.textFormat = textFormat
         self.separatorsToSpaces = separatorsToSpaces
         self.writebackEnabled = writebackEnabled

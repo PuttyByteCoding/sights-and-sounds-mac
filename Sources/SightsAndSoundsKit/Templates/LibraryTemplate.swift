@@ -49,14 +49,13 @@ public enum LibraryTemplate: String, CaseIterable, Sendable, Identifiable {
                         allowMultiple: true,
                         sortOrder: 10,
                         notes: "Bands and solo artists performing in the recording.",
-                        isDefaultFocus: true,
                         textFormat: .titleCase,
                         separatorsToSpaces: true,
                         writebackField: "ARTIST"),
                     PlannedCategory(
                         name: "Recording Type",
                         allowMultiple: false,
-                        displayAsCheckboxes: true,
+                        displayStyle: .checkboxes,
                         sortOrder: 20,
                         notes: "Source quality. One per recording.",
                         tags: [
@@ -100,8 +99,7 @@ public enum LibraryTemplate: String, CaseIterable, Sendable, Identifiable {
                         name: "Subject",
                         allowMultiple: false,
                         sortOrder: 10,
-                        notes: "Broad area — Swift, Photography, Music Theory.",
-                        isDefaultFocus: true),
+                        notes: "Broad area — Swift, Photography, Music Theory."),
                     PlannedCategory(
                         name: "Course",
                         allowMultiple: false,
@@ -118,7 +116,7 @@ public enum LibraryTemplate: String, CaseIterable, Sendable, Identifiable {
                     PlannedCategory(
                         name: "Watched",
                         allowMultiple: false,
-                        displayAsCheckboxes: true,
+                        displayStyle: .checkboxes,
                         sortOrder: 40,
                         notes: "Two-value workflow flag.",
                         tags: [
@@ -139,15 +137,14 @@ public enum LibraryTemplate: String, CaseIterable, Sendable, Identifiable {
                     PlannedCategory(
                         name: "People",
                         allowMultiple: true,
-                        displayAsCheckboxes: true,
+                        displayStyle: .checkboxes,
                         sortOrder: 10,
                         notes: "Who's in the video. Stable small set — checkboxes."),
                     PlannedCategory(
                         name: "Occasion",
                         allowMultiple: false,
                         sortOrder: 20,
-                        notes: "Birthdays, holidays, trips.",
-                        isDefaultFocus: true),
+                        notes: "Birthdays, holidays, trips."),
                     PlannedCategory(
                         name: "Location",
                         allowMultiple: false,

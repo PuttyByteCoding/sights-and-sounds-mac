@@ -113,19 +113,17 @@ import Testing
 
     // MARK: Category configuration
 
-    @Test func defaultFocusIsExclusive() throws {
+    /// Default focus is gone entirely: focus is the first visible
+    /// category by sort order, so there is no flag two categories can
+    /// hold at once and no cascade to police it.
+    @Test func displayStyleReplacesTheCheckboxBoolean() throws {
         let f = try FilterFixture()
         var band = f.band
-        band.isDefaultFocus = true
+        band.displayStyle = .checkboxes
         try f.library.updateCategory(band)
-        var recType = f.recordingType
-        recType.isDefaultFocus = true
-        try f.library.updateCategory(recType)
-
-        let focused = try f.library.writer.read {
-            try TagCategory.filter(sql: "isDefaultFocus = 1").fetchAll($0)
-        }
-        #expect(focused.map(\.name) == ["Recording Type"])
+        let stored = try f.library.vocabulary().first { $0.category.id == f.band.id }?.category
+        #expect(stored?.displayStyle == .checkboxes)
+        #expect(stored?.displayAsCheckboxes == true)
     }
 
     // MARK: Key bindings

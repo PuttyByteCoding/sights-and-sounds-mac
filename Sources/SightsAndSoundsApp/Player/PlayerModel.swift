@@ -98,6 +98,14 @@ final class PlayerModel {
         panelVocabulary.first { $0.category.displayAsCheckboxes }
     }
 
+    /// Which category's field takes focus when the panel opens: the
+    /// first visible one, by sort order. It used to be a flag a category
+    /// carried, which two categories could hold at once and a write path
+    /// had to police.
+    var focusCategoryID: UUID? {
+        panelVocabulary.first { !$0.category.hiddenFromBrowse }?.id
+    }
+
     init(request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?) {
         self.library = library
         self.libraryID = request.libraryID

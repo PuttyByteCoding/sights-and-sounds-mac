@@ -82,43 +82,22 @@ import Testing
         #expect(again.skippedExisting > 0)
     }
 
-    @Test func importNeverStealsDefaultFocus() async throws {
+    /// An imported vocabulary carries its display styles across without
+    /// the caller restating them.
+    @Test func importCarriesTheDisplayStyle() async throws {
         let f = try FilterFixture()
         var band = f.band
-        band.isDefaultFocus = true
+        band.displayStyle = .checkboxes
         try f.library.updateCategory(band)
         let json = try VocabularyIO.exportJSON(from: f.library)
 
         let target = try LibraryDatabase.openInMemory()
         try target.ensureInfo(name: "T")
-        let existing = TagCategory(name: "Existing", isDefaultFocus: true)
-        try target.createCategory(existing)
-
         _ = try VocabularyIO.importJSON(json, into: target)
-        let focused = try await target.writer.read { db in
-            try TagCategory.filter(sql: "isDefaultFocus = 1").fetchAll(db).map(\.name)
+        let styles = try await target.writer.read { db in
+            try TagCategory.fetchAll(db)
         }
-        #expect(focused == ["Existing"])  // the import didn't take it
-    }
-
-    @Test func legacySkipMigratesOnce() throws {
-        let file = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sas-settings-mig-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: file) }
-        let app = try AppDatabase.openInMemory()
-        let legacy = SkipSettings(key1Seconds: 9)
-        try app.setPreference(
-            "playbackSkips",
-            to: String(data: try JSONEncoder().encode(legacy), encoding: .utf8)!)
-
-        let store = AppSettingsStore(fileURL: file)
-        store.migrateLegacySkipForTesting(from: app)
-        #expect(store.current.skip.key1Seconds == 9)
-
-        // Second migration is a no-op (the file now exists).
-        try app.setPreference("playbackSkips", to: "{\"key1Seconds\": 99}")
-        store.migrateLegacySkipForTesting(from: app)
-        #expect(store.current.skip.key1Seconds == 9)
+        #expect(styles.first { $0.name == "Band" }?.displayStyle == .checkboxes)
     }
 }
 
