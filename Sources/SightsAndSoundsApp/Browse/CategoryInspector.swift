@@ -475,7 +475,7 @@ struct FieldList: View {
             name: newName, dataType: newType, scope: scope,
             tagCategoryID: scope == .tag ? categoryID : nil,
             sortOrder: (fields.map(\.sortOrder).max() ?? 0) + 10)
-        try? library.createField(field)
+        _ = try? library.createField(field)
         newName = ""
         onChange()
     }
