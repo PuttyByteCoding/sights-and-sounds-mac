@@ -276,6 +276,7 @@ private struct ItemCell: View {
 /// thing you usually do next is change the filter.
 private struct BulkBar: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     @State private var showTagPicker = false
 
     var body: some View {
@@ -295,6 +296,16 @@ private struct BulkBar: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             Button("Mark for deletion") { model.markSelectionForDeletion() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
+            // The context menu still handles one item; a SELECTION goes
+            // to the window that says what an operation will cost.
+            Button("Operations…") {
+                openWindow(
+                    id: "aux",
+                    value: AuxWindowRequest(
+                        libraryID: model.libraryID, kind: .operations,
+                        itemIDs: model.selectedItems.map(\.id)))
+            }
+            .buttonStyle(SecondaryButtonStyle(compact: true))
             divider
             Button("Deselect · esc") { model.clearSelection() }
                 .buttonStyle(.plain)

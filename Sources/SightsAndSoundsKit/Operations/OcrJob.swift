@@ -38,7 +38,19 @@ public struct OcrJob: Job {
 
     public struct Payload: Codable, Sendable {
         public var itemID: UUID
-        public init(itemID: UUID) { self.itemID = itemID }
+        /// Per run, defaulted from settings — so tightening a knob and
+        /// running again scans with the knob you set, not with whatever
+        /// the settings say by the time the queue reaches it.
+        public var settings: OcrSettings?
+        public var sampleIntervalSeconds: Double?
+
+        public init(
+            itemID: UUID, settings: OcrSettings? = nil, sampleIntervalSeconds: Double? = nil
+        ) {
+            self.itemID = itemID
+            self.settings = settings
+            self.sampleIntervalSeconds = sampleIntervalSeconds
+        }
     }
 
     let payload: Payload
@@ -51,9 +63,26 @@ public struct OcrJob: Job {
         fileAccess = LiveFileAccess()
     }
 
-    public static func enqueue(on runner: JobRunner, itemID: UUID) async throws -> JobRecord {
+    @discardableResult
+    public static func enqueue(
+        on runner: JobRunner, itemID: UUID,
+        settings: OcrSettings? = nil, sampleIntervalSeconds: Double? = nil
+    ) async throws -> JobRecord {
         try await runner.enqueue(
-            OcrJob.self, payload: JSONEncoder().encode(Payload(itemID: itemID)))
+            OcrJob.self,
+            payload: JSONEncoder().encode(Payload(
+                itemID: itemID, settings: settings,
+                sampleIntervalSeconds: sampleIntervalSeconds)))
+    }
+
+    /// How many frames a scan of these items would read — the number
+    /// worth knowing BEFORE starting rather than after. Half-second
+    /// sampling across four concerts is about thirty-four thousand.
+    public static func frameCount(
+        durations: [Double], sampleIntervalSeconds: Double
+    ) -> Int {
+        let interval = max(0.1, sampleIntervalSeconds)
+        return durations.reduce(0) { $0 + Int((max(0, $1) / interval).rounded(.down)) }
     }
 
     public func run(_ context: JobContext) async throws {
@@ -78,10 +107,10 @@ public struct OcrJob: Job {
             return
         }
 
+        let settings = payload.settings ?? AppSettingsStore.shared.current.ocr
+        let interval = max(1, payload.sampleIntervalSeconds ?? Self.sampleIntervalSeconds)
         let runEnd = min(duration, scannedThrough + Self.budgetSecondsPerRun)
-        let times = stride(
-            from: scannedThrough, to: runEnd, by: Self.sampleIntervalSeconds
-        ).map { $0 }
+        let times = stride(from: scannedThrough, to: runEnd, by: interval).map { $0 }
         guard !times.isEmpty else {
             await context.setSummary("already fully scanned")
             return
@@ -93,18 +122,31 @@ public struct OcrJob: Job {
         generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
 
         var linesFound = 0
+        var previousText: String?
         await context.reportProgress(current: 0, total: times.count)
 
         for (index, seconds) in times.enumerated() {
             try await context.checkCancellation()
-            let text = await Self.recognizeText(generator: generator, at: seconds)
+            let text = await Self.recognizeText(
+                generator: generator, at: seconds, settings: settings)
             if let text, !text.isEmpty {
-                let line = OcrTextLine(mediaItemID: item.id, timeSeconds: seconds, text: text)
-                try await library.writer.write { try line.insert($0) }
-                linesFound += 1
+                // The same banner across 200 frames is 200 identical
+                // lines unless they are collapsed — and only CONSECUTIVE
+                // repeats collapse, so a banner that returns later is a
+                // new line with its own timestamp.
+                if settings.collapseRepeats, text == previousText {
+                    previousText = text
+                } else {
+                    let line = OcrTextLine(mediaItemID: item.id, timeSeconds: seconds, text: text)
+                    try await library.writer.write { try line.insert($0) }
+                    linesFound += 1
+                    previousText = text
+                }
+            } else {
+                previousText = nil
             }
             // Reach advances whether or not the frame had text — ported.
-            let reached = min(duration, seconds + Self.sampleIntervalSeconds)
+            let reached = min(duration, seconds + interval)
             try await library.writer.write { db in
                 try OcrProgress(mediaItemID: item.id, scannedThroughSeconds: reached).upsert(db)
             }
@@ -121,7 +163,10 @@ public struct OcrJob: Job {
     /// One frame → recognized text (lines joined), or nil. The generator
     /// stays in this isolation region; Vision runs on the CGImage inside
     /// the continuation's callback.
-    static func recognizeText(generator: AVAssetImageGenerator, at seconds: Double) async -> String? {
+    static func recognizeText(
+        generator: AVAssetImageGenerator, at seconds: Double,
+        settings: OcrSettings = OcrSettings()
+    ) async -> String? {
         let time = CMTime(seconds: seconds, preferredTimescale: 600)
         return await withCheckedContinuation { continuation in
             generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
@@ -131,8 +176,15 @@ public struct OcrJob: Job {
                     return
                 }
                 let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                request.usesLanguageCorrection = false
+                request.recognitionLevel =
+                    settings.recognitionLevel == .fast ? .fast : .accurate
+                request.usesLanguageCorrection = settings.usesLanguageCorrection
+                request.minimumTextHeight = Float(settings.minimumTextHeight)
+                if !settings.region.isFull {
+                    request.regionOfInterest = CGRect(
+                        x: settings.region.x, y: settings.region.y,
+                        width: settings.region.width, height: settings.region.height)
+                }
                 let handler = VNImageRequestHandler(cgImage: cgImage)
                 guard (try? handler.perform([request])) != nil else {
                     continuation.resume(returning: nil)

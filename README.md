@@ -264,6 +264,12 @@ follow. Full context, locked decisions and the 11-phase plan live in
     a playback issue keeps the probe output captured when it failed; and
     repair recipes are data — a match, a tool, a command and a risk label
     — run on a copy that is re-probed before the original is archived.
+  - Spec 08, Operations: picking an operation against a selection opens a
+    window that says what it costs first — files written, bytes added,
+    time — recomputed as rows are unticked. Stream copy / re-encode /
+    reads-only is a chip on each row, the command is shown, a join is
+    refused with the mismatch named before anything is written, and OCR's
+    six knobs get the one place they belong.
 
 ### Demo library
 

@@ -13,6 +13,7 @@ struct AuxWindowRequest: Codable, Hashable {
         case reorganize
         case validation
         case importMedia
+        case operations
 
         var title: String {
             switch self {
@@ -22,12 +23,17 @@ struct AuxWindowRequest: Codable, Hashable {
             case .reorganize: "Reorganize"
             case .validation: "Validation"
             case .importMedia: "Import"
+            case .operations: "Operations"
             }
         }
     }
 
     var libraryID: UUID
     var kind: Kind
+    /// The selection an operation acts on. Empty for every other
+    /// surface — the operations window is the only one that opens
+    /// against a set of items.
+    var itemIDs: [UUID] = []
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -89,6 +95,7 @@ struct AuxiliaryWindowView: View {
             case .reorganize: ReorganizeView()
             case .validation: ValidationView()
             case .importMedia: ImportView()
+            case .operations: OperationsView(itemIDs: request.itemIDs)
             }
         }
     }
