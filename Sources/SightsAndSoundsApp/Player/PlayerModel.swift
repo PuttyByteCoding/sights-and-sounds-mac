@@ -128,11 +128,6 @@ final class PlayerModel {
     /// the main actor.
     private(set) var queueItems: [MediaItem] = []
 
-    /// Where the playing item sat when the filter dropped it out of the
-    /// playlist, so ← and → still move from a sensible place. Nil while
-    /// the item is in the playlist.
-    private var orphanIndex: Int?
-
     /// The browse listing changed under us. The playlist follows it, but
     /// **playback does not stop**: an item that no longer matches keeps
     /// playing to its end and simply is not in the queue any more. A
@@ -140,15 +135,24 @@ final class PlayerModel {
     /// worse surprise than a queue that no longer contains it.
     func updatePlaylist(_ ids: [UUID]) {
         guard ids != playlist else { return }
-        if let current = item?.id, !ids.contains(current) {
-            // Its natural position in the new list: however many of the
-            // items ahead of it survived the filter.
-            orphanIndex = playlist.prefix { $0 != current }.filter(ids.contains).count
-        } else {
-            orphanIndex = nil
-        }
+        let droppedCurrent = item.map { !ids.contains($0.id) } ?? false
         playlist = ids
         loadQueueItems()
+        // The playing item no longer matches, so it stops and the new
+        // queue starts from its first item.
+        //
+        // This reverses the earlier rule of letting it play on. Playing
+        // something the filter has just excluded means the queue on
+        // screen and the video in it disagree, and every ← or → after
+        // that starts from a position that is not in the list — the
+        // orphan-index bookkeeping that needed is gone with it.
+        //
+        // Nothing to switch to means nothing to interrupt: an empty
+        // result leaves the current item playing rather than stopping
+        // playback dead on a filter that matched nothing.
+        if droppedCurrent, let first = ids.first {
+            load(itemID: first)
+        }
     }
 
     private func loadQueueItems() {
@@ -643,21 +647,11 @@ final class PlayerModel {
     func goPrevious() { step(-1) }
 
     private func step(_ delta: Int) {
-        guard let item else { return }
-        let base: Int
-        if let index = playlist.firstIndex(of: item.id) {
-            base = index
-        } else if let orphan = orphanIndex {
-            // The filter dropped what is playing. It keeps playing, but
-            // the arrows have to move from somewhere — so they move from
-            // the gap it left: forward onto the survivor that took its
-            // place, back onto the one before it. Without this, ← and →
-            // would silently stop working the moment a filter changed.
-            base = delta > 0 ? orphan - 1 : orphan
-        } else {
-            return
-        }
-        let next = base + delta
+        // The playing item is always in the playlist now — a filter that
+        // drops it loads the new first item instead — so there is no
+        // orphaned position to walk from.
+        guard let item, let index = playlist.firstIndex(of: item.id) else { return }
+        let next = index + delta
         guard playlist.indices.contains(next) else { return }
         load(itemID: playlist[next])
     }
