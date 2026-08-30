@@ -27,18 +27,28 @@ struct SidebarView: View {
     @State private var refusal: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if isNarrowed { filterStatus }
-                mediaTypeSection
-                sourcesSection
-                categorySections
-                statusSection
-                legend
+        VStack(alignment: .leading, spacing: 0) {
+            // Pinned above the scroll, not inside it. This block is the
+            // answer to "why am I seeing 12 items", and the moment that
+            // question gets asked is the moment you have scrolled down
+            // three categories looking for the thing that caused it.
+            if isNarrowed {
+                filterStatus
+                    .padding(.horizontal, 8)
+                    .padding(.top, 9)
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 9)
-            .padding(.bottom, 16)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    mediaTypeSection
+                    sourcesSection
+                    categorySections
+                    statusSection
+                    legend
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 9)
+                .padding(.bottom, 16)
+            }
         }
         // The column's own surface, drawn edge to edge — including under
         // the toolbar, where a system material would otherwise show
@@ -86,7 +96,7 @@ struct SidebarView: View {
                             text: "\(label.group) · \(label.value)",
                             strikethrough: entry.slot == .excluded,
                             help: entry.slot.legend,
-                            setSlot: { model.filter.setSlot($0, for: entry.term) }
+                            cycle: { model.filter.cycle(entry.term, reverse: $0) }
                         ) {
                             model.filter.setSlot(nil, for: entry.term)
                         }
@@ -136,22 +146,20 @@ struct SidebarView: View {
     /// One reason the listing is narrower, and the way to undo just that
     /// one — each row removes itself, so a filter can be unpicked a
     /// piece at a time rather than only cleared whole.
-    /// A row carrying a `slot` gets its glyph turned into the four-way
-    /// state menu; the folder, search and offline rows have no slot to
-    /// change, so their symbol stays inert and only the ✕ acts.
+    /// A row carrying a `cycle` closure walks the slots on click and steps
+    /// back on right-click — the same gesture pair as the category rows
+    /// that set them, because a four-state cycle with no reverse is a
+    /// guessing game every time you overshoot. The folder, search and
+    /// offline rows have no slot to walk, so only their ✕ acts.
     private func statusRow(
         slot: MediaFilter.TagSlot? = nil, symbol: String? = nil, color: Color, text: String,
         strikethrough: Bool = false, help: String,
-        setSlot: ((MediaFilter.TagSlot?) -> Void)? = nil,
+        cycle: ((Bool) -> Void)? = nil,
         remove: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 6) {
+        let content = HStack(spacing: 6) {
             Group {
-                if let slot, let setSlot {
-                    SlotMenu(slot: slot, set: setSlot) {
-                        Text(slot.mark).font(Theme.ui(10, .bold))
-                    }
-                } else if let slot {
+                if let slot {
                     Text(slot.mark).font(Theme.ui(10, .bold))
                 } else if let symbol {
                     Image(systemName: symbol).font(Theme.ui(9))
@@ -161,7 +169,10 @@ struct SidebarView: View {
             .frame(width: 12)
             Text(text)
                 .font(Theme.ui(11.5))
-                .foregroundStyle(Theme.Text.secondary)
+                // Colour-coded: a slotted row reads as what it IS without
+                // decoding a one-character glyph. The rows with no slot
+                // stay neutral, so colour never means "nothing".
+                .foregroundStyle(slot == nil ? Theme.Text.secondary : color)
                 .strikethrough(strikethrough)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -173,7 +184,17 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
         }
-        .help(help)
+        return Group {
+            if let cycle {
+                SidebarRow(
+                    action: { cycle(false) },
+                    secondaryAction: { cycle(true) }
+                ) { content }
+            } else {
+                content
+            }
+        }
+        .help(cycle == nil ? help : "\(help). Click to cycle, right-click to step back.")
     }
 
     /// Anything at all narrowing the listing — the block appears only

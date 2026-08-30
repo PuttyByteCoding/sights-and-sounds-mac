@@ -31,9 +31,19 @@ struct ItemGridView: View {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                         ForEach(model.visibleItems) { item in
                             ItemCell(item: item)
+                                .transition(.opacity)
                         }
                     }
                     .padding(16)
+                    // The listing is DIFFED, not blanked: tiles that survive
+                    // the filter change slide to their new positions while
+                    // departures fade out and arrivals fade in. Keyed on the
+                    // ids, so a re-query returning the same items animates
+                    // nothing — and a rapid cycle interrupts cleanly instead
+                    // of stacking fades.
+                    .animation(
+                        .easeInOut(duration: Theme.Motion.listingSettle),
+                        value: model.visibleItems.map(\.id))
                 }
             }
         }

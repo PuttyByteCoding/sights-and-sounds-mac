@@ -152,6 +152,23 @@ enum Theme {
         static let hide = Color(hex: 0xD07A6A)
     }
 
+    // MARK: - Motion
+
+    /// How long a listing takes to settle after the filter changes.
+    ///
+    /// One constant because the grid and (later) the player's queue must
+    /// agree: two surfaces resettling at different speeds off the same
+    /// click reads as a bug rather than a style.
+    ///
+    /// The listing is diffed, not blanked — tiles that survive the change
+    /// slide to their new positions while departures fade out and
+    /// arrivals fade in. A fade-to-empty-and-back would blank the grid on
+    /// every step of a four-state cycle, which is the interaction most
+    /// often repeated, and would hide a query that had already finished.
+    enum Motion {
+        static let listingSettle: Double = 0.22
+    }
+
     // MARK: - Tag category hues
 
     /// Fixed per category, used for pills, swatches and filter chips
