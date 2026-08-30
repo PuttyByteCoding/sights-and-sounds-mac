@@ -146,7 +146,7 @@ struct SidebarView: View {
                             text: "\(label.group) · \(label.value)",
                             strikethrough: entry.slot == .excluded,
                             help: entry.slot.legend,
-                            cycle: { model.filter.cycle(entry.term, reverse: $0) }
+                            cycle: { model.filter.cycle(entry.term) }
                         ) {
                             model.filter.setSlot(nil, for: entry.term)
                         }
@@ -189,15 +189,13 @@ struct SidebarView: View {
     /// One reason the listing is narrower, and the way to undo just that
     /// one — each row removes itself, so a filter can be unpicked a
     /// piece at a time rather than only cleared whole.
-    /// A row carrying a `cycle` closure walks the slots on click and steps
-    /// back on right-click — the same gesture pair as the category rows
-    /// that set them, because a four-state cycle with no reverse is a
-    /// guessing game every time you overshoot. The folder, search and
-    /// offline rows have no slot to walk, so only their ✕ acts.
+    /// A row carrying a `cycle` closure walks the slots on click, like
+    /// the category rows that set them. The folder, search and offline
+    /// rows have no slot to walk, so only their ✕ acts.
     private func statusRow(
         slot: MediaFilter.TagSlot? = nil, symbol: String? = nil, color: Color, text: String,
         strikethrough: Bool = false, help: String,
-        cycle: ((Bool) -> Void)? = nil,
+        cycle: (() -> Void)? = nil,
         remove: @escaping () -> Void
     ) -> some View {
         let content = HStack(spacing: 6) {
@@ -229,15 +227,12 @@ struct SidebarView: View {
         }
         return Group {
             if let cycle {
-                SidebarRow(
-                    action: { cycle(false) },
-                    secondaryAction: { cycle(true) }
-                ) { content }
+                SidebarRow(action: cycle) { content }
             } else {
                 content
             }
         }
-        .help(cycle == nil ? help : "\(help). Click to cycle, right-click to step back.")
+        .help(cycle == nil ? help : "\(help). Click to cycle.")
     }
 
     /// Anything at all narrowing the listing — the block appears only
@@ -475,8 +470,8 @@ struct SidebarView: View {
 
     // MARK: - Legend
 
-    /// Three colours and three glyphs is more than a first-time user will
-    /// infer, and the reverse step is invisible without being named.
+    /// Three colours and three glyphs is more than a first-time user
+    /// will infer.
     private var legend: some View {
         VStack(alignment: .leading, spacing: 4) {
             SidebarSectionLabel("Filter slots")
@@ -489,7 +484,7 @@ struct SidebarView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                 }
             }
-            Text("Click cycles forward, right-click steps back.")
+            Text("Click cycles through the slots. Right-click a tag to edit it.")
                 .font(Theme.ui(10.5))
                 .foregroundStyle(Theme.Text.disabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -600,7 +595,6 @@ private struct SidebarRow<Content: View>: View {
     /// A slot's colour tints the row behind it.
     var tint: Color?
     var action: () -> Void
-    var secondaryAction: (() -> Void)?
     @ViewBuilder var content: Content
 
     @State private var hovering = false
@@ -615,59 +609,12 @@ private struct SidebarRow<Content: View>: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: action)
             .onHover { hovering = $0 }
-            .modifier(SecondaryClick(action: secondaryAction))
     }
 
     private var background: Color {
         if let tint { return tint.opacity(0.08) }
         if selected { return Theme.Surface.selectedRow }
         return hovering ? Theme.Surface.raised : .clear
-    }
-}
-
-/// Right-click, without a context menu. `onTapGesture` cannot see the
-/// secondary button, so the reverse step comes from an AppKit gesture
-/// recognizer's SwiftUI equivalent: a tap gesture bound to the right
-/// mouse button.
-private struct SecondaryClick: ViewModifier {
-    let action: (() -> Void)?
-
-    func body(content: Content) -> some View {
-        if let action {
-            content.overlay(RightClickCatcher(action: action))
-        } else {
-            content
-        }
-    }
-}
-
-/// The right mouse button, caught by an AppKit view over the row.
-/// SwiftUI has no secondary-click gesture; `contextMenu` is the only
-/// built-in path to it and it opens a menu, which is precisely what the
-/// reverse step must not do.
-private struct RightClickCatcher: NSViewRepresentable {
-    let action: () -> Void
-
-    func makeNSView(context: Context) -> CatcherView {
-        let view = CatcherView()
-        view.action = action
-        return view
-    }
-
-    func updateNSView(_ view: CatcherView, context: Context) {
-        view.action = action
-    }
-
-    final class CatcherView: NSView {
-        var action: (() -> Void)?
-        override func rightMouseDown(with event: NSEvent) { action?() }
-        // Transparent to everything except the secondary button, so the
-        // forward cycle (a SwiftUI tap gesture underneath) is untouched —
-        // including the control-click that AppKit already delivers as a
-        // right mouse down.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            NSApp.currentEvent?.type == .rightMouseDown ? self : nil
-        }
     }
 }
 
@@ -926,9 +873,10 @@ private struct CategoryHeader: View {
     }
 }
 
-/// A tag row. Click cycles the slot forward, right-click steps it back —
-/// and ⌥-click still opens the in-place editor (#108), which lost the
-/// context menu to the reverse step.
+/// A tag row. Click cycles the slot; right-click edits the tag. The
+/// reverse step used to own right-click and the editor was an ⌥-click
+/// nobody could discover — trading one for the other gives the editor
+/// the gesture people actually reach for.
 private struct TagFilterRow: View {
     @Environment(BrowseModel.self) private var model
     let tag: Tag
@@ -944,10 +892,20 @@ private struct TagFilterRow: View {
             label: tag.name,
             count: narrowed ?? unfiltered,
             unfilteredCount: narrowed == nil ? nil : unfiltered,
-            hidden: tag.hiddenByDefault,
-            optionClick: { showEditor = true })
-            .popover(isPresented: $showEditor, arrowEdge: .trailing) {
-                TagEditorView(tag: tag)
+            hidden: tag.hiddenByDefault)
+            // Right-click is free now that it no longer steps the cycle
+            // backwards, and a context menu is where anyone looks for
+            // "edit this" — ⌥-click was a chord you had to be told about.
+            .contextMenu {
+                Button("Edit Tag…") { showEditor = true }
+            }
+            .sheet(isPresented: $showEditor) {
+                TagSheet(
+                    mode: .edit(tag),
+                    library: model.library,
+                    libraryID: model.libraryID,
+                    categories: model.vocabulary.map(\.category),
+                    onSaved: { _ in model.refreshAll() })
             }
     }
 }
@@ -966,20 +924,12 @@ private struct SlotRow: View {
     var unfilteredCount: Int?
     var italic = false
     var hidden = false
-    var optionClick: (() -> Void)?
 
     var body: some View {
         let slot = model.filter.slot(of: term)
         SidebarRow(
             tint: slot?.color,
-            action: {
-                if let optionClick, NSEvent.modifierFlags.contains(.option) {
-                    optionClick()
-                } else {
-                    model.filter.cycle(term)
-                }
-            },
-            secondaryAction: { model.filter.cycle(term, reverse: true) }
+            action: { model.filter.cycle(term) },
         ) {
             FilterSlotChip(slot: slot)
             Text(label)
@@ -1024,8 +974,8 @@ private struct SlotRow: View {
                     ? "\(count) items — the filter takes none of them away"
                     : "\(count) of \(unfilteredCount) items survive the current filter")
         }
-        parts.append("Click cycles forward, right-click steps back")
-        if optionClick != nil { parts.append("⌥-click to edit the tag") }
+        parts.append("Click cycles through required, optional and excluded")
+        parts.append("right-click to edit the tag")
         return parts.joined(separator: ". ")
     }
 }
