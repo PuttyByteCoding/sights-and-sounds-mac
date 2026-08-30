@@ -18,6 +18,8 @@ struct SettingsView: View {
                 .tabItem { Label("Playback", systemImage: "play.circle") }
             JobsSettingsPane()
                 .tabItem { Label("Jobs", systemImage: "gearshape.2") }
+            RepairSettingsPane()
+                .tabItem { Label("Repair", systemImage: "bandage") }
             VocabularySettingsPane()
                 .tabItem { Label("Tag Category Configuration", systemImage: "tag") }
             LibraryImportSettingsPane()
@@ -390,6 +392,7 @@ private struct VocabularySettingsPane: View {
 private struct JobsSettingsPane: View {
     @State private var interval = AppSettingsStore.shared.current.ocrSampleIntervalSeconds
     @State private var budget = AppSettingsStore.shared.current.ocrBudgetSecondsPerRun
+    @State private var ocr = AppSettingsStore.shared.current.ocr
 
     var body: some View {
         Form {
@@ -409,10 +412,31 @@ private struct JobsSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            // The DEFAULTS. The Operations window overrides them per
+            // run, which is where a scan is actually chosen.
+            Section("What Vision is told") {
+                Picker("Recognition", selection: $ocr.recognitionLevel) {
+                    ForEach(OcrSettings.RecognitionLevel.allCases, id: \.self) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                }
+                LabeledContent("Smallest text") {
+                    TextField("share", value: $ocr.minimumTextHeight, format: .percent)
+                        .frame(width: 64)
+                    Text("of frame height")
+                }
+                Toggle("Language correction", isOn: $ocr.usesLanguageCorrection)
+                Toggle("Collapse consecutive repeats", isOn: $ocr.collapseRepeats)
+                Text("Lower text heights catch captions and credits, and also catch noise. Correction off is literal, which is better when the text is a band name Vision will not know.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .onChange(of: interval) { AppSettingsStore.shared.update { $0.ocrSampleIntervalSeconds = interval } }
         .onChange(of: budget) { AppSettingsStore.shared.update { $0.ocrBudgetSecondsPerRun = budget } }
+        .onChange(of: ocr) { AppSettingsStore.shared.update { $0.ocr = ocr } }
     }
 }
 
@@ -634,5 +658,166 @@ private struct LibraryImportSettingsPane: View {
         } catch {
             statusText = "Save failed: \(error)"
         }
+    }
+}
+
+
+/// Repair recipes and the tools they call.
+///
+/// Recipes are **data**: adding "untrunc for truncated MP4s" is a
+/// settings change rather than a release, and the Review window's issue
+/// queue reads this list instead of carrying a switch over failure
+/// kinds. Tools are declared once and referenced by name, so a recipe
+/// whose binary is missing is flagged in place rather than silently
+/// never matching.
+private struct RepairSettingsPane: View {
+    @Environment(AppModel.self) private var app
+
+    @State private var tools: [ExternalTool] = []
+    @State private var recipes: [RepairRecipe] = []
+    @State private var status: String?
+
+    var body: some View {
+        Form {
+            ScopeHeader(scope: .app)
+            Section("Tools") {
+                if tools.isEmpty {
+                    Text("No tools detected yet.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(tools) { tool in
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            if let path = tool.path {
+                                Text(path)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Button("Test") { detect(tool.name) }
+                                    .controlSize(.small)
+                            } else {
+                                Text("\(tool.name) not found")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                Button("Locate…") { locate(tool.name) }
+                                    .controlSize(.small)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(tool.isAvailable ? Color.green : Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text(tool.name)
+                            Text("\(recipeCount(using: tool.name)) recipes")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let version = tool.version {
+                        Text(version)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                }
+                Text("Point at a binary — the app records its path and version, and it becomes available to recipes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Recipes") {
+                ForEach($recipes) { $recipe in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Toggle("", isOn: $recipe.enabled)
+                                .labelsHidden()
+                                .onChange(of: recipe.enabled) { save(recipe) }
+                            Text(recipe.name)
+                            if let kind = recipe.matchesFailureKind,
+                               let failure = PlaybackFailureKind(rawValue: kind) {
+                                Text(failure.displayName)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(.quaternary, in: Capsule())
+                            }
+                            Spacer()
+                            Text(recipe.risk.displayName)
+                                .font(.caption)
+                                .foregroundStyle(recipe.risk == .lossy ? .orange : .green)
+                        }
+                        if !isAvailable(recipe.tool) {
+                            Text("\(recipe.tool) not found")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        Text(recipe.command(input: "{in}", output: "{out}"))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text(recipe.estimate)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 2)
+                }
+                Text("A recipe is offered by the Review window's issue queue in this order, cheapest first. Re-encoding recipes are shown last and never auto-selected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let status {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { reload() }
+    }
+
+    private func recipeCount(using tool: String) -> Int {
+        recipes.count { $0.tool == tool }
+    }
+
+    private func isAvailable(_ tool: String) -> Bool {
+        tools.first { $0.name == tool }?.isAvailable ?? false
+    }
+
+    private func reload() {
+        guard let database = app.appDatabase else { return }
+        try? database.seedRepairRecipes()
+        try? database.detectShippedTools()
+        tools = (try? database.externalTools()) ?? []
+        recipes = (try? database.repairRecipes()) ?? []
+    }
+
+    private func save(_ recipe: RepairRecipe) {
+        try? app.appDatabase?.saveRepairRecipe(recipe)
+        status = recipe.enabled ? nil : "Disabled recipes are never offered."
+    }
+
+    private func detect(_ name: String) {
+        guard let tool = try? app.appDatabase?.detectTool(named: name) else { return }
+        status = tool.isAvailable ? "\(name) found." : "\(name) not found."
+        reload()
+    }
+
+    /// Pointing at a binary by hand — the case where it is installed
+    /// somewhere PATH does not reach.
+    private func locate(_ name: String) {
+        let panel = NSOpenPanel()
+        panel.title = "Locate \(name)"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var tool = tools.first { $0.name == name } ?? ExternalTool(name: name)
+        tool.path = url.path
+        tool.version = ExternalTool.detectedVersion(ofToolAt: url.path)
+        tool.lastVerifiedAt = Date()
+        try? app.appDatabase?.saveExternalTool(tool)
+        reload()
     }
 }

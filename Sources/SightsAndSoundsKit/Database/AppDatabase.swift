@@ -120,6 +120,22 @@ public final class AppDatabase: Sendable {
             }
         }
 
+        // External tools are declared once and referenced by name, so a
+        // recipe whose binary is missing can be flagged in place rather
+        // than silently never matching.
+        migrator.registerMigration("externalTools") { db in
+            try db.create(table: "externalTool") { t in
+                t.primaryKey("name", .text)
+                t.column("path", .text)
+                t.column("version", .text)
+                t.column("lastVerifiedAt", .datetime)
+            }
+            try db.alter(table: "repairRecipe") { t in
+                t.add(column: "enabled", .boolean).notNull().defaults(to: true)
+                t.add(column: "matchPattern", .text)
+            }
+        }
+
         return migrator
     }
 

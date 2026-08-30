@@ -33,6 +33,13 @@ public struct RepairRecipe: Codable, Equatable, Identifiable, Sendable, Fetchabl
 
     public var id: UUID
     public var name: String
+    /// A new recipe arrives **disabled**: it is a command line that will
+    /// be run against real files, and the enable box is the "I have
+    /// tested this" gesture.
+    public var enabled: Bool
+    /// An optional substring the probe output must contain, for a
+    /// recipe that is narrower than a whole failure kind.
+    public var matchPattern: String?
     /// The failure kind this addresses (`PlaybackFailureKind`), or nil
     /// for a recipe worth trying against anything.
     public var matchesFailureKind: String?
@@ -52,6 +59,8 @@ public struct RepairRecipe: Codable, Equatable, Identifiable, Sendable, Fetchabl
     public init(
         id: UUID = UUID(),
         name: String,
+        enabled: Bool = true,
+        matchPattern: String? = nil,
         matchesFailureKind: String? = nil,
         tool: String = "ffmpeg",
         argumentTemplate: [String],
@@ -62,6 +71,8 @@ public struct RepairRecipe: Codable, Equatable, Identifiable, Sendable, Fetchabl
     ) {
         self.id = id
         self.name = name
+        self.enabled = enabled
+        self.matchPattern = matchPattern
         self.matchesFailureKind = matchesFailureKind
         self.tool = tool
         self.argumentTemplate = argumentTemplate
@@ -145,9 +156,18 @@ extension AppDatabase {
 
     /// Recipes that address this failure kind, plus the ones that match
     /// anything — cheapest first, so the row order is the advice.
-    public func repairRecipes(forFailureKind kind: String?) throws -> [RepairRecipe] {
-        try repairRecipes().filter {
-            $0.matchesFailureKind == nil || $0.matchesFailureKind == kind
+    /// Disabled recipes are never offered: enabling one is the gesture
+    /// that says it has been tested.
+    public func repairRecipes(forFailureKind kind: String?, probeOutput: String? = nil) throws
+        -> [RepairRecipe] {
+        try repairRecipes().filter { recipe in
+            guard recipe.enabled else { return false }
+            if let pattern = recipe.matchPattern, !pattern.isEmpty {
+                guard let probeOutput,
+                      probeOutput.range(of: pattern, options: .caseInsensitive) != nil
+                else { return false }
+            }
+            return recipe.matchesFailureKind == nil || recipe.matchesFailureKind == kind
         }
     }
 

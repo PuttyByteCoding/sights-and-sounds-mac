@@ -475,7 +475,9 @@ struct ReviewView: View {
         // Recipes are data: what is offered follows the failure kind,
         // cheapest first, and anything unmatched still offers the
         // last-resort ones.
-        recipes = (try? app.appDatabase?.repairRecipes(forFailureKind: evidence?.failureKind)) ?? []
+        recipes = (try? app.appDatabase?.repairRecipes(
+            forFailureKind: evidence?.failureKind,
+            probeOutput: evidence?.probeOutput)) ?? []
     }
 
     private func runFix() {

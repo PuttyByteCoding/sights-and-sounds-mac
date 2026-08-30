@@ -287,6 +287,11 @@ follow. Full context, locked decisions and the 11-phase plan live in
     thing it is about — and a Configuration tab holds what only a library
     can own: its name, its `separatorCharacters`, and extension overrides
     that replace the app-wide lists rather than extending them.
+  - Spec 13, Settings: a **Repair** tab where recipes are editable data
+    and the tools they call are declared once (a missing binary is
+    flagged on the card, not silently never matched), and Jobs gains the
+    rest of the OCR defaults. Category Order is specified only — it stays
+    parked until tagging is called finished.
 
 ### Demo library
 
