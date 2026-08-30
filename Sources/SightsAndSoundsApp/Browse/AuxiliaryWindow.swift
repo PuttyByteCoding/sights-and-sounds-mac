@@ -13,6 +13,7 @@ struct AuxWindowRequest: Codable, Hashable {
         case maintenance
         case importMedia
         case operations
+        case watched
 
         var title: String {
             switch self {
@@ -22,6 +23,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .maintenance: "Maintenance"
             case .importMedia: "Import"
             case .operations: "Operations"
+            case .watched: "Recently Watched"
             }
         }
     }
@@ -94,6 +96,7 @@ struct AuxiliaryWindowView: View {
             case .maintenance: MaintenanceView()
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
+            case .watched: WatchedView()
             }
         }
     }
