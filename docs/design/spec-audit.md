@@ -1,7 +1,15 @@
-# Copy audit — the verbatim strings, against the code
+# Spec audit — copy and layout, against the code
 
 Run 30 August 2026 against `dev` at `47220ed`, covering the fourteen built specs
 (01–13 and 16). Specs 14 and 15 are deliberately unbuilt and were skipped.
+
+Two passes, with opposite results. **Part A** checks each spec's *Copy — verbatim*
+strings and finds two sub-features that were never built. **Part B** checks each
+spec's *Layout* measurements and colours and finds essentially nothing wrong.
+
+---
+
+# Part A — Copy
 
 Each spec's *Copy — verbatim* section marks exact strings. This checks whether they
 are actually in `Sources/`.
@@ -150,8 +158,75 @@ five have a fixed fragment that is genuinely absent:
 - **07** — `<n> files removed from disk`, `<size> space reclaimed`
 - **09** — `No category called "<Name>" — check the spelling, or create it in Categories & Fields.`
 
-## What this does not cover
+## What Part A does not cover
 
 Presence only. Nothing here checks that a string is shown on the right screen, at
-the right moment, or at all. A pass that reads each spec's *Layout* section against
-the view would catch a different and probably larger class of drift.
+the right moment, or at all.
+
+---
+
+# Part B — Layout
+
+The *Layout* sections carry two things a machine can check: **pt measurements**
+(`Queue rail 262 pt`) and **hex colours** (`#17130E`). Each spec's measurements were
+checked against the Swift files that **that spec's own landing commit touched** —
+so spec 07's numbers are checked against spec 07's files, not the whole app.
+Colours were checked against all of `Sources/`, because the palette is central:
+specs write `#17130E`, `Theme.swift` writes `Color(hex: 0x17130E)`.
+
+Thirteen of the fourteen specs have a `## Layout` section. Spec 02 does not — it
+predates the five-part template, as doc 00 records ("specs 01 and 02 were written in
+an earlier session"), and organises its content as numbered decisions instead. That
+is a format difference, not a gap.
+
+## Result
+
+| | |
+|---|---|
+| pt measurements checked | 25 |
+| absent from the spec's own files | **0** |
+| hex colours checked | 46 |
+| present verbatim | 38 |
+| not verbatim, but near an existing token | 8 |
+
+**Layout adherence is high.** Every measurement a spec names appears in the files
+that spec's commit produced, and no colour is missing because an element was never
+built — which is exactly the failure Part A found on the copy side.
+
+## The eight colours
+
+None is absent. Each is close to a colour already in `Theme.swift`, which is what a
+token pass looks like: the comps carry per-screen hexes and the theme normalises
+them into one palette.
+
+| Spec | Spec hex | Nearest in `Theme.swift` | Distance |
+|---|---|---|---:|
+| 04 | `#141109` | `0x131009` | 1 |
+| 09 | `#151109` | `0x151209` | 1 |
+| 11 | `#1C1710` | `0x1A1610` | 2 |
+| 08 | `#251512` | `0x221D16` | 9 |
+| 06 | `#3E2A22` | `0x3A2C18` | 10 |
+| 08 | `#4A2A24` | `0x4A3C24` | 18 |
+| 08 | `#C9857A` | `0xD07A6A` | 20 |
+| 11 | `#2F4A2F` | `0x443E34` | 24 |
+
+The first five are rounding — the spec and the token are the same colour to the eye.
+The last three are worth a glance rather than a change: two are spec 08's destructive
+pair, and `#2F4A2F` is a dark green whose "nearest" neighbour is a brown, because
+straight RGB distance crosses hues freely. The palette does have greens
+(`Theme.Status.green = 0x6FB86F`), so the question there is which treatment the
+success chip actually got, not whether green exists.
+
+## What Part B does not cover
+
+The measurement check is weak in one direction on purpose: finding `262` somewhere in
+a spec's files does not prove it is the width of the queue rail. **Absence is the
+signal; presence is only weak evidence.** Structural claims — element order, what
+pins to which edge, which panel is where — are not checked at all and would need
+reading each view against its spec by hand.
+
+One method note, recorded because it nearly produced a false report: the first run
+of this check flagged *all 46* colours as missing. The comparison uppercased the
+Swift source, turning `0x` into `0X`, so no hex could ever match. It was caught only
+because `#17130E` had already been confirmed by hand. A tool that reports everything
+as broken is usually broken itself.
