@@ -274,15 +274,25 @@ final class BrowseModel {
     /// alongside the item fetch, never per cell (per-cell queries are an
     /// N+1 disaster at library size). Populated only while a field that
     /// needs them is enabled.
-    private(set) var itemTagNames: [UUID: [String]] = [:]
+    private(set) var itemTags: [UUID: [TagPill]] = [:]
     private(set) var itemMissingCategories: [UUID: [String]] = [:]
     private(set) var duplicateFlaggedIDs: Set<UUID> = []
 
     private struct ListingPayload: Sendable {
         var items: [MediaItem]
-        var tagNames: [UUID: [String]]
+        var tags: [UUID: [TagPill]]
         var missingCategories: [UUID: [String]]
         var duplicateIDs: Set<UUID>
+    }
+
+    /// Everything a tile needs about one item that is not on its row.
+    func tileContext(for item: MediaItem) -> TileContext {
+        TileContext(
+            isOnline: isOnline(item),
+            sourceName: source(for: item)?.name,
+            tags: itemTags[item.id] ?? [],
+            missingCategories: itemMissingCategories[item.id] ?? [],
+            isDuplicate: duplicateFlaggedIDs.contains(item.id))
     }
 
     func refreshItems() {
@@ -296,13 +306,22 @@ final class BrowseModel {
                 let rows = try library.mediaItems(
                     matching: filter, kinds: kinds, orderedBy: ordering)
                 var payload = ListingPayload(
-                    items: rows, tagNames: [:], missingCategories: [:], duplicateIDs: [])
+                    items: rows, tags: [:], missingCategories: [:], duplicateIDs: [])
                 if grid.needsTagData {
                     let vocabulary = try library.vocabulary()
                         .filter { !$0.category.hiddenFromBrowse }
-                    var tagInfo: [UUID: (name: String, categoryID: UUID)] = [:]
-                    for entry in vocabulary {
-                        for tag in entry.tags { tagInfo[tag.id] = (tag.name, entry.category.id) }
+                    // Category order decides pill order, so a tile reads
+                    // Band · Venue · Year the way the sidebar lists them.
+                    var categoryRank: [UUID: Int] = [:]
+                    var tagInfo: [UUID: TagPill] = [:]
+                    for (rank, entry) in vocabulary.enumerated() {
+                        categoryRank[entry.category.id] = rank
+                        for tag in entry.tags {
+                            tagInfo[tag.id] = TagPill(
+                                id: tag.id, name: tag.name, categoryID: entry.category.id,
+                                categoryName: entry.category.name,
+                                colorIndex: entry.category.colorIndex)
+                        }
                     }
                     // Deliberately the SYNCHRONOUS read: we're already on
                     // a detached task (like the item fetch above), and the
@@ -318,14 +337,19 @@ final class BrowseModel {
                     }
                     for item in rows {
                         let tagIDs = tagsByItem[item.id] ?? []
-                        payload.tagNames[item.id] = tagIDs.compactMap { tagInfo[$0]?.name }.sorted()
+                        payload.tags[item.id] = tagIDs
+                            .compactMap { tagInfo[$0] }
+                            .sorted {
+                                (categoryRank[$0.categoryID] ?? 0, $0.name)
+                                    < (categoryRank[$1.categoryID] ?? 0, $1.name)
+                            }
                         let covered = Set(tagIDs.compactMap { tagInfo[$0]?.categoryID })
                         payload.missingCategories[item.id] = vocabulary
                             .filter { !covered.contains($0.category.id) }
                             .map(\.category.name)
                     }
                 }
-                if grid.duplicate != .hidden {
+                if grid.needsDuplicateData {
                     payload.duplicateIDs = Set(
                         try library.pendingCandidates().flatMap { [$0.itemAID, $0.itemBID] })
                 }
@@ -338,7 +362,7 @@ final class BrowseModel {
                 switch outcome {
                 case .success(let payload):
                     self.items = payload.items
-                    self.itemTagNames = payload.tagNames
+                    self.itemTags = payload.tags
                     self.itemMissingCategories = payload.missingCategories
                     self.duplicateFlaggedIDs = payload.duplicateIDs
                     self.errorMessage = nil
@@ -456,6 +480,100 @@ final class BrowseModel {
 
     func isOnline(_ item: MediaItem) -> Bool {
         onlineSourceIDs.contains(item.sourceID)
+    }
+
+    // MARK: - Selection
+
+    /// The tiles picked out for a bulk action. Held here rather than in
+    /// the grid view so the bulk bar, the queue and the context menu all
+    /// read one answer.
+    private(set) var selection: Set<UUID> = []
+    /// Where a shift-click measures from.
+    private var selectionAnchor: UUID?
+
+    /// A click on a tile. ⌘ or ⇧ starts a selection; once one exists,
+    /// plain clicks extend it — the modifier is for getting in, not for
+    /// staying in.
+    func click(_ itemID: UUID, extend: Bool, range: Bool) {
+        let listing = visibleItems.map(\.id)
+        if range, let anchor = selectionAnchor,
+           let from = listing.firstIndex(of: anchor),
+           let to = listing.firstIndex(of: itemID) {
+            selection.formUnion(listing[min(from, to)...max(from, to)])
+            return
+        }
+        guard extend || !selection.isEmpty else { return }
+        if selection.contains(itemID) {
+            selection.remove(itemID)
+        } else {
+            selection.insert(itemID)
+            selectionAnchor = itemID
+        }
+    }
+
+    func clearSelection() {
+        selection = []
+        selectionAnchor = nil
+    }
+
+    /// The selected items in listing order — the order a queue plays
+    /// them in, and the order any bulk action reports.
+    var selectedItems: [MediaItem] {
+        visibleItems.filter { selection.contains($0.id) }
+    }
+
+    /// Mark the selection reviewed. The flag is what the Needs Review
+    /// worklist reads, so clearing it here is the same act as clearing
+    /// it one item at a time.
+    func markSelectionReviewed() {
+        let ids = Array(selection)
+        do {
+            try library.setNeedsReview(ids, false)
+            clearSelection()
+            refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
+    /// Stage the selection for deletion. This MOVES each file into the
+    /// staging folder, exactly as the single-item action does — nothing
+    /// is deleted, and Review is where it is undone.
+    func markSelectionForDeletion() {
+        let items = selectedItems
+        do {
+            for item in items {
+                try library.stage(.toDelete, itemID: item.id)
+            }
+            clearSelection()
+            refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
+    /// Play the selection, in listing order.
+    func queueSelection() {
+        let items = selectedItems.filter(isOnline)
+        guard let first = items.first else {
+            errorMessage = "Every selected item is on an offline source."
+            return
+        }
+        playerRequest = PlayerRequest(
+            libraryID: libraryID, itemID: first.id, playlist: items.map(\.id))
+        clearSelection()
+    }
+
+    /// Apply one tag to everything selected. Goes through `assignTag`,
+    /// so a single-select category replaces rather than accumulates —
+    /// the rule cannot be skipped by tagging in bulk.
+    func applyTagToSelection(_ tagID: UUID) {
+        do {
+            for id in selection { try library.assignTag(tagID, to: id) }
+            refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
     }
 
     /// How a filter term reads on a chip: the group it came from, and

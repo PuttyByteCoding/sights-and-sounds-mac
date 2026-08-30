@@ -1017,6 +1017,11 @@ private struct QueuePanel: View {
     }
 }
 
+/// One queue tile. Drawn by the same `TileCard` as the browse grid, from
+/// the same active view — the queue IS the grid at a different size, and
+/// two implementations of "what a tile says" is how they drift apart.
+/// The join-backed values (tags, missing categories) stay empty here: the
+/// queue does not run the grid's batch queries.
 private struct QueueCell: View {
     @Environment(PlayerModel.self) private var model
     let item: MediaItem
@@ -1025,115 +1030,41 @@ private struct QueueCell: View {
     let isCurrent: Bool
     @State private var thumbnail: NSImage?
 
-    /// Deterministic reserve for the text under the thumbnail; the
-    /// estimates match the fonts used below. The panel divides its
-    /// height into thumbnail + this, so cells always fit whole.
+    /// Deterministic reserve for the strips above and below the
+    /// thumbnail; the panel divides its height into thumbnail + this, so
+    /// cells always fit whole at any divider height.
     static func metadataHeight(for grid: GridSettings) -> CGFloat {
-        var height: CGFloat = 0
-        if grid.fileName == .under { height += 18 }
-        if grid.path == .under { height += 14 }
-        if hasMetaRow(grid) { height += 16 }
-        return height == 0 ? 0 : height + 4
-    }
-
-    private static func hasMetaRow(_ grid: GridSettings) -> Bool {
-        [grid.duration, grid.fileSize, grid.dimensions, grid.importDate,
-         grid.viewCount, grid.favorite, grid.reviewed, grid.deleted, grid.clip]
-            .contains(.under)
+        let view = grid.activeView
+        let strips = [TileSlot.above, .below].filter { !view.entries(in: $0).isEmpty }
+        return strips.isEmpty ? 0 : CGFloat(strips.count) * 16 + 5
     }
 
     private var cellWidth: CGFloat { thumbHeight * 16 / 9 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // Letterboxed like the grid (#68): the ENTIRE frame visible,
-            // portrait pillarboxed on black.
-            ZStack {
-                Color.black
-                if let thumbnail {
-                    Image(nsImage: thumbnail)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                } else {
-                    Image(systemName: item.kind == .audio ? "waveform" : "film")
-                        .foregroundStyle(.secondary)
-                }
+        TileCard(
+            item: item,
+            context: TileContext(),
+            view: grid.activeView,
+            grid: grid,
+            thumbnail: thumbnail,
+            thumbnailHeight: thumbHeight)
+            .frame(width: cellWidth)
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isCurrent ? Theme.Accent.amber.opacity(0.15) : Color.clear))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isCurrent ? Theme.Accent.amber : Color.clear, lineWidth: 2))
+            .help(item.fileName)
+            .task(id: item.id) {
+                let data = await ThumbnailProvider.shared.thumbnailData(
+                    itemID: item.id, libraryID: model.libraryID,
+                    fileURL: model.queueFileURL(for: item),
+                    durationSeconds: item.durationSeconds)
+                thumbnail = data.flatMap(NSImage.init(data:))
             }
-            .overlay {
-                ThumbnailCornerOverlays(item: item, grid: grid)
-            }
-            .frame(width: cellWidth, height: thumbHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-            if grid.fileName == .under {
-                Text(item.fileName)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            if grid.path == .under {
-                Text(item.relativePath)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            if Self.hasMetaRow(grid) {
-                metaRow
-            }
-        }
-        .frame(width: cellWidth)
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isCurrent ? Color.accentColor.opacity(0.15) : Color.clear))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 2))
-        .help(item.fileName)
-        .task(id: item.id) {
-            let data = await ThumbnailProvider.shared.thumbnailData(
-                itemID: item.id, libraryID: model.libraryID,
-                fileURL: model.queueFileURL(for: item),
-                durationSeconds: item.durationSeconds)
-            thumbnail = data.flatMap(NSImage.init(data:))
-        }
-    }
-
-    private var metaRow: some View {
-        HStack(spacing: 6) {
-            if grid.duration == .under, let duration = item.durationSeconds {
-                Text(TransportBarTime.format(duration))
-            }
-            if grid.fileSize == .under {
-                Text(ByteCountFormatter.string(fromByteCount: item.fileSize, countStyle: .file))
-            }
-            if grid.dimensions == .under, let width = item.width, let height = item.height {
-                Text("\(width)×\(height)")
-            }
-            if grid.importDate == .under {
-                Text(item.ingestDate.formatted(date: .abbreviated, time: .omitted))
-            }
-            if grid.viewCount == .under, item.watchCount > 0 {
-                Text("▶ \(item.watchCount)")
-            }
-            Spacer(minLength: 0)
-            if grid.favorite == .under, item.isFavorite {
-                Image(systemName: "star.fill").foregroundStyle(.yellow)
-            }
-            if grid.reviewed == .under, item.needsReview {
-                Image(systemName: "eye.trianglebadge.exclamationmark")
-                    .foregroundStyle(.orange)
-            }
-            if grid.deleted == .under, item.markedForDeletion {
-                Image(systemName: "trash").foregroundStyle(.red)
-            }
-            if grid.clip == .under, item.isClip {
-                Image(systemName: "scissors")
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
     }
 }
 

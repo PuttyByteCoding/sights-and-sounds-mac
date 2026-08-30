@@ -122,34 +122,94 @@ import Testing
     }
 }
 
-/// #99: per-field placements, decoding the previous boolean format.
-@Suite struct FieldPlacementTests {
+/// Saved tile views, and the two older shapes of this section that must
+/// keep loading: the per-field booleans (#99's predecessor) and the
+/// placements that replaced them.
+@Suite struct TileViewSettingsTests {
 
-    @Test func legacyBooleansMapToUnderAndHidden() throws {
+    @Test func aFreshInstallGetsTheShippedViews() {
+        let grid = GridSettings()
+        #expect(grid.views.map(\.name)
+            == ["Default", "Triage", "Tagging", "Contact sheet", "Clean"])
+        #expect(grid.activeView.name == "Default")
+        #expect(grid.activeView.entries(in: .below).map(\.value) == [.fileName])
+    }
+
+    @Test func legacyBooleansBecomeOneCarriedForwardView() throws {
         let json = """
         {"thumbnailSize": 250, "showsFileName": false, "showsDuration": true,
          "showsPath": true, "showsDuplicate": false}
         """
         let grid = try JSONDecoder().decode(GridSettings.self, from: Data(json.utf8))
         #expect(grid.thumbnailSize == 250)
-        #expect(grid.fileName == .hidden)   // explicit false
-        #expect(grid.duration == .under)    // explicit true
-        #expect(grid.path == .under)
-        #expect(grid.duplicate == .hidden)
-        #expect(grid.fileSize == .under)    // untouched keys keep defaults
-        #expect(grid.dimensions == .hidden)
+        // What was on lands under the thumbnail, and it is what opens.
+        #expect(grid.activeView.name == "Custom")
+        #expect(Set(grid.activeView.entries(in: .below).map(\.value)) == [.duration, .path])
+        #expect(!grid.activeView.contains(.fileName))
+        // The shipped views are still there to switch to.
+        #expect(grid.views.count == TileView.shipped.count + 1)
     }
 
-    @Test func placementsRoundTrip() throws {
+    @Test func legacyPlacementsKeepTheirCorners() throws {
+        let json = """
+        {"fileName": "bottomLeft", "favorite": "topRight", "duration": "hidden",
+         "tags": "under"}
+        """
+        let grid = try JSONDecoder().decode(GridSettings.self, from: Data(json.utf8))
+        #expect(grid.activeView.slot(of: .fileName) == .bottomLeft)
+        #expect(grid.activeView.slot(of: .favorite) == .topRight)
+        #expect(grid.activeView.slot(of: .tags) == .below)
+        #expect(!grid.activeView.contains(.duration))
+    }
+
+    @Test func viewsRoundTrip() throws {
         var grid = GridSettings()
-        grid.fileName = .bottomLeft
-        grid.favorite = .topRight
-        grid.duration = .hidden
+        grid.views[0].toggle(.fileSize, in: .topLeft)
+        grid.views[0].update(.fileSize) { $0.alignment = .center; $0.width = .fixed(120) }
+        grid.activeViewID = grid.views[1].id
         let data = try JSONEncoder().encode(grid)
         let decoded = try JSONDecoder().decode(GridSettings.self, from: data)
         #expect(decoded == grid)
-        #expect(decoded.needsTagData == false)
-        grid.missingCategories = .topLeft
+        #expect(decoded.activeView.name == "Triage")
+    }
+
+    /// A value lives in one slot at a time — moving it does not leave a
+    /// copy behind in the slot it came from.
+    @Test func aValueLivesInOneSlot() {
+        var view = TileView(name: "Test")
+        view.toggle(.duration, in: .topLeft)
+        view.toggle(.duration, in: .bottomRight)
+        #expect(view.slot(of: .duration) == .bottomRight)
+        #expect(view.entries(in: .topLeft).isEmpty)
+        view.toggle(.duration, in: .bottomRight)
+        #expect(!view.contains(.duration))
+        #expect(view.placements.isEmpty)
+    }
+
+    /// Only the views that actually show tags pay for the join.
+    @Test func onlyTagViewsNeedTheBatchQueries() {
+        var grid = GridSettings()
+        grid.activeViewID = grid.views.first { $0.name == "Clean" }?.id
+        #expect(!grid.needsTagData)
+        grid.activeViewID = grid.views.first { $0.name == "Tagging" }?.id
         #expect(grid.needsTagData)
+    }
+
+    /// The per-category entries survive a round trip through the raw
+    /// string form, which is what settings.json stores.
+    @Test func perCategoryTagValuesRoundTripThroughTheirRawForm() {
+        let id = UUID()
+        let value = TileValue.tagsIn(id)
+        #expect(TileValue(rawValue: value.rawValue) == value)
+        #expect(TileValue(rawValue: "tags:not-a-uuid") == nil)
+    }
+
+    /// A named view that has since been deleted must not leave the grid
+    /// with nothing to draw.
+    @Test func aMissingActiveViewFallsBackToTheFirst() {
+        var grid = GridSettings()
+        grid.activeViewID = UUID()
+        #expect(grid.activeView.name == "Default")
+        #expect(grid.activeIndex == 0)
     }
 }
