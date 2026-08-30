@@ -53,6 +53,48 @@ extension LibraryDatabase {
 
     /// The backups home: the settings-chosen directory, else Application
     /// Support/SightsAndSounds/Backups.
+    /// One backup on disk, as the list shows it.
+    public struct BackupFile: Sendable, Equatable, Identifiable {
+        public var url: URL
+        public var createdAt: Date
+        public var bytes: Int64
+        /// Read from the backup itself — a file whose name says
+        /// "Concerts" but whose contents say otherwise is worth
+        /// catching before a restore, not after.
+        public var libraryName: String?
+        public var itemCount: Int?
+
+        public var id: URL { url }
+    }
+
+    /// What is in the backup directory, newest first.
+    ///
+    /// `backup(into:)` writes dated files and `verifyBackup` opens one,
+    /// but nothing enumerated them for display — so the list existed
+    /// only in the Finder.
+    public static func backups(in directory: URL) -> [BackupFile] {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.fileSizeKey, .creationDateKey])) ?? []
+        return contents
+            .filter { $0.pathExtension.lowercased() == "sqlite" }
+            .map { url in
+                let values = try? url.resourceValues(
+                    forKeys: [.fileSizeKey, .creationDateKey])
+                var file = BackupFile(
+                    url: url,
+                    createdAt: values?.creationDate ?? Date.distantPast,
+                    bytes: Int64(values?.fileSize ?? 0))
+                // Opening each backup to count items would be slow and
+                // pointless for a list; the identity read is cheap and
+                // is the part worth verifying.
+                if let info = try? verifyBackup(at: url) {
+                    file.libraryName = info.name
+                }
+                return file
+            }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
     public static func defaultBackupDirectory() -> URL {
         if let custom = AppSettingsStore.shared.current.backupDirectory {
             return URL(fileURLWithPath: custom, isDirectory: true)

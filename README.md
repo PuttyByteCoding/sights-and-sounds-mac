@@ -276,6 +276,12 @@ follow. Full context, locked decisions and the 11-phase plan live in
     folders it would create — token chips write themselves into the
     template, skip reasons aggregate without hiding rows, and every move
     carries a `sessionID` so a run is one Put all back.
+  - Spec 10, Maintenance: write-back, backup and validation — the three
+    things that touch files rather than the database — in one window with
+    one shape. Write-back gets a **dry run** that shows the value each
+    field is about to overwrite, struck through, because it is a wipe and
+    rewrite; backups are listed with their size and identity; findings
+    stay per-finding with one honest action each.
 
 ### Demo library
 
