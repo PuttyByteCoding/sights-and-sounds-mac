@@ -92,6 +92,9 @@ final class PlayerModel {
     }
     private(set) var itemTags: [CategoryTags] = []
     private(set) var panelVocabulary: [CategoryTags] = []
+    /// Alias strings per tag, so the tagging field can offer a tag by a
+    /// name it also answers to.
+    private(set) var panelAliases: [UUID: [String]] = [:]
     private(set) var boundKeys: [String: TagKeyBinding] = [:]
 
     /// The category whose tags Alt+1…9 toggles: the first checkbox-mode
@@ -355,6 +358,13 @@ final class PlayerModel {
         do {
             itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
             panelVocabulary = try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) }
+            // An alias IS a name, so typing "SBD" must offer "Soundboard"
+            // — the browse sidebar has always matched them and the
+            // tagging field, where you are actually typing, did not.
+            panelAliases = Dictionary(
+                grouping: try library.writer.read { try TagAlias.fetchAll($0) },
+                by: \.tagID
+            ).mapValues { $0.map(\.alias) }
             boundKeys = Dictionary(
                 uniqueKeysWithValues: try library.keyBindings().map { ($0.key, $0) })
         } catch {

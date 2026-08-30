@@ -125,10 +125,19 @@ private struct PathSettingRow: View {
 
 private struct GeneralSettingsPane: View {
     @State private var defaultOrdering = AppSettingsStore.shared.current.defaultOrdering
+    @State private var suggestionLimit = AppSettingsStore.shared.current.tagSuggestionLimit
 
     var body: some View {
         Form {
             ScopeHeader(scope: .app)
+            Section("Tagging") {
+                Stepper(
+                    "Tag suggestions shown: \(suggestionLimit)",
+                    value: $suggestionLimit, in: 3...50)
+                Text("How many matches the tagging field offers while you type. Arrow up and down to pick one; Enter with nothing picked creates a new tag.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Browse") {
                 Picker("Open libraries sorted by", selection: $defaultOrdering) {
                     ForEach(DefaultOrdering.allCases, id: \.self) { order in
@@ -161,6 +170,9 @@ private struct GeneralSettingsPane: View {
         .formStyle(.grouped)
         .onChange(of: defaultOrdering) {
             AppSettingsStore.shared.update { $0.defaultOrdering = defaultOrdering }
+        }
+        .onChange(of: suggestionLimit) {
+            AppSettingsStore.shared.update { $0.tagSuggestionLimit = suggestionLimit }
         }
     }
 }
