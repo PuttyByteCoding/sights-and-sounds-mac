@@ -187,6 +187,9 @@ struct BrowseView: View {
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
                         }
+                        Button("Recently Watched…", systemImage: "clock.arrow.circlepath") {
+                            openAux(.watched)
+                        }
                         Divider()
                         Button("Organise…", systemImage: "folder.badge.gearshape") {
                             openAux(.organise)
