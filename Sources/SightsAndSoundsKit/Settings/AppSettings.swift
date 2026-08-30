@@ -36,6 +36,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// under each thumbnail.
     public var grid: GridSettings
 
+    /// The order a library window opens with. `.random` deals a fresh
+    /// shuffle each time a window opens, which is what makes it useful
+    /// for surfacing things you have not seen.
+    public var defaultOrdering: DefaultOrdering
+
     /// The player's panel layout — sizes survive item switches and
     /// launches; the video is the flexible center and shrinks to fit.
     public var playerLayout: PlayerLayoutSettings
@@ -70,6 +75,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         infoBar: InfoBarSettings = InfoBarSettings(),
         keyMap: KeyMapStyle = .mac,
         grid: GridSettings = GridSettings(),
+        defaultOrdering: DefaultOrdering = .path,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         ocrSampleIntervalSeconds: Double = 5,
@@ -87,6 +93,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.infoBar = infoBar
         self.keyMap = keyMap
         self.grid = grid
+        self.defaultOrdering = defaultOrdering
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
@@ -115,6 +122,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.keyMap
         grid = try container.decodeIfPresent(GridSettings.self, forKey: .grid)
             ?? defaults.grid
+        // decodeIfPresent like every field here: a settings.json written
+        // before this setting existed still has to load.
+        defaultOrdering = try container.decodeIfPresent(
+            DefaultOrdering.self, forKey: .defaultOrdering) ?? defaults.defaultOrdering
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)

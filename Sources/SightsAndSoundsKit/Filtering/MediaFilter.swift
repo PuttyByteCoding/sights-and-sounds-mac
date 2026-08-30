@@ -97,3 +97,38 @@ public enum MediaOrdering: Hashable, Sendable {
     /// stable queue. A new seed is a new deal.
     case random(seed: Int)
 }
+
+/// The order a library window opens with.
+///
+/// A *choice*, deliberately not a stored `MediaOrdering`. That type is
+/// not Codable, and more importantly `.random` carries a seed:
+/// persisting a concrete random ordering would deal the SAME shuffle at
+/// every launch, which is the opposite of what choosing random is for.
+/// Storing the choice and minting the seed on open is what makes
+/// "random" mean "show me something else this time".
+public enum DefaultOrdering: String, Codable, Sendable, CaseIterable {
+    case path, name, fullPath, largestFirst, longestFirst, random
+
+    public var displayName: String {
+        switch self {
+        case .path: "Path"
+        case .name: "Name"
+        case .fullPath: "Full Path (source + path)"
+        case .largestFirst: "File Size (largest first)"
+        case .longestFirst: "Duration (longest first)"
+        case .random: "Random"
+        }
+    }
+
+    /// The concrete ordering — a fresh seed every call, for `.random`.
+    public func ordering() -> MediaOrdering {
+        switch self {
+        case .path: .relativePath
+        case .name: .fileName
+        case .fullPath: .fullPath
+        case .largestFirst: .fileSize(ascending: false)
+        case .longestFirst: .duration(ascending: false)
+        case .random: .random(seed: Int.random(in: 0..<1_000_000_000))
+        }
+    }
+}

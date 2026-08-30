@@ -32,8 +32,15 @@ final class BrowseModel {
     var hideOfflineItems = false
 
     /// The listing's sort. One control orders both the grid and the play
-    /// queue — the playlist is a snapshot of `items`.
-    var ordering: MediaOrdering = .relativePath { didSet { refreshItems() } }
+    /// queue.
+    ///
+    /// Opens on the Settings default rather than a hard-coded path sort.
+    /// `.random` mints a fresh seed here, so choosing it means every
+    /// window opens on a different deal — which is the point of setting
+    /// it: to be shown things you have not seen.
+    var ordering: MediaOrdering = AppSettingsStore.shared.current.defaultOrdering.ordering() {
+        didSet { refreshItems() }
+    }
 
     /// Shuffle deals with a seed so the order is stable across refreshes;
     /// calling again is a new deal.
