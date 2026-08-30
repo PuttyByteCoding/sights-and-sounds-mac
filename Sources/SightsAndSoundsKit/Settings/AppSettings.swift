@@ -27,6 +27,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// Which elements the player's info bar shows.
     public var infoBar: InfoBarSettings
 
+    /// Which keyboard map the player answers to. One setting, chosen
+    /// once: the two maps differ on four rows, and every hint in the
+    /// player reads its labels from this.
+    public var keyMap: KeyMapStyle
+
     /// The browse grid's display: thumbnail size, and which fields show
     /// under each thumbnail.
     public var grid: GridSettings
@@ -58,6 +63,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         startVideosMuted: Bool = true,
         loopVideos: Bool = true,
         infoBar: InfoBarSettings = InfoBarSettings(),
+        keyMap: KeyMapStyle = .mac,
         grid: GridSettings = GridSettings(),
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
@@ -73,6 +79,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.startVideosMuted = startVideosMuted
         self.loopVideos = loopVideos
         self.infoBar = infoBar
+        self.keyMap = keyMap
         self.grid = grid
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
@@ -97,6 +104,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.loopVideos
         infoBar = try container.decodeIfPresent(InfoBarSettings.self, forKey: .infoBar)
             ?? defaults.infoBar
+        keyMap = try container.decodeIfPresent(KeyMapStyle.self, forKey: .keyMap)
+            ?? defaults.keyMap
         grid = try container.decodeIfPresent(GridSettings.self, forKey: .grid)
             ?? defaults.grid
         playerLayout = try container.decodeIfPresent(
@@ -110,29 +119,31 @@ public struct AppSettings: Codable, Sendable, Equatable {
     }
 }
 
-/// Which elements the player shows in the info bar under the video.
-/// All on by default; the bar hides entirely when every element is off.
+/// The two facts the player still lets you turn off.
+///
+/// It was four. Tag pills and the favourite star are gone from here
+/// because both now have a permanent home — the tag panel shows the same
+/// taggings with their category hue, and the flags are toolbar toggles —
+/// and a setting for whether a fact appears in one of its two places is
+/// a setting nobody can answer. Older files decode without them.
 public struct InfoBarSettings: Codable, Equatable, Sendable {
     /// "x of y" — position in the filtered listing playback opened from.
+    /// Now in the footer, beside the focus zone.
     public var showsPosition: Bool
-    public var showsTags: Bool
-    public var showsFavorite: Bool
     public var showsDownload: Bool
 
-    public init(
-        showsPosition: Bool = true,
-        showsTags: Bool = true,
-        showsFavorite: Bool = true,
-        showsDownload: Bool = true
-    ) {
+    public init(showsPosition: Bool = true, showsDownload: Bool = true) {
         self.showsPosition = showsPosition
-        self.showsTags = showsTags
-        self.showsFavorite = showsFavorite
         self.showsDownload = showsDownload
     }
 
-    public var showsAnything: Bool {
-        showsPosition || showsTags || showsFavorite || showsDownload
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = InfoBarSettings()
+        showsPosition = try container.decodeIfPresent(Bool.self, forKey: .showsPosition)
+            ?? defaults.showsPosition
+        showsDownload = try container.decodeIfPresent(Bool.self, forKey: .showsDownload)
+            ?? defaults.showsDownload
     }
 }
 
@@ -302,27 +313,67 @@ public struct GridSettings: Codable, Equatable, Sendable {
     }
 }
 
-/// The player's resizable-panel layout. Clamps live at the drag sites;
-/// these are the remembered sizes.
-public struct PlayerLayoutSettings: Codable, Equatable, Sendable {
-    /// Tag panel width, points.
-    public var tagPanelWidth: Double
-    /// On-Screen Text panel width, points.
-    public var textPanelWidth: Double
-    /// Play-queue strip height, points — also the thumbnail scale.
-    public var queueHeight: Double
-    public var showsQueue: Bool
+/// Which of the player's four panels are on screen. Each collapses from
+/// the toolbar and is remembered, because whether you want the segments
+/// rail up is a fact about how you work, not about this item.
+public struct PlayerPanels: Codable, Equatable, Sendable {
+    public var tags: Bool
+    public var segments: Bool
+    public var queue: Bool
+    /// On-screen text starts collapsed: most items have none.
+    public var text: Bool
 
     public init(
-        tagPanelWidth: Double = 300,
-        textPanelWidth: Double = 300,
-        queueHeight: Double = 120,
-        showsQueue: Bool = true
+        tags: Bool = true, segments: Bool = true, queue: Bool = true, text: Bool = false
     ) {
-        self.tagPanelWidth = tagPanelWidth
-        self.textPanelWidth = textPanelWidth
+        self.tags = tags
+        self.segments = segments
+        self.queue = queue
+        self.text = text
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PlayerPanels()
+        tags = try container.decodeIfPresent(Bool.self, forKey: .tags) ?? defaults.tags
+        segments = try container.decodeIfPresent(Bool.self, forKey: .segments) ?? defaults.segments
+        queue = try container.decodeIfPresent(Bool.self, forKey: .queue) ?? defaults.queue
+        text = try container.decodeIfPresent(Bool.self, forKey: .text) ?? defaults.text
+    }
+}
+
+/// The player's resizable-panel layout. Clamps live at the drag sites;
+/// these are the remembered sizes.
+///
+/// The right side is now ONE rail holding tags over segments, and
+/// on-screen text is a drawer under the transport rather than a second
+/// side panel — so the two right-hand widths that used to scale jointly
+/// against the video floor became one width and one height. A file
+/// written before that carries its tag-panel width forward into the
+/// rail, which is the same edge in the same place.
+public struct PlayerLayoutSettings: Codable, Equatable, Sendable {
+    /// The right rail's width, points.
+    public var railWidth: Double
+    /// The on-screen-text drawer's height, points.
+    public var textDrawerHeight: Double
+    /// Play-queue strip height, points — also the thumbnail scale.
+    public var queueHeight: Double
+    public var panels: PlayerPanels
+
+    public init(
+        railWidth: Double = 352,
+        textDrawerHeight: Double = 112,
+        queueHeight: Double = 146,
+        panels: PlayerPanels = PlayerPanels()
+    ) {
+        self.railWidth = railWidth
+        self.textDrawerHeight = textDrawerHeight
         self.queueHeight = queueHeight
-        self.showsQueue = showsQueue
+        self.panels = panels
+    }
+
+    private enum LegacyKeys: String, CodingKey {
+        case tagPanelWidth, textPanelWidth, showsQueue
     }
 
     /// Per-key tolerant, like AppSettings itself — a stored layout from
@@ -330,15 +381,26 @@ public struct PlayerLayoutSettings: Codable, Equatable, Sendable {
     /// defaults.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
         let defaults = PlayerLayoutSettings()
-        tagPanelWidth = try container.decodeIfPresent(Double.self, forKey: .tagPanelWidth)
-            ?? defaults.tagPanelWidth
-        textPanelWidth = try container.decodeIfPresent(Double.self, forKey: .textPanelWidth)
-            ?? defaults.textPanelWidth
+        railWidth = try container.decodeIfPresent(Double.self, forKey: .railWidth)
+            ?? (legacy.flatMap { (try? $0.decodeIfPresent(Double.self, forKey: .tagPanelWidth)) ?? nil })
+            ?? defaults.railWidth
+        textDrawerHeight = try container.decodeIfPresent(Double.self, forKey: .textDrawerHeight)
+            ?? defaults.textDrawerHeight
         queueHeight = try container.decodeIfPresent(Double.self, forKey: .queueHeight)
             ?? defaults.queueHeight
-        showsQueue = try container.decodeIfPresent(Bool.self, forKey: .showsQueue)
-            ?? defaults.showsQueue
+        if let panels = try container.decodeIfPresent(PlayerPanels.self, forKey: .panels) {
+            self.panels = panels
+        } else {
+            var panels = defaults.panels
+            if let showsQueue = legacy.flatMap({
+                (try? $0.decodeIfPresent(Bool.self, forKey: .showsQueue)) ?? nil
+            }) {
+                panels.queue = showsQueue
+            }
+            self.panels = panels
+        }
     }
 }
 

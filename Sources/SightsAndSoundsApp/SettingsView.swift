@@ -195,6 +195,7 @@ private struct PlaybackSettingsPane: View {
     @State private var startVideosMuted = AppSettingsStore.shared.current.startVideosMuted
     @State private var loopVideos = AppSettingsStore.shared.current.loopVideos
     @State private var infoBar = AppSettingsStore.shared.current.infoBar
+    @State private var keyMap = AppSettingsStore.shared.current.keyMap
     @State private var videoAnchor = AppSettingsStore.shared.current.videoAnchor
 
     var body: some View {
@@ -222,12 +223,21 @@ private struct PlaybackSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section("Info bar under the video") {
-                Toggle("Position (\u{201C}x of y\u{201D})", isOn: $infoBar.showsPosition)
-                Toggle("Tags", isOn: $infoBar.showsTags)
-                Toggle("Favorite star", isOn: $infoBar.showsFavorite)
+            Section("Keyboard map") {
+                Picker("Map", selection: $keyMap) {
+                    ForEach(KeyMapStyle.allCases, id: \.self) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .pickerStyle(.inline)
+                Text("The two maps differ on four rows. Press ? in the player to compare them side by side; every hint in the window follows this choice.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Player chrome") {
+                Toggle("Position (\u{201C}x of y\u{201D}) in the footer", isOn: $infoBar.showsPosition)
                 Toggle("Save a Copy button", isOn: $infoBar.showsDownload)
-                Text("The bar hides entirely when everything is off. Applies to the next item you play.")
+                Text("Tags live in the tag panel and the flags are toolbar toggles, so neither is a setting any more. Applies to the next item you play.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -256,6 +266,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: loopVideos) {
             AppSettingsStore.shared.update { $0.loopVideos = loopVideos }
+        }
+        .onChange(of: keyMap) {
+            AppSettingsStore.shared.update { $0.keyMap = keyMap }
         }
         .onChange(of: infoBar) {
             AppSettingsStore.shared.update { $0.infoBar = infoBar }

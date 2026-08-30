@@ -37,14 +37,21 @@ extension LibraryDatabase {
             .appendingPathComponent(target.relativePath)
     }
 
-    /// Author an embedded clip: a named range inside the parent's file.
-    /// The row carries the parent's path (its file IS the parent's file —
-    /// the path-unique index is partial for exactly this) and inherits the
-    /// parent's tags? No — a clip starts untagged; tags are the user's call.
+    /// Author a segment: a named range inside the parent's file, as a
+    /// song or a clip. The row carries the parent's path (its file IS the
+    /// parent's file — the path-unique index is partial for exactly this)
+    /// and inherits the parent's tags? No — a segment starts untagged;
+    /// tags are the user's call.
+    ///
+    /// The name is optional because the rail renames in place: closing a
+    /// segment must never be blocked on a text field, or overshooting the
+    /// out-point costs you the range. An empty name takes the role's
+    /// default ("New song") and can be edited afterwards.
     @discardableResult
     public func createEmbeddedClip(
-        parentID: UUID, name: String,
-        startSeconds: Double, endSeconds: Double
+        parentID: UUID, name: String = "",
+        startSeconds: Double, endSeconds: Double,
+        role: SegmentRole = .clip
     ) throws -> MediaItem {
         guard endSeconds > startSeconds, startSeconds >= 0 else { throw ClipError.invalidRange }
         return try writer.write { db in
@@ -63,12 +70,40 @@ extension LibraryDatabase {
                 parentMediaItemID: parent.id,
                 clipStartSeconds: startSeconds,
                 clipEndSeconds: endSeconds,
-                isClip: true)
-            // Label the clip by note-in-name: the grid shows fileName, so a
-            // clip presents as "name (parent file)".
-            clip.notes = name
+                isClip: true,
+                segmentRole: role)
+            // Label the segment by note-in-name: the grid shows fileName,
+            // so it presents as "name (parent file)".
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
+            clip.notes = trimmed.isEmpty ? role.defaultName : trimmed
             try clip.insert(db)
             return clip
+        }
+    }
+
+    /// Rename a segment. The rail edits in place, and the name is the
+    /// only thing about a segment that changes after it is closed.
+    public func renameSegment(_ itemID: UUID, to name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        try writer.write { db in
+            guard let item = try MediaItem.fetchOne(db, key: itemID),
+                  item.parentMediaItemID != nil
+            else { throw ClipError.notAClip }
+            var updated = item
+            updated.notes = trimmed.isEmpty
+                ? (item.segmentRole ?? .clip).defaultName : trimmed
+            try updated.update(db)
+        }
+    }
+
+    /// Delete a segment row. The parent's file is untouched — a segment
+    /// is a named range, so removing one removes only the name.
+    public func deleteSegment(_ itemID: UUID) throws {
+        _ = try writer.write { db in
+            guard let item = try MediaItem.fetchOne(db, key: itemID),
+                  item.parentMediaItemID != nil
+            else { throw ClipError.notAClip }
+            return try MediaItem.deleteOne(db, key: itemID)
         }
     }
 

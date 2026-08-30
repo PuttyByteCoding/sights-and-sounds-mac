@@ -1,48 +1,86 @@
 import SwiftUI
 import SightsAndSoundsKit
 
-/// The tag editing panel beside the player — the tagging surface, kept
-/// out of the player's own responsibilities. Checkbox categories render
-/// as checkbox lists (Alt+1…9 toggles the first one); everything else is
-/// pills + autocomplete. The default-focus category's field takes focus
-/// when the panel opens or the item changes.
+/// The tag editing panel, top of the player's right rail — the tagging
+/// surface, kept out of the player's own responsibilities.
+///
+/// It is also where the playing item's tags are *shown*: the info strip
+/// under the video used to draw a second set of pills, in a second style,
+/// from the same data. One name, one place — and here they carry their
+/// category's hue, which is what makes a wall of pills readable.
+///
+/// Checkbox categories render as checkbox lists (Alt+1…9 toggles the
+/// first one); everything else is pills + autocomplete.
 struct TagPanelView: View {
     @Environment(PlayerModel.self) private var model
-    /// Width is owned by the player's layout (draggable, persisted).
-    var width: CGFloat = 300
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                // An empty vocabulary used to render the panel as a bare
-                // strip that read as "nothing happened" — say why instead.
-                if model.panelVocabulary.isEmpty {
-                    Text("No tag categories in this library yet — create them from the browse toolbar's Categories button.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(model.panelVocabulary) { entry in
-                    if let label = entry.category.sectionLabel {
-                        if label.isEmpty { Divider() } else {
-                            Text(label)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Tags").modifier(Theme.sectionLabel())
+                Spacer()
+                Text(appliedCount == 0 ? "" : "\(appliedCount) applied")
+                    .font(Theme.mono(9.5))
+                    .foregroundStyle(Theme.Text.disabled)
+                ZoneBadge(zone: .tags)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    // An empty vocabulary used to render the panel as a
+                    // bare strip that read as "nothing happened" — say
+                    // why instead.
+                    if model.panelVocabulary.isEmpty {
+                        Text("No tag categories in this library yet — create them from the browse toolbar's Categories button.")
+                            .font(Theme.ui(12))
+                            .foregroundStyle(Theme.Text.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(model.panelVocabulary) { entry in
+                        if let label = entry.category.sectionLabel {
+                            if label.isEmpty {
+                                Divider().overlay(Theme.Border.standard)
+                            } else {
+                                Text(label).modifier(Theme.sectionLabel())
+                            }
+                        }
+                        if entry.category.displayAsCheckboxes {
+                            CheckboxCategoryView(
+                                entry: entry,
+                                isAltTarget: entry.id == model.checkboxCategory?.id)
+                        } else {
+                            PillCategoryView(entry: entry)
                         }
                     }
-                    if entry.category.displayAsCheckboxes {
-                        CheckboxCategoryView(
-                            entry: entry,
-                            isAltTarget: entry.id == model.checkboxCategory?.id)
-                    } else {
-                        PillCategoryView(entry: entry)
-                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 14)
             }
-            .padding(12)
         }
-        .frame(width: width)
-        .background(.background.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { model.zone = .tags }
+    }
+
+    private var appliedCount: Int {
+        model.itemTags.reduce(0) { $0 + $1.tags.count }
+    }
+}
+
+/// A category's own hue, for its heading and its pills.
+private struct CategoryHeading: View {
+    let category: TagCategory
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Theme.categoryHue(category.colorIndex))
+                .frame(width: 6, height: 6)
+            Text(category.name)
+                .font(Theme.ui(12, .semibold))
+                .foregroundStyle(Theme.Text.primary)
+        }
     }
 }
 
@@ -52,27 +90,43 @@ private struct CheckboxCategoryView: View {
     let isAltTarget: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.category.name)
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 5) {
+            CategoryHeading(category: entry.category)
             ForEach(Array(entry.tags.enumerated()), id: \.element.id) { index, tag in
-                Toggle(isOn: Binding(
-                    get: { model.hasTag(tag.id) },
-                    set: { _ in model.toggleTag(tag.id) }
-                )) {
-                    HStack(spacing: 4) {
+                let on = model.hasTag(tag.id)
+                Button {
+                    model.toggleTag(tag.id)
+                } label: {
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(on ? hue : .clear)
+                            .stroke(on ? hue : Theme.Border.subtleButtonHover, lineWidth: 1)
+                            .frame(width: 13, height: 13)
+                            .overlay {
+                                if on {
+                                    Image(systemName: "checkmark")
+                                        .font(Theme.ui(8, .bold))
+                                        .foregroundStyle(Theme.Text.onAmber)
+                                }
+                            }
                         Text(tag.name)
-                        if isAltTarget && index < 9 {
+                            .font(Theme.ui(12))
+                            .foregroundStyle(on ? Theme.Text.primary : Theme.Text.tertiary)
+                        if isAltTarget, index < 9 {
                             Text("⌥\(index + 1)")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .font(Theme.mono(9))
+                                .foregroundStyle(Theme.Text.disabled)
                         }
+                        Spacer(minLength: 0)
                     }
+                    .contentShape(Rectangle())
                 }
-                .toggleStyle(.checkbox)
+                .buttonStyle(.plain)
             }
         }
     }
+
+    private var hue: Color { Theme.categoryHue(entry.category.colorIndex) }
 }
 
 private struct PillCategoryView: View {
@@ -95,32 +149,51 @@ private struct PillCategoryView: View {
             .map { $0 }
     }
 
+    private var hue: Color { Theme.categoryHue(entry.category.colorIndex) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(entry.category.name)
-                .font(.headline)
+            CategoryHeading(category: entry.category)
 
             if !applied.isEmpty {
-                FlowLayoutLite(spacing: 4) {
+                FlowRow(spacing: 4) {
                     ForEach(applied) { tag in
-                        HStack(spacing: 2) {
-                            Text(tag.name).font(.callout)
+                        HStack(spacing: 4) {
+                            Text(tag.name)
+                                .font(Theme.ui(11.5))
+                                .foregroundStyle(hue)
                             Button {
                                 model.toggleTag(tag.id)
                             } label: {
-                                Image(systemName: "xmark.circle.fill").font(.caption2)
+                                Image(systemName: "xmark")
+                                    .font(Theme.ui(8, .semibold))
+                                    .foregroundStyle(hue.opacity(0.7))
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(Color.accentColor.opacity(0.18), in: Capsule())
+                        .padding(.horizontal, 9)
+                        .background {
+                            Capsule().fill(hue.opacity(0.13))
+                        }
+                        .overlay {
+                            Capsule().stroke(hue.opacity(0.35), lineWidth: 1)
+                        }
                     }
                 }
             }
 
             TextField("Add \(entry.category.name)…", text: $draft)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(Theme.ui(12))
+                .padding(.vertical, 5)
+                .padding(.horizontal, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(Theme.Surface.well)
+                        .stroke(
+                            fieldFocused ? Theme.Border.activeControl : Theme.Border.standard,
+                            lineWidth: 1))
                 .focused($fieldFocused)
                 .onSubmit {
                     let raw = draft.trimmingCharacters(in: .whitespaces)
@@ -128,14 +201,25 @@ private struct PillCategoryView: View {
                     model.addTag(named: raw, categoryID: entry.category.id)
                     draft = ""
                 }
+                .onChange(of: fieldFocused) { _, focused in
+                    if focused { model.zone = .tags }
+                }
 
             ForEach(suggestions) { tag in
                 Button {
                     model.toggleTag(tag.id)
                     draft = ""
                 } label: {
-                    Label(tag.name, systemImage: "plus")
-                        .font(.callout)
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus")
+                            .font(Theme.ui(9))
+                            .foregroundStyle(hue)
+                        Text(tag.name)
+                            .font(Theme.ui(11.5))
+                            .foregroundStyle(Theme.Text.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -143,43 +227,5 @@ private struct PillCategoryView: View {
         .task(id: model.item?.id) {
             if entry.category.isDefaultFocus { fieldFocused = true }
         }
-    }
-}
-
-/// Minimal wrapping layout for tag pills.
-struct FlowLayoutLite: Layout {
-    var spacing: CGFloat = 4
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(proposal: proposal, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let slots = arrange(proposal: proposal, subviews: subviews).slots
-        for (subview, slot) in zip(subviews, slots) {
-            subview.place(
-                at: CGPoint(x: bounds.minX + slot.x, y: bounds.minY + slot.y),
-                proposal: .unspecified)
-        }
-    }
-
-    private func arrange(proposal: ProposedViewSize, subviews: Subviews)
-        -> (size: CGSize, slots: [CGPoint])
-    {
-        let maxWidth = proposal.width ?? 280
-        var slots: [CGPoint] = []
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            slots.append(CGPoint(x: x, y: y))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        return (CGSize(width: maxWidth, height: y + rowHeight), slots)
     }
 }

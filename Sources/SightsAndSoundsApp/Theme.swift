@@ -34,6 +34,11 @@ enum Theme {
         static let titleBar = Color(hex: 0x1C1814)
         /// Text fields and progress tracks.
         static let well = Color(hex: 0x0F0C07)
+        /// The video stage. Darker than `page`: the frame is the only
+        /// thing on it that should have a colour.
+        static let stage = Color(hex: 0x0A0806)
+        /// A selected segment row.
+        static let selectedSegment = Color(hex: 0x241E16)
 
         /// A modal panel floating over its context — lighter than
         /// `content` so it reads as being in front of it.
@@ -135,6 +140,16 @@ enum Theme {
         static let warnBadgeFill = Color(hex: 0x3A2C18)
         /// The warning tone in body copy, where `orange` would shout.
         static let warnText = Color(hex: 0xE8CFA8)
+    }
+
+    /// The three kinds of range the player's segments rail lists. A song
+    /// and a clip are the same record with different labels; a hide block
+    /// is a different record entirely, and reads as a warning because it
+    /// is an instruction to an edit.
+    enum Segment {
+        static let song = Color(hex: 0x6FBFB0)
+        static let clip = Color(hex: 0xC58BB8)
+        static let hide = Color(hex: 0xD07A6A)
     }
 
     // MARK: - Tag category hues

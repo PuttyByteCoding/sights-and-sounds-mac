@@ -36,9 +36,58 @@ final class PlayerModel {
     var title: String { item?.fileName ?? "Player" }
     var isAudio: Bool { item?.kind == .audio }
 
+    /// Which map the keys answer to. Read per use, so changing it in
+    /// Settings applies without reopening the player.
+    var keyMap: KeyMapStyle { AppSettingsStore.shared.current.keyMap }
+
+    // MARK: - Focus
+
+    /// Where the keyboard is pointed. The whole single-key map depends on
+    /// this being knowable, so it is state rather than a guess made from
+    /// whichever text field last took first responder.
+    var zone: PlayerZone = .video
+
+    /// Tab walks the zones that are actually on screen — a collapsed
+    /// panel is not a place focus can go.
+    func moveZone(reverse: Bool, available: [PlayerZone]) {
+        guard !available.isEmpty else { return }
+        let index = available.firstIndex(of: zone) ?? 0
+        let next = (index + (reverse ? available.count - 1 : 1)) % available.count
+        zone = available[next]
+    }
+
+    // MARK: - Panels
+
+    /// Which panels are up. Persisted through the player's layout
+    /// settings — whether you want the segments rail is a fact about how
+    /// you work, not about this item.
+    var panels: PlayerPanels = AppSettingsStore.shared.current.playerLayout.panels
+
+    func togglePanel(_ panel: PlayerPanel) {
+        panels[panel].toggle()
+        // Focus cannot sit in a panel that just closed.
+        if !panels[panel], zone.panel == panel { zone = .video }
+    }
+
+    var showsRail: Bool { panels.tags || panels.segments }
+
+    /// The zones actually on screen, in Tab order. A collapsed panel is
+    /// not a place focus can go.
+    var availableZones: [PlayerZone] {
+        var zones: [PlayerZone] = [.video]
+        if panels.tags { zones.append(.tags) }
+        if panels.segments { zones.append(.segments) }
+        if panels.queue, !playlist.isEmpty { zones.append(.queue) }
+        return zones
+    }
+
     // MARK: - Tagging state
 
-    var showTagPanel = false
+    /// Kept for the `T` key's older name; the panel itself is `panels.tags`.
+    var showTagPanel: Bool {
+        get { panels.tags }
+        set { panels.tags = newValue }
+    }
     private(set) var itemTags: [CategoryTags] = []
     private(set) var panelVocabulary: [CategoryTags] = []
     private(set) var boundKeys: [String: TagKeyBinding] = [:]
@@ -313,6 +362,18 @@ final class PlayerModel {
         }
     }
 
+    /// A recognized on-screen line, kept as another name for a tag.
+    /// Aliases are how a future import or search resolves the spelling
+    /// that was burned into the video.
+    func addAlias(_ alias: String, to tagID: UUID) {
+        do {
+            try library.addAlias(alias, toTag: tagID)
+            refreshTagging()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
     /// Alt+digit: toggle the Nth (1-based) tag of the checkbox category.
     func toggleCheckboxTag(at digit: Int) -> Bool {
         guard let entry = checkboxCategory, digit >= 1, digit <= entry.tags.count else { return false }
@@ -335,16 +396,141 @@ final class PlayerModel {
         return true
     }
 
+    // MARK: - Segments
+
+    /// Songs and clips (child rows) and hide blocks (edit instructions),
+    /// in one list because they are one thing on screen: a named range.
+    /// They stay two records — a song can be tagged and browsed, a hide
+    /// block must never reach the grid.
+    private(set) var segments: [SegmentRow] = []
+    var selectedSegmentID: UUID?
+
+    /// A mark opened and not yet closed. Separate from the hide-block
+    /// pending mark: `{`/`}` author a block, the map's segment keys
+    /// author a song or a clip, and having one variable for both would
+    /// make an overshoot silently change what you were making.
+    var pendingSegmentStart: Double?
+
+    func refreshSegments() {
+        guard let item else { return }
+        let parentID = item.parentMediaItemID ?? item.id
+        let children = (try? library.clips(of: parentID)) ?? []
+        let blocks = (try? library.blocks(of: parentID).filter { $0.kind == .hide }) ?? []
+        segments = (children.map { child in
+            SegmentRow(
+                id: child.id,
+                kind: (child.segmentRole ?? .clip) == .song ? .song : .clip,
+                name: child.notes.isEmpty ? (child.segmentRole ?? .clip).defaultName : child.notes,
+                start: child.clipStartSeconds ?? 0,
+                end: child.clipEndSeconds ?? (child.clipStartSeconds ?? 0))
+        } + blocks.map { block in
+            SegmentRow(
+                id: block.id, kind: .hide, name: "Hide block",
+                start: block.startSeconds, end: block.endSeconds)
+        }).sorted { $0.start < $1.start }
+        hideBlocks = blocks
+    }
+
+    var songCount: Int { segments.count { $0.kind == .song } }
+    var clipCount: Int { segments.count { $0.kind == .clip } }
+
+    /// Open a mark at the playhead.
+    func openSegmentMark() { pendingSegmentStart = currentSeconds }
+
+    /// Close the open mark as a song or a clip. The name comes later —
+    /// the rail renames in place, and blocking the close on a text field
+    /// is how you lose the range you just marked.
+    func closeSegmentMark(as role: SegmentRole) {
+        guard let item, let start = pendingSegmentStart, currentSeconds > start else { return }
+        do {
+            let created = try library.createEmbeddedClip(
+                parentID: item.parentMediaItemID ?? item.id,
+                startSeconds: start, endSeconds: currentSeconds, role: role)
+            pendingSegmentStart = nil
+            refreshSegments()
+            selectedSegmentID = created.id
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    func cancelSegmentMark() { pendingSegmentStart = nil }
+
+    func renameSegment(_ id: UUID, to name: String) {
+        do {
+            try library.renameSegment(id, to: name)
+            refreshSegments()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// Remove a rail row, whichever record it is. Nothing is destroyed
+    /// either way: a segment is a name over a range, and a hide block is
+    /// an instruction the export reads.
+    func removeSegment(_ row: SegmentRow) {
+        do {
+            switch row.kind {
+            case .song, .clip: try library.deleteSegment(row.id)
+            case .hide: try library.deleteBlock(row.id)
+            }
+            if selectedSegmentID == row.id { selectedSegmentID = nil }
+            refreshSegments()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// Play from a segment's start. Selecting a row highlights its bar on
+    /// the scrubber; playing it moves the playhead there.
+    var selectedSegment: SegmentRow? {
+        segments.first { $0.id == selectedSegmentID }
+    }
+
+    /// ↑/↓ in the segments zone. Nothing selected yet starts at the end
+    /// the arrow came from, so the first press always lands somewhere.
+    func stepSegmentSelection(_ delta: Int) {
+        guard !segments.isEmpty else { return }
+        guard let current = segments.firstIndex(where: { $0.id == selectedSegmentID }) else {
+            selectedSegmentID = delta > 0 ? segments.first?.id : segments.last?.id
+            return
+        }
+        let next = (current + delta + segments.count) % segments.count
+        selectedSegmentID = segments[next].id
+    }
+
+    func playSegment(_ row: SegmentRow) {
+        selectedSegmentID = row.id
+        seek(to: row.start)
+        play()
+    }
+
+    // MARK: - Triage
+
+    /// Triage mode exists for one reason: to make the FIXED flag keys
+    /// advance without changing what they mean everywhere else. Outside
+    /// it, R/W/D toggle and stay put.
+    var triageMode = false {
+        didSet { if triageMode != oldValue { triageCount = 0 } }
+    }
+    private(set) var triageCount = 0
+
+    /// Mark and move on. Returns false when there was nothing to mark.
+    @discardableResult
+    func triageMark(_ action: PlayerAction) -> Bool {
+        guard item != nil else { return false }
+        perform(action)
+        triageCount += 1
+        goNext()
+        return true
+    }
+
     // MARK: - Blocks
 
-    private(set) var hideBlocks: [VideoBlock] = []
+    fileprivate(set) var hideBlocks: [VideoBlock] = []
     var pendingBlockStart: Double?
 
-    func refreshBlocks() {
-        guard let item else { return }
-        let targetID = item.parentMediaItemID ?? item.id
-        hideBlocks = (try? library.blocks(of: targetID).filter { $0.kind == .hide }) ?? []
-    }
+    func refreshBlocks() { refreshSegments() }
 
     /// The old map's `{`/`}` block taps: first tap opens a block at the
     /// playhead, second closes and saves it.
@@ -388,17 +574,17 @@ final class PlayerModel {
         return false
     }
 
-    /// Save the pending range as an embedded clip on the current item
+    /// Save the pending range as a segment on the current item
     /// (authoring on a clip targets its parent).
-    func savePendingClip(named name: String) {
+    func savePendingClip(named name: String, role: SegmentRole = .clip) {
         guard let item, let start = pendingClipStart, let end = pendingClipEnd else { return }
         do {
             let parentID = item.parentMediaItemID ?? item.id
             _ = try library.createEmbeddedClip(
-                parentID: parentID,
-                name: name.isEmpty ? "clip" : name,
-                startSeconds: start, endSeconds: end)
+                parentID: parentID, name: name,
+                startSeconds: start, endSeconds: end, role: role)
             cancelPendingClip()
+            refreshSegments()
         } catch {
             loadError = "\(error)"
         }
@@ -485,4 +671,82 @@ final class PlayerModel {
             Task { await ScrubPreviewProvider.shared.releaseGenerator(for: item.id) }
         }
     }
+}
+
+/// The four places the keyboard can be pointed, in Tab order.
+enum PlayerZone: String, CaseIterable, Sendable {
+    case video, tags, segments, queue
+
+    var displayName: String {
+        switch self {
+        case .video: "Video"
+        case .tags: "Tags"
+        case .segments: "Segments"
+        case .queue: "Queue"
+        }
+    }
+
+    /// The panel this zone lives in, if any — closing a panel has to be
+    /// able to evict the focus sitting in it.
+    var panel: PlayerPanel? {
+        switch self {
+        case .video: nil
+        case .tags: .tags
+        case .segments: .segments
+        case .queue: .queue
+        }
+    }
+}
+
+/// One of the player's four collapsible panels.
+enum PlayerPanel: String, CaseIterable, Sendable {
+    case tags, segments, queue, text
+}
+
+extension PlayerPanels {
+    subscript(panel: PlayerPanel) -> Bool {
+        get {
+            switch panel {
+            case .tags: tags
+            case .segments: segments
+            case .queue: queue
+            case .text: text
+            }
+        }
+        set {
+            switch panel {
+            case .tags: tags = newValue
+            case .segments: segments = newValue
+            case .queue: queue = newValue
+            case .text: text = newValue
+            }
+        }
+    }
+}
+
+/// One row of the segments rail: a song, a clip, or a hide block. Same
+/// shape on screen; deliberately not the same record.
+struct SegmentRow: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case song, clip, hide
+
+        var badge: String {
+            switch self {
+            case .song: "SONG"
+            case .clip: "CLIP"
+            case .hide: "HIDE"
+            }
+        }
+    }
+
+    var id: UUID
+    var kind: Kind
+    var name: String
+    var start: Double
+    var end: Double
+
+    var duration: Double { max(0, end - start) }
+    /// Only songs and clips are renameable rows — a hide block has no
+    /// name to give, because it is not a thing you can browse to.
+    var isRenameable: Bool { kind != .hide }
 }

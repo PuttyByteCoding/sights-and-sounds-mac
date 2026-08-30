@@ -168,7 +168,7 @@ private struct CompareView: View {
             if !mergeableTags.isEmpty {
                 Text("Carry these tags from the file being removed:")
                     .font(.callout)
-                FlowLayoutLite(spacing: 4) {
+                FlowRow(spacing: 4) {
                     ForEach(mergeableTags) { tag in
                         Toggle(tag.name, isOn: Binding(
                             get: { mergeSelection.contains(tag.id) },
