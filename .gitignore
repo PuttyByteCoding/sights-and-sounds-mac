@@ -72,3 +72,6 @@ fastlane/test_output
 *.sqlite-shm
 snapshot*.json
 *.snapshot.json
+
+# CodeGraph index — local code-intelligence database, rebuilt with `codegraph init`
+.codegraph/
