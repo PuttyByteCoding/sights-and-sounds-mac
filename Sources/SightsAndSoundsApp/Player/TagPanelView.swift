@@ -99,6 +99,7 @@ private struct CheckboxCategoryView: View {
     /// A radio category shows the same list; picking replaces rather
     /// than adds, which `assignTag` already enforces for single-select.
     var single = false
+    @State private var editing: Tag?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -133,7 +134,18 @@ private struct CheckboxCategoryView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Edit Tag…") { editing = tag }
+                }
             }
+        }
+        .sheet(item: $editing) { tag in
+            TagSheet(
+                mode: .edit(tag),
+                library: model.library,
+                libraryID: model.libraryID,
+                categories: model.panelVocabulary.map(\.category)
+            ) { _ in model.refreshTagging() }
         }
     }
 
@@ -149,6 +161,9 @@ private struct PillCategoryView: View {
     /// nil is exactly what makes Enter create rather than apply.
     @State private var highlighted: Int?
     @State private var creating = false
+    /// The tag whose editor is open, from a right-click on any tag this
+    /// category draws — applied pill or suggestion alike.
+    @State private var editing: Tag?
     @FocusState private var fieldFocused: Bool
 
     private var applied: [Tag] {
@@ -267,6 +282,9 @@ private struct PillCategoryView: View {
                         .overlay {
                             Capsule().stroke(hue.opacity(0.35), lineWidth: 1)
                         }
+                        .contextMenu {
+                            Button("Edit Tag…") { editing = tag }
+                        }
                     }
                 }
             }
@@ -333,18 +351,34 @@ private struct PillCategoryView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Edit Tag…") { editing = suggestion.tag }
+                }
             }
         }
         .task(id: model.item?.id) {
             if takesFocus { fieldFocused = true }
         }
+        .sheet(item: $editing) { tag in
+            TagSheet(
+                mode: .edit(tag),
+                library: model.library,
+                libraryID: model.libraryID,
+                categories: model.panelVocabulary.map(\.category)
+            ) { _ in model.refreshTagging() }
+        }
         .sheet(isPresented: $creating) {
-            NewTagSheet(categoryID: entry.category.id, initialName: query) { tag in
+            TagSheet(
+                mode: .create(categoryID: entry.category.id, name: query),
+                library: model.library,
+                libraryID: model.libraryID,
+                categories: model.panelVocabulary.map(\.category)
+            ) { tag in
+                model.refreshTagging()
                 model.toggleTag(tag.id)
                 draft = ""
                 highlighted = nil
             }
-            .environment(model)
         }
     }
 }
