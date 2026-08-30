@@ -63,7 +63,7 @@ struct LibraryPickerView: View {
             }
         }
         .sheet(isPresented: $showingNewLibrary) {
-            NewLibraryFlow()
+            NewLibraryView()
                 .environment(model)
         }
     }

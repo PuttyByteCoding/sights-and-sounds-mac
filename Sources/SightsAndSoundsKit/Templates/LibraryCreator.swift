@@ -14,6 +14,46 @@ public struct LibraryPlanError: Error, CustomStringConvertible {
 ///
 /// Nothing is written until the whole plan validates — the review screen's
 /// contract is "adjust freely, nothing exists yet".
+/// What a freshly created library actually contains, read back.
+///
+/// A migration that wrote the wrong thing is far cheaper to catch now
+/// than after a week of tagging, and the same read-back is worth having
+/// for a template: it is the difference between "Create succeeded" and
+/// "here is what exists".
+public struct CreationVerification: Sendable, Equatable {
+    public var categories: Int
+    public var tags: Int
+    public var aliases: Int
+    public var fields: Int
+
+    /// What the plan said should exist. A mismatch on any row is the
+    /// finding.
+    public static func expected(from plan: LibraryPlan) -> CreationVerification {
+        let included = plan.categories.filter(\.include)
+        return CreationVerification(
+            categories: included.count,
+            tags: included.reduce(0) { $0 + $1.tags.count },
+            aliases: included.reduce(0) { $0 + $1.tags.reduce(0) { $0 + $1.aliases.count } },
+            fields: included.reduce(0) { $0 + $1.fields.count }
+                + plan.itemFields.filter(\.include).count)
+    }
+
+    public func matches(_ other: CreationVerification) -> Bool { self == other }
+}
+
+extension LibraryDatabase {
+    /// Read the library back and count what is in it.
+    public func creationVerification() throws -> CreationVerification {
+        try writer.read { db in
+            CreationVerification(
+                categories: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tagCategory") ?? 0,
+                tags: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tag") ?? 0,
+                aliases: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tagAlias") ?? 0,
+                fields: try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM fieldDefinition") ?? 0)
+        }
+    }
+}
+
 public enum LibraryCreator {
     @discardableResult
     public static func create(
@@ -39,7 +79,10 @@ public enum LibraryCreator {
                     sortOrder: planned.sortOrder,
                     notes: planned.notes,
                     hiddenFromBrowse: planned.hiddenFromBrowse,
-                    colorIndex: hue,
+                    // The plan's hue when the template seeded one;
+                    // otherwise dealt in plan order, so no two
+                    // categories open the same colour.
+                    colorIndex: planned.colorIndex == 0 ? hue : planned.colorIndex,
                     sectionLabel: planned.sectionLabel,
                     textFormat: planned.textFormat,
                     separatorsToSpaces: planned.separatorsToSpaces,
