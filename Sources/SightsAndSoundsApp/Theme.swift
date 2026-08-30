@@ -94,6 +94,10 @@ enum Theme {
         static let quaternary = Color(hex: 0x8C8478)
         /// 3.4:1 — non-informational only. Never a value someone reads.
         static let disabled = Color(hex: 0x6E6659)
+        /// A count of zero. Dimmed rather than hidden: "exists, but
+        /// nothing under these kinds" is the information (#96), and the
+        /// column of numbers keeps its shape.
+        static let zeroCount = Color(hex: 0x443E34)
         /// Text on an amber fill.
         static let onAmber = Color(hex: 0x1A1409)
     }

@@ -105,8 +105,8 @@ struct FilterFixture {
 
     /// File names of the visible video items for a filter — the assertion
     /// currency of the semantics tests.
-    func names(_ filter: MediaFilter, kind: MediaKind = .video) throws -> Set<String> {
-        Set(try library.mediaItems(matching: filter, kind: kind).map(\.fileName))
+    func names(_ filter: MediaFilter, kinds: MediaKinds = .video) throws -> Set<String> {
+        Set(try library.mediaItems(matching: filter, kinds: kinds).map(\.fileName))
     }
 
     /// Every video item the empty filter shows (hidden + spent rows absent).

@@ -18,10 +18,10 @@ import Testing
 
     @Test func everyTermCompilesIntoOneStatement() throws {
         let f = try FilterFixture()
-        let compiled = FilterCompiler.compile(filter: fullFilter(f), kind: .video)
+        let compiled = FilterCompiler.compile(filter: fullFilter(f), kinds: .video)
 
         // The baseline predicates every listing carries.
-        #expect(compiled.sql.contains("mediaItem.kind = ?"))
+        #expect(compiled.sql.contains("mediaItem.kind IN (?)"))
         #expect(compiled.sql.contains("mediaItem.clipExported = 0"))
         #expect(compiled.sql.contains("source.enabled"))
         // Term shapes.
@@ -47,7 +47,7 @@ import Testing
     @Test func probesRunOnIndexes() throws {
         let f = try FilterFixture()
         let filter = MediaFilter(required: [.tag(f.bandA.id), .folder("shows/1995")])
-        let compiled = FilterCompiler.compile(filter: filter, kind: .video)
+        let compiled = FilterCompiler.compile(filter: filter, kinds: .video)
 
         let plan = try f.library.writer.read { db in
             try Row.fetchAll(

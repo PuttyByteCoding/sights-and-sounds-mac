@@ -40,7 +40,7 @@ import Testing
     @Test func folderCountsRespectTheListingBaseline() throws {
         let f = try FilterFixture()
         let counts = Dictionary(
-            uniqueKeysWithValues: try f.library.folderCounts(kind: .video).map { ($0.path, $0.count) })
+            uniqueKeysWithValues: try f.library.folderCounts(kinds: .video).map { ($0.path, $0.count) })
         #expect(counts["shows/1995"] == 1)
         // The spent clip row (clips/l.mp4) is excluded: clips has i, j, k only.
         #expect(counts["clips"] == 3)
@@ -53,18 +53,18 @@ import Testing
             off.enabled = false
             try off.update(db)
         }
-        #expect(try f.library.folderCounts(kind: .video).isEmpty)
+        #expect(try f.library.folderCounts(kinds: .video).isEmpty)
     }
 
     @Test func folderCountsScopeToOneSource() throws {
         let f = try FilterFixture()
         // Scoped to the fixture's source: identical to the unscoped tree.
-        let all = try f.library.folderCounts(kind: .video).map { "\($0.path):\($0.count)" }.sorted()
-        let scoped = try f.library.folderCounts(kind: .video, sourceID: f.mainSource.id)
+        let all = try f.library.folderCounts(kinds: .video).map { "\($0.path):\($0.count)" }.sorted()
+        let scoped = try f.library.folderCounts(kinds: .video, sourceID: f.mainSource.id)
             .map { "\($0.path):\($0.count)" }.sorted()
         #expect(scoped == all)
         // Another source's id sees nothing.
-        #expect(try f.library.folderCounts(kind: .video, sourceID: UUID()).isEmpty)
+        #expect(try f.library.folderCounts(kinds: .video, sourceID: UUID()).isEmpty)
     }
 
     // MARK: Vocabulary
@@ -78,12 +78,14 @@ import Testing
 
     // MARK: Filter mutation helpers
 
-    @Test func tagCycleWalksRequiredExcludedCleared() {
+    @Test func tagCycleWalksAllFourStates() {
         var filter = MediaFilter()
         let id = UUID()
 
         filter.cycleTag(id)
         #expect(filter.slot(of: id) == .required)
+        filter.cycleTag(id)
+        #expect(filter.slot(of: id) == .optional)
         filter.cycleTag(id)
         #expect(filter.slot(of: id) == .excluded)
         filter.cycleTag(id)
@@ -91,20 +93,59 @@ import Testing
         #expect(filter.isEmpty)
     }
 
-    @Test func cycleFromOptionalMovesToExcluded() {
+    /// The right-click. Overshooting a four-state cycle without a way
+    /// back is what makes one a guessing game.
+    @Test func reverseCycleWalksBackwards() {
+        var filter = MediaFilter()
         let id = UUID()
-        var filter = MediaFilter(optional: [.tag(id)])
-        filter.cycleTag(id)
+
+        filter.cycleTag(id, reverse: true)
         #expect(filter.slot(of: id) == .excluded)
-        #expect(filter.optional.isEmpty)
+        filter.cycleTag(id, reverse: true)
+        #expect(filter.slot(of: id) == .optional)
+        filter.cycleTag(id, reverse: true)
+        #expect(filter.slot(of: id) == .required)
+        filter.cycleTag(id, reverse: true)
+        #expect(filter.isEmpty)
     }
 
-    @Test func statusToggleFlips() {
+    /// A term occupies one slot at a time, whichever list it started in.
+    @Test func settingASlotClearsTheOthers() {
+        let id = UUID()
+        var filter = MediaFilter(optional: [.tag(id)])
+        filter.setSlot(.excluded, for: .tag(id))
+        #expect(filter.slot(of: id) == .excluded)
+        #expect(filter.optional.isEmpty)
+        #expect(filter.required.isEmpty)
+    }
+
+    /// Status flags and missing-category rows cycle exactly like tags —
+    /// one row type, one behaviour.
+    @Test func statusAndMissingCycleLikeTags() {
         var filter = MediaFilter()
-        filter.toggleStatus(.favorite)
+        let categoryID = UUID()
+
+        filter.cycle(.status(.favorite))
         #expect(filter.required == [.status(.favorite)])
-        filter.toggleStatus(.favorite)
+        filter.cycle(.missingCategory(categoryID))
+        filter.cycle(.missingCategory(categoryID), reverse: true)
+        #expect(filter.slot(of: .missingCategory(categoryID)) == nil)
+        filter.cycle(.status(.favorite), reverse: true)
         #expect(filter.isEmpty)
+    }
+
+    /// "Clear all" on the chip bar clears the chips — not the folder you
+    /// navigated to, which is where you are rather than what you asked.
+    @Test func clearSlotsKeepsTheFolderSelection() {
+        var filter = MediaFilter(
+            required: [.subtree("shows"), .tag(UUID())],
+            excluded: [.status(.markedForDeletion)],
+            searchText: "riverbend")
+        filter.clearSlots()
+        #expect(filter.required == [.subtree("shows")])
+        #expect(filter.excluded.isEmpty)
+        #expect(filter.searchText == "riverbend")
+        #expect(filter.slottedTerms.isEmpty)
     }
 
     @Test func subtreeSelectionReplacesAnyFolderTerm() {

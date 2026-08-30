@@ -19,9 +19,17 @@ final class BrowseModel {
     let library: LibraryDatabase
     let libraryName: String
 
-    var kind: MediaKind = .video { didSet { refreshAll() } }
+    /// Which media kinds this listing includes. Several at once is
+    /// allowed and none is not — the guard lives in `MediaKinds` and in
+    /// the query, not in whichever view last remembered to apply it.
+    var kinds: MediaKinds = .video { didSet { refreshAll() } }
     var filter = MediaFilter() { didSet { refreshItems() } }
     var selectedFolderPath: String?
+
+    /// The offline banner's toggle. It hides items from the LISTING;
+    /// `items` stays the full listing so the banner can keep counting
+    /// what it hid, which is what makes the state recoverable.
+    var hideOfflineItems = false
 
     /// The listing's sort. One control orders both the grid and the play
     /// queue — the playlist is a snapshot of `items`.
@@ -48,10 +56,11 @@ final class BrowseModel {
     private(set) var vocabulary: [CategoryTags] = []
     private(set) var sources: [Source] = []
     private(set) var pendingDuplicateCount = 0
-    /// Items per tag under the listing baseline (kind, enabled sources,
-    /// spent clips) — the sidebar's per-tag counts (#96). One grouped
-    /// query in refreshAll, never per row.
-    private(set) var tagItemCounts: [UUID: Int] = [:]
+    /// Every sidebar count — per tag, per source, per empty category, per
+    /// status flag — under the listing baseline (kinds, enabled sources,
+    /// spent clips) but not under the active filter. One batch in
+    /// refreshAll, never a query per row (#96).
+    private(set) var counts = BrowseCounts()
     private(set) var onlineSourceIDs: Set<UUID> = []
     var errorMessage: String? {
         didSet {
@@ -184,7 +193,7 @@ final class BrowseModel {
     func refreshAll(broadcast: Bool = true) {
         refreshAllGeneration += 1
         let generation = refreshAllGeneration
-        let library = library, kind = kind, fileAccess = fileAccess
+        let library = library, kinds = kinds, fileAccess = fileAccess
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let sources = try library.sources()
@@ -200,28 +209,13 @@ final class BrowseModel {
                 var trees: [UUID: [FolderNode]] = [:]
                 for source in sources where source.enabled {
                     trees[source.id] = FolderTreeBuilder.build(
-                        from: try library.folderCounts(kind: kind, sourceID: source.id))
+                        from: try library.folderCounts(kinds: kinds, sourceID: source.id))
                 }
                 let pending = try library.pendingCandidates().count
-                // One grouped query for every tag's item count (#96) —
-                // explicit closure type for the CI toolchain, sync read
-                // on this already-detached task.
-                let countRows: [Row] = try library.writer.read { db -> [Row] in
-                    try Row.fetchAll(
-                        db,
-                        sql: """
-                        SELECT mediaItemTag.tagID AS tagID, COUNT(*) AS n \
-                        FROM mediaItemTag \
-                        JOIN mediaItem ON mediaItem.id = mediaItemTag.mediaItemID \
-                        WHERE mediaItem.kind = ? AND mediaItem.clipExported = 0 \
-                        AND EXISTS (SELECT 1 FROM source \
-                                    WHERE source.id = mediaItem.sourceID AND source.enabled) \
-                        GROUP BY mediaItemTag.tagID
-                        """,
-                        arguments: [kind.rawValue])
-                }
-                let tagCounts = Dictionary(
-                    uniqueKeysWithValues: countRows.map { ($0["tagID"] as UUID, $0["n"] as Int) })
+                // Every sidebar number in one batch (#96) — the counts
+                // and the listing they label share one baseline, so they
+                // cannot disagree.
+                let counts = try library.browseCounts(kinds: kinds)
                 await MainActor.run { [weak self] in
                     guard let self, self.refreshAllGeneration == generation else { return }
                     self.sources = sources
@@ -229,7 +223,7 @@ final class BrowseModel {
                     self.vocabulary = vocabulary
                     self.tagAliases = aliases
                     self.folderTrees = trees
-                    self.tagItemCounts = tagCounts
+                    self.counts = counts
                     self.pendingDuplicateCount = pending
                     self.refreshItems()
                     if broadcast {
@@ -294,12 +288,13 @@ final class BrowseModel {
     func refreshItems() {
         refreshGeneration += 1
         let generation = refreshGeneration
-        let library = library, filter = filter, kind = kind, ordering = ordering
+        let library = library, filter = filter, kinds = kinds, ordering = ordering
         let grid = GridDisplaySettings.shared.grid
         Task.detached(priority: .userInitiated) { [weak self] in
             let outcome: Result<ListingPayload, Error>
             do {
-                let rows = try library.mediaItems(matching: filter, kind: kind, orderedBy: ordering)
+                let rows = try library.mediaItems(
+                    matching: filter, kinds: kinds, orderedBy: ordering)
                 var payload = ListingPayload(
                     items: rows, tagNames: [:], missingCategories: [:], duplicateIDs: [])
                 if grid.needsTagData {
@@ -366,6 +361,17 @@ final class BrowseModel {
         searchDebounce?.cancel()
         searchDisplayText = ""
         filter = MediaFilter()
+    }
+
+    /// Turn a media kind on or off. Returns false when the click was
+    /// refused because it was the last kind selected — the sidebar says
+    /// so rather than appearing to have ignored it.
+    @discardableResult
+    func toggleKind(_ kind: MediaKind) -> Bool {
+        var updated = kinds
+        guard updated.toggle(kind) else { return false }
+        kinds = updated
+        return true
     }
 
     func setSourceEnabled(_ source: Source, _ enabled: Bool) {
@@ -450,6 +456,53 @@ final class BrowseModel {
 
     func isOnline(_ item: MediaItem) -> Bool {
         onlineSourceIDs.contains(item.sourceID)
+    }
+
+    /// How a filter term reads on a chip: the group it came from, and
+    /// the value. Two halves because a tag name alone is ambiguous —
+    /// "1995" could be a Year or a Venue — and the chip bar is read at a
+    /// glance, away from the sidebar row that set it.
+    func chipLabel(for term: FilterTerm) -> (group: String, value: String)? {
+        switch term {
+        case .tag(let id):
+            for entry in vocabulary {
+                if let tag = entry.tags.first(where: { $0.id == id }) {
+                    return (entry.category.name, tag.name)
+                }
+            }
+            return nil
+        case .missingCategory(let id):
+            guard let entry = vocabulary.first(where: { $0.category.id == id })
+            else { return nil }
+            return (entry.category.name, "Missing")
+        case .status(let flag):
+            return ("Status", flag.displayName)
+        case .folder, .subtree:
+            return nil
+        }
+    }
+
+    // MARK: - Offline items
+
+    /// The listing the grid draws: `items`, minus the offline ones while
+    /// the banner's toggle is on. Playback queues follow this, not
+    /// `items` — the queue is what you can see.
+    var visibleItems: [MediaItem] {
+        hideOfflineItems ? items.filter(isOnline) : items
+    }
+
+    /// Items in the full listing whose source is offline. Counted against
+    /// the listing BEFORE the toggle, so hiding them does not make the
+    /// banner forget how many it hid.
+    var offlineItems: [MediaItem] {
+        items.filter { !isOnline($0) }
+    }
+
+    /// The offline sources represented in the listing, listed the way the
+    /// banner names them.
+    var offlineSourceNames: [String] {
+        let ids = Set(offlineItems.map(\.sourceID))
+        return sources.filter { ids.contains($0.id) }.map(\.name)
     }
 
     /// Absolute file URL (an embedded clip resolves to its parent's

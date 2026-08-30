@@ -61,6 +61,15 @@ struct BrowseView: View {
         openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
     }
 
+    /// "Video" when one kind is selected, "2 media types" when several —
+    /// the toolbar states the scope without repeating the sidebar's list.
+    private var kindSummary: String {
+        let kinds = model.kinds.ordered
+        return kinds.count == 1
+            ? kinds[0].displayName
+            : "\(kinds.count) media types"
+    }
+
     private var isShuffled: Bool {
         if case .random = model.ordering { return true }
         return false
@@ -70,7 +79,7 @@ struct BrowseView: View {
         @Bindable var model = model
         NavigationSplitView {
             SidebarView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: sidebarMax)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 262, max: sidebarMax)
         } detail: {
             // Playback happens in place, in the DETAIL column — the
             // sidebar stays open and usable beside the player. Back (or
@@ -82,12 +91,19 @@ struct BrowseView: View {
                 }
                 .id(request)  // a new request rebuilds the player from scratch
             } else {
-                ItemGridView()
-                    .searchable(
-                        text: Binding(
-                            get: { model.searchDisplayText },
-                            set: { model.setSearchText($0) }),
-                        prompt: "Name, path, notes, on-screen text")
+                VStack(spacing: 0) {
+                    // The sidebar shows where a filter came from; the chip
+                    // bar shows what is currently on.
+                    if !model.filter.slottedTerms.isEmpty { FilterChipBar() }
+                    if !model.offlineItems.isEmpty { OfflineBanner() }
+                    ItemGridView()
+                }
+                .background(Theme.Surface.content)
+                .searchable(
+                    text: Binding(
+                        get: { model.searchDisplayText },
+                        set: { model.setSearchText($0) }),
+                    prompt: "Name, path, notes, on-screen text")
             }
         }
         .toolbar {
@@ -95,25 +111,25 @@ struct BrowseView: View {
             // detail column; hiding the browse set keeps the top bar
             // from doubling up.
             if model.playerRequest == nil {
-                ToolbarItem(placement: .principal) {
-                    Picker("Kind", selection: $model.kind) {
-                        Text("Video").tag(MediaKind.video)
-                        Text("Audio").tag(MediaKind.audio)
-                    }
-                    .pickerStyle(.segmented)
-                    .help("Every listing is one media kind at a time — video or audio")
-                }
                 ToolbarItem {
                     // The toolbar draws a capsule behind this item sized to
                     // its content; without the padding and fixedSize the
                     // text spills past the capsule at 4+ digit counts (#102).
-                    Text("\(model.items.count) items")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .fixedSize()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .help("Items visible under the current filter")
+                    // Media type moved to the sidebar — it is a filter with
+                    // several values, not a mode — so the summary of what is
+                    // selected comes along beside the count.
+                    HStack(spacing: 7) {
+                        Text("\(model.visibleItems.count) items")
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.Text.quaternary)
+                        Text(kindSummary)
+                            .font(Theme.ui(11.5))
+                            .foregroundStyle(Theme.Text.disabled)
+                    }
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .help("Items visible under the current filter")
                 }
                 ToolbarItem {
                     Menu {
@@ -191,10 +207,10 @@ struct BrowseView: View {
                         }
                         Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
                             model.writeTags(
-                                itemIDs: model.items.map(\.id),
-                                scope: "filtered (\(model.items.count) files)")
+                                itemIDs: model.visibleItems.map(\.id),
+                                scope: "filtered (\(model.visibleItems.count) files)")
                         }
-                        .disabled(model.items.isEmpty)
+                        .disabled(model.visibleItems.isEmpty)
                         PurgeButton()
                     } label: {
                         Label("Maintenance", systemImage: "wrench.adjustable")
@@ -249,5 +265,170 @@ private struct ThumbnailQueueBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)
+    }
+}
+
+/// Every live filter slot, as a removable chip above the grid.
+///
+/// The sidebar answers "where did this come from" — a slot sits in the
+/// category it belongs to, three sections down, behind a disclosure
+/// triangle. This answers "what is on right now", which is the question
+/// you have when the grid shows fewer items than you expected.
+private struct FilterChipBar: View {
+    @Environment(BrowseModel.self) private var model
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 7) {
+            FlowLayout(spacing: 7) {
+                ForEach(model.filter.slottedTerms, id: \.term) { entry in
+                    chip(term: entry.term, slot: entry.slot)
+                }
+            }
+            Spacer(minLength: 0)
+            Button("Clear all") { model.filter.clearSlots() }
+                .buttonStyle(.plain)
+                .font(Theme.ui(11.5))
+                .foregroundStyle(Theme.Text.quaternary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Theme.Surface.sidebar)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func chip(term: FilterTerm, slot: MediaFilter.TagSlot) -> some View {
+        if let label = model.chipLabel(for: term) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(slot.color)
+                    .frame(width: 6, height: 6)
+                Text("\(label.group) · \(label.value)")
+                    .font(Theme.ui(11.5))
+                    .foregroundStyle(slot.color)
+                    .strikethrough(slot == .excluded)
+                Button {
+                    model.filter.setSlot(nil, for: term)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(Theme.ui(9, .semibold))
+                        .foregroundStyle(slot.color.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(slot.color.opacity(0.12))
+                    .stroke(slot.color.opacity(0.4), lineWidth: 1))
+            .help("\(slot.name) — \(slot.legend)")
+        }
+    }
+}
+
+/// Chips wrap; a row of them must not clip or force a scroller.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 7
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = layout(subviews, width: proposal.width ?? .infinity)
+        let height = rows.last.map { $0.y + $0.height } ?? 0
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    ) {
+        for row in layout(subviews, width: bounds.width) {
+            for placed in row.items {
+                subviews[placed.index].place(
+                    at: CGPoint(x: bounds.minX + placed.x, y: bounds.minY + row.y),
+                    proposal: .unspecified)
+            }
+        }
+    }
+
+    private struct Row {
+        var y: CGFloat
+        var height: CGFloat
+        var width: CGFloat
+        var items: [(index: Int, x: CGFloat)]
+    }
+
+    private func layout(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var current = Row(y: 0, height: 0, width: 0, items: [])
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            let x = current.items.isEmpty ? 0 : current.width + spacing
+            if !current.items.isEmpty, x + size.width > width {
+                rows.append(current)
+                current = Row(
+                    y: current.y + current.height + spacing, height: 0, width: 0, items: [])
+                current.items.append((index, 0))
+                current.width = size.width
+            } else {
+                current.items.append((index, x))
+                current.width = x + size.width
+            }
+            current.height = max(current.height, size.height)
+        }
+        if !current.items.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+
+/// What an offline source actually costs you, stated plainly.
+///
+/// Cached thumbnails mean an offline source's tiles look completely
+/// normal — only playback and file operations fail. So the banner says
+/// exactly that rather than implying the items are gone, and its action
+/// is a real toggle: hiding them is a choice, and the count of what was
+/// hidden is kept against the listing before the toggle so the state is
+/// recoverable.
+private struct OfflineBanner: View {
+    @Environment(BrowseModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Circle()
+                .fill(Theme.Status.orange)
+                .frame(width: 8, height: 8)
+            Text(message)
+                .font(Theme.ui(12.5))
+                .foregroundStyle(Theme.Status.warnText)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(model.hideOfflineItems ? "Show offline items" : "Hide offline items") {
+                model.hideOfflineItems.toggle()
+            }
+            .buttonStyle(SecondaryButtonStyle(compact: true))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(Theme.Status.warnBadgeFill)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.Border.activeCard).frame(height: 1)
+        }
+    }
+
+    private var message: String {
+        let offline = model.offlineItems.count
+        let sources = model.offlineSourceNames.formatted(
+            .list(type: .and, width: .standard))
+        if model.hideOfflineItems {
+            return """
+                \(offline) items on \(sources) are hidden. Their tags, fields and \
+                thumbnails are local and still current.
+                """
+        }
+        return """
+            \(offline) of these \(model.items.count) items live on \(sources) — tags, \
+            fields and thumbnails are local and current. Only playback and file \
+            operations are unavailable.
+            """
     }
 }

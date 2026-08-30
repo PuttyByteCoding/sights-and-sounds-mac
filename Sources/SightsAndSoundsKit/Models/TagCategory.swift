@@ -29,6 +29,12 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
     public var notes: String
     /// Hide from the browse filter panel (still available in editing).
     public var hiddenFromBrowse: Bool
+    /// Index into the fixed hue palette. Pills, swatches and filter chips
+    /// in three windows read it, so the colour is stored once here rather
+    /// than invented per surface — and it is an index, not a hex, so a
+    /// palette change moves every category at once. Wraps: an index past
+    /// the palette is stable, never a crash or a default grey.
+    public var colorIndex: Int
     /// Section separator above this category in the browse panel:
     /// nil = none, "" = plain divider, non-empty = labeled header.
     public var sectionLabel: String?
@@ -53,6 +59,7 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
         sortOrder: Int = 0,
         notes: String = "",
         hiddenFromBrowse: Bool = false,
+        colorIndex: Int = 0,
         sectionLabel: String? = nil,
         isDefaultFocus: Bool = false,
         textFormat: TextFormat = .noFormatting,
@@ -67,6 +74,7 @@ public struct TagCategory: Codable, Equatable, Identifiable, Sendable, Fetchable
         self.sortOrder = sortOrder
         self.notes = notes
         self.hiddenFromBrowse = hiddenFromBrowse
+        self.colorIndex = colorIndex
         self.sectionLabel = sectionLabel
         self.isDefaultFocus = isDefaultFocus
         self.textFormat = textFormat

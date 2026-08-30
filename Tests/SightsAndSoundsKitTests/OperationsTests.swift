@@ -118,7 +118,7 @@ import Testing
         #expect(spent.clipExported)
         #expect(spent.exportedToMediaItemID == exported!.id)
         // Spent rows leave every listing (the phase-0 baseline predicate).
-        let visible = try f.library.mediaItems(matching: MediaFilter(), kind: .video)
+        let visible = try f.library.mediaItems(matching: MediaFilter(), kinds: .video)
         #expect(!visible.contains { $0.id == clip.id })
     }
 

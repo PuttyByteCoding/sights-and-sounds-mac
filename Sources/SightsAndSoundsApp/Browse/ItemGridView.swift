@@ -18,7 +18,7 @@ struct ItemGridView: View {
                 ContentUnavailableView(
                     "Query Failed", systemImage: "exclamationmark.triangle",
                     description: Text(error))
-            } else if model.items.isEmpty {
+            } else if model.visibleItems.isEmpty {
                 ContentUnavailableView(
                     model.filter.isEmpty ? "No Items" : "No Matches",
                     systemImage: model.filter.isEmpty ? "film.stack" : "line.3.horizontal.decrease.circle",
@@ -28,7 +28,7 @@ struct ItemGridView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(model.items) { item in
+                        ForEach(model.visibleItems) { item in
                             ItemCell(item: item)
                         }
                     }
@@ -249,7 +249,7 @@ private struct ItemCell: View {
         guard model.isOnline(item) else { return }
         model.playerRequest = PlayerRequest(
             libraryID: model.libraryID, itemID: item.id,
-            playlist: model.items.map(\.id))
+            playlist: model.visibleItems.map(\.id))
     }
 
     // An embedded clip resolves to its parent's file — the file on disk.

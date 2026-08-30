@@ -179,10 +179,21 @@ extension LibraryDatabase {
         }
     }
 
+    /// Create a category.
+    ///
+    /// A category created without a colour (`colorIndex` at its default of
+    /// 0) is dealt the next hue in rotation, so the fifth category added
+    /// by hand is not the same colour as the first. Pass a non-zero index
+    /// to keep one; change one later with `updateCategory`.
     public func createCategory(_ category: TagCategory) throws {
         try writer.write { db in
             if category.isDefaultFocus {
                 try db.execute(sql: "UPDATE tagCategory SET isDefaultFocus = 0")
+            }
+            var category = category
+            if category.colorIndex == 0 {
+                category.colorIndex = try Int.fetchOne(
+                    db, sql: "SELECT COALESCE(MAX(colorIndex) + 1, 0) FROM tagCategory") ?? 0
             }
             try category.insert(db)
         }

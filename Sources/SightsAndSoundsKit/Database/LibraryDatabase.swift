@@ -582,6 +582,27 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // A category owns its colour. The design tokens fix a hue per
+        // category and the browse sidebar, the tag pills and the filter
+        // chips all draw it — but nothing stored one, so every surface
+        // was about to invent its own. Existing libraries are dealt
+        // hues in browse order (sortOrder, then name), which is the
+        // order the sidebar lists them in, so the colours read as
+        // deliberate rather than random from the first launch.
+        migrator.registerMigration("categoryColors") { db in
+            try db.alter(table: "tagCategory") { t in
+                t.add(column: "colorIndex", .integer).notNull().defaults(to: 0)
+            }
+            try db.execute(sql: """
+                UPDATE tagCategory SET colorIndex = (
+                    SELECT COUNT(*) FROM tagCategory AS earlier
+                    WHERE earlier.sortOrder < tagCategory.sortOrder
+                       OR (earlier.sortOrder = tagCategory.sortOrder
+                           AND earlier.name < tagCategory.name)
+                )
+                """)
+        }
+
         return migrator
     }
 
@@ -608,16 +629,15 @@ public final class LibraryDatabase: Sendable {
     /// sources. Pass a sourceID to scope the tree to one source — the
     /// sidebar nests a tree under each source row.
     public func folderCounts(
-        kind: MediaKind, sourceID: UUID? = nil
+        kinds: MediaKinds, sourceID: UUID? = nil
     ) throws -> [(path: String, count: Int)] {
-        try writer.read { db in
+        let baseline = FilterCompiler.Baseline.sql(kinds)
+        return try writer.read { db in
             var sql = """
                 SELECT mediaItem.folderPath AS path, COUNT(*) AS n FROM mediaItem \
-                WHERE mediaItem.kind = ? AND mediaItem.clipExported = 0 \
-                AND EXISTS (SELECT 1 FROM source \
-                            WHERE source.id = mediaItem.sourceID AND source.enabled)
+                WHERE \(baseline.sql)
                 """
-            var arguments: [any DatabaseValueConvertible] = [kind.rawValue]
+            var arguments: [any DatabaseValueConvertible] = baseline.args
             if let sourceID {
                 sql += " AND mediaItem.sourceID = ?"
                 arguments.append(sourceID)
@@ -649,14 +669,16 @@ public final class LibraryDatabase: Sendable {
 
     /// The visible items for a filter — the product's central query.
     ///
-    /// `kind` is a required parameter on purpose: the old app's rule that
+    /// `kinds` is a required parameter on purpose: the old app's rule that
     /// every listing surface must hard-filter by media kind failed silently
-    /// when forgotten, so here it cannot be omitted.
+    /// when forgotten, so here it cannot be omitted — and `MediaKinds`
+    /// cannot be empty, so a listing that names several kinds still cannot
+    /// name none.
     public func mediaItems(
-        matching filter: MediaFilter, kind: MediaKind,
+        matching filter: MediaFilter, kinds: MediaKinds,
         orderedBy ordering: MediaOrdering = .relativePath
     ) throws -> [MediaItem] {
-        let compiled = FilterCompiler.compile(filter: filter, kind: kind, ordering: ordering)
+        let compiled = FilterCompiler.compile(filter: filter, kinds: kinds, ordering: ordering)
         return try writer.read { db in
             try MediaItem.fetchAll(db, sql: compiled.sql, arguments: compiled.arguments)
         }

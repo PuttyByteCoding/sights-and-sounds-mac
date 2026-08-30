@@ -17,11 +17,11 @@ import Testing
 
     @Test func kindHardFilterSeparatesAudio() throws {
         let f = try FilterFixture()
-        #expect(try f.names(MediaFilter(), kind: .audio) == ["e.flac"])
+        #expect(try f.names(MediaFilter(), kinds: .audio) == ["e.flac"])
         // bandA is on both a video and the audio item; kind still separates.
         let byTag = MediaFilter(required: [.tag(f.bandA.id)])
-        #expect(try f.names(byTag, kind: .video) == ["a.mp4", "b.mp4"])
-        #expect(try f.names(byTag, kind: .audio) == ["e.flac"])
+        #expect(try f.names(byTag, kinds: .video) == ["a.mp4", "b.mp4"])
+        #expect(try f.names(byTag, kinds: .audio) == ["e.flac"])
     }
 
     // MARK: Slots

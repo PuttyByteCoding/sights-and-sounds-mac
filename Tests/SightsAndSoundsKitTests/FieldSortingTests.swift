@@ -44,7 +44,7 @@ import Testing
     @Test func numberFieldsSortNumericallyNotLexically() throws {
         let f = try LearningFixture()
         let ordered = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video,
+            matching: MediaFilter(), kinds: .video,
             orderedBy: .fieldValue(f.lessonNumber.id))
         // Numeric: 1, 2, 3, 10 — lexical would put "10" before "2".
         #expect(ordered.map(\.fileName) == [
@@ -55,7 +55,7 @@ import Testing
     @Test func itemsWithoutAValueSortLastEvenDescending() throws {
         let f = try LearningFixture()
         let ordered = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video,
+            matching: MediaFilter(), kinds: .video,
             orderedBy: .fieldValue(f.lessonNumber.id, ascending: false))
         #expect(ordered.map(\.fileName) == [
             "lesson-10.mp4", "lesson-3.mp4", "lesson-2.mp4", "lesson-1.mp4", "intro.mp4",
@@ -65,7 +65,7 @@ import Testing
     @Test func orderingComposesWithFiltering() throws {
         let f = try LearningFixture()
         let ordered = try f.library.mediaItems(
-            matching: MediaFilter(required: [.subtree("swift")]), kind: .video,
+            matching: MediaFilter(required: [.subtree("swift")]), kinds: .video,
             orderedBy: .fieldValue(f.lessonNumber.id))
         #expect(ordered.count == 5)
         #expect(ordered.first?.fileName == "lesson-1.mp4")
@@ -88,7 +88,7 @@ import Testing
             }
         }
         let ordered = try library.mediaItems(
-            matching: MediaFilter(), kind: .video, orderedBy: .fieldValue(venue.id))
+            matching: MediaFilter(), kinds: .video, orderedBy: .fieldValue(venue.id))
         // NOCASE text ordering; numericValue is nil for text fields.
         #expect(ordered.map(\.fileName) == ["1.mp4", "2.mp4", "0.mp4"])
     }
@@ -115,12 +115,12 @@ import Testing
     @Test func fileSizeAndDurationOrderings() throws {
         let f = try FilterFixture()
         let bySize = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video, orderedBy: .fileSize(ascending: false))
+            matching: MediaFilter(), kinds: .video, orderedBy: .fileSize(ascending: false))
         let sizes = bySize.map(\.fileSize)
         #expect(sizes == sizes.sorted(by: >))
 
         let byDuration = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video, orderedBy: .duration(ascending: true))
+            matching: MediaFilter(), kinds: .video, orderedBy: .duration(ascending: true))
         // Items without a duration sort last, whatever the direction.
         let durations = byDuration.map(\.durationSeconds)
         let known = durations.compactMap { $0 }
@@ -132,9 +132,9 @@ import Testing
 
     @Test func fullPathOrderingGroupsBySourceAndKeepsEveryRow() throws {
         let f = try FilterFixture()
-        let baseline = try f.library.mediaItems(matching: MediaFilter(), kind: .video)
+        let baseline = try f.library.mediaItems(matching: MediaFilter(), kinds: .video)
         let byFullPath = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video, orderedBy: .fullPath)
+            matching: MediaFilter(), kinds: .video, orderedBy: .fullPath)
         #expect(Set(byFullPath.map(\.id)) == Set(baseline.map(\.id)))
         // One source in the fixture — full path degrades to path order.
         #expect(byFullPath.map(\.id) == baseline.map(\.id))
@@ -143,19 +143,19 @@ import Testing
     @Test func shuffleIsStablePerSeedAndReDealsWithANewOne() throws {
         let f = try FilterFixture()
         let deal1 = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video, orderedBy: .random(seed: 41))
+            matching: MediaFilter(), kinds: .video, orderedBy: .random(seed: 41))
         let deal1Again = try f.library.mediaItems(
-            matching: MediaFilter(), kind: .video, orderedBy: .random(seed: 41))
+            matching: MediaFilter(), kinds: .video, orderedBy: .random(seed: 41))
         #expect(deal1.map(\.id) == deal1Again.map(\.id))  // same seed, same deal
 
-        let baseline = try f.library.mediaItems(matching: MediaFilter(), kind: .video)
+        let baseline = try f.library.mediaItems(matching: MediaFilter(), kinds: .video)
         #expect(Set(deal1.map(\.id)) == Set(baseline.map(\.id)))  // nothing lost
 
         // A different seed deals differently for at least one of a few
         // tries (tiny fixtures can collide on a single seed by chance).
         let reDealt = (1...5).contains { seed in
             (try? f.library.mediaItems(
-                matching: MediaFilter(), kind: .video, orderedBy: .random(seed: seed)))?
+                matching: MediaFilter(), kinds: .video, orderedBy: .random(seed: seed)))?
                 .map(\.id) != deal1.map(\.id)
         }
         #expect(reDealt)
