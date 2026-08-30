@@ -580,6 +580,19 @@ final class BrowseModel {
         }
     }
 
+    // MARK: - Command palette
+
+    /// The commands last run here, most recent first. Empty means the
+    /// palette lists everything; a palette that rewards the SECOND use
+    /// of a command is the point of remembering.
+    private(set) var paletteRecents: [String] = []
+
+    func rememberPaletteCommand(_ id: String) {
+        paletteRecents.removeAll { $0 == id }
+        paletteRecents.insert(id, at: 0)
+        if paletteRecents.count > 8 { paletteRecents.removeLast() }
+    }
+
     /// How a filter term reads on a chip: the group it came from, and
     /// the value. Two halves because a tag name alone is ambiguous —
     /// "1995" could be a Year or a Venue — and the chip bar is read at a

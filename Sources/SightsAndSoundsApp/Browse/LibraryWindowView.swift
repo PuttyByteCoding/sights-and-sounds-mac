@@ -44,6 +44,7 @@ struct BrowseView: View {
     @Environment(BrowseModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @State private var showViewOptions = false
+    @State private var showPalette = false
     @State private var windowWidth: CGFloat = 0
 
     /// The sidebar's expansion stops where the video's 150 pt floor
@@ -221,6 +222,16 @@ struct BrowseView: View {
                     TasksWindowButton()
                 }
             }
+        }
+        // ⌃K over the library window: one field reaching windows,
+        // filters, tagging, operations and views.
+        .background {
+            Button("Command Palette") { showPalette = true }
+                .keyboardShortcut("k", modifiers: .control)
+                .hidden()
+        }
+        .sheet(isPresented: $showPalette) {
+            CommandPalette().environment(model)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let status = model.thumbnailQueue {

@@ -292,6 +292,12 @@ follow. Full context, locked decisions and the 11-phase plan live in
     flagged on the card, not silently never matched), and Jobs gains the
     rest of the OCR defaults. Category Order is specified only — it stays
     parked until tagging is called finished.
+  - Spec 16, Command palette: ⌃K over the library window — one field over
+    windows, filters, tagging, operations and saved views, using each
+    command's existing name. Category-derived commands are generated from
+    the vocabulary, so a new category gets its filter and tagging
+    commands for free; unavailable commands stay listed with their
+    requirement; and an empty field shows what was last used.
 
 ### Demo library
 
