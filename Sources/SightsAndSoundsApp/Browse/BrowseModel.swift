@@ -302,9 +302,24 @@ final class BrowseModel {
         let grid = GridDisplaySettings.shared.grid
         Task.detached(priority: .userInitiated) { [weak self] in
             let outcome: Result<ListingPayload, Error>
+            // Timed because how the grid should react to a filter change
+            // depends on how long the query actually takes, and that is a
+            // fact about a real library rather than a guess. Debug level:
+            // it is diagnostic, and the Log window can filter to it.
+            let started = ContinuousClock.now
             do {
                 let rows = try library.mediaItems(
                     matching: filter, kinds: kinds, orderedBy: ordering)
+                // Both components: `attoseconds` carries only the
+                // sub-second remainder, so seconds must be added or a
+                // 1.5s query reports as 500ms — the exact case worth
+                // knowing about.
+                let took = started.duration(to: .now).components
+                let elapsed = Double(took.seconds) * 1000
+                    + Double(took.attoseconds) / 1e15
+                AppLog.shared.debug(
+                    "browse",
+                    "listing query \(String(format: "%.1f", elapsed))ms — \(rows.count) items")
                 var payload = ListingPayload(
                     items: rows, tags: [:], missingCategories: [:], duplicateIDs: [])
                 if grid.needsTagData {

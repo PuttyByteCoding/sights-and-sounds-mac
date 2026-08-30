@@ -93,9 +93,10 @@ struct BrowseView: View {
                 .id(request)  // a new request rebuilds the player from scratch
             } else {
                 VStack(spacing: 0) {
-                    // The sidebar shows where a filter came from; the chip
-                    // bar shows what is currently on.
-                    if !model.filter.slottedTerms.isEmpty { FilterChipBar() }
+                    // One filter surface, not two. The pinned block at the
+                    // top of the sidebar says both where a filter came from
+                    // and what is currently on — and being in the sidebar,
+                    // it stays visible while the player owns this column.
                     if !model.offlineItems.isEmpty { OfflineBanner() }
                     ItemGridView()
                 }
@@ -273,72 +274,6 @@ private struct ThumbnailQueueBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)
-    }
-}
-
-/// Every live filter slot, as a removable chip above the grid.
-///
-/// The sidebar answers "where did this come from" — a slot sits in the
-/// category it belongs to, three sections down, behind a disclosure
-/// triangle. This answers "what is on right now", which is the question
-/// you have when the grid shows fewer items than you expected.
-private struct FilterChipBar: View {
-    @Environment(BrowseModel.self) private var model
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 7) {
-            FlowRow(spacing: 7) {
-                ForEach(model.filter.slottedTerms, id: \.term) { entry in
-                    chip(term: entry.term, slot: entry.slot)
-                }
-            }
-            Spacer(minLength: 0)
-            Button("Clear all") { model.filter.clearSlots() }
-                .buttonStyle(.plain)
-                .font(Theme.ui(11.5))
-                .foregroundStyle(Theme.Text.quaternary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Theme.Surface.sidebar)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.Border.standard).frame(height: 1)
-        }
-    }
-
-    @ViewBuilder
-    private func chip(term: FilterTerm, slot: MediaFilter.TagSlot) -> some View {
-        if let label = model.chipLabel(for: term) {
-            HStack(spacing: 6) {
-                // The dot was decoration; it is now the way to move this
-                // term between the four states without going back to the
-                // sidebar row that set it.
-                SlotMenu(slot: slot, set: { model.filter.setSlot($0, for: term) }) {
-                    Circle()
-                        .fill(slot.color)
-                        .frame(width: 6, height: 6)
-                }
-                Text("\(label.group) · \(label.value)")
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(slot.color)
-                    .strikethrough(slot == .excluded)
-                Button {
-                    model.filter.setSlot(nil, for: term)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(Theme.ui(9, .semibold))
-                        .foregroundStyle(slot.color.opacity(0.7))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 9)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control)
-                    .fill(slot.color.opacity(0.12))
-                    .stroke(slot.color.opacity(0.4), lineWidth: 1))
-            .help("\(slot.name) — \(slot.legend)")
-        }
     }
 }
 
