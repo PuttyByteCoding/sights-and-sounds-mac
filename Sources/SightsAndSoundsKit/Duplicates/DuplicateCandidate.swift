@@ -9,6 +9,11 @@ public enum DuplicateStatus: String, Codable, Sendable, CaseIterable {
     /// Reviewed and judged NOT duplicates. Kept — never deleted — so the
     /// pair can't be re-flagged and re-reviewed later.
     case rejected
+    /// Reviewed, agreed to be the same content, and **both copies are
+    /// wanted**. A pro-shot and an audience capture of the same set match
+    /// at 94% and are both worth having; the matcher does not know that.
+    /// Distinct from `rejected`, which says the match was wrong.
+    case keptBoth
 }
 
 /// How a pair got flagged.

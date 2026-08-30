@@ -198,15 +198,39 @@ extension LibraryDatabase {
         public var fileFailures: [String] = []
     }
 
-    /// Permanently delete every marked-for-deletion item: files first
+    /// The size of everything currently flagged for deletion — the
+    /// review list's headline number.
+    public func reclaimableBytes() throws -> Int64 {
+        try writer.read { db in
+            try Int64.fetchOne(
+                db, sql: "SELECT COALESCE(SUM(fileSize), 0) FROM mediaItem WHERE markedForDeletion = 1")
+                ?? 0
+        }
+    }
+
+    /// Permanently delete marked-for-deletion items: files first
     /// (through the boundary; offline sources' items are skipped
     /// entirely), then rows — cascades sweep tags, values, feature state
-    /// and candidates. Only flagged rows are ever touched. The caller
-    /// owns the confirmation.
+    /// and candidates. The caller owns the confirmation.
+    ///
+    /// `itemIDs` narrows it to a reviewed subset; nil means everything
+    /// flagged. **The flag check stays the guard either way** — a passed
+    /// id that is not flagged is not deleted, so a stale list cannot
+    /// take a file nobody marked.
     @discardableResult
-    public func purgeDeleted(fileAccess: any FileAccess = LiveFileAccess()) throws -> PurgeOutcome {
-        let flagged = try writer.read { db in
-            try MediaItem.filter(sql: "markedForDeletion = 1").fetchAll(db)
+    public func purgeDeleted(
+        itemIDs: [UUID]? = nil, fileAccess: any FileAccess = LiveFileAccess()
+    ) throws -> PurgeOutcome {
+        let flagged = try writer.read { db -> [MediaItem] in
+            guard let itemIDs else {
+                return try MediaItem.filter(sql: "markedForDeletion = 1").fetchAll(db)
+            }
+            guard !itemIDs.isEmpty else { return [] }
+            let placeholders = Array(repeating: "?", count: itemIDs.count).joined(separator: ", ")
+            return try MediaItem.fetchAll(
+                db,
+                sql: "SELECT * FROM mediaItem WHERE markedForDeletion = 1 AND id IN (\(placeholders))",
+                arguments: StatementArguments(itemIDs))
         }
         let sources = try writer.read { db in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })

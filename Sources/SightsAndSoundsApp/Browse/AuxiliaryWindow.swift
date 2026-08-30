@@ -8,7 +8,7 @@ import SightsAndSoundsKit
 struct AuxWindowRequest: Codable, Hashable {
     enum Kind: String, Codable, CaseIterable {
         case categories
-        case duplicates
+        case review
         case moveHistory
         case reorganize
         case validation
@@ -17,7 +17,7 @@ struct AuxWindowRequest: Codable, Hashable {
         var title: String {
             switch self {
             case .categories: "Categories & Fields"
-            case .duplicates: "Duplicates"
+            case .review: "Review"
             case .moveHistory: "Move History"
             case .reorganize: "Reorganize"
             case .validation: "Validation"
@@ -84,7 +84,7 @@ struct AuxiliaryWindowView: View {
         } else {
             switch request.kind {
             case .categories: CategoryManagerView()
-            case .duplicates: DuplicatesView()
+            case .review: ReviewView()
             case .moveHistory: MoveHistoryView()
             case .reorganize: ReorganizeView()
             case .validation: ValidationView()

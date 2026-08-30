@@ -102,6 +102,24 @@ public final class AppDatabase: Sendable {
                 t.add(column: "summaryTagCount", .integer)
             }
         }
+        // Repair recipes are data: a match, a tool, a command template,
+        // an estimate and a risk label. App-level because the tools are
+        // machine-wide, and editable so adding one is a settings change
+        // rather than a release.
+        migrator.registerMigration("repairRecipes") { db in
+            try db.create(table: "repairRecipe") { t in
+                t.primaryKey("id", .blob)
+                t.column("name", .text).notNull()
+                t.column("matchesFailureKind", .text)
+                t.column("tool", .text).notNull()
+                t.column("argumentTemplate", .text).notNull()
+                t.column("estimate", .text).notNull()
+                t.column("risk", .text).notNull()
+                t.column("sortOrder", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text).notNull().defaults(to: "")
+            }
+        }
+
         return migrator
     }
 

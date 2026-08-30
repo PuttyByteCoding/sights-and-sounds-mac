@@ -171,14 +171,14 @@ struct BrowseView: View {
                 }
                 ToolbarItem {
                     Button {
-                        openAux(.duplicates)
+                        openAux(.review)
                     } label: {
-                        Label("Duplicates", systemImage: "rectangle.on.rectangle")
+                        Label("Review", systemImage: "checklist")
                             .badge(model.pendingDuplicateCount)
                     }
                     .help(model.pendingDuplicateCount > 0
-                        ? "\(model.pendingDuplicateCount) duplicate pairs awaiting review"
-                        : "No pending duplicate pairs")
+                        ? "\(model.pendingDuplicateCount) duplicate pairs, plus the delete list and playback issues"
+                        : "Duplicates, the delete list and playback issues")
                 }
                 ToolbarItem {
                     Menu {
