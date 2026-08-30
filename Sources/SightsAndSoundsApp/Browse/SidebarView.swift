@@ -81,11 +81,12 @@ struct SidebarView: View {
                 ForEach(model.filter.slottedTerms, id: \.term) { entry in
                     if let label = model.chipLabel(for: entry.term) {
                         statusRow(
-                            mark: entry.slot.mark,
+                            slot: entry.slot,
                             color: entry.slot.color,
                             text: "\(label.group) · \(label.value)",
                             strikethrough: entry.slot == .excluded,
-                            help: entry.slot.legend
+                            help: entry.slot.legend,
+                            setSlot: { model.filter.setSlot($0, for: entry.term) }
                         ) {
                             model.filter.setSlot(nil, for: entry.term)
                         }
@@ -135,14 +136,23 @@ struct SidebarView: View {
     /// One reason the listing is narrower, and the way to undo just that
     /// one — each row removes itself, so a filter can be unpicked a
     /// piece at a time rather than only cleared whole.
+    /// A row carrying a `slot` gets its glyph turned into the four-way
+    /// state menu; the folder, search and offline rows have no slot to
+    /// change, so their symbol stays inert and only the ✕ acts.
     private func statusRow(
-        mark: String? = nil, symbol: String? = nil, color: Color, text: String,
-        strikethrough: Bool = false, help: String, remove: @escaping () -> Void
+        slot: MediaFilter.TagSlot? = nil, symbol: String? = nil, color: Color, text: String,
+        strikethrough: Bool = false, help: String,
+        setSlot: ((MediaFilter.TagSlot?) -> Void)? = nil,
+        remove: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 6) {
             Group {
-                if let mark {
-                    Text(mark).font(Theme.ui(10, .bold))
+                if let slot, let setSlot {
+                    SlotMenu(slot: slot, set: setSlot) {
+                        Text(slot.mark).font(Theme.ui(10, .bold))
+                    }
+                } else if let slot {
+                    Text(slot.mark).font(Theme.ui(10, .bold))
                 } else if let symbol {
                     Image(systemName: symbol).font(Theme.ui(9))
                 }

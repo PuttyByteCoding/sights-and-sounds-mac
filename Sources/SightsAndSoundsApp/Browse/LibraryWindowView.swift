@@ -310,9 +310,14 @@ private struct FilterChipBar: View {
     private func chip(term: FilterTerm, slot: MediaFilter.TagSlot) -> some View {
         if let label = model.chipLabel(for: term) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(slot.color)
-                    .frame(width: 6, height: 6)
+                // The dot was decoration; it is now the way to move this
+                // term between the four states without going back to the
+                // sidebar row that set it.
+                SlotMenu(slot: slot, set: { model.filter.setSlot($0, for: term) }) {
+                    Circle()
+                        .fill(slot.color)
+                        .frame(width: 6, height: 6)
+                }
                 Text("\(label.group) · \(label.value)")
                     .font(Theme.ui(11.5))
                     .foregroundStyle(slot.color)
