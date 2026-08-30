@@ -9,8 +9,10 @@ import SightsAndSoundsKit
 final class PlayerModel {
     let library: LibraryDatabase
     let libraryID: UUID
-    /// The filtered listing the item was opened from; ←/→ walk it.
-    let playlist: [UUID]
+    /// The filtered listing the item was opened from; ←/→ walk it. It
+    /// FOLLOWS the browse filter — see `updatePlaylist` — rather than
+    /// being the snapshot the player opened with.
+    private(set) var playlist: [UUID]
 
     private(set) var item: MediaItem?
     private(set) var player = AVPlayer()
@@ -119,11 +121,38 @@ final class PlayerModel {
     // MARK: - Play queue
 
     /// The playlist's rows, in playlist order — the queue strip's data.
-    /// One fetch per player open, off the main actor.
+    /// Re-fetched whenever the browse filter reshapes the listing, off
+    /// the main actor.
     private(set) var queueItems: [MediaItem] = []
 
+    /// Where the playing item sat when the filter dropped it out of the
+    /// playlist, so ← and → still move from a sensible place. Nil while
+    /// the item is in the playlist.
+    private var orphanIndex: Int?
+
+    /// The browse listing changed under us. The playlist follows it, but
+    /// **playback does not stop**: an item that no longer matches keeps
+    /// playing to its end and simply is not in the queue any more. A
+    /// filter click killing what you are three minutes into would be a
+    /// worse surprise than a queue that no longer contains it.
+    func updatePlaylist(_ ids: [UUID]) {
+        guard ids != playlist else { return }
+        if let current = item?.id, !ids.contains(current) {
+            // Its natural position in the new list: however many of the
+            // items ahead of it survived the filter.
+            orphanIndex = playlist.prefix { $0 != current }.filter(ids.contains).count
+        } else {
+            orphanIndex = nil
+        }
+        playlist = ids
+        loadQueueItems()
+    }
+
     private func loadQueueItems() {
-        guard !playlist.isEmpty else { return }
+        guard !playlist.isEmpty else {
+            queueItems = []
+            return
+        }
         let library = library, playlist = playlist
         Task.detached(priority: .userInitiated) { [weak self] in
             // Explicit return type — the async `read` overload's
@@ -604,8 +633,21 @@ final class PlayerModel {
     func goPrevious() { step(-1) }
 
     private func step(_ delta: Int) {
-        guard let item, let index = playlist.firstIndex(of: item.id) else { return }
-        let next = index + delta
+        guard let item else { return }
+        let base: Int
+        if let index = playlist.firstIndex(of: item.id) {
+            base = index
+        } else if let orphan = orphanIndex {
+            // The filter dropped what is playing. It keeps playing, but
+            // the arrows have to move from somewhere — so they move from
+            // the gap it left: forward onto the survivor that took its
+            // place, back onto the one before it. Without this, ← and →
+            // would silently stop working the moment a filter changed.
+            base = delta > 0 ? orphan - 1 : orphan
+        } else {
+            return
+        }
+        let next = base + delta
         guard playlist.indices.contains(next) else { return }
         load(itemID: playlist[next])
     }

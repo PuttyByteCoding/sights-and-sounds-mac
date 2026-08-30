@@ -14,6 +14,10 @@ import SightsAndSoundsKit
 /// lesson from the web app's player component.
 struct PlayerView: View {
     @Environment(AppModel.self) private var app
+    /// The player lives in the browse window's detail column, so the
+    /// listing that opened it is still right there — which is what lets
+    /// the queue follow the filter instead of being a snapshot.
+    @Environment(BrowseModel.self) private var browse
     let request: PlayerRequest
     let onClose: () -> Void
 
@@ -77,6 +81,11 @@ struct PlayerView: View {
             } catch {
                 openError = "\(error)"
             }
+        }
+        // The queue follows the browse listing. Keyed on the ids so a
+        // refresh returning the same items does nothing.
+        .onChange(of: browse.visibleItems.map(\.id)) { _, ids in
+            model?.updatePlaylist(ids)
         }
         .onDisappear { model?.shutdown() }
     }
@@ -1442,6 +1451,7 @@ private struct QueuePanel: View {
                             grid: grid,
                             isCurrent: item.id == model.item?.id)
                             .id(item.id)
+                            .transition(.opacity)
                             .onTapGesture {
                                 model.zone = .queue
                                 model.load(itemID: item.id)
@@ -1449,6 +1459,14 @@ private struct QueuePanel: View {
                     }
                 }
                 .padding(6)
+                // Cross-fade rather than a hard swap: the strip reshaping
+                // silently under you while you are watching something is
+                // the jarring part. Same constant as the grid — two
+                // surfaces resettling at different speeds off one click
+                // reads as a bug.
+                .animation(
+                    .easeInOut(duration: Theme.Motion.listingSettle),
+                    value: model.queueItems.map(\.id))
             }
             .onChange(of: model.item?.id) { _, current in
                 if let current {
