@@ -164,6 +164,7 @@ private struct RailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 preview
+                appliedBlock
                 sources
                 status
                 thisPass
@@ -244,6 +245,52 @@ private struct RailView: View {
             itemID: item.id, libraryID: model.libraryID, fileURL: fileURL,
             durationSeconds: item.durationSeconds)
         if let data { frame = NSImage(data: data) }
+    }
+
+    // MARK: Applied tags
+
+    /// The tags the displayed video already wears, category-hued — the
+    /// baseline for every decision. A basket commit or an advance
+    /// refreshes it with the rest of the reload, so accepting a tag is
+    /// visibly "it moved up here".
+    @ViewBuilder
+    private var appliedBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Applied tags").modifier(Theme.sectionLabel())
+                Spacer()
+                Text("\(model.appliedTags.reduce(0) { $0 + $1.tags.count })")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(
+                        model.appliedTags.isEmpty
+                            ? Theme.Text.zeroCount : Theme.Text.quaternary)
+            }
+            if model.appliedTags.isEmpty {
+                Text("Nothing yet — that is what this window is for.")
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Text.quaternary)
+            } else {
+                ForEach(model.appliedTags, id: \.category.id) { entry in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(entry.category.name)
+                            .font(Theme.ui(10, .semibold))
+                            .foregroundStyle(Theme.Text.tertiary)
+                        FlowRow(spacing: 4) {
+                            ForEach(entry.tags) { tag in
+                                let hue = Theme.categoryHue(entry.category.colorIndex)
+                                Text(tag.name)
+                                    .font(Theme.ui(10.5))
+                                    .foregroundStyle(hue)
+                                    .padding(.vertical, 2)
+                                    .padding(.horizontal, 7)
+                                    .background(Capsule().fill(hue.opacity(0.13)))
+                                    .overlay(Capsule().stroke(hue.opacity(0.35), lineWidth: 1))
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Filters
