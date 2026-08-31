@@ -27,6 +27,9 @@ private struct TileBadge: Hashable {
     var color: Color
     var isPill = false
     var isGlyph = false
+    /// Set on tag pills only. A badge is otherwise just text, but a tag
+    /// pill IS a tag, and right-clicking one has to know which.
+    var tagID: UUID?
 }
 
 /// A tile, drawn from the active view.
@@ -41,6 +44,10 @@ struct TileCard: View {
     let grid: GridSettings
     var thumbnail: NSImage?
     var isSelected = false
+    /// Right-clicking a tag pill asks the caller to edit that tag. The
+    /// player's queue strip passes nothing and its pills stay inert —
+    /// the tile does not know what an editor is.
+    var onEditTag: ((UUID) -> Void)?
     /// The queue strip sizes its own thumbnail; the browse grid lets the
     /// column width decide.
     var thumbnailHeight: CGFloat?
@@ -222,6 +229,10 @@ struct TileCard: View {
                     Capsule().stroke(badge.color.opacity(outside ? 0.2 : 0.35), lineWidth: 1)
                 }
                 .modifier(WidthRule(width: entry.width(in: slot)))
+                // The innermost context menu wins, so right-clicking the
+                // pill edits the TAG while right-clicking the tile around
+                // it still gets the item's own menu.
+                .modifier(TagPillMenu(tagID: badge.tagID, onEdit: onEditTag))
         } else if outside {
             text.modifier(WidthRule(width: entry.width(in: slot)))
         } else {
@@ -312,11 +323,15 @@ struct TileCard: View {
                 color: Theme.Status.orange)]
         case .tags:
             return context.tags.map {
-                TileBadge(text: $0.name, color: Theme.categoryHue($0.colorIndex), isPill: true)
+                TileBadge(
+                    text: $0.name, color: Theme.categoryHue($0.colorIndex),
+                    isPill: true, tagID: $0.id)
             }
         case .tagsIn(let categoryID):
             return context.tags.filter { $0.categoryID == categoryID }.map {
-                TileBadge(text: $0.name, color: Theme.categoryHue($0.colorIndex), isPill: true)
+                TileBadge(
+                    text: $0.name, color: Theme.categoryHue($0.colorIndex),
+                    isPill: true, tagID: $0.id)
             }
         }
     }
@@ -390,6 +405,26 @@ extension TileAlignment {
         case .leading: .leading
         case .center: .center
         case .trailing: .trailing
+        }
+    }
+}
+
+
+/// The context menu on a tag pill. Applied only where a pill actually
+/// carries a tag and the caller wants the gesture — everywhere else the
+/// badge stays a plain piece of text and the tile's own menu is what a
+/// right-click finds.
+private struct TagPillMenu: ViewModifier {
+    let tagID: UUID?
+    let onEdit: ((UUID) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let tagID, let onEdit {
+            content.contextMenu {
+                Button("Edit Tag…") { onEdit(tagID) }
+            }
+        } else {
+            content
         }
     }
 }

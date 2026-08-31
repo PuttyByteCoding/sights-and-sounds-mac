@@ -141,6 +141,9 @@ private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
     let item: MediaItem
     @State private var thumbnail: NSImage?
+    /// The tag whose editor is open, from a right-click on one of this
+    /// tile's pills.
+    @State private var editingTag: Tag?
 
     var body: some View {
         TileCard(
@@ -149,7 +152,15 @@ private struct ItemCell: View {
             view: GridDisplaySettings.shared.grid.activeView,
             grid: GridDisplaySettings.shared.grid,
             thumbnail: thumbnail,
-            isSelected: model.selection.contains(item.id))
+            isSelected: model.selection.contains(item.id),
+            // A tag pill on a tile IS a tag: right-clicking one edits it,
+            // while right-clicking the tile around it still gets the
+            // item's own menu.
+            onEditTag: { id in
+                editingTag = model.vocabulary
+                    .flatMap(\.tags)
+                    .first { $0.id == id }
+            })
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { play() }
             .onTapGesture {
@@ -160,6 +171,14 @@ private struct ItemCell: View {
                     range: flags.contains(.shift))
             }
             .contextMenu { menu }
+            .sheet(item: $editingTag) { tag in
+                TagSheet(
+                    mode: .edit(tag),
+                    library: model.library,
+                    libraryID: model.libraryID,
+                    categories: model.vocabulary.map(\.category),
+                    onSaved: { _ in model.refreshAll() })
+            }
             .task(id: item.id) {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id,
