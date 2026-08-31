@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import SightsAndSoundsKit
 
-/// Tag analysis — the Candidates tab.
+/// Tag analysis — the window, and the switch between its two modes.
 ///
 /// Candidate mining across the library: strings that appear in items with
 /// no tag behind them, triaged in one place. This is the **plural half of
@@ -11,12 +11,14 @@ import SightsAndSoundsKit
 /// the item playing; everything that touches *other* items happens here.
 /// That one rule is what stops the same feature being built twice.
 ///
-/// The Rules tab is Phase E. The tab strip is here because the mode
-/// switch is part of this window's identity, and a tab that says what is
-/// coming beats a window that changes shape later.
+/// Candidates is triage, Rules is automation, and §4 is the hinge
+/// between them: deciding the same thing twice is a rule waiting to be
+/// written, so "Make a rule from this" carries the string across rather
+/// than asking for it again.
 struct TagAnalysisView: View {
     @Environment(BrowseModel.self) private var browse
     @State private var model: TagAnalysisModel?
+    @State private var rules: RulesTabModel?
     @State private var mode: Mode = .candidates
 
     enum Mode: String, Hashable { case candidates, rules }
@@ -26,8 +28,10 @@ struct TagAnalysisView: View {
             header
             if let model {
                 switch mode {
-                case .candidates: CandidatesTab(model: model)
-                case .rules: rulesPlaceholder
+                case .candidates:
+                    CandidatesTab(model: model, onMakeRule: makeRule)
+                case .rules:
+                    if let rules { RulesTabView(model: rules) }
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -40,6 +44,7 @@ struct TagAnalysisView: View {
             let made = TagAnalysisModel(library: browse.library, libraryID: browse.libraryID)
             made.reload()
             model = made
+            rules = RulesTabModel(library: browse.library)
         }
     }
 
@@ -74,18 +79,14 @@ struct TagAnalysisView: View {
         }
     }
 
-    private var rulesPlaceholder: some View {
-        VStack(spacing: 8) {
-            Text("Rules run top to bottom, and actions fold in list order — both orders are significant.")
-                .font(Theme.ui(Theme.TypeScale.body))
-                .foregroundStyle(Theme.Text.tertiary)
-                .multilineTextAlignment(.center)
-            Text("The rule editor is not built yet. Candidates can still be decided one at a time.")
-                .font(Theme.ui(Theme.TypeScale.secondary))
-                .foregroundStyle(Theme.Text.quaternary)
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    /// Spec 14 §4 — the entire path from one-off triage to automation,
+    /// and it must not require retyping the string. If a rule already
+    /// covers the candidate this OPENS that rule rather than adding a
+    /// rival, which is why the tab switch happens either way.
+    private func makeRule(from candidate: TagCandidate) {
+        guard let rules else { return }
+        rules.makeRule(from: candidate)
+        mode = .rules
     }
 }
 
@@ -94,6 +95,7 @@ struct TagAnalysisView: View {
 private struct CandidatesTab: View {
     @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
+    let onMakeRule: (TagCandidate) -> Void
 
     var body: some View {
         HSplitView {
@@ -105,7 +107,7 @@ private struct CandidatesTab: View {
                 if model.selected != nil { EvidenceStrip(model: model) }
             }
             .frame(minWidth: 420)
-            DetailPane(model: model)
+            DetailPane(model: model, onMakeRule: onMakeRule)
                 .frame(minWidth: 300, idealWidth: 340, maxWidth: 460)
         }
     }
@@ -310,6 +312,12 @@ private struct CandidatesTab: View {
                 .disabled(!model.pickedCandidates.contains { model.suggestedCategory(for: $0) != nil })
             Button("Ignore") { model.ignorePicked() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
+            Button("Make a rule") {
+                // From the first pick: a rule is authored from ONE string,
+                // and the matcher it starts with generalises from there.
+                if let first = model.pickedCandidates.first { onMakeRule(first) }
+            }
+            .buttonStyle(SecondaryButtonStyle(compact: true))
             Button("Clear") { model.clearPicks() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
         }
@@ -424,6 +432,7 @@ private struct CandidateRow: View {
 private struct DetailPane: View {
     @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
+    let onMakeRule: (TagCandidate) -> Void
     @State private var targetCategoryID: UUID?
 
     var body: some View {
@@ -500,6 +509,14 @@ private struct DetailPane: View {
                 model.apply(candidate, .ignore)
             }
             .buttonStyle(SecondaryButtonStyle(compact: true))
+
+            Button("Make a rule from this…") { onMakeRule(candidate) }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+            if candidate.coveredByRuleID != nil {
+                Text("Already covered by a rule — showing it")
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Text.quaternary)
+            }
 
             Text("Applying writes tags to \(candidate.itemCount) item\(candidate.itemCount == 1 ? "" : "s"), revertible from the tag history.")
                 .font(Theme.ui(Theme.TypeScale.secondary))
