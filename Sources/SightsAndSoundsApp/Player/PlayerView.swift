@@ -297,6 +297,8 @@ private struct PlayerContent: View {
     let refocus: () -> Void
     @Binding var showKeyMap: Bool
     @State private var showBindingsEditor = false
+    /// The stage's rendered width, feeding `stageHeightCap`.
+    @State private var stageWidth: CGFloat = 0
 
     /// Panel sizes: draggable, clamped so the video always keeps a
     /// floor, persisted so they survive item switches (the .id(request)
@@ -441,6 +443,10 @@ private struct PlayerContent: View {
     private var leftColumn: some View {
         VStack(spacing: 0) {
             videoStage
+                .frame(maxHeight: stageHeightCap)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) {
+                    stageWidth = $0
+                }
                 .simultaneousGesture(TapGesture().onEnded { refocus() })
             TransportBlock()
                 // The fixed strip's height comes out of the vertical
@@ -460,7 +466,33 @@ private struct PlayerContent: View {
                     onDoubleClick: { model.togglePanel(.queue) })
                 QueuePanel(height: effectiveQueueHeight)
             }
+            // With the stage capped below its old fill height, the
+            // leftover space lands here — pinned under the panels rather
+            // than centring the whole column.
+            Spacer(minLength: 0)
         }
+    }
+
+    /// The most height the video can use at the stage's current width —
+    /// aspect at that width, still under the 2× upscale cap. Capping the
+    /// stage at it is what keeps the transport UNDER the video: a
+    /// low-resolution clip used to leave the fitted rect floating at the
+    /// anchor while the controls sat at the window bottom, with the whole
+    /// empty stage between them.
+    ///
+    /// Nil — audio, unknown dimensions, an error state — means no cap,
+    /// which is the old fill behaviour. The vertical half of the anchor
+    /// setting is moot under the cap (the stage hugs the video); the
+    /// horizontal half still applies.
+    private var stageHeightCap: CGFloat? {
+        guard !model.isAudio, model.loadError == nil,
+              let item = model.item,
+              let width = item.width, let height = item.height,
+              width > 0, height > 0, stageWidth > 0
+        else { return nil }
+        let capPointsPerPixel = 2 / max(displayScale, 1)
+        let scale = min(stageWidth / CGFloat(width), capPointsPerPixel)
+        return CGFloat(height) * scale
     }
 
     private var videoStage: some View {
@@ -1125,6 +1157,10 @@ private struct ScrubberView: View {
     @State private var previewBucket: Int = -1
 
     private let height: CGFloat = 44
+    /// One constant drives the frame, the horizontal clamp and the lift
+    /// above the track — three places that were separately tuned to 160
+    /// and would drift apart again if renumbered separately.
+    private static let previewWidth: CGFloat = 240
 
     var body: some View {
         GeometryReader { geometry in
@@ -1273,10 +1309,12 @@ private struct ScrubberView: View {
         let seconds = fraction * model.durationSeconds
         VStack(spacing: 2) {
             if let previewImage, !model.isAudio {
+                // 240pt, not the old 160 — at 160 the preview was too
+                // small to read a frame from, which is its entire job.
                 Image(nsImage: previewImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 160)
+                    .frame(width: Self.previewWidth)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .shadow(radius: 3)
             }
@@ -1288,15 +1326,15 @@ private struct ScrubberView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 3).fill(Theme.Surface.iconTile))
         }
-        .offset(x: overlayX(fraction: fraction, width: width), y: -78)
+        .offset(x: overlayX(fraction: fraction, width: width), y: -Self.previewWidth * 9 / 16 / 2 - 44)
         .allowsHitTesting(false)
     }
 
     /// Explicit CGFloat arithmetic — mixed Double/CGFloat expressions are
     /// ambiguous to the CI toolchain (Xcode 16).
     private func overlayX(fraction: Double, width: CGFloat) -> CGFloat {
-        let x = CGFloat(fraction) * width - 80
-        let upper = max(width - 160, 0)
+        let x = CGFloat(fraction) * width - Self.previewWidth / 2
+        let upper = max(width - Self.previewWidth, 0)
         return x.clamped(to: 0...upper)
     }
 

@@ -30,7 +30,9 @@ actor ScrubPreviewProvider {
         let generator = generators[itemID] ?? {
             let g = AVAssetImageGenerator(asset: AVURLAsset(url: fileURL))
             g.appliesPreferredTrackTransform = true
-            g.maximumSize = CGSize(width: 320, height: 320)
+            // 480: the overlay draws at 240pt, so 320px was upscaled on
+            // any Retina display — a blurry preview of a sharp file.
+            g.maximumSize = CGSize(width: 480, height: 480)
             // Keyframe-tolerant: fast beats exact for hover previews.
             g.requestedTimeToleranceBefore = CMTime(seconds: Self.bucketSeconds, preferredTimescale: 600)
             g.requestedTimeToleranceAfter = CMTime(seconds: Self.bucketSeconds, preferredTimescale: 600)
