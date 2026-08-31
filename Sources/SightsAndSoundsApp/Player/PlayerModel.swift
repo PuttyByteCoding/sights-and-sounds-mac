@@ -254,6 +254,8 @@ final class PlayerModel {
         isMuted = loaded.kind == .video && SessionAudio.shared.isMuted
         player.isMuted = isMuted
         isLooping = AppSettingsStore.shared.current.loopVideos
+        pendingSeekTarget = nil
+        isBuffering = false
         installObserver()
         refreshTagging()
         refreshBlocks()
@@ -291,6 +293,14 @@ final class PlayerModel {
     /// the next load re-applies the start-muted setting.
     private(set) var isMuted = false
 
+    /// Where the operator has ASKED to be, while the player catches up.
+    /// Seeks stack from this, not from the player's reported time —
+    /// which lags during buffering, so "skip 30s four times quickly"
+    /// must mean two minutes, not four attempts at the same 30.
+    private var pendingSeekTarget: Double?
+    /// The seek has outrun the buffer — the stage shows a spinner.
+    private(set) var isBuffering = false
+
     func toggleMute() {
         isMuted.toggle()
         player.isMuted = isMuted
@@ -318,10 +328,25 @@ final class PlayerModel {
 
     func seek(to seconds: Double) {
         let clamped = max(0, durationSeconds > 0 ? min(seconds, durationSeconds) : seconds)
+        // The playhead moves NOW — the display answers to the operator's
+        // intent, and the video catches up to it, never the reverse.
         currentSeconds = clamped
+        pendingSeekTarget = clamped
+        isBuffering = true
         player.seek(
             to: CMTime(seconds: clamped, preferredTimescale: 600),
-            toleranceBefore: .zero, toleranceAfter: .zero)
+            toleranceBefore: .zero, toleranceAfter: .zero
+        ) { [weak self] finished in
+            Task { @MainActor in
+                guard let self else { return }
+                // A superseded seek completes with false — a newer target
+                // owns the pending state; only the seek that LANDED may
+                // clear it.
+                guard finished, self.pendingSeekTarget == clamped else { return }
+                self.pendingSeekTarget = nil
+                self.isBuffering = false
+            }
+        }
     }
 
     func seek(by delta: Double) { seek(to: currentSeconds + delta) }
@@ -735,7 +760,12 @@ final class PlayerModel {
         ) { [weak self] time in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.currentSeconds = time.seconds
+                // While a seek is in flight the playhead already shows
+                // the TARGET; the player's stale time must not drag it
+                // back.
+                if self.pendingSeekTarget == nil {
+                    self.currentSeconds = time.seconds
+                }
                 if self.durationSeconds == 0,
                    let duration = self.player.currentItem?.duration.seconds,
                    duration.isFinite, duration > 0 {

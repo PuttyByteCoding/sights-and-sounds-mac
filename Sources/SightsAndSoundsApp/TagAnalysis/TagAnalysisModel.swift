@@ -40,6 +40,10 @@ final class TagAnalysisModel {
     /// playback to a paused first frame ("it appears to be frame by
     /// frame"). The item is replaced only when the VIDEO changes.
     private var previewItemID: UUID?
+    /// Where the operator has ASKED to be — seeks stack from this while
+    /// the video buffers, and the transport shows loading.
+    private var previewSeekTarget: Double?
+    private(set) var previewBuffering = false
     private var previewTimeObserver: Any?
     private var previewEndObserver: NSObjectProtocol?
     /// What the displayed video already wears — the baseline every
@@ -219,6 +223,8 @@ final class TagAnalysisModel {
         previewPlaying = false
         previewSeconds = 0
         previewDuration = 0
+        previewSeekTarget = nil
+        previewBuffering = false
         if let previewEndObserver {
             NotificationCenter.default.removeObserver(previewEndObserver)
             self.previewEndObserver = nil
@@ -242,7 +248,10 @@ final class TagAnalysisModel {
             previewTimeObserver = previewPlayer.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
             ) { [weak self] time in
-                Task { @MainActor in self?.previewSeconds = time.seconds }
+                Task { @MainActor in
+                    guard let self, self.previewSeekTarget == nil else { return }
+                    self.previewSeconds = time.seconds
+                }
             }
         }
         previewEndObserver = NotificationCenter.default.addObserver(
@@ -294,13 +303,29 @@ final class TagAnalysisModel {
     }
 
     func previewSeek(by seconds: Double) {
-        previewSeek(to: previewPlayer.currentTime().seconds + seconds)
+        // From the shown playhead — the pending target when one is in
+        // flight — never from the player's lagging clock.
+        previewSeek(to: previewSeconds + seconds)
     }
 
     private func previewSeek(to seconds: Double) {
+        let clamped = previewDuration > 0
+            ? min(max(0, seconds), previewDuration) : max(0, seconds)
+        // Intent first: the playhead jumps, the stacking base moves, and
+        // the picture catches up — four quick skips mean four skips.
+        previewSeconds = clamped
+        previewSeekTarget = clamped
+        previewBuffering = true
         previewPlayer.seek(
-            to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
-            toleranceBefore: .zero, toleranceAfter: .zero)
+            to: CMTime(seconds: clamped, preferredTimescale: 600),
+            toleranceBefore: .zero, toleranceAfter: .zero
+        ) { [weak self] finished in
+            Task { @MainActor in
+                guard let self, finished, self.previewSeekTarget == clamped else { return }
+                self.previewSeekTarget = nil
+                self.previewBuffering = false
+            }
+        }
     }
 
     // MARK: - Loading
