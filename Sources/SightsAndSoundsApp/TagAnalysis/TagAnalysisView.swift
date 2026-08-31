@@ -744,6 +744,13 @@ private struct DecidePane: View {
     @State private var decision: Decision = .assign
     @State private var categoryID: UUID?
     @State private var aliasTargetID: UUID?
+    /// The selected span headed into the New Tag sheet.
+    @State private var newTagSeed: NewTagSeed?
+
+    struct NewTagSeed: Identifiable {
+        let text: String
+        var id: String { text }
+    }
 
     enum Decision: Hashable { case assign, applyExisting, alias, ignoreKey, hidePrefix }
 
@@ -766,6 +773,25 @@ private struct DecidePane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .id(candidate.id)
                 .onAppear { seed(candidate, findings: row?.findings ?? []) }
+                .sheet(item: $newTagSeed) { seedText in
+                    if let fallback = categoryID ?? model.categories.first?.id {
+                        TagSheet(
+                            mode: .create(categoryID: fallback, name: seedText.text),
+                            library: model.library,
+                            libraryID: model.libraryID,
+                            categories: model.categories
+                        ) { tag in
+                            // Creating from THIS video's evidence means
+                            // tagging THIS video: the new tag goes into
+                            // the basket, and the reload's existing-tag
+                            // pass now recognises the string everywhere.
+                            model.stage(
+                                value: tag.name, categoryID: tag.tagCategoryID,
+                                existingTagID: tag.id)
+                            model.reload()
+                        }
+                    }
+                }
             } else {
                 Text("Select a string to decide what it is.")
                     .font(Theme.ui(Theme.TypeScale.body))
@@ -807,6 +833,21 @@ private struct DecidePane: View {
                 .font(Theme.ui(Theme.TypeScale.secondary))
                 .foregroundStyle(Theme.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // The raw text, selectable: drag a span, right-click, New
+            // Tag — the path for "the taper's name is INSIDE this line".
+            // The sheet's category picker decides where it lands.
+            SelectableValueText(text: candidate.value) { selection in
+                newTagSeed = NewTagSeed(text: selection)
+            }
+            .frame(height: candidate.value.count > 80 ? 72 : 40)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(Theme.Surface.well)
+                    .stroke(Theme.Border.standard, lineWidth: 1))
+            Text("Select text · right-click · New Tag")
+                .font(Theme.ui(9.5))
+                .foregroundStyle(Theme.Text.disabled)
         }
     }
 
