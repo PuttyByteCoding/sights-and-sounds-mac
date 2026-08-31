@@ -223,6 +223,15 @@ private struct RailView: View {
                 PlayerSurface(player: model.previewPlayer)
                     .aspectRatio(16 / 9, contentMode: .fit)
                     .frame(maxWidth: .infinity)
+                    .overlay {
+                        if model.previewBuffering {
+                            ZStack {
+                                Color.black.opacity(0.25)
+                                ProgressView().controlSize(.small)
+                            }
+                            .allowsHitTesting(false)
+                        }
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
                     .contentShape(Rectangle())
                     .onTapGesture { model.previewTogglePlay() }

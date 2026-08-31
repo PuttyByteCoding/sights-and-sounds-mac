@@ -542,6 +542,23 @@ private struct PlayerContent: View {
                                     onEmptyClick: { model.play() })
                             }
                         }
+                        // Seeking past the buffer: the playhead has moved,
+                        // the picture has not — say so instead of looking
+                        // frozen.
+                        .overlay {
+                            if model.isBuffering {
+                                ZStack {
+                                    Color.black.opacity(0.25)
+                                    VStack(spacing: 6) {
+                                        ProgressView()
+                                        Text("Loading…")
+                                            .font(Theme.mono(10))
+                                            .foregroundStyle(Theme.Text.secondary)
+                                    }
+                                }
+                                .allowsHitTesting(false)
+                            }
+                        }
                         // The anchor setting (#92): placement only — the
                         // fitted-size math is untouched.
                         .frame(
