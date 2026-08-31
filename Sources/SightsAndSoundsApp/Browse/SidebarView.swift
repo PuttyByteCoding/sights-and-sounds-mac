@@ -25,6 +25,7 @@ struct SidebarView: View {
     @State private var tagQueries: [UUID: String] = [:]
     // What the sidebar said back when it refused a click.
     @State private var refusal: String?
+    @State private var showSaveFilter = false
     // How each category's tags are ordered. Session-scoped like the sets
     // above: which way you want a category sorted is a fact about the
     // hunt you are on, not about the library.
@@ -55,6 +56,7 @@ struct SidebarView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    savedFiltersSection
                     mediaTypeSection
                     sourcesSection
                     categorySections
@@ -70,6 +72,10 @@ struct SidebarView: View {
         // the toolbar, where a system material would otherwise show
         // through and put a seam across the top of the sidebar.
         .background { Theme.Surface.sidebar.ignoresSafeArea() }
+
+        .sheet(isPresented: $showSaveFilter) {
+            SaveFilterSheet { name in model.saveCurrentFilter(named: name) }
+        }
     }
 
     // MARK: - Filter status
@@ -90,6 +96,11 @@ struct SidebarView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Filter").modifier(Theme.sectionLabel(Theme.Accent.amber))
                 Spacer(minLength: 0)
+                Button("Save…") { showSaveFilter = true }
+                    .buttonStyle(.plain)
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .help("Save this filter under a name, to apply again later")
                 Button("Clear all") { clearEverything() }
                     .buttonStyle(.plain)
                     .font(Theme.ui(10.5))
@@ -249,6 +260,37 @@ struct SidebarView: View {
     private func clearEverything() {
         model.clearFilter()
         model.hideOfflineItems = false
+    }
+
+    // MARK: - Saved filters
+
+    /// Named filters, applied wholesale on click — "show me THAT". The
+    /// section only exists once something is saved; the Save… button in
+    /// the filter block is the way in.
+    @ViewBuilder
+    private var savedFiltersSection: some View {
+        if !model.savedFilters.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                SidebarSectionLabel("Saved Filters")
+                ForEach(model.savedFilters) { saved in
+                    let active = saved.filter == model.filter
+                    SidebarRow(selected: active, action: { model.applySavedFilter(saved) }) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(Theme.ui(10))
+                            .foregroundStyle(active ? Theme.Accent.amber : Theme.Text.disabled)
+                            .frame(width: 13)
+                        Text(saved.name)
+                            .font(Theme.ui(12.5))
+                            .foregroundStyle(Theme.Text.primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .contextMenu {
+                        Button("Delete Saved Filter") { model.deleteSavedFilter(saved) }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Media type
@@ -1093,6 +1135,66 @@ private struct SourceRenameSheet: View {
     private func commit() {
         guard !trimmed.isEmpty else { return }
         onRename(trimmed)
+        dismiss()
+    }
+}
+
+/// Name the current filter. Same chrome as the source rename sheet —
+/// one field, Enter saves, Esc cancels.
+private struct SaveFilterSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onSave: (String) -> Void
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Text("Save Filter")
+                .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
+                .foregroundStyle(Theme.Text.primary)
+            TextField("Name", text: $name)
+                .textFieldStyle(.plain)
+                .font(Theme.ui(12.5))
+                .padding(.vertical, 7)
+                .padding(.horizontal, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(Theme.Surface.well)
+                        .stroke(
+                            focused ? Theme.Border.activeControl : Theme.Border.standard,
+                            lineWidth: focused ? 2 : 1))
+                .focused($focused)
+            Text("Saving an existing name replaces that filter.")
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.disabled)
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle())
+                Button("Save") { commit() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(trimmed.isEmpty)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(18)
+        .frame(width: 360)
+        .background(Theme.Surface.dialog)
+        .onKeyPress { press in
+            if press.key == .escape {
+                dismiss()
+                return .handled
+            }
+            return .ignored
+        }
+        .onAppear { focused = true }
+    }
+
+    private func commit() {
+        guard !trimmed.isEmpty else { return }
+        onSave(trimmed)
         dismiss()
     }
 }

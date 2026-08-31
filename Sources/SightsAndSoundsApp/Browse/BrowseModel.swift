@@ -24,6 +24,9 @@ final class BrowseModel {
     /// the query, not in whichever view last remembered to apply it.
     var kinds: MediaKinds = .video { didSet { refreshAll() } }
     var filter = MediaFilter() { didSet { refreshItems() } }
+    /// The library's named filters, alphabetical — the sidebar's Saved
+    /// Filters section.
+    private(set) var savedFilters: [SavedFilter] = []
     var selectedFolderPath: String?
 
     /// The offline banner's toggle. It hides items from the LISTING;
@@ -228,6 +231,7 @@ final class BrowseModel {
                     self.sources = sources
                     self.onlineSourceIDs = onlineIDs
                     self.vocabulary = vocabulary
+                    self.savedFilters = (try? library.savedFilters()) ?? []
                     self.tagAliases = aliases
                     self.folderTrees = trees
                     self.counts = counts
@@ -462,6 +466,37 @@ final class BrowseModel {
                 try updated.update(db)
             }
             refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
+    // MARK: - Saved filters
+
+    func saveCurrentFilter(named name: String) {
+        do {
+            _ = try library.saveFilter(named: name, filter)
+            savedFilters = (try? library.savedFilters()) ?? savedFilters
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
+    /// Apply a saved filter — wholesale, replacing the current one. A
+    /// merge would be quieter and also unpredictable; applying a named
+    /// filter means "show me THAT".
+    func applySavedFilter(_ saved: SavedFilter) {
+        guard let decoded = saved.filter else {
+            errorMessage = "This saved filter could not be read."
+            return
+        }
+        filter = decoded
+    }
+
+    func deleteSavedFilter(_ saved: SavedFilter) {
+        do {
+            try library.deleteSavedFilter(saved.id)
+            savedFilters.removeAll { $0.id == saved.id }
         } catch {
             errorMessage = "\(error)"
         }

@@ -726,6 +726,17 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Named filters: the current three-way filter, saved to apply
+        // later. Authored, so it belongs in the library like rules do.
+        migrator.registerMigration("savedFilters") { db in
+            try db.create(table: "savedFilter") { t in
+                t.primaryKey("id", .blob)
+                t.column("name", .text).notNull().collate(.nocase).unique()
+                t.column("filterJSON", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 

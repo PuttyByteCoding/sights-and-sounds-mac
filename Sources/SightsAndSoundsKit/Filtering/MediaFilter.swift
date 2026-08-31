@@ -21,7 +21,7 @@ public enum StatusFlag: String, Codable, Sendable, CaseIterable {
 /// The old app's terms arrived as strings and a malformed value silently
 /// matched nothing; here every payload is typed, so that failure mode is
 /// gone by construction.
-public enum FilterTerm: Hashable, Sendable {
+public enum FilterTerm: Hashable, Sendable, Codable {
     /// The item carries this tag.
     case tag(UUID)
     /// The item's file sits in exactly this directory (source-relative).
@@ -39,7 +39,9 @@ public enum FilterTerm: Hashable, Sendable {
 /// The three-way filter: every `required` term must match, at least one
 /// `optional` term must match (when any are present), and no `excluded`
 /// term may match.
-public struct MediaFilter: Hashable, Sendable {
+/// Codable so a filter can be SAVED — the named-filters feature stores
+/// the whole three-way filter (search text included) as JSON.
+public struct MediaFilter: Hashable, Sendable, Codable {
     public var required: [FilterTerm]
     public var optional: [FilterTerm]
     public var excluded: [FilterTerm]
