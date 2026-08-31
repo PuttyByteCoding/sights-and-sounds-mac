@@ -366,6 +366,9 @@ struct CommandPalette: View {
             PaletteCommand(group: .goTo, title: "Maintenance", symbol: "checkmark.seal") {
                 aux(.maintenance)
             },
+            PaletteCommand(group: .goTo, title: "Tag Analysis", symbol: "tag.square") {
+                aux(.tagAnalysis)
+            },
             PaletteCommand(group: .goTo, title: "Background Tasks", symbol: "gearshape.2") {
                 openWindow(id: "tasks")
             },

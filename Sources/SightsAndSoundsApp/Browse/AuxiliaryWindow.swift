@@ -14,6 +14,7 @@ struct AuxWindowRequest: Codable, Hashable {
         case importMedia
         case operations
         case watched
+        case tagAnalysis
 
         var title: String {
             switch self {
@@ -24,6 +25,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .importMedia: "Import"
             case .operations: "Operations"
             case .watched: "Recently Watched"
+            case .tagAnalysis: "Tag Analysis"
             }
         }
     }
@@ -97,6 +99,7 @@ struct AuxiliaryWindowView: View {
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()
+            case .tagAnalysis: TagAnalysisView()
             }
         }
     }

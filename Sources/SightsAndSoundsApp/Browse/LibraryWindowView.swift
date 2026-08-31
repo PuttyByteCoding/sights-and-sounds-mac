@@ -200,6 +200,9 @@ struct BrowseView: View {
                         Button("Maintenance…", systemImage: "checkmark.seal") {
                             openAux(.maintenance)
                         }
+                        Button("Tag Analysis…", systemImage: "tag.square") {
+                            openAux(.tagAnalysis)
+                        }
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             do {
                                 let url = try model.library.backup(
