@@ -1,0 +1,315 @@
+import Foundation
+import GRDB
+
+/// Where a surviving string came from — enough for the display to say
+/// "embedded metadata · comment" or seek an OCR still.
+public struct AnalysisOrigin: Equatable, Sendable, Hashable {
+    public let readerID: String
+    public let timeSeconds: Double?
+}
+
+/// One string the analysis surfaced, after parsing and the rule fold.
+public struct AnalysisCandidate: Equatable, Sendable, Identifiable {
+    /// The FOLDED value — a stripPrefix rule has already run, so this is
+    /// what the tag would be called.
+    public let value: String
+    public let key: String?
+    /// Non-nil when a rule mapped it to a category: the Suggested bucket.
+    public let category: String?
+    /// Non-nil when an ignore rule struck it. Struck strings stay listed
+    /// — that is what keeps a mis-authored ignore rule diagnosable — and
+    /// are skipped by existing-tag matching, which is the false-positive
+    /// reduction the ignore-words exist for.
+    public let suppressedByRule: String?
+    public let origins: [AnalysisOrigin]
+
+    public var id: String { "\(KeyNormalizer.normalize(key ?? ""))|\(value.lowercased())" }
+}
+
+/// An existing tag whose name (or one of its aliases) appears inside a
+/// surviving string — the best possible candidate: nothing to create,
+/// just apply.
+public struct ExistingTagFinding: Equatable, Sendable, Identifiable {
+    public let tag: Tag
+    public let categoryName: String
+    /// What matched — the tag's own name, or the alias that hit.
+    public let matchedText: String
+    /// The string it was found inside, for display.
+    public let foundIn: String
+    /// Already on this video. Shown struck rather than hidden, so "why
+    /// isn't this offered" has a visible answer.
+    public let alreadyApplied: Bool
+
+    public var id: String { "\(tag.id)|\(foundIn.lowercased())" }
+}
+
+/// Everything the analysis found for one video, bucketed the way the
+/// operator triages: rule-mapped first, known tags second, judgment last.
+public struct ItemAnalysis: Equatable, Sendable {
+    public let suggested: [AnalysisCandidate]
+    public let existing: [ExistingTagFinding]
+    public let unmapped: [AnalysisCandidate]
+    public let md5s: [String]
+    /// The parse hit its deadline — surfaced where the results are,
+    /// because an incomplete list that looks complete is worse than a
+    /// visibly incomplete one.
+    public let truncated: Bool
+    public let provenance: [ProvenanceStep]
+
+    public static let empty = ItemAnalysis(
+        suggested: [], existing: [], unmapped: [], md5s: [], truncated: false, provenance: [])
+}
+
+/// A tag waiting in the basket — staged, not written. `value` is
+/// editable right up to commit: "tapper: Mike Jones" gets trimmed by
+/// hand before it becomes a tag.
+public struct PendingTag: Equatable, Sendable, Identifiable {
+    public let id: UUID
+    public var value: String
+    public var categoryID: UUID
+    /// Set when the pending tag IS an existing tag being applied — commit
+    /// assigns it rather than creating anything, even if the display
+    /// value was edited.
+    public var existingTagID: UUID?
+
+    public init(id: UUID = UUID(), value: String, categoryID: UUID, existingTagID: UUID? = nil) {
+        self.id = id
+        self.value = value
+        self.categoryID = categoryID
+        self.existingTagID = existingTagID
+    }
+}
+
+extension LibraryDatabase {
+
+    /// The default reader set, in display order. A future web-page reader
+    /// or schema matcher is appended here — one line, no rewrites.
+    public static func defaultAnalysisReaders() -> [any AnalysisReader] {
+        [
+            EmbeddedMetadataReader(),
+            PathAnalysisReader(),
+            SidecarTextReader(),
+            SidecarJsonReader(),
+            OcrAnalysisReader(),
+        ]
+    }
+
+    /// Run the full analysis for one video: every reader, every string
+    /// through the recursive hub, the rules over every leaf, then the
+    /// existing-tag pass over what survives.
+    ///
+    /// One deadline spans the WHOLE item — readers' strings share the
+    /// budget, so a pathological sidecar cannot starve the metadata pass
+    /// of its turn only by being listed first... it can, but the run says
+    /// so via `truncated` instead of hanging.
+    public func analyzeItem(
+        _ itemID: UUID,
+        rules: [RuleEngine.Rule],
+        readers: [any AnalysisReader]? = nil,
+        fileAccess: any FileAccess = LiveFileAccess(),
+        deadline: ParseDeadline = .seconds(5)
+    ) throws -> ItemAnalysis {
+        guard let item = try writer.read({ try MediaItem.fetchOne($0, key: itemID) }) else {
+            return .empty
+        }
+        let fileURL = try? resolvedFileURL(for: item, fileAccess: fileAccess)
+
+        // JSON before Path: the precise detector before the loose one, or
+        // every JSON payload containing a slash is shredded as a path.
+        let parser = TextParser(subParsers: [
+            JsonSubParser(),
+            PathSubParser(mediaRoot: nil, rules: rules),
+        ])
+
+        // Gather, then parse. A reader that throws contributes nothing
+        // rather than sinking the run: five sources of evidence must
+        // degrade one at a time.
+        var merged: [String: (candidate: ParsedCandidate, origins: [AnalysisOrigin])] = [:]
+        var order: [String] = []
+        var md5s: [String] = []
+        var provenance: [ProvenanceStep] = []
+        var truncated = false
+
+        for reader in readers ?? Self.defaultAnalysisReaders() {
+            let sources = (try? reader.read(item: item, fileURL: fileURL, library: self)) ?? []
+            for source in sources {
+                // The reader's key enters the walk at the top, so the
+                // rule fold sees it exactly once — a keyed metadata value
+                // and a JSON leaf take the same path through the engine.
+                let result = parser.parse(
+                    source.text, key: source.key, rules: rules, deadline: deadline)
+                truncated = truncated || result.truncated
+                provenance += result.provenance
+                for hash in result.md5s where !md5s.contains(hash) { md5s.append(hash) }
+
+                for parsed in result.candidates {
+                    let key = parsed.key
+                    let folded = parsed
+                    let value = folded.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !value.isEmpty else { continue }
+                    let origin = AnalysisOrigin(
+                        readerID: reader.id, timeSeconds: source.timeSeconds)
+                    let dedupeKey = "\(KeyNormalizer.normalize(key ?? ""))|\(value.lowercased())"
+                    if var known = merged[dedupeKey] {
+                        if !known.origins.contains(origin) { known.origins.append(origin) }
+                        // A category from ANY occurrence wins over none.
+                        if known.candidate.category == nil, folded.category != nil {
+                            known.candidate = ParsedCandidate(
+                                value: known.candidate.value, category: folded.category,
+                                suppressedByRule: known.candidate.suppressedByRule, key: key)
+                        }
+                        merged[dedupeKey] = known
+                    } else {
+                        merged[dedupeKey] = (
+                            ParsedCandidate(
+                                value: value, category: folded.category,
+                                suppressedByRule: folded.suppressedByRule, key: key),
+                            [origin])
+                        order.append(dedupeKey)
+                    }
+                }
+            }
+        }
+
+        // The existing-tag pass, over what survived.
+        let inventory = try tagInventory()
+        let appliedIDs = Set(try tags(of: itemID).flatMap(\.tags).map(\.id))
+        var existing: [ExistingTagFinding] = []
+        var existingSeen = Set<String>()
+        var suggested: [AnalysisCandidate] = []
+        var unmapped: [AnalysisCandidate] = []
+
+        for dedupeKey in order {
+            guard let entry = merged[dedupeKey] else { continue }
+            let candidate = AnalysisCandidate(
+                value: entry.candidate.value, key: entry.candidate.key,
+                category: entry.candidate.category,
+                suppressedByRule: entry.candidate.suppressedByRule,
+                origins: entry.origins)
+
+            if candidate.category != nil, candidate.suppressedByRule == nil {
+                suggested.append(candidate)
+                continue
+            }
+            // Ignore-ruled strings skip tag matching — that IS the
+            // false-positive reduction — but stay listed below.
+            if candidate.suppressedByRule == nil {
+                for hit in Self.findTags(in: candidate.value, inventory: inventory) {
+                    let finding = ExistingTagFinding(
+                        tag: hit.tag, categoryName: hit.categoryName,
+                        matchedText: hit.matchedText, foundIn: candidate.value,
+                        alreadyApplied: appliedIDs.contains(hit.tag.id))
+                    if existingSeen.insert(finding.id).inserted {
+                        existing.append(finding)
+                    }
+                }
+            }
+            unmapped.append(candidate)
+        }
+
+        return ItemAnalysis(
+            suggested: suggested.sorted { $0.value.localizedStandardCompare($1.value) == .orderedAscending },
+            existing: existing.sorted {
+                ($0.alreadyApplied ? 1 : 0, $0.tag.name) < ($1.alreadyApplied ? 1 : 0, $1.tag.name)
+            },
+            unmapped: unmapped,
+            md5s: md5s, truncated: truncated, provenance: provenance)
+    }
+
+    // MARK: - The existing-tag pass
+
+    struct TagNeedle: Sendable {
+        let needle: String  // lowercased name or alias
+        let matchedText: String
+        let tag: Tag
+        let categoryName: String
+    }
+
+    /// Every tag name and alias, lowercased, with its tag — the needles
+    /// the existing-tag pass searches for.
+    func tagInventory() throws -> [TagNeedle] {
+        try writer.read { db in
+            let categories = Dictionary(
+                uniqueKeysWithValues: try TagCategory.fetchAll(db).map { ($0.id, $0.name) })
+            let tags = try Tag.fetchAll(db)
+            let byID = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0) })
+            var needles: [TagNeedle] = []
+            for tag in tags {
+                needles.append(TagNeedle(
+                    needle: tag.name.lowercased(), matchedText: tag.name,
+                    tag: tag, categoryName: categories[tag.tagCategoryID] ?? ""))
+            }
+            for alias in try TagAlias.fetchAll(db) {
+                guard let tag = byID[alias.tagID] else { continue }
+                needles.append(TagNeedle(
+                    needle: alias.alias.lowercased(), matchedText: alias.alias,
+                    tag: tag, categoryName: categories[tag.tagCategoryID] ?? ""))
+            }
+            return needles
+        }
+    }
+
+    /// Word-boundary search for every needle inside one string. "taped by
+    /// Mike Jones 2019" finds the tag "Mike Jones"; "Jonestown" does not.
+    ///
+    /// Needles under three characters are skipped — a two-letter tag
+    /// name matching inside every third sentence is a false-positive
+    /// storm, and a tag that short is findable by eye anyway.
+    static func findTags(in text: String, inventory: [TagNeedle]) -> [TagNeedle] {
+        let haystack = text.lowercased()
+        var hits: [TagNeedle] = []
+        var seenTags = Set<UUID>()
+        for needle in inventory where needle.needle.count >= 3 {
+            guard !seenTags.contains(needle.tag.id) else { continue }
+            var searchRange = haystack.startIndex..<haystack.endIndex
+            while let range = haystack.range(of: needle.needle, range: searchRange) {
+                if isWordBounded(range, in: haystack) {
+                    hits.append(needle)
+                    seenTags.insert(needle.tag.id)
+                    break
+                }
+                searchRange = range.upperBound..<haystack.endIndex
+            }
+        }
+        return hits
+    }
+
+    /// Bounded when the characters just outside the match are not
+    /// letters or digits — so a needle inside a longer word never hits.
+    private static func isWordBounded(_ range: Range<String.Index>, in text: String) -> Bool {
+        if range.lowerBound > text.startIndex {
+            let before = text[text.index(before: range.lowerBound)]
+            if before.isLetter || before.isNumber { return false }
+        }
+        if range.upperBound < text.endIndex {
+            let after = text[range.upperBound]
+            if after.isLetter || after.isNumber { return false }
+        }
+        return true
+    }
+
+    // MARK: - The basket
+
+    /// Write the basket. Each pending tag either applies an existing tag
+    /// or creates-then-applies by (trimmed) value — `ensureTag` reuses a
+    /// same-named tag in the category, so accepting a suggestion whose
+    /// value already names a tag applies rather than duplicates.
+    /// Returns how many landed.
+    @discardableResult
+    public func commitPendingTags(_ pending: [PendingTag], to itemID: UUID) throws -> Int {
+        var applied = 0
+        for one in pending {
+            if let tagID = one.existingTagID {
+                try assignTag(tagID, to: itemID)
+                applied += 1
+                continue
+            }
+            let value = one.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+            let tag = try ensureTag(named: value, inCategory: one.categoryID)
+            try assignTag(tag.id, to: itemID)
+            applied += 1
+        }
+        return applied
+    }
+}

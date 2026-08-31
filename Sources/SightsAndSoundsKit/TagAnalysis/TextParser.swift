@@ -13,11 +13,19 @@ public struct ParsedCandidate: Equatable, Sendable {
     public let value: String
     public let category: String?
     public let suppressedByRule: String?
+    /// The enclosing object key the value was found under, when there was
+    /// one — "the key beside the value could indicate which value is the
+    /// taper's name", so the display must be able to show it.
+    public let key: String?
 
-    public init(value: String, category: String? = nil, suppressedByRule: String? = nil) {
+    public init(
+        value: String, category: String? = nil, suppressedByRule: String? = nil,
+        key: String? = nil
+    ) {
         self.value = value
         self.category = category
         self.suppressedByRule = suppressedByRule
+        self.key = key
     }
 }
 
@@ -154,8 +162,19 @@ public struct TextParser: Sendable {
     public func parse(
         _ raw: String, rules: [RuleEngine.Rule], deadline: ParseDeadline
     ) -> TextParseResult {
+        parse(raw, key: nil, rules: rules, deadline: deadline)
+    }
+
+    /// As above, with the top-level string already under a key — an
+    /// embedded metadata value arrives under its field name, and the rule
+    /// fold must see that key exactly ONCE, here, rather than being
+    /// re-applied by the caller to an already-folded value (which runs
+    /// every stripPrefix twice).
+    public func parse(
+        _ raw: String, key: String?, rules: [RuleEngine.Rule], deadline: ParseDeadline
+    ) -> TextParseResult {
         var state = State()
-        var work: [(raw: String, key: String?, depth: Int)] = [(raw, nil, 0)]
+        var work: [(raw: String, key: String?, depth: Int)] = [(raw, key, 0)]
 
         while let node = work.popLast() {
             // Truncation stops the drain entirely. Everything still queued
@@ -229,7 +248,8 @@ public struct TextParser: Sendable {
             : nil
         state.candidates.append(
             ParsedCandidate(
-                value: outcome.value, category: outcome.category, suppressedByRule: suppressedBy))
+                value: outcome.value, category: outcome.category,
+                suppressedByRule: suppressedBy, key: key))
         return true
     }
 
