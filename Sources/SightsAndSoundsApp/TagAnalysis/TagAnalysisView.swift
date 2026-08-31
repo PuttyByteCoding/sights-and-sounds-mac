@@ -64,25 +64,11 @@ struct TagAnalysisView: View {
                 press.key == .leftArrow ? model.goPrevious() : model.goNext()
                 return .handled
             }
-            // The player window's digit transport — seeks, 5 to
-            // pause/play, 0 to start, 8/− to near end, space to
-            // pause/play. TOP-ROW digits work whenever no text field has
-            // the keyboard (most Mac keyboards have no numpad at all);
-            // actual numpad digits punch through even while the filter
-            // field is typing, exactly as they do in the player.
-            if let character = press.characters.first {
-                let numpad = press.modifiers.contains(.numericPad)
-                let typing = NSApp.keyWindow?.firstResponder is NSTextView
-                let transportKey = character.isNumber || character == "-"
-                    || character == " " || "!#$^&(".contains(character)
-                if transportKey, numpad || !typing {
-                    return model.handlePreviewKey(
-                        character: character,
-                        shift: press.modifiers.contains(.shift),
-                        numpad: numpad)
-                        ? .handled : .ignored
-                }
-            }
+            // Numpad transport is handled by the AppKit monitor below —
+            // SwiftUI's key presses do not reliably carry the
+            // numeric-pad flag, and top-row digits must NOT drive the
+            // preview (they are separable from a filter field spelling
+            // a tag name only when they stay out entirely).
             return .ignored
         }
         .task {
@@ -101,6 +87,14 @@ struct TagAnalysisView: View {
             if let model { sweepCurrentIfNeeded(model) }
         }
         .onDisappear { model?.commitBasket() }
+        // The numpad transport, at the AppKit layer. NSEvent's
+        // numeric-pad flag is trustworthy where SwiftUI's is not, and a
+        // local monitor sees keypad digits even while the filter field
+        // owns the keyboard — the player's exception, kept exactly:
+        // NUMPAD seeks mid-word; top-row digits never do.
+        .background(NumpadTransportMonitor(handle: { character in
+            model?.handlePreviewKey(character: character, shift: false, numpad: true) ?? false
+        }))
     }
 
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
@@ -1085,6 +1079,59 @@ private struct QueueThumb: View {
                 itemID: itemID, libraryID: libraryID, fileURL: fileURL,
                 durationSeconds: item.durationSeconds)
             if let data { thumbnail = NSImage(data: data) }
+        }
+    }
+}
+
+// MARK: - Numpad monitor
+
+/// A window-scoped AppKit key monitor for the preview transport.
+///
+/// SwiftUI's `KeyPress.modifiers` does not dependably include
+/// `.numericPad` for keypad digits on macOS — the player never noticed
+/// because bare digits reach the same table there. Here bare digits are
+/// excluded on purpose, so the keypad must be told apart at the AppKit
+/// layer, where the flag is reliable. The monitor only acts when its own
+/// window is key, and swallows exactly the events it handled.
+private struct NumpadTransportMonitor: NSViewRepresentable {
+    let handle: (Character) -> Bool
+
+    func makeNSView(context: Context) -> MonitorView {
+        let view = MonitorView()
+        view.handle = handle
+        return view
+    }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.handle = handle
+    }
+
+    final class MonitorView: NSView {
+        var handle: ((Character) -> Bool)?
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                remove()
+            } else if monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                    guard let self, let window = self.window, event.window === window,
+                          window.isKeyWindow,
+                          event.modifierFlags.contains(.numericPad),
+                          let character = event.charactersIgnoringModifiers?.first,
+                          character.isNumber || character == "-"
+                    else { return event }
+                    return self.handle?(character) == true ? nil : event
+                }
+            }
+        }
+
+        deinit { remove() }
+
+        private func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
         }
     }
 }
