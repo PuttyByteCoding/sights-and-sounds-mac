@@ -135,3 +135,154 @@ import Testing
         #expect(try library.candidateEvidence(for: candidate, limit: 6).count == 6)
     }
 }
+
+/// Scoping the queue to a set of items — one video, or the play queue.
+@Suite struct CandidateScopeTests {
+
+    private func makeLibrary() async throws -> (LibraryDatabase, Source, TagCategory) {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Scope")
+        let source = Source(name: "S", rootPath: "/tmp/scope")
+        let category = TagCategory(name: "Artist")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try category.insert(db)
+        }
+        return (library, source, category)
+    }
+
+    @discardableResult
+    private func insertItem(
+        _ library: LibraryDatabase, _ source: Source, path: String
+    ) async throws -> MediaItem {
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: path, needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+        return item
+    }
+
+    @Test func scopeNarrowsCandidatesAndCountsWithinIt() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let inside = try await insertItem(library, source, path: "a.mp4")
+        let outside = try await insertItem(library, source, path: "b.mp4")
+        for item in [inside, outside] {
+            try library.recordMetadataPairs(itemID: item.id, pairs: [("artist", "Miles Davis")])
+        }
+        try library.recordMetadataPairs(itemID: outside.id, pairs: [
+            ("artist", "Miles Davis"), ("album", "Kind of Blue"),
+        ])
+
+        let scoped = try library.tagCandidates(sources: [.metadata], within: [inside.id])
+        // Only strings from the scoped item, counted inside the scope:
+        // Miles Davis is in two items, but the answer to "what is in THIS
+        // video" is one.
+        #expect(scoped.map(\.value) == ["Miles Davis"])
+        #expect(scoped.first?.itemCount == 1)
+    }
+
+    @Test func pathScopeCountsOnlyScopedItemsUnderTheFolder() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let inside = try await insertItem(library, source, path: "Concerts/a.mp4")
+        try await insertItem(library, source, path: "Concerts/b.mp4")
+
+        let scoped = try library.tagCandidates(sources: [.path], within: [inside.id])
+        let concerts = try #require(scoped.first { $0.value == "Concerts" })
+        #expect(concerts.itemCount == 1)
+    }
+
+    @Test func emptyScopeMeansTheWholeLibrary() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let item = try await insertItem(library, source, path: "a.mp4")
+        try library.recordMetadataPairs(itemID: item.id, pairs: [("artist", "Bill Evans")])
+
+        // An empty set is nobody's question — it must not mean "match
+        // nothing" and blank the window.
+        #expect(try library.tagCandidates(sources: [.metadata], within: []).count == 1)
+        #expect(try library.tagCandidates(sources: [.metadata], within: nil).count == 1)
+    }
+
+    @Test func scopedEvidenceAndAffectedCountStayInsideTheScope() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let inside = try await insertItem(library, source, path: "a.mp4")
+        let outside = try await insertItem(library, source, path: "b.mp4")
+        for item in [inside, outside] {
+            try library.recordMetadataPairs(itemID: item.id, pairs: [("artist", "Bill Evans")])
+        }
+
+        let candidate = try #require(
+            try library.tagCandidates(sources: [.metadata], within: [inside.id]).first)
+        let evidence = try library.candidateEvidence(for: candidate, within: [inside.id])
+        #expect(evidence.map(\.item.id) == [inside.id])
+        #expect(try library.itemsAffected(by: [candidate], within: [inside.id]) == 1)
+    }
+
+    @Test func scopedAcceptTagsOnlyScopedItemsAndSuppressesNothingGlobally() async throws {
+        let (library, source, category) = try await makeLibrary()
+        let inside = try await insertItem(library, source, path: "a.mp4")
+        let outside = try await insertItem(library, source, path: "b.mp4")
+        for item in [inside, outside] {
+            try library.recordMetadataPairs(itemID: item.id, pairs: [("artist", "Bill Evans")])
+        }
+
+        let candidate = try #require(
+            try library.tagCandidates(sources: [.metadata], within: [inside.id]).first)
+        let updated = try library.apply(
+            candidate, .assignCategory(categoryID: category.id), within: [inside.id])
+
+        #expect(updated == 1)
+        #expect(try library.tags(of: inside.id).flatMap(\.tags).map(\.name) == ["Bill Evans"])
+        #expect(try library.tags(of: outside.id).isEmpty)
+
+        // No decision row was written: the string leaves the queue only
+        // because it now names a tag. Deleting that tag must bring the
+        // OUTSIDE item's candidate back — a global accepted row would
+        // have suppressed it forever.
+        let tag = try #require(try library.tags(of: inside.id).flatMap(\.tags).first)
+        try library.deleteTag(tag.id)
+        #expect(try library.tagCandidates(sources: [.metadata]).count == 1)
+    }
+
+    @Test func scopedIgnoreIsDeliberatelyGlobal() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let inside = try await insertItem(library, source, path: "a.mp4")
+        let outside = try await insertItem(library, source, path: "b.mp4")
+        for item in [inside, outside] {
+            try library.recordMetadataPairs(itemID: item.id, pairs: [("encoder", "Lavf58")])
+        }
+
+        let candidate = try #require(
+            try library.tagCandidates(sources: [.metadata], within: [inside.id]).first)
+        _ = try library.apply(candidate, .ignore, within: [inside.id])
+
+        // "Not a tag" is a fact about the string, not about whichever
+        // items you were looking at.
+        #expect(try library.tagCandidates(sources: [.metadata]).isEmpty)
+    }
+
+    @Test func unsweptCountSeesOnlyTheScope() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let swept = try await insertItem(library, source, path: "a.mp4")
+        let unswept = try await insertItem(library, source, path: "b.mp4")
+        try library.recordMetadataPairs(itemID: swept.id, pairs: [])
+
+        #expect(try library.unsweptCount(in: [swept.id]) == 0)
+        #expect(try library.unsweptCount(in: [unswept.id]) == 1)
+        #expect(try library.unsweptCount(in: [swept.id, unswept.id]) == 1)
+    }
+}
+
+extension CandidateScopeTests {
+    @Test func resettingTheSweepMakesTheItemEligibleAgain() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let item = try await insertItem(library, source, path: "a.mp4")
+        try library.recordMetadataPairs(itemID: item.id, pairs: [("artist", "Old")])
+        #expect(try library.unsweptCount(in: [item.id]) == 0)
+
+        // The marker's absence IS the retry — "Rescan This Video" is
+        // exactly this plus the ordinary scoped sweep.
+        try library.resetMetadataSweep(itemIDs: [item.id])
+        #expect(try library.unsweptCount(in: [item.id]) == 1)
+        // The recorded pairs survive until the re-probe replaces them.
+        #expect(try library.tagCandidates(sources: [.metadata]).count == 1)
+    }
+}

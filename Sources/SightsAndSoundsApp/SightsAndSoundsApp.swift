@@ -364,7 +364,20 @@ struct OpenLibraryFocusKey: FocusedValueKey {
     typealias Value = UUID
 }
 
+/// The focused window's BrowseModel, for the one menu command that needs
+/// more than the library's identity: View ▸ Tag Analysis carries the
+/// window's CURRENT listing — the queue — and the menu bar lives outside
+/// every window.
+struct BrowseModelFocusKey: FocusedValueKey {
+    typealias Value = BrowseModel
+}
+
 extension FocusedValues {
+    var browseModel: BrowseModel? {
+        get { self[BrowseModelFocusKey.self] }
+        set { self[BrowseModelFocusKey.self] = newValue }
+    }
+
     var openLibraryID: UUID? {
         get { self[OpenLibraryFocusKey.self] }
         set { self[OpenLibraryFocusKey.self] = newValue }
@@ -403,6 +416,7 @@ struct ViewMenuCommands: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.openLibraryID) private var focusedLibraryID
+    @FocusedValue(\.browseModel) private var focusedBrowse
 
     var body: some View {
         Divider()
@@ -437,7 +451,12 @@ struct ViewMenuCommands: View {
             guard let focusedLibraryID else { return }
             openWindow(
                 id: "aux",
-                value: AuxWindowRequest(libraryID: focusedLibraryID, kind: kind))
+                value: AuxWindowRequest(
+                    libraryID: focusedLibraryID, kind: kind,
+                    // Tag Analysis always walks the focused window's
+                    // current listing — the queue.
+                    itemIDs: kind == .tagAnalysis
+                        ? focusedBrowse?.visibleItems.map(\.id) ?? [] : []))
         }
         .keyboardShortcut(KeyEquivalent(key), modifiers: [.command, .option])
     }

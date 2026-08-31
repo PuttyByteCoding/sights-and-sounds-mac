@@ -296,6 +296,7 @@ private struct PlayerContent: View {
     /// fields need to keep the focus they take.
     let refocus: () -> Void
     @Binding var showKeyMap: Bool
+    @Environment(\.openWindow) private var openWindow
     @State private var showBindingsEditor = false
     /// The stage's rendered width, feeding `stageHeightCap`.
     @State private var stageWidth: CGFloat = 0
@@ -569,6 +570,20 @@ private struct PlayerContent: View {
                     showKeyMap = true
                 }
                 Button("Key Bindings…", systemImage: "keyboard") { showBindingsEditor = true }
+                Divider()
+                // Tag Analysis carries the player's own queue, opened
+                // at the playing item — both windows walk the same list
+                // with the same SHIFT+arrows.
+                if let item = model.item {
+                    Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
+                        openWindow(
+                            id: "aux",
+                            value: AuxWindowRequest(
+                                libraryID: model.libraryID, kind: .tagAnalysis,
+                                itemIDs: model.playlist,
+                                startIndex: model.playlist.firstIndex(of: item.id) ?? 0))
+                    }
+                }
                 Divider()
                 if AppSettingsStore.shared.current.infoBar.showsDownload {
                     Button("Save a Copy…", systemImage: "square.and.arrow.down") {

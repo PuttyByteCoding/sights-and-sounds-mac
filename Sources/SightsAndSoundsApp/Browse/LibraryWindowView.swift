@@ -59,6 +59,16 @@ struct BrowseView: View {
     /// The former sheets open as WINDOWS (#73) — draggable, resizable,
     /// usable beside the grid.
     private func openAux(_ kind: AuxWindowRequest.Kind) {
+        // Tag Analysis is always the current queue — the same listing
+        // the player takes — walked one video at a time.
+        if kind == .tagAnalysis {
+            openWindow(
+                id: "aux",
+                value: AuxWindowRequest(
+                    libraryID: model.libraryID, kind: kind,
+                    itemIDs: model.visibleItems.map(\.id)))
+            return
+        }
         openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
     }
 
@@ -248,6 +258,7 @@ struct BrowseView: View {
         }
         .task { await model.watchThumbnailQueue() }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { windowWidth = $0 }
+            .focusedSceneValue(\.browseModel, model)
         .defaultToolbarShowsLabels()
         .frame(minWidth: 900, minHeight: 560)
     }

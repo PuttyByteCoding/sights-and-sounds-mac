@@ -801,11 +801,20 @@ final class BrowseModel {
     /// `enqueueUnlessPending` rather than `enqueue`: the button is a
     /// signal, not a command to run another sweep, and a second row would
     /// re-probe every file the first is already probing.
-    func sweepMetadata(then finished: @escaping @MainActor @Sendable () -> Void) {
+    func sweepMetadata(
+        itemIDs: [UUID]? = nil, then finished: @escaping @MainActor @Sendable () -> Void
+    ) {
         let runner = jobRunner
         Task {
             do {
-                _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                if let itemIDs {
+                    // Scoped: plain enqueue — dedupe is by kind, and a
+                    // pending library sweep must not swallow the small
+                    // one the operator is waiting on.
+                    _ = try await MetadataSweepJob.enqueue(on: runner, itemIDs: itemIDs)
+                } else {
+                    _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                }
                 try await runner.runPending()
             } catch {
                 errorMessage = "\(error)"

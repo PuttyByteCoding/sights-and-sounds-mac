@@ -23,12 +23,19 @@ extension LibraryDatabase {
     /// and anything already decided. A string a RULE would drop is **not**
     /// excluded — it comes back marked, because a mis-authored ignore rule
     /// has to be diagnosable rather than invisible.
+    /// `within` narrows the queue to strings found in those items, with
+    /// counts counted inside the scope — "what is in THIS video", or in
+    /// the current play queue, rather than in the library. Nil is the
+    /// whole library, and an empty set is nobody's question, so it means
+    /// the whole library too.
     public func tagCandidates(
         sources: Set<TagCandidateSource> = Set(TagCandidateSource.allCases),
         rules: [RuleEngine.Rule] = [],
         limit: Int = 2000,
-        pathSegmenter: PathSubParser? = nil
+        pathSegmenter: PathSubParser? = nil,
+        within scope: Set<UUID>? = nil
     ) throws -> [TagCandidate] {
+        let scopeJSON = Self.scopeJSON(scope)
         let known = try knownTagText()
         let decided = try decidedCandidateKeys()
 
@@ -41,8 +48,10 @@ extension LibraryDatabase {
                     sql: """
                     SELECT key, value, COUNT(DISTINCT mediaItemID) AS n \
                     FROM embeddedMetadataPair \
+                    \(Self.scopeClause("mediaItemID", scopeJSON, prefix: "WHERE")) \
                     GROUP BY key, value
-                    """
+                    """,
+                    arguments: scopeJSON.map { [$0] } ?? []
                 ).map { (.metadata, $0["key"] as String, $0["value"] as String, $0["n"] as Int) }
             }
         }
@@ -53,15 +62,19 @@ extension LibraryDatabase {
                     db,
                     sql: """
                     SELECT text, COUNT(DISTINCT mediaItemID) AS n \
-                    FROM ocrTextLine GROUP BY text
-                    """
+                    FROM ocrTextLine \
+                    \(Self.scopeClause("mediaItemID", scopeJSON, prefix: "WHERE")) \
+                    GROUP BY text
+                    """,
+                    arguments: scopeJSON.map { [$0] } ?? []
                 ).map { (.onScreen, nil, $0["text"] as String, $0["n"] as Int) }
             }
         }
 
         if sources.contains(.path) {
-            rows += try pathCandidates(segmenter: pathSegmenter ?? PathSubParser(
-                mediaRoot: nil, rules: rules))
+            rows += try pathCandidates(
+                segmenter: pathSegmenter ?? PathSubParser(mediaRoot: nil, rules: rules),
+                scopeJSON: scopeJSON)
         }
 
         var candidates: [TagCandidate] = []
@@ -99,15 +112,17 @@ extension LibraryDatabase {
     /// per item — there are orders of magnitude fewer folders than files,
     /// and each folder's segment set is the same for every item under it.
     private func pathCandidates(
-        segmenter: PathSubParser
+        segmenter: PathSubParser, scopeJSON: String?
     ) throws -> [(source: TagCandidateSource, key: String?, value: String, count: Int)] {
         let folders = try writer.read { db in
             try Row.fetchAll(
                 db,
                 sql: """
                 SELECT folderPath, COUNT(*) AS n FROM mediaItem \
-                WHERE folderPath <> '' GROUP BY folderPath
-                """
+                WHERE folderPath <> '' \(Self.scopeClause("id", scopeJSON, prefix: "AND")) \
+                GROUP BY folderPath
+                """,
+                arguments: scopeJSON.map { [$0] } ?? []
             ).map { ($0["folderPath"] as String, $0["n"] as Int) }
         }
 
@@ -158,6 +173,30 @@ extension LibraryDatabase {
         _ key: String?, _ value: String, _ rules: [RuleEngine.Rule]
     ) -> RuleEngine.Rule? {
         rules.first { RuleEngine.matches($0.matcher, key: key, value: value) }
+    }
+
+    // MARK: - Scope plumbing
+
+    /// The scope as one SQL argument: a JSON array of dash-less uppercase
+    /// UUID hex, matched with `hex(column) IN (SELECT value FROM
+    /// json_each(?))`.
+    ///
+    /// One bound argument regardless of size — a plain IN list runs into
+    /// SQLite's bound-variable ceiling exactly when the scope is a real
+    /// play queue. `hex()` of the stored 16-byte blob IS the dash-less
+    /// uuidString, which is what makes the comparison exact. The scan
+    /// this defeats an index for is a GROUP BY over the whole table
+    /// anyway.
+    static func scopeJSON(_ scope: Set<UUID>?) -> String? {
+        guard let scope, !scope.isEmpty else { return nil }
+        let hex = scope.map { $0.uuidString.replacingOccurrences(of: "-", with: "") }
+        return "[" + hex.map { "\"\($0)\"" }.joined(separator: ",") + "]"
+    }
+
+    /// `prefix` is WHERE or AND, depending on what the query already has.
+    static func scopeClause(_ column: String, _ scopeJSON: String?, prefix: String) -> String {
+        scopeJSON == nil
+            ? "" : "\(prefix) hex(\(column)) IN (SELECT value FROM json_each(?))"
     }
 
     // MARK: - Deciding
@@ -228,6 +267,42 @@ extension LibraryDatabase {
                 ORDER BY mediaItem.relativePath LIMIT ?
                 """,
                 arguments: [limit])
+        }
+    }
+}
+
+extension LibraryDatabase {
+    /// How many of these items the metadata sweep has not visited — the
+    /// cheap check before auto-enqueueing a scoped sweep, so opening a
+    /// scoped window on already-swept items queues nothing.
+    public func unsweptCount(in scope: Set<UUID>) throws -> Int {
+        guard !scope.isEmpty else { return 0 }
+        let json = Self.scopeJSON(scope)
+        return try writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                SELECT COUNT(*) FROM mediaItem \
+                LEFT JOIN metadataSweepState ON metadataSweepState.mediaItemID = mediaItem.id \
+                WHERE metadataSweepState.mediaItemID IS NULL \
+                AND mediaItem.parentMediaItemID IS NULL \
+                \(Self.scopeClause("mediaItem.id", json, prefix: "AND"))
+                """,
+                arguments: json.map { [$0] } ?? []) ?? 0
+        }
+    }
+}
+
+extension LibraryDatabase {
+    /// Forget that the sweep visited these items — the marker's absence
+    /// IS the retry, so "rescan this video" is exactly this plus the
+    /// ordinary scoped sweep.
+    public func resetMetadataSweep(itemIDs: [UUID]) throws {
+        guard !itemIDs.isEmpty else { return }
+        _ = try writer.write { db in
+            try MetadataSweepState
+                .filter(keys: itemIDs)
+                .deleteAll(db)
         }
     }
 }

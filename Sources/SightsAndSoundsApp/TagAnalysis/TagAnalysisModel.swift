@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Observation
 import SightsAndSoundsKit
 
@@ -43,6 +44,16 @@ final class TagAnalysisModel {
     let library: LibraryDatabase
     let libraryID: UUID
 
+    /// The queue this window walks — the same listing the player takes.
+    /// Analysis always looks at ONE video, `queue[index]`: metadata from
+    /// one video is not evidence about another, so there is no
+    /// whole-library mode and no multi-item mode. The queue exists to be
+    /// walked, exactly as the player walks it.
+    private(set) var queue: [UUID]
+    private(set) var index: Int
+    /// The video on display, loaded for the header.
+    private(set) var currentItem: MediaItem?
+
     private(set) var candidates: [TagCandidate] = []
     private(set) var categories: [TagCategory] = []
     private(set) var tagsByCategory: [UUID: [Tag]] = [:]
@@ -75,9 +86,48 @@ final class TagAnalysisModel {
     private(set) var ignoredThisPass = 0
     private(set) var lastDecision: (candidate: TagCandidate, wasAccepted: Bool)?
 
-    init(library: LibraryDatabase, libraryID: UUID) {
+    init(library: LibraryDatabase, libraryID: UUID, queue: [UUID], startAt: Int = 0) {
         self.library = library
         self.libraryID = libraryID
+        self.queue = queue
+        self.index = queue.indices.contains(startAt) ? startAt : 0
+    }
+
+    var currentItemID: UUID? {
+        queue.indices.contains(index) ? queue[index] : nil
+    }
+
+    /// What every Kit call is scoped to: the displayed video, alone.
+    private var scope: Set<UUID>? {
+        currentItemID.map { [$0] }
+    }
+
+    // MARK: - Walking the queue
+
+    var canGoPrevious: Bool { index > 0 }
+    var canGoNext: Bool { index + 1 < queue.count }
+
+    func goNext() { step(1) }
+    func goPrevious() { step(-1) }
+
+    /// Clamped at the ends, like the player — SHIFT+arrows walk the same
+    /// queue in both windows and must not disagree about what the last
+    /// item does.
+    private func step(_ delta: Int) {
+        let next = index + delta
+        guard queue.indices.contains(next) else { return }
+        index = next
+        // The analysis is per video, so the working state goes with the
+        // video: a selection, a set of picks, or an undoable decision
+        // from the previous one would silently point at strings the new
+        // video may not even contain. The pass tally stays — it counts
+        // the pass over the queue, not one video.
+        selectedID = nil
+        picked = []
+        evidence = []
+        itemsAffected = 0
+        lastDecision = nil
+        reload()
     }
 
     // MARK: - Derived
@@ -151,7 +201,10 @@ final class TagAnalysisModel {
             do {
                 let rules = try library.analysisRules()
                 let vocabulary = try library.vocabulary()
-                let candidates = try library.tagCandidates(rules: rules)
+                let candidates = try library.tagCandidates(rules: rules, within: scope)
+                self.currentItem = try self.currentItemID.flatMap { id in
+                    try library.writer.read { try MediaItem.fetchOne($0, key: id) }
+                }
                 self.rules = rules
                 self.categories = vocabulary.map(\.category)
                 self.tagsByCategory = Dictionary(
@@ -180,7 +233,7 @@ final class TagAnalysisModel {
         }
         let library = library
         Task {
-            evidence = (try? library.candidateEvidence(for: selected)) ?? []
+            evidence = (try? library.candidateEvidence(for: selected, within: scope)) ?? []
         }
     }
 
@@ -191,7 +244,7 @@ final class TagAnalysisModel {
             return
         }
         Task {
-            itemsAffected = (try? library.itemsAffected(by: picked)) ?? 0
+            itemsAffected = (try? library.itemsAffected(by: picked, within: scope)) ?? 0
         }
     }
 
@@ -218,7 +271,7 @@ final class TagAnalysisModel {
 
     func apply(_ candidate: TagCandidate, _ application: CandidateApplication) {
         do {
-            _ = try library.apply(candidate, application)
+            _ = try library.apply(candidate, application, within: scope)
             lastDecision = (candidate, application != .ignore)
             if application == .ignore { ignoredThisPass += 1 } else { acceptedThisPass += 1 }
             reload()
@@ -236,7 +289,8 @@ final class TagAnalysisModel {
         for candidate in pickedCandidates {
             guard let category = suggestedCategory(for: candidate) else { continue }
             do {
-                _ = try library.apply(candidate, .assignCategory(categoryID: category.id))
+                _ = try library.apply(
+                    candidate, .assignCategory(categoryID: category.id), within: scope)
                 applied += 1
             } catch {
                 loadError = "\(error)"

@@ -36,6 +36,9 @@ struct AuxWindowRequest: Codable, Hashable {
     /// surface — the operations window is the only one that opens
     /// against a set of items.
     var itemIDs: [UUID] = []
+    /// Tag Analysis only: where in `itemIDs` to start the walk.
+    /// Optional so window state saved before this field decodes.
+    var startIndex: Int? = nil
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -99,7 +102,9 @@ struct AuxiliaryWindowView: View {
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()
-            case .tagAnalysis: TagAnalysisView()
+            case .tagAnalysis:
+                TagAnalysisView(
+                    queueIDs: request.itemIDs, startIndex: request.startIndex ?? 0)
             }
         }
     }

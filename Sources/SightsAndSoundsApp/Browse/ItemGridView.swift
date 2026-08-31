@@ -139,6 +139,7 @@ private struct EmptyGridState: View {
 
 private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     let item: MediaItem
     @State private var thumbnail: NSImage?
     /// The tag whose editor is open, from a right-click on one of this
@@ -198,6 +199,19 @@ private struct ItemCell: View {
             .disabled(!model.isOnline(item))
         Button("Open Terminal at Folder", systemImage: "terminal") { openTerminal() }
             .disabled(!model.isOnline(item))
+        Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
+            // The whole queue rides along, positioned at this video —
+            // analysis is per video, but the window walks the queue the
+            // way the player does, and arriving with only one item would
+            // strand the arrows.
+            let queue = model.visibleItems.map(\.id)
+            openWindow(
+                id: "aux",
+                value: AuxWindowRequest(
+                    libraryID: model.libraryID, kind: .tagAnalysis,
+                    itemIDs: queue,
+                    startIndex: queue.firstIndex(of: item.id) ?? 0))
+        }
         if item.parentMediaItemID != nil && !item.isExportedClip {
             Button("Export Clip to File", systemImage: "scissors") {
                 model.exportClip(item)
