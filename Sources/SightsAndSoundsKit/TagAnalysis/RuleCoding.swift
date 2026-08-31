@@ -146,3 +146,18 @@ public enum RuleCoding {
         return nil
     }
 }
+
+extension LibraryDatabase {
+
+    /// Every stored rule, decoded, in the order the engine folds them.
+    ///
+    /// A row whose matcher cannot be read is dropped rather than throwing:
+    /// one unreadable rule must not take down an analysis run over a whole
+    /// library. That is the same "degrade, never throw" the matchers
+    /// themselves follow — an unregistered matcher goes inert too.
+    public func analysisRules() throws -> [RuleEngine.Rule] {
+        try writer.read { db in
+            RuleCoding.decodeAll(try AnalysisRule.fetchAll(db))
+        }
+    }
+}

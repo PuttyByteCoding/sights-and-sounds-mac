@@ -769,6 +769,26 @@ final class BrowseModel {
         }
     }
 
+    /// Sweep embedded metadata into `embeddedMetadataPair` — the tag
+    /// analysis queue's largest source, and the only one that needs a
+    /// pass over the files rather than a query.
+    ///
+    /// `enqueueUnlessPending` rather than `enqueue`: the button is a
+    /// signal, not a command to run another sweep, and a second row would
+    /// re-probe every file the first is already probing.
+    func sweepMetadata(then finished: @escaping @MainActor @Sendable () -> Void) {
+        let runner = jobRunner
+        Task {
+            do {
+                _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                try await runner.runPending()
+            } catch {
+                errorMessage = "\(error)"
+            }
+            finished()
+        }
+    }
+
     private func runOperation(_ enqueue: @escaping @Sendable (JobRunner) async throws -> Void) {
         let runner = jobRunner
         Task {
