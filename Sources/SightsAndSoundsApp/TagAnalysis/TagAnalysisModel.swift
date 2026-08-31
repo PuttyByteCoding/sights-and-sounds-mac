@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import GRDB
 import Observation
@@ -24,6 +25,14 @@ final class TagAnalysisModel {
     private(set) var currentItem: MediaItem?
 
     private(set) var analysis: ItemAnalysis = .empty
+
+    /// The rail preview's own player — the numpad transport works here
+    /// exactly as in the player window, off the same key map and the
+    /// same skip settings, because seek distances are muscle memory.
+    /// Loads paused: this is a triage surface, and sound the operator
+    /// did not ask for is noise.
+    let previewPlayer = AVPlayer()
+    private(set) var previewPlaying = false
     /// What the displayed video already wears — the baseline every
     /// decision is made against, so it sits in view instead of in memory.
     private(set) var appliedTags: [(category: TagCategory, tags: [Tag])] = []
@@ -179,8 +188,13 @@ final class TagAnalysisModel {
     /// its tags are saved — then the working state clears, because all
     /// of it points at strings the next video may not contain.
     private func step(_ delta: Int) {
-        let next = index + delta
-        guard queue.indices.contains(next) else { return }
+        jump(to: index + delta)
+    }
+
+    /// The queue strip's click, and what the arrows are made of — same
+    /// commit-then-clear contract whichever way you arrive at a video.
+    func jump(to next: Int) {
+        guard queue.indices.contains(next), next != index else { return }
         commitBasket()
         index = next
         videosVisitedThisPass += 1
@@ -188,6 +202,61 @@ final class TagAnalysisModel {
         searchText = ""
         analysis = .empty
         reload()
+    }
+
+    // MARK: - The preview transport
+
+    /// Point the preview at the current video, paused at the top.
+    func reloadPreview() {
+        previewPlayer.pause()
+        previewPlaying = false
+        guard let item = currentItem,
+              let url = (try? library.resolvedFileURL(for: item)) ?? nil
+        else {
+            previewPlayer.replaceCurrentItem(with: nil)
+            return
+        }
+        previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
+    }
+
+    /// The player window's digit table, verbatim — numpad seeks, 5
+    /// pauses, 0 to the start, − to near the end. The triage flags in
+    /// the map (favorite and friends) deliberately do NOT fire here:
+    /// this window's decisions are tags, and a stray numpad press must
+    /// not silently flag a video.
+    func handlePreviewKey(character: Character, shift: Bool, numpad: Bool) -> Bool {
+        guard let action = PlayerKeyMap.action(
+            character: character, shift: shift, numpad: numpad,
+            settings: AppSettingsStore.shared.current.skip)
+        else { return false }
+        switch action {
+        case .seek(let seconds):
+            previewSeek(by: seconds)
+        case .playPause:
+            previewPlaying ? previewPlayer.pause() : previewPlayer.play()
+            previewPlaying.toggle()
+        case .seekToStart:
+            previewPlayer.seek(to: .zero)
+        case .seekToNearEnd:
+            let duration = previewPlayer.currentItem?.duration.seconds ?? 0
+            if duration.isFinite, duration > 5 {
+                previewSeek(to: duration - 5)
+            }
+        case .toggleFavorite, .toggleNeedsReview, .toggleMarkedForDeletion,
+             .togglePlaybackIssue:
+            return false
+        }
+        return true
+    }
+
+    private func previewSeek(by seconds: Double) {
+        previewSeek(to: previewPlayer.currentTime().seconds + seconds)
+    }
+
+    private func previewSeek(to seconds: Double) {
+        previewPlayer.seek(
+            to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
+            toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     // MARK: - Loading
@@ -217,6 +286,7 @@ final class TagAnalysisModel {
                 self.analysis = analysis
                 self.occurrenceCounts = (try? library.stringOccurrenceCounts()) ?? [:]
                 self.appliedTags = (try? library.tags(of: itemID)) ?? []
+                self.reloadPreview()
                 self.refreshAppearsIn()
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)

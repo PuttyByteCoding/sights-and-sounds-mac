@@ -41,6 +41,9 @@ struct TagAnalysisView: View {
                         RulesTabView(model: rules)
                     }
                 }
+                if mode == .candidates {
+                    QueueStrip(model: model)
+                }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -54,12 +57,26 @@ struct TagAnalysisView: View {
         // punching through a focused text field as the player's do.
         // Advancing commits the basket; that is the contract.
         .onKeyPress(phases: [.down, .repeat]) { press in
-            guard press.modifiers.contains(.shift),
-                  press.key == .leftArrow || press.key == .rightArrow,
-                  let model
-            else { return .ignored }
-            press.key == .leftArrow ? model.goPrevious() : model.goNext()
-            return .handled
+            guard let model else { return .ignored }
+            if press.modifiers.contains(.shift),
+               press.key == .leftArrow || press.key == .rightArrow
+            {
+                press.key == .leftArrow ? model.goPrevious() : model.goNext()
+                return .handled
+            }
+            // The player window's numpad transport, verbatim — seeks,
+            // 5 to pause/play, 0 to start, − to near end. Numpad only,
+            // exactly like the player: the digits are separable from a
+            // filter field that is spelling a tag name.
+            if press.modifiers.contains(.numericPad),
+               let character = press.characters.first,
+               character.isNumber || character == "-"
+            {
+                return model.handlePreviewKey(
+                    character: character, shift: false, numpad: true)
+                    ? .handled : .ignored
+            }
+            return .ignored
         }
         .task {
             guard model == nil else { return }
@@ -158,7 +175,6 @@ private struct RailView: View {
     @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
     @State private var previewCollapsed = false
-    @State private var frame: NSImage?
 
     var body: some View {
         ScrollView {
@@ -196,19 +212,17 @@ private struct RailView: View {
             }
 
             if !previewCollapsed {
+                // A LIVE surface, not a still: the numpad transport
+                // seeks and 5 plays right here, so "is that really the
+                // taper's banner at 4:00?" is answerable without the
+                // player window.
                 ZStack(alignment: .bottomTrailing) {
-                    Group {
-                        if let frame {
-                            Image(nsImage: frame).resizable().aspectRatio(contentMode: .fit)
-                        } else {
-                            Rectangle().fill(Theme.Surface.stage)
-                                .aspectRatio(16 / 9, contentMode: .fit)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
-                    Text("frame 1")
-                        .font(Theme.mono(9))
+                    PlayerSurface(player: model.previewPlayer)
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
+                    Text(model.previewPlaying ? "▶" : "⏸ numpad seeks · 5 plays")
+                        .font(Theme.mono(8.5))
                         .foregroundStyle(Theme.Accent.amber)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
@@ -235,17 +249,8 @@ private struct RailView: View {
                 }
             }
         }
-        .task(id: model.currentItemID) { await loadFrame() }
     }
 
-    private func loadFrame() async {
-        frame = nil
-        guard let item = model.currentItem, let fileURL = browse.fileURL(for: item) else { return }
-        let data = await ThumbnailProvider.shared.thumbnailData(
-            itemID: item.id, libraryID: model.libraryID, fileURL: fileURL,
-            durationSeconds: item.durationSeconds)
-        if let data { frame = NSImage(data: data) }
-    }
 
     // MARK: Applied tags
 
@@ -807,7 +812,22 @@ private struct DecidePane: View {
     }
 
     private func byline(_ candidate: AnalysisCandidate) -> String {
-        let place = candidate.key.map { "as metadata key “\($0)”" } ?? "in this video's evidence"
+        // Name the contributing FILE for sidecar text: a folder-level
+        // info.txt applies to every video in its folder, and without the
+        // name, shared text reads as a leak from another video.
+        let files = Set(candidate.origins.compactMap(\.sourceFile)).sorted()
+        let place: String
+        if let key = candidate.key {
+            place = "as metadata key “\(key)”"
+        } else if !files.isEmpty {
+            place = "in \(files.joined(separator: ", ")) beside this video"
+        } else if candidate.origins.contains(where: { $0.readerID == "path" }) {
+            place = "in this video's path"
+        } else if candidate.origins.contains(where: { $0.timeSeconds != nil }) {
+            place = "on screen in this video"
+        } else {
+            place = "in this video's evidence"
+        }
         let reach = model.libraryCount(for: candidate)
         return reach > 1
             ? "Found \(place) · appears in \(reach) items library-wide."
@@ -973,6 +993,92 @@ private struct DecidePane: View {
                 model.hidePrefixRule(root: candidate.value)
             }
             .buttonStyle(PrimaryButtonStyle())
+        }
+    }
+}
+
+// MARK: - Queue strip
+
+/// The queue as thumbnails across the window's bottom — the walk made
+/// visible. The current video wears the amber ring; a click is the same
+/// commit-then-move as the arrows, and the strip follows the walk so
+/// the current video is always in view.
+private struct QueueStrip: View {
+    @Environment(BrowseModel.self) private var browse
+    let model: TagAnalysisModel
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    ForEach(Array(model.queue.enumerated()), id: \.element) { index, itemID in
+                        QueueThumb(
+                            itemID: itemID,
+                            libraryID: model.libraryID,
+                            library: model.library,
+                            isCurrent: index == model.index,
+                            onTap: { model.jump(to: index) })
+                            .id(itemID)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            }
+            .frame(height: 92)
+            .background(Theme.Surface.toolbar)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            }
+            .onChange(of: model.index) { _, _ in
+                if let id = model.currentItemID {
+                    withAnimation { proxy.scrollTo(id, anchor: .center) }
+                }
+            }
+            .onAppear {
+                if let id = model.currentItemID {
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
+        }
+    }
+}
+
+private struct QueueThumb: View {
+    let itemID: UUID
+    let libraryID: UUID
+    let library: LibraryDatabase
+    let isCurrent: Bool
+    let onTap: () -> Void
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack {
+                if let thumbnail {
+                    Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle().fill(Theme.Surface.stage)
+                }
+            }
+            .frame(width: 118, height: 68)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                    .stroke(
+                        isCurrent ? Theme.Accent.amber : Theme.Border.standard,
+                        lineWidth: isCurrent ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .task(id: itemID) {
+            guard thumbnail == nil else { return }
+            let item = try? await library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+            guard let item else { return }
+            let fileURL = (try? library.resolvedFileURL(for: item)) ?? nil
+            let data = await ThumbnailProvider.shared.thumbnailData(
+                itemID: itemID, libraryID: libraryID, fileURL: fileURL,
+                durationSeconds: item.durationSeconds)
+            if let data { thumbnail = NSImage(data: data) }
         }
     }
 }
