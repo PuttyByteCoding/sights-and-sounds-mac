@@ -105,6 +105,26 @@ extension LibraryDatabase {
             actionCount: rule.actions.count)
     }
 
+    /// Every rule's dry run in one pass — the per-card "412 pairs · 380
+    /// items" lines. The queue is computed ONCE and each rule filters it;
+    /// running dryRun(_:) per card would recompute the whole queue per
+    /// rule.
+    public func dryRuns(for rules: [RuleEngine.Rule]) throws -> [UUID: RuleDryRun] {
+        let candidates = try tagCandidates(rules: [])
+        var results: [UUID: RuleDryRun] = [:]
+        for rule in rules {
+            let matched = candidates.filter {
+                RuleEngine.matches(rule.matcher, key: $0.key, value: $0.value)
+            }
+            results[rule.id] = RuleDryRun(
+                matchedCandidates: matched.count,
+                affectedItems: try itemsAffected(by: matched),
+                metadataMatches: matched.count { $0.source == .metadata },
+                actionCount: rule.actions.count)
+        }
+        return results
+    }
+
     /// The rule a "make a rule from this" should OPEN rather than rival —
     /// spec 14 §4. Nil when nothing covers the candidate yet.
     public func ruleCovering(_ candidate: TagCandidate) throws -> RuleEngine.Rule? {

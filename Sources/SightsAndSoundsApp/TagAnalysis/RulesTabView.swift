@@ -58,6 +58,7 @@ struct RulesTabView: View {
                         ForEach(Array(model.rules.enumerated()), id: \.element.id) { index, rule in
                             RuleCard(
                                 rule: rule, order: index + 1,
+                                dryRun: model.cardDryRuns[rule.id],
                                 isSelected: rule.id == model.selectedID,
                                 isFirst: index == 0,
                                 isLast: index == model.rules.count - 1,
@@ -283,6 +284,7 @@ struct RulesTabView: View {
 private struct RuleCard: View {
     let rule: RuleEngine.Rule
     let order: Int
+    let dryRun: RuleDryRun?
     let isSelected: Bool
     let isFirst: Bool
     let isLast: Bool
@@ -319,6 +321,13 @@ private struct RuleCard: View {
                     .foregroundStyle(Theme.Text.tertiary).disabled(isLast)
                 Button("×", action: onRemove).buttonStyle(.plain)
                     .foregroundStyle(Theme.Text.tertiary)
+            }
+            if let dryRun {
+                // The comp's per-card reach line, indented under the chips.
+                Text("\(dryRun.matchedCandidates) pairs · \(dryRun.affectedItems) items")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .padding(.leading, 24)
             }
         }
         .padding(10)

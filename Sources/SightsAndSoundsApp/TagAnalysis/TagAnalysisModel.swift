@@ -40,6 +40,31 @@ final class TagAnalysisModel {
     var searchText = ""
     var selectedCandidateID: AnalysisCandidate.ID?
 
+    /// Left-rail filters — the comp's EVIDENCE SOURCES and STATUS blocks.
+    var readerFilter: String?
+    var statusFilter: StatusFilter = .undecided
+
+    enum StatusFilter: String, CaseIterable {
+        case undecided, inBasket, ignored, everything
+
+        var label: String {
+            switch self {
+            case .undecided: "Undecided"
+            case .inBasket: "In basket"
+            case .ignored: "Ignored"
+            case .everything: "Everything"
+            }
+        }
+    }
+
+    /// Library-wide item counts per string — the ITEMS column. "This
+    /// appears in 148 items" is what makes a string worth a tag, even
+    /// though applying stays per-video.
+    private(set) var occurrenceCounts: [String: Int] = [:]
+
+    /// The selected string's library-wide reach — APPEARS IN.
+    private(set) var appearsIn: (names: [String], total: Int) = ([], 0)
+
     init(library: LibraryDatabase, libraryID: UUID, queue: [UUID], startAt: Int = 0) {
         self.library = library
         self.libraryID = libraryID
@@ -57,25 +82,68 @@ final class TagAnalysisModel {
         (analysis.suggested + analysis.unmapped).first { $0.id == selectedCandidateID }
     }
 
-    var visibleSuggested: [AnalysisCandidate] { filtered(analysis.suggested) }
-    var visibleUnmapped: [AnalysisCandidate] { filtered(analysis.unmapped) }
+    /// One row per string — the comp's single table. The suggestion
+    /// column carries the classification instead of three separate
+    /// sections: a rule mapping, an existing-tag hit, or nothing.
+    struct TableRow: Identifiable {
+        let candidate: AnalysisCandidate
+        let findings: [ExistingTagFinding]
+        var id: AnalysisCandidate.ID { candidate.id }
+    }
 
-    var visibleExisting: [ExistingTagFinding] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return analysis.existing }
-        return analysis.existing.filter {
-            $0.tag.name.localizedCaseInsensitiveContains(query)
-                || $0.foundIn.localizedCaseInsensitiveContains(query)
+    var allRows: [TableRow] {
+        let findingsByText = Dictionary(grouping: analysis.existing, by: \.foundIn)
+        // Suggested first — the rows a click can finish are worth the
+        // top of the table.
+        return (analysis.suggested + analysis.unmapped).map {
+            TableRow(candidate: $0, findings: findingsByText[$0.value] ?? [])
         }
     }
 
-    private func filtered(_ candidates: [AnalysisCandidate]) -> [AnalysisCandidate] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return candidates }
-        return candidates.filter {
-            $0.value.localizedCaseInsensitiveContains(query)
-                || ($0.key?.localizedCaseInsensitiveContains(query) ?? false)
+    var visibleRows: [TableRow] {
+        allRows.filter { matches($0) }
+    }
+
+    func count(reader: String?) -> Int {
+        allRows.count { row in
+            (reader == nil || row.candidate.origins.contains { $0.readerID == reader })
+                && status(of: row) == .undecided
         }
+    }
+
+    func count(status: StatusFilter) -> Int {
+        if status == .everything { return allRows.count }
+        return allRows.count(where: { self.status(of: $0) == status })
+    }
+
+    func status(of row: TableRow) -> StatusFilter {
+        if row.candidate.suppressedByRule != nil { return .ignored }
+        let mappedCategoryID = row.candidate.category.flatMap { self.category(named: $0)?.id }
+        if isStaged(value: row.candidate.value, categoryID: mappedCategoryID)
+            || row.findings.contains(where: { isStaged(tagID: $0.tag.id) })
+        {
+            return .inBasket
+        }
+        return .undecided
+    }
+
+    private func matches(_ row: TableRow) -> Bool {
+        if let readerFilter,
+           !row.candidate.origins.contains(where: { $0.readerID == readerFilter })
+        {
+            return false
+        }
+        if statusFilter != .everything, status(of: row) != statusFilter { return false }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        return row.candidate.value.localizedCaseInsensitiveContains(query)
+            || (row.candidate.key?.localizedCaseInsensitiveContains(query) ?? false)
+    }
+
+    /// The ITEMS column: library-wide when known (metadata and OCR),
+    /// otherwise this video's own occurrence count.
+    func libraryCount(for candidate: AnalysisCandidate) -> Int {
+        occurrenceCounts[candidate.id] ?? candidate.origins.count
     }
 
     /// Already staged, so a row can say "in the basket" instead of
@@ -144,6 +212,8 @@ final class TagAnalysisModel {
                 self.rules = rules
                 self.categories = categories
                 self.analysis = analysis
+                self.occurrenceCounts = (try? library.stringOccurrenceCounts()) ?? [:]
+                self.refreshAppearsIn()
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)
                 }
@@ -159,6 +229,72 @@ final class TagAnalysisModel {
     /// is in flight.
     func beginSweep() { isLoading = true }
     func finishSweep() { reload() }
+
+    func select(_ id: AnalysisCandidate.ID?) {
+        selectedCandidateID = id
+        refreshAppearsIn()
+    }
+
+    private func refreshAppearsIn() {
+        guard let candidate = selectedCandidate else {
+            appearsIn = ([], 0)
+            return
+        }
+        let library = library
+        Task {
+            appearsIn = (try? library.itemsCarrying(
+                key: candidate.key, value: candidate.value)) ?? ([], 0)
+        }
+    }
+
+    // MARK: - Decide actions beyond the basket
+
+    /// The comp's "Ignore this key": never offer it again, reversible.
+    /// Implemented as an authored ignore RULE — candidates become rules —
+    /// so reversing it is deleting the rule, and the Ignored status
+    /// filter is the list the comp promises.
+    func ignoreRule(for candidate: AnalysisCandidate) {
+        let matcher: RuleMatcher = candidate.key.flatMap { key in
+            key.isEmpty ? nil : .keyEquals(key: key)
+        } ?? .valueStartsWith(prefix: candidate.value)
+        do {
+            try library.saveAnalysisRule(
+                RuleEngine.Rule(id: UUID(), matcher: matcher, actions: [.ignore]))
+            reload()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// The comp's "Hide the prefix": a pathRootStartsWith + hidePrefix
+    /// rule, so the never-useful leading token stops appearing — an
+    /// ordinary rule row, one editor, one storage, one backup path.
+    func hidePrefixRule(root: String) {
+        let trimmed = root.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try library.saveAnalysisRule(
+                RuleEngine.Rule(
+                    id: UUID(), matcher: .pathRootStartsWith(root: trimmed),
+                    actions: [.hidePrefix]))
+            reload()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// The comp's "Add as an alias": folds this spelling into an existing
+    /// tag. Vocabulary, not tagging — it writes immediately rather than
+    /// through the basket, because an alias belongs to the library, not
+    /// to this video.
+    func addAlias(_ value: String, toTag tagID: UUID) {
+        do {
+            try library.addAlias(value.trimmingCharacters(in: .whitespacesAndNewlines), toTag: tagID)
+            reload()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
 
     // MARK: - The basket
 
