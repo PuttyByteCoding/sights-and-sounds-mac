@@ -16,6 +16,8 @@ final class RulesTabModel {
 
     private(set) var rules: [RuleEngine.Rule] = []
     private(set) var dryRun: RuleDryRun?
+    /// Per-card dry runs — the comp's "412 pairs · 380 items" lines.
+    private(set) var cardDryRuns: [UUID: RuleDryRun] = [:]
     private(set) var lastApplied: RuleApplication?
     private(set) var loadError: String?
 
@@ -45,6 +47,7 @@ final class RulesTabModel {
         do {
             rules = try library.analysisRules()
             loadError = nil
+            refreshCardDryRuns()
             if let selectedID, !rules.contains(where: { $0.id == selectedID }) {
                 self.selectedID = nil
                 draft = nil
@@ -52,6 +55,18 @@ final class RulesTabModel {
             refreshDryRun()
         } catch {
             loadError = "\(error)"
+        }
+    }
+
+    /// One queue computation for all cards — off the main actor, since
+    /// it walks every stored pair.
+    private func refreshCardDryRuns() {
+        let library = library, rules = rules
+        Task {
+            let runs = try? await Task.detached(priority: .utility) {
+                try library.dryRuns(for: rules)
+            }.value
+            if let runs { self.cardDryRuns = runs }
         }
     }
 
