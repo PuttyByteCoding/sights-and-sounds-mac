@@ -24,6 +24,9 @@ final class TagAnalysisModel {
     private(set) var currentItem: MediaItem?
 
     private(set) var analysis: ItemAnalysis = .empty
+    /// What the displayed video already wears — the baseline every
+    /// decision is made against, so it sits in view instead of in memory.
+    private(set) var appliedTags: [(category: TagCategory, tags: [Tag])] = []
     private(set) var rules: [RuleEngine.Rule] = []
     private(set) var categories: [TagCategory] = []
     private(set) var isLoading = false
@@ -213,6 +216,7 @@ final class TagAnalysisModel {
                 self.categories = categories
                 self.analysis = analysis
                 self.occurrenceCounts = (try? library.stringOccurrenceCounts()) ?? [:]
+                self.appliedTags = (try? library.tags(of: itemID)) ?? []
                 self.refreshAppearsIn()
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)
