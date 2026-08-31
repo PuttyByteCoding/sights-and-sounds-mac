@@ -48,6 +48,15 @@ struct SightsAndSoundsApp: App {
                 OpenLibraryCommand()
                     .environment(model)
             }
+            // Every workspace, in the system View menu — the toolbar's
+            // overflow menu and the palette both reach the same windows,
+            // but the menu bar is where anyone looks first, and it is the
+            // only one of the three that is discoverable without already
+            // being in a library window.
+            CommandGroup(after: .sidebar) {
+                ViewMenuCommands()
+                    .environment(model)
+            }
         }
 
         // One library per window — several can be open at once, each backed
@@ -381,6 +390,56 @@ struct OpenLibraryCommand: View {
             openWindow(id: SightsAndSoundsApp.pickerWindowID)
         }
         .keyboardShortcut("o", modifiers: .command)
+    }
+}
+
+/// The View menu's workspace entries. Enabled only while a library
+/// window has focus: every one of these windows is per-library, so with
+/// no library in front there is nothing coherent for them to open.
+///
+/// Operations is deliberately absent — it opens against a selection of
+/// items (`AuxWindowRequest.itemIDs`), which a menu bar does not have.
+struct ViewMenuCommands: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.openLibraryID) private var focusedLibraryID
+
+    var body: some View {
+        Divider()
+        Group {
+            aux("Categories & Fields", .categories, key: "1")
+            aux("Import", .importMedia, key: "2")
+            aux("Review", .review, key: "3")
+            aux("Organise", .organise, key: "4")
+            aux("Maintenance", .maintenance, key: "5")
+            aux("Tag Analysis", .tagAnalysis, key: "6")
+            aux("Recently Watched", .watched, key: "7")
+            Button("Library Properties") {
+                guard let focusedLibraryID else { return }
+                openWindow(id: "properties", value: focusedLibraryID)
+            }
+            .keyboardShortcut("8", modifiers: [.command, .option])
+        }
+        .disabled(focusedLibraryID == nil)
+        Divider()
+        // App-wide, so never disabled: tasks and the log exist without a
+        // library window in front.
+        Button("Background Tasks") { openWindow(id: "tasks") }
+            .keyboardShortcut("9", modifiers: [.command, .option])
+        Button("Log") { openWindow(id: "log") }
+            .keyboardShortcut("0", modifiers: [.command, .option])
+    }
+
+    private func aux(
+        _ title: String, _ kind: AuxWindowRequest.Kind, key: Character
+    ) -> some View {
+        Button(title) {
+            guard let focusedLibraryID else { return }
+            openWindow(
+                id: "aux",
+                value: AuxWindowRequest(libraryID: focusedLibraryID, kind: kind))
+        }
+        .keyboardShortcut(KeyEquivalent(key), modifiers: [.command, .option])
     }
 }
 
