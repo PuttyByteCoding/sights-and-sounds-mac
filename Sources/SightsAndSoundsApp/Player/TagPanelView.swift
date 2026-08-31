@@ -49,24 +49,45 @@ struct TagPanelView: View {
                                 Text(label).modifier(Theme.sectionLabel())
                             }
                         }
-                        switch entry.category.displayStyle {
-                        case .checkboxes, .radio:
-                            CheckboxCategoryView(
-                                entry: entry,
-                                isAltTarget: entry.id == model.checkboxCategory?.id,
-                                single: entry.category.displayStyle == .radio)
-                        case .search:
-                            PillCategoryView(
-                                entry: entry,
-                                // Focus is the FIRST visible category, not
-                                // a flag a category carries — which is one
-                                // setting and one whole class of conflict
-                                // fewer.
-                                takesFocus: entry.id == model.focusCategoryID,
-                                focus: $focusedCategory,
-                                onAdvance: { forward in advance(from: entry.id, forward: forward) })
+                        Group {
+                            switch entry.category.displayStyle {
+                            case .checkboxes, .radio:
+                                CheckboxCategoryView(
+                                    entry: entry,
+                                    isAltTarget: entry.id == model.checkboxCategory?.id,
+                                    single: entry.category.displayStyle == .radio)
+                            case .search:
+                                PillCategoryView(
+                                    entry: entry,
+                                    // Focus is the FIRST visible category, not
+                                    // a flag a category carries — which is one
+                                    // setting and one whole class of conflict
+                                    // fewer.
+                                    takesFocus: entry.id == model.focusCategoryID,
+                                    focus: $focusedCategory,
+                                    onAdvance: { forward in advance(from: entry.id, forward: forward) })
+                            }
+                        }
+                        // Dropping a dragged heading on a category slots
+                        // it in BEFORE that category.
+                        .dropDestination(for: String.self) { dropped, _ in
+                            guard let id = dropped.first.flatMap(UUID.init(uuidString:))
+                            else { return false }
+                            model.moveCategory(id, before: entry.category.id)
+                            return true
                         }
                     }
+                    // …and the space under the list is "make it last".
+                    Rectangle()
+                        .fill(.clear)
+                        .frame(height: 40)
+                        .contentShape(Rectangle())
+                        .dropDestination(for: String.self) { dropped, _ in
+                            guard let id = dropped.first.flatMap(UUID.init(uuidString:))
+                            else { return false }
+                            model.moveCategory(id, before: nil)
+                            return true
+                        }
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 14)
@@ -105,6 +126,10 @@ struct TagPanelView: View {
 /// A category's own hue, for its heading and its pills.
 private struct CategoryHeading: View {
     let category: TagCategory
+    /// Set by the panel: the heading grows a ≡ handle that drags the
+    /// whole category. On the HANDLE, not the block — a drag that
+    /// starts anywhere would fight text selection and the pills.
+    var draggable = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -114,6 +139,13 @@ private struct CategoryHeading: View {
             Text(category.name)
                 .font(Theme.ui(12, .semibold))
                 .foregroundStyle(Theme.Text.primary)
+            if draggable {
+                Text("≡")
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .help("Drag to reorder categories")
+                    .draggable(category.id.uuidString)
+            }
         }
     }
 }
@@ -130,7 +162,7 @@ private struct CheckboxCategoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            CategoryHeading(category: entry.category)
+            CategoryHeading(category: entry.category, draggable: true)
             ForEach(Array(entry.tags.enumerated()), id: \.element.id) { index, tag in
                 let on = model.hasTag(tag.id)
                 Button {
@@ -302,7 +334,7 @@ private struct PillCategoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CategoryHeading(category: entry.category)
+            CategoryHeading(category: entry.category, draggable: true)
 
             if !applied.isEmpty {
                 FlowRow(spacing: 4) {
