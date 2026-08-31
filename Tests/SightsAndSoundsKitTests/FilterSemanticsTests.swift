@@ -198,3 +198,60 @@ extension SavedFilterTests {
         #expect(try library.savedFilters().contains { $0.name == "sbds" })
     }
 }
+
+/// The analyzed marker and its three status filters.
+@Suite struct AnalyzedMarkerTests {
+    @Test func markingStampsTheCurrentVersionAndUpserts() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Marker")
+        let source = Source(name: "S", rootPath: "/tmp/marker")
+        try await library.writer.write { try source.insert($0) }
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+
+        try library.markAnalyzed(item.id)
+        try library.markAnalyzed(item.id)  // advancing back and forth — one row
+        let states = try await library.writer.read { try TagAnalysisState.fetchAll($0) }
+        #expect(states.count == 1)
+        #expect(states.first?.analyzerVersion == ItemAnalysis.analyzerVersion)
+    }
+
+    @Test func theThreeStatusPredicatesPartitionTheLibrary() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Marker")
+        let source = Source(name: "S", rootPath: "/tmp/marker")
+        try await library.writer.write { try source.insert($0) }
+
+        func insert(_ path: String) async throws -> MediaItem {
+            let item = MediaItem(
+                sourceID: source.id, kind: .video, relativePath: path, needsReview: false)
+            try await library.writer.write { try item.insert($0) }
+            return item
+        }
+        let current = try await insert("current.mp4")
+        let stale = try await insert("stale.mp4")
+        _ = try await insert("never.mp4")
+
+        try library.markAnalyzed(current.id)
+        // An item visited under an OLDER analyzer.
+        try await library.writer.write { db in
+            try TagAnalysisState(
+                mediaItemID: stale.id,
+                analyzerVersion: ItemAnalysis.analyzerVersion - 1
+            ).upsert(db)
+        }
+
+        func count(_ flag: StatusFlag) async throws -> Int {
+            try await library.writer.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM mediaItem WHERE \(FilterCompiler.Baseline.status(flag))"
+                ) ?? 0
+            }
+        }
+        #expect(try await count(.analyzedCurrent) == 1)
+        #expect(try await count(.analyzedStale) == 1)
+        #expect(try await count(.neverAnalyzed) == 1)
+    }
+}

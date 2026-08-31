@@ -86,7 +86,12 @@ struct TagAnalysisView: View {
         .onChange(of: model?.index ?? -1) { _, _ in
             if let model { sweepCurrentIfNeeded(model) }
         }
-        .onDisappear { model?.commitBasket() }
+        .onDisappear {
+            // Closing the window is the other way of leaving a video:
+            // the basket lands and the visited marker is stamped.
+            model?.commitBasket()
+            model?.markCurrentAnalyzed()
+        }
         // The numpad transport, at the AppKit layer. NSEvent's
         // numeric-pad flag is trustworthy where SwiftUI's is not, and a
         // local monitor sees keypad digits even while the filter field

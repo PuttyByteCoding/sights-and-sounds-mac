@@ -203,12 +203,22 @@ final class TagAnalysisModel {
     func jump(to next: Int) {
         guard queue.indices.contains(next), next != index else { return }
         commitBasket()
+        markCurrentAnalyzed()
         index = next
         videosVisitedThisPass += 1
         selectedCandidateID = nil
         searchText = ""
         analysis = .empty
         reload()
+    }
+
+    /// Stamp the departed video as analyzed, at the current analyzer
+    /// version. Advancing past without staging anything still counts —
+    /// seeing the evidence and judging nothing tag-worthy IS an
+    /// analysis. The Analyzed status filters in the sidebar read this.
+    func markCurrentAnalyzed() {
+        guard let id = currentItemID else { return }
+        try? library.markAnalyzed(id)
     }
 
     // MARK: - The preview transport

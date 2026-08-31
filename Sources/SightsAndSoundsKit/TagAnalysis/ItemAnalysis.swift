@@ -60,6 +60,40 @@ public struct ItemAnalysis: Equatable, Sendable {
 
     public static let empty = ItemAnalysis(
         suggested: [], existing: [], unmapped: [], md5s: [], truncated: false, provenance: [])
+
+    /// The analyzer's CAPABILITY version, stamped on every item the
+    /// operator advances past. Derived from what the analyzer can read,
+    /// not from when it ran:
+    ///
+    /// **Bump this in any PR that adds a reader or sub-parser** (the
+    /// web-page reader, the JSON-schema matcher, …) — that is the review
+    /// rule that makes "Analyzed (older)" mean "a re-pass could find
+    /// more". Rule edits deliberately do NOT bump it: rules change
+    /// weekly, and staleness must mean missing capability, not recency.
+    ///
+    /// 1 · embedded metadata, path, same-basename sidecars (.txt/.json),
+    ///     OCR, the recursive parser.
+    public static let analyzerVersion = 1
+}
+
+/// The visited marker: tag analysis showed the operator this item, under
+/// this analyzer. Advancing past without staging anything still counts —
+/// seeing the evidence and judging nothing tag-worthy IS an analysis.
+public struct TagAnalysisState: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "tagAnalysisState"
+
+    public var mediaItemID: UUID
+    public var analyzedAt: Date
+    public var analyzerVersion: Int
+
+    public init(
+        mediaItemID: UUID, analyzedAt: Date = Date(),
+        analyzerVersion: Int = ItemAnalysis.analyzerVersion
+    ) {
+        self.mediaItemID = mediaItemID
+        self.analyzedAt = analyzedAt
+        self.analyzerVersion = analyzerVersion
+    }
 }
 
 /// A tag waiting in the basket — staged, not written. `value` is
@@ -83,6 +117,15 @@ public struct PendingTag: Equatable, Sendable, Identifiable {
 }
 
 extension LibraryDatabase {
+
+    /// Stamp the visited marker. Re-visiting under a newer analyzer
+    /// upgrades the stored version; re-visiting under the same one just
+    /// refreshes the date.
+    public func markAnalyzed(_ itemID: UUID) throws {
+        try writer.write { db in
+            try TagAnalysisState(mediaItemID: itemID).upsert(db)
+        }
+    }
 
     /// The default reader set, in display order. A future web-page reader
     /// or schema matcher is appended here — one line, no rewrites.

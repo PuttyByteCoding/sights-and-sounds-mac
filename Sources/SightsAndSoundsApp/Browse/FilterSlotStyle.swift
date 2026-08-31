@@ -82,6 +82,9 @@ extension StatusFlag {
         case .embedded: "Embedded Clip"
         case .exported: "Exported Clip"
         case .edited: "Edited"
+        case .analyzedCurrent: "Analyzed (current)"
+        case .analyzedStale: "Analyzed (older)"
+        case .neverAnalyzed: "Never Analyzed"
         }
     }
 }
