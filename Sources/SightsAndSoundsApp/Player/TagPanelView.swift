@@ -13,6 +13,10 @@ import SightsAndSoundsKit
 /// first one); everything else is pills + autocomplete.
 struct TagPanelView: View {
     @Environment(PlayerModel.self) private var model
+    /// Which category's Add field holds the keyboard. Panel-owned so Tab
+    /// can WALK it: each field advances to the next search category, and
+    /// a per-field Bool could not know who is next.
+    @FocusState private var focusedCategory: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -58,7 +62,9 @@ struct TagPanelView: View {
                                 // a flag a category carries — which is one
                                 // setting and one whole class of conflict
                                 // fewer.
-                                takesFocus: entry.id == model.focusCategoryID)
+                                takesFocus: entry.id == model.focusCategoryID,
+                                focus: $focusedCategory,
+                                onAdvance: { forward in advance(from: entry.id, forward: forward) })
                         }
                     }
                 }
@@ -73,6 +79,19 @@ struct TagPanelView: View {
 
     private var appliedCount: Int {
         model.itemTags.reduce(0) { $0 + $1.tags.count }
+    }
+
+    /// The Tab order: search categories only, in panel order — checkbox
+    /// categories have no field to land in (they answer to ⌥1…9), so Tab
+    /// steps over them. Wraps, because the panel is a cycle you go
+    /// around while tagging, not a form you finish.
+    private func advance(from id: UUID, forward: Bool) {
+        let fields = model.panelVocabulary
+            .filter { $0.category.displayStyle == .search }
+            .map(\.id)
+        guard fields.count > 1, let index = fields.firstIndex(of: id) else { return }
+        let next = (index + (forward ? 1 : fields.count - 1)) % fields.count
+        focusedCategory = fields[next]
     }
 }
 
@@ -156,6 +175,8 @@ private struct PillCategoryView: View {
     @Environment(PlayerModel.self) private var model
     let entry: CategoryTags
     var takesFocus = false
+    var focus: FocusState<UUID?>.Binding
+    var onAdvance: (Bool) -> Void
     @State private var draft = ""
     /// Which suggestion the arrows have landed on. Nil means none — and
     /// nil is exactly what makes Enter create rather than apply.
@@ -164,7 +185,7 @@ private struct PillCategoryView: View {
     /// The tag whose editor is open, from a right-click on any tag this
     /// category draws — applied pill or suggestion alike.
     @State private var editing: Tag?
-    @FocusState private var fieldFocused: Bool
+    private var fieldFocused: Bool { focus.wrappedValue == entry.id }
 
     private var applied: [Tag] {
         model.itemTags.first { $0.id == entry.id }?.tags ?? []
@@ -293,14 +314,22 @@ private struct PillCategoryView: View {
                 TextField("Add \(entry.category.name)…", text: $draft)
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12))
-                    .focused($fieldFocused)
+                    .focused(focus, equals: entry.id)
                     .onSubmit(commit)
+                    // Tab hops to the next category's field, ⇧Tab back —
+                    // handled before the field editor eats it, so tagging
+                    // a show is type · Enter · Tab · type without the
+                    // mouse. Shifted arrows still walk the playlist.
+                    .onKeyPress(keys: [.tab]) { press in
+                        onAdvance(!press.modifiers.contains(.shift))
+                        return .handled
+                    }
                     .onChange(of: draft) { _, _ in
                         // A new query invalidates the old highlight.
                         highlighted = nil
                     }
-                    .onChange(of: fieldFocused) { _, focused in
-                        if focused { model.zone = .tags }
+                    .onChange(of: focus.wrappedValue) { _, now in
+                        if now == entry.id { model.zone = .tags }
                     }
                     // Arrows before the field sees them: a single-line
                     // field does nothing with up and down, and shifted
@@ -357,7 +386,7 @@ private struct PillCategoryView: View {
             }
         }
         .task(id: model.item?.id) {
-            if takesFocus { fieldFocused = true }
+            if takesFocus { focus.wrappedValue = entry.id }
         }
         .sheet(item: $editing) { tag in
             TagSheet(
