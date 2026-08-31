@@ -1113,21 +1113,30 @@ private struct NumpadTransportMonitor: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if window == nil {
+                // Leaving the window is the teardown path — SwiftUI
+                // removes the representable from its window before
+                // releasing it, so no deinit is needed (and a deinit
+                // could not touch this main-actor state anyway).
                 remove()
             } else if monitor == nil {
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                    guard let self, let window = self.window, event.window === window,
-                          window.isKeyWindow,
-                          event.modifierFlags.contains(.numericPad),
-                          let character = event.charactersIgnoringModifiers?.first,
-                          character.isNumber || character == "-"
-                    else { return event }
-                    return self.handle?(character) == true ? nil : event
+                    // Local key monitors fire on the main thread; say so
+                    // to the compiler rather than leaving the closure's
+                    // isolation to a toolchain's mood. Only a Bool
+                    // crosses the boundary — NSEvent is not Sendable.
+                    let handled = MainActor.assumeIsolated { () -> Bool in
+                        guard let self, let window = self.window, event.window === window,
+                              window.isKeyWindow,
+                              event.modifierFlags.contains(.numericPad),
+                              let character = event.charactersIgnoringModifiers?.first,
+                              character.isNumber || character == "-"
+                        else { return false }
+                        return self.handle?(character) == true
+                    }
+                    return handled ? nil : event
                 }
             }
         }
-
-        deinit { remove() }
 
         private func remove() {
             if let monitor { NSEvent.removeMonitor(monitor) }
