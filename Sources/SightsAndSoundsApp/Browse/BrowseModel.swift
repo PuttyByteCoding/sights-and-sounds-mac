@@ -493,6 +493,15 @@ final class BrowseModel {
         filter = decoded
     }
 
+    func renameSavedFilter(_ saved: SavedFilter, to name: String) {
+        do {
+            try library.renameSavedFilter(saved.id, to: name)
+            savedFilters = (try? library.savedFilters()) ?? savedFilters
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
     func deleteSavedFilter(_ saved: SavedFilter) {
         do {
             try library.deleteSavedFilter(saved.id)

@@ -176,3 +176,25 @@ import Testing
         }
     }
 }
+
+extension SavedFilterTests {
+    @Test func renamingChangesTheLabelAndRefusesRivals() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Filters")
+        let keep = try library.saveFilter(named: "Favorites", MediaFilter(searchText: "a"))
+        let other = try library.saveFilter(named: "SBDs", MediaFilter(searchText: "b"))
+
+        try library.renameSavedFilter(keep.id, to: "Best Shows")
+        let renamed = try #require(try library.savedFilters().first { $0.id == keep.id })
+        #expect(renamed.name == "Best Shows")
+        #expect(renamed.filter?.searchText == "a")  // the filter itself untouched
+
+        // A rival's name is refused, not merged — case-insensitively.
+        #expect(throws: Error.self) {
+            try library.renameSavedFilter(keep.id, to: "sbds")
+        }
+        // Renaming to your OWN name (case change only) is fine.
+        try library.renameSavedFilter(other.id, to: "sbds")
+        #expect(try library.savedFilters().contains { $0.name == "sbds" })
+    }
+}

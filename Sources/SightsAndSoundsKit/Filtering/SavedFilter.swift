@@ -65,6 +65,27 @@ extension LibraryDatabase {
         }
     }
 
+    /// Rename in place. A name already worn by a DIFFERENT filter is
+    /// refused rather than merged — renaming is about the label, and
+    /// silently overwriting another filter under it would destroy one.
+    public func renameSavedFilter(_ id: UUID, to rawName: String) throws {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw DatabaseError(message: "a saved filter needs a name")
+        }
+        try writer.write { db in
+            if let rival = try SavedFilter
+                .filter(sql: "name = ? COLLATE NOCASE", arguments: [name])
+                .fetchOne(db), rival.id != id
+            {
+                throw DatabaseError(message: "another filter is already named “\(name)”")
+            }
+            guard var filter = try SavedFilter.fetchOne(db, key: id) else { return }
+            filter.name = name
+            try filter.update(db)
+        }
+    }
+
     public func deleteSavedFilter(_ id: UUID) throws {
         _ = try writer.write { db in
             try SavedFilter.deleteOne(db, key: id)
