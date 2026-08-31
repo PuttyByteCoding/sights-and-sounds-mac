@@ -270,3 +270,19 @@ import Testing
         #expect(try library.unsweptCount(in: [swept.id, unswept.id]) == 1)
     }
 }
+
+extension CandidateScopeTests {
+    @Test func resettingTheSweepMakesTheItemEligibleAgain() async throws {
+        let (library, source, _) = try await makeLibrary()
+        let item = try await insertItem(library, source, path: "a.mp4")
+        try library.recordMetadataPairs(itemID: item.id, pairs: [("artist", "Old")])
+        #expect(try library.unsweptCount(in: [item.id]) == 0)
+
+        // The marker's absence IS the retry — "Rescan This Video" is
+        // exactly this plus the ordinary scoped sweep.
+        try library.resetMetadataSweep(itemIDs: [item.id])
+        #expect(try library.unsweptCount(in: [item.id]) == 1)
+        // The recorded pairs survive until the re-probe replaces them.
+        #expect(try library.tagCandidates(sources: [.metadata]).count == 1)
+    }
+}

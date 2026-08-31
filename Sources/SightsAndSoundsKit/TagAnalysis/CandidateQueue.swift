@@ -292,3 +292,17 @@ extension LibraryDatabase {
         }
     }
 }
+
+extension LibraryDatabase {
+    /// Forget that the sweep visited these items — the marker's absence
+    /// IS the retry, so "rescan this video" is exactly this plus the
+    /// ordinary scoped sweep.
+    public func resetMetadataSweep(itemIDs: [UUID]) throws {
+        guard !itemIDs.isEmpty else { return }
+        _ = try writer.write { db in
+            try MetadataSweepState
+                .filter(keys: itemIDs)
+                .deleteAll(db)
+        }
+    }
+}

@@ -17,12 +17,15 @@ import SightsAndSoundsKit
 /// than asking for it again.
 struct TagAnalysisView: View {
     @Environment(BrowseModel.self) private var browse
-    /// Items this window is scoped to — one video, or the play queue that
-    /// was sent here. Empty means the whole library.
-    var scopeItemIDs: [UUID] = []
+    /// The queue this window walks, and where in it to start. Analysis is
+    /// always one video at a time — the window exists to iterate the
+    /// queue the way the player does, SHIFT+arrows included.
+    var queueIDs: [UUID] = []
+    var startIndex: Int = 0
     @State private var model: TagAnalysisModel?
     @State private var rules: RulesTabModel?
     @State private var mode: Mode = .candidates
+    @FocusState private var focused: Bool
 
     enum Mode: String, Hashable { case candidates, rules }
 
@@ -42,25 +45,51 @@ struct TagAnalysisView: View {
         }
         .frame(minWidth: 1_100, minHeight: 620)
         .background(Theme.Surface.content)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        // SHIFT+arrows walk the queue, the player's gesture exactly —
+        // and like the player's, they punch through a focused text field
+        // (extending a selection by one character is the only cost).
+        .onKeyPress(phases: [.down, .repeat]) { press in
+            guard press.modifiers.contains(.shift),
+                  press.key == .leftArrow || press.key == .rightArrow,
+                  let model
+            else { return .ignored }
+            press.key == .leftArrow ? model.goPrevious() : model.goNext()
+            return .handled
+        }
         .task {
             guard model == nil else { return }
+            // The queue comes with the request; an empty one falls back
+            // to whatever the hosting window is listing, so a stale
+            // restored window still opens on something real.
+            let queue = queueIDs.isEmpty ? browse.visibleItems.map(\.id) : queueIDs
             let made = TagAnalysisModel(
                 library: browse.library, libraryID: browse.libraryID,
-                scope: Set(scopeItemIDs))
+                queue: queue, startAt: startIndex)
             made.reload()
             model = made
             rules = RulesTabModel(library: browse.library)
-            // A scoped open sweeps its own items if the sweep has not
-            // reached them — the operator is looking at THESE items now,
-            // and "no metadata yet, wait for the library pass" is an
-            // empty window with no explanation. Checked first so an
-            // already-swept scope queues nothing.
-            if let scope = made.scope,
-               (try? browse.library.unsweptCount(in: scope)) ?? 0 > 0 {
-                made.beginSweep()
-                browse.sweepMetadata(itemIDs: Array(scope)) { made.finishSweep() }
-            }
+            focused = true
+            sweepCurrentIfNeeded(made)
         }
+        .onChange(of: model?.index ?? -1) { _, _ in
+            // Each video sweeps on display, not on demand: the analysis
+            // is FOR the video being shown, and "no metadata yet, wait
+            // for the library pass" is an empty window with no
+            // explanation. Checked first, so an already-swept video
+            // queues nothing.
+            if let model { sweepCurrentIfNeeded(model) }
+        }
+    }
+
+    private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
+        guard let id = model.currentItemID,
+              (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
+        else { return }
+        model.beginSweep()
+        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
     }
 
     private var header: some View {
@@ -72,42 +101,21 @@ struct TagAnalysisView: View {
                 emphasis: .neutral)
             Spacer()
             if let model {
-                if let scope = model.scope {
-                    // The scope chip: what the window is answering for,
-                    // and the way back out. Widening reuses this window —
-                    // a second unscoped one would be the same question
-                    // twice.
-                    HStack(spacing: 6) {
-                        Text(scope.count == 1
-                            ? "Scoped to 1 item" : "Scoped to \(scope.count) items")
-                            .font(Theme.mono(10.5))
-                            .foregroundStyle(Theme.Accent.amber)
-                        Button("Entire Library") { model.clearScope() }
-                            .buttonStyle(.plain)
-                            .font(Theme.ui(11))
-                            .foregroundStyle(Theme.Text.quaternary)
-                    }
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                            .fill(Theme.Surface.iconTileSelected))
-                }
+                queueControls(model)
                 Text(model.isLoading ? "Scanning…" : "\(model.candidates.count) candidates")
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.Text.quaternary)
-                Button(model.scope == nil ? "Rescan library" : "Rescan items") {
-                    // The queue itself is derived and reloads in a
-                    // moment; the SWEEP is what finds metadata that was
-                    // never read, so the button does both — scoped to the
-                    // window's items when the window is.
+                Button("Rescan This Video") {
+                    // Re-probe on purpose, so the marker clears first —
+                    // otherwise the sweep skips a video it has already
+                    // visited, and the button does nothing.
+                    guard let id = model.currentItemID else { return }
+                    try? browse.library.resetMetadataSweep(itemIDs: [id])
                     model.beginSweep()
-                    browse.sweepMetadata(itemIDs: model.scope.map(Array.init)) {
-                        model.finishSweep()
-                    }
+                    browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                .disabled(model.isLoading)
+                .disabled(model.isLoading || model.currentItemID == nil)
             }
         }
         .padding(.horizontal, 14)
@@ -116,6 +124,51 @@ struct TagAnalysisView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
+    }
+
+    /// The queue walk: which video is on display, where it sits in the
+    /// queue, and the arrows — mirroring the player's transport reading
+    /// of the same queue.
+    @ViewBuilder
+    private func queueControls(_ model: TagAnalysisModel) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                model.goPrevious()
+            } label: {
+                Image(systemName: "chevron.left").font(Theme.ui(11, .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(model.canGoPrevious ? Theme.Text.secondary : Theme.Text.disabled)
+            .disabled(!model.canGoPrevious)
+            .help("Previous video in the queue (⇧←)")
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.currentItem?.fileName ?? "—")
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.Text.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 260, alignment: .leading)
+                Text("\(model.index + 1) of \(model.queue.count) in the queue")
+                    .font(Theme.mono(9.5))
+                    .foregroundStyle(Theme.Text.quaternary)
+            }
+
+            Button {
+                model.goNext()
+            } label: {
+                Image(systemName: "chevron.right").font(Theme.ui(11, .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(model.canGoNext ? Theme.Text.secondary : Theme.Text.disabled)
+            .disabled(!model.canGoNext)
+            .help("Next video in the queue (⇧→)")
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                .fill(Theme.Surface.iconTileSelected))
     }
 
     /// Spec 14 §4 — the entire path from one-off triage to automation,

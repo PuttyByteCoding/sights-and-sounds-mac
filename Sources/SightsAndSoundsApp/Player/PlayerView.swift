@@ -571,25 +571,17 @@ private struct PlayerContent: View {
                 }
                 Button("Key Bindings…", systemImage: "keyboard") { showBindingsEditor = true }
                 Divider()
-                // The player is where "what is this string in THIS
-                // video" gets asked, and the queue here is the queue the
-                // operator means by "the current queue".
+                // Tag Analysis carries the player's own queue, opened
+                // at the playing item — both windows walk the same list
+                // with the same SHIFT+arrows.
                 if let item = model.item {
-                    Button("Tag Analysis on This Item", systemImage: "sparkle.magnifyingglass") {
+                    Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
                         openWindow(
                             id: "aux",
                             value: AuxWindowRequest(
                                 libraryID: model.libraryID, kind: .tagAnalysis,
-                                itemIDs: [item.id]))
-                    }
-                }
-                if model.playlist.count > 1 {
-                    Button("Tag Analysis on Queue", systemImage: "sparkle.magnifyingglass") {
-                        openWindow(
-                            id: "aux",
-                            value: AuxWindowRequest(
-                                libraryID: model.libraryID, kind: .tagAnalysis,
-                                itemIDs: model.playlist))
+                                itemIDs: model.playlist,
+                                startIndex: model.playlist.firstIndex(of: item.id) ?? 0))
                     }
                 }
                 Divider()

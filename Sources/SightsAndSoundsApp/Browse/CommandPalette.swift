@@ -346,7 +346,12 @@ struct CommandPalette: View {
     }
 
     private func aux(_ kind: AuxWindowRequest.Kind) {
-        openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
+        openWindow(
+            id: "aux",
+            value: AuxWindowRequest(
+                libraryID: model.libraryID, kind: kind,
+                // Tag Analysis always walks the current queue.
+                itemIDs: kind == .tagAnalysis ? model.visibleItems.map(\.id) : []))
     }
 
     private var goTo: [PaletteCommand] {
