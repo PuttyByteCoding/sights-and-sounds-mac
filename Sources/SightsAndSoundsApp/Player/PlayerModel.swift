@@ -357,6 +357,32 @@ final class PlayerModel {
 
     // MARK: - Tagging
 
+    /// Which tag category's Add field holds the keyboard — mirrored from
+    /// the panel's FocusState so the PLAYER's key handler can walk it.
+    /// The handler is where Tab actually arrives: the field's own
+    /// key-press modifier never sees Tab, because the outer handler runs
+    /// first for every key the text-input guard does not exempt.
+    var tagFieldCategoryID: UUID?
+
+    /// Move the keyboard to the next (or previous) search category's
+    /// field, wrapping. False when there is nothing to walk — no search
+    /// categories — so the caller can fall back to the zone walk.
+    @discardableResult
+    func advanceTagField(reverse: Bool) -> Bool {
+        let fields = panelVocabulary
+            .filter { $0.category.displayStyle == .search }
+            .map(\.id)
+        guard !fields.isEmpty else { return false }
+        guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
+        else {
+            tagFieldCategoryID = fields.first
+            return true
+        }
+        let next = (index + (reverse ? fields.count - 1 : 1)) % fields.count
+        tagFieldCategoryID = fields[next]
+        return true
+    }
+
     func refreshTagging() {
         guard let item else { return }
         do {

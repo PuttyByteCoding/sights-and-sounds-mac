@@ -125,9 +125,20 @@ struct PlayerView: View {
 
         // Tab walks video → tags → segments → queue, skipping whatever is
         // collapsed. The footer names where it landed.
+        //
+        // EXCEPT while a tag field is typing: there Tab walks the
+        // category fields instead (⇧Tab back, wrapping), because "type ·
+        // Enter · Tab · type" is the tagging rhythm and being yanked to
+        // the Segments zone mid-show is nobody's intent. This check must
+        // live HERE, not on the field — the outer handler receives Tab
+        // first for every key the text-input guard does not exempt.
         if press.key == .tab {
-            model.moveZone(
-                reverse: press.modifiers.contains(.shift), available: model.availableZones)
+            let reverse = press.modifiers.contains(.shift)
+            if model.zone == .tags, NSApp.keyWindow?.firstResponder is NSTextView,
+               model.advanceTagField(reverse: reverse) {
+                return true
+            }
+            model.moveZone(reverse: reverse, available: model.availableZones)
             focused = true
             return true
         }

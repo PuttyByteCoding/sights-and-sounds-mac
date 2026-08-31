@@ -75,23 +75,30 @@ struct TagPanelView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture { model.zone = .tags }
+        // The focus lives here as FocusState; the model mirrors it so
+        // the player's key handler — where Tab actually arrives — can
+        // walk it. Two onChanges, one in each direction, and the guards
+        // stop them ping-ponging.
+        .onChange(of: focusedCategory) { _, now in
+            if model.tagFieldCategoryID != now { model.tagFieldCategoryID = now }
+        }
+        .onChange(of: model.tagFieldCategoryID) { _, now in
+            if focusedCategory != now { focusedCategory = now }
+        }
     }
 
     private var appliedCount: Int {
         model.itemTags.reduce(0) { $0 + $1.tags.count }
     }
 
-    /// The Tab order: search categories only, in panel order — checkbox
-    /// categories have no field to land in (they answer to ⌥1…9), so Tab
-    /// steps over them. Wraps, because the panel is a cycle you go
-    /// around while tagging, not a form you finish.
+    /// The Tab order lives on the model (search categories only, in
+    /// panel order, wrapping) so the player's key handler and this panel
+    /// walk the same list — Tab arrives at the HANDLER while a field is
+    /// typing, never at the field.
     private func advance(from id: UUID, forward: Bool) {
-        let fields = model.panelVocabulary
-            .filter { $0.category.displayStyle == .search }
-            .map(\.id)
-        guard fields.count > 1, let index = fields.firstIndex(of: id) else { return }
-        let next = (index + (forward ? 1 : fields.count - 1)) % fields.count
-        focusedCategory = fields[next]
+        model.tagFieldCategoryID = id
+        model.advanceTagField(reverse: !forward)
+        focusedCategory = model.tagFieldCategoryID
     }
 }
 
