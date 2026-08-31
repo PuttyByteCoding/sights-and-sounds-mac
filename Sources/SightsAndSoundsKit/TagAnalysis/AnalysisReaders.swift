@@ -10,12 +10,20 @@ public struct AnalysisSourceText: Equatable, Sendable {
     public let text: String
     /// OCR only: the moment the text was read, for the evidence still.
     public let timeSeconds: Double?
+    /// Which FILE contributed this, for sidecars — a folder-level
+    /// info.txt applies to every video in the folder, so a row must be
+    /// able to say where it came from or shared text looks like a leak.
+    public let sourceFile: String?
 
-    public init(readerID: String, key: String?, text: String, timeSeconds: Double? = nil) {
+    public init(
+        readerID: String, key: String?, text: String, timeSeconds: Double? = nil,
+        sourceFile: String? = nil
+    ) {
         self.readerID = readerID
         self.key = key
         self.text = text
         self.timeSeconds = timeSeconds
+        self.sourceFile = sourceFile
     }
 }
 
@@ -147,7 +155,10 @@ public struct SidecarTextReader: AnalysisReader {
             return file.text.split(whereSeparator: \.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
-                .map { AnalysisSourceText(readerID: id, key: nil, text: $0) }
+                .map {
+                    AnalysisSourceText(
+                        readerID: id, key: nil, text: $0, sourceFile: file.name)
+                }
         }
     }
 }
@@ -165,7 +176,8 @@ public struct SidecarJsonReader: AnalysisReader {
         item: MediaItem, fileURL: URL?, library: LibraryDatabase
     ) throws -> [AnalysisSourceText] {
         SidecarFiles.contents(besideFile: fileURL, extension: "json").map {
-            AnalysisSourceText(readerID: id, key: nil, text: $0.text)
+            AnalysisSourceText(
+                readerID: id, key: nil, text: $0.text, sourceFile: $0.name)
         }
     }
 }

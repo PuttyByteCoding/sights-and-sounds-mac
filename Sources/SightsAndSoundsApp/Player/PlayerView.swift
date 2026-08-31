@@ -1135,7 +1135,7 @@ struct ZoneBadge: View {
 // MARK: - Video surface
 
 /// AVPlayerLayer host — the raw video surface with no system chrome.
-private struct PlayerSurface: NSViewRepresentable {
+struct PlayerSurface: NSViewRepresentable {
     let player: AVPlayer
 
     func makeNSView(context: Context) -> PlayerLayerView {

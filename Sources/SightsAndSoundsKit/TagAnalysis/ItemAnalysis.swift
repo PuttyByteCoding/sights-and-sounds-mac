@@ -6,6 +6,8 @@ import GRDB
 public struct AnalysisOrigin: Equatable, Sendable, Hashable {
     public let readerID: String
     public let timeSeconds: Double?
+    /// The contributing file, for sidecars — nil elsewhere.
+    public let sourceFile: String?
 }
 
 /// One string the analysis surfaced, after parsing and the rule fold.
@@ -148,7 +150,8 @@ extension LibraryDatabase {
                     let value = folded.value.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !value.isEmpty else { continue }
                     let origin = AnalysisOrigin(
-                        readerID: reader.id, timeSeconds: source.timeSeconds)
+                        readerID: reader.id, timeSeconds: source.timeSeconds,
+                        sourceFile: source.sourceFile)
                     let dedupeKey = "\(KeyNormalizer.normalize(key ?? ""))|\(value.lowercased())"
                     if var known = merged[dedupeKey] {
                         if !known.origins.contains(origin) { known.origins.append(origin) }
