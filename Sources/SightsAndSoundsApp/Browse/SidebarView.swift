@@ -294,7 +294,7 @@ struct SidebarView: View {
 
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 1) {
-            SidebarSectionLabel("Sources")
+            SidebarSectionLabel("Browse Sources")
             SidebarRow(
                 selected: model.selectedFolderPath == nil,
                 action: { model.selectFolder(nil) }
@@ -336,7 +336,15 @@ struct SidebarView: View {
     // MARK: - Categories
 
     private var categorySections: some View {
-        ForEach(model.vocabulary) { entry in
+        // The list's own header, above every category. Distinct from a
+        // category's `sectionLabel`, which is a divider WITHIN the list —
+        // this one names what the list is, the way "Browse Sources" and
+        // "Media type" do above theirs.
+        VStack(alignment: .leading, spacing: 0) {
+            if !model.vocabulary.isEmpty {
+                SidebarSectionLabel("Tag Categories")
+            }
+            ForEach(model.vocabulary) { entry in
             // A section label above a category: "" draws a plain divider,
             // text draws a labeled header (old browse-panel semantics).
             if let label = entry.category.sectionLabel {
@@ -379,6 +387,7 @@ struct SidebarView: View {
                 }
             }
             .padding(.top, 11)
+        }
         }
     }
 
@@ -731,6 +740,7 @@ private struct SourceRow: View {
     let source: Source
     let expanded: Bool
     let toggle: () -> Void
+    @State private var renaming = false
 
     var body: some View {
         // Sidebar convention: clicking a collapsible header's name
@@ -769,6 +779,15 @@ private struct SourceRow: View {
             Button(source.enabled ? "Disable" : "Enable") {
                 model.setSourceEnabled(source, !source.enabled)
             }
+            Divider()
+            // A rename is a label change and nothing else — the library
+            // keys off the source's id and finds files by its path — so
+            // it sits with the harmless entries rather than behind a
+            // confirmation.
+            Button("Rename…") { renaming = true }
+        }
+        .sheet(isPresented: $renaming) {
+            SourceRenameSheet(source: source) { model.renameSource(source, to: $0) }
         }
         .help(source.rootPath)
     }
@@ -989,5 +1008,85 @@ extension SidebarView {
         panel.prompt = "Add Source"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         model.addSource(at: url)
+    }
+}
+
+/// Rename one source.
+///
+/// Its own small sheet rather than an inline edit in the row: the row is
+/// a click target that toggles a folder tree, and an editable field
+/// inside it would make every rename start with a mis-click.
+private struct SourceRenameSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let source: Source
+    let onRename: (String) -> Void
+
+    @State private var name: String
+    @FocusState private var focused: Bool
+
+    init(source: Source, onRename: @escaping (String) -> Void) {
+        self.source = source
+        self.onRename = onRename
+        _name = State(initialValue: source.name)
+    }
+
+    private var trimmed: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Text("Rename Source")
+                .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
+                .foregroundStyle(Theme.Text.primary)
+
+            TextField("", text: $name)
+                .textFieldStyle(.plain)
+                .font(Theme.ui(12.5))
+                .padding(.vertical, 7)
+                .padding(.horizontal, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(Theme.Surface.well)
+                        .stroke(
+                            focused ? Theme.Border.activeControl : Theme.Border.standard,
+                            lineWidth: focused ? 2 : 1))
+                .focused($focused)
+
+            // The path, because two sources can honestly share a name and
+            // this is the half that says which one you are renaming.
+            PathText(path: source.rootPath, size: 10.5)
+
+            Text("Enter saves · Esc to cancel")
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.disabled)
+
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle())
+                Button("Save") { commit() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(trimmed.isEmpty)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(18)
+        .frame(width: 380)
+        .background(Theme.Surface.dialog)
+        .onKeyPress { press in
+            if press.key == .escape {
+                dismiss()
+                return .handled
+            }
+            return .ignored
+        }
+        .onAppear { focused = true }
+    }
+
+    private func commit() {
+        guard !trimmed.isEmpty else { return }
+        onRename(trimmed)
+        dismiss()
     }
 }

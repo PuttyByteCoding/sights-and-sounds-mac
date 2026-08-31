@@ -442,6 +442,31 @@ final class BrowseModel {
         return true
     }
 
+    /// Rename a source. The name is a label only — the library keys off
+    /// `id` and finds files by `rootPath` — so this touches nothing but
+    /// what the sidebar draws.
+    ///
+    /// Trimmed, and an empty name is refused rather than written: a
+    /// source with no name is a row you cannot tell from its neighbour,
+    /// and `rootPath` is a tooltip rather than something you can read at
+    /// a glance. Duplicates ARE allowed: the schema does not make the
+    /// name unique, two folders can honestly have the same name, and the
+    /// path in the tooltip is what tells them apart.
+    func renameSource(_ source: Source, to rawName: String) {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != source.name else { return }
+        do {
+            try library.writer.write { db in
+                var updated = source
+                updated.name = name
+                try updated.update(db)
+            }
+            refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
     func setSourceEnabled(_ source: Source, _ enabled: Bool) {
         do {
             try library.writer.write { db in
