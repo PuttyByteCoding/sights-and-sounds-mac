@@ -119,6 +119,7 @@ private struct CheckboxCategoryView: View {
     /// than adds, which `assignTag` already enforces for single-select.
     var single = false
     @State private var editing: Tag?
+    @State private var previewing: Tag?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -155,8 +156,14 @@ private struct CheckboxCategoryView: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button("Edit Tag…") { editing = tag }
+                    Button("Show Items with This Tag") { previewing = tag }
                 }
             }
+        }
+        .sheet(item: $previewing) { tag in
+            TagItemsSheet(
+                tag: tag, categoryName: entry.category.name,
+                library: model.library, libraryID: model.libraryID)
         }
         .sheet(item: $editing) { tag in
             TagSheet(
@@ -185,6 +192,8 @@ private struct PillCategoryView: View {
     /// The tag whose editor is open, from a right-click on any tag this
     /// category draws — applied pill or suggestion alike.
     @State private var editing: Tag?
+    /// The tag whose company is on show — "is this the right tag?"
+    @State private var previewing: Tag?
     private var fieldFocused: Bool { focus.wrappedValue == entry.id }
 
     private var applied: [Tag] {
@@ -316,6 +325,7 @@ private struct PillCategoryView: View {
                         }
                         .contextMenu {
                             Button("Edit Tag…") { editing = tag }
+                            Button("Show Items with This Tag") { previewing = tag }
                         }
                     }
                 }
@@ -393,6 +403,7 @@ private struct PillCategoryView: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button("Edit Tag…") { editing = suggestion.tag }
+                    Button("Show Items with This Tag") { previewing = suggestion.tag }
                 }
             }
         }
@@ -406,6 +417,11 @@ private struct PillCategoryView: View {
                 libraryID: model.libraryID,
                 categories: model.panelVocabulary.map(\.category)
             ) { _ in model.refreshTagging() }
+        }
+        .sheet(item: $previewing) { tag in
+            TagItemsSheet(
+                tag: tag, categoryName: entry.category.name,
+                library: model.library, libraryID: model.libraryID)
         }
         .sheet(isPresented: $creating) {
             TagSheet(

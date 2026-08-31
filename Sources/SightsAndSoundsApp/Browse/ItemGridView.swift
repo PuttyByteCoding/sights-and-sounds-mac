@@ -145,6 +145,8 @@ private struct ItemCell: View {
     /// The tag whose editor is open, from a right-click on one of this
     /// tile's pills.
     @State private var editingTag: Tag?
+    /// The tag whose company is on show — "is this the right tag?"
+    @State private var previewingTag: Tag?
 
     var body: some View {
         TileCard(
@@ -161,6 +163,11 @@ private struct ItemCell: View {
                 editingTag = model.vocabulary
                     .flatMap(\.tags)
                     .first { $0.id == id }
+            },
+            onPreviewTag: { id in
+                previewingTag = model.vocabulary
+                    .flatMap(\.tags)
+                    .first { $0.id == id }
             })
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { play() }
@@ -172,6 +179,13 @@ private struct ItemCell: View {
                     range: flags.contains(.shift))
             }
             .contextMenu { menu }
+            .sheet(item: $previewingTag) { tag in
+                TagItemsSheet(
+                    tag: tag,
+                    categoryName: model.vocabulary
+                        .first { $0.category.id == tag.tagCategoryID }?.category.name,
+                    library: model.library, libraryID: model.libraryID)
+            }
             .sheet(item: $editingTag) { tag in
                 TagSheet(
                     mode: .edit(tag),

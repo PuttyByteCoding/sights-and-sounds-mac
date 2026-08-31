@@ -48,6 +48,7 @@ struct TileCard: View {
     /// player's queue strip passes nothing and its pills stay inert —
     /// the tile does not know what an editor is.
     var onEditTag: ((UUID) -> Void)?
+    var onPreviewTag: ((UUID) -> Void)?
     /// The queue strip sizes its own thumbnail; the browse grid lets the
     /// column width decide.
     var thumbnailHeight: CGFloat?
@@ -232,7 +233,8 @@ struct TileCard: View {
                 // The innermost context menu wins, so right-clicking the
                 // pill edits the TAG while right-clicking the tile around
                 // it still gets the item's own menu.
-                .modifier(TagPillMenu(tagID: badge.tagID, onEdit: onEditTag))
+                .modifier(TagPillMenu(
+                    tagID: badge.tagID, onEdit: onEditTag, onPreview: onPreviewTag))
         } else if outside {
             text.modifier(WidthRule(width: entry.width(in: slot)))
         } else {
@@ -417,11 +419,15 @@ extension TileAlignment {
 private struct TagPillMenu: ViewModifier {
     let tagID: UUID?
     let onEdit: ((UUID) -> Void)?
+    var onPreview: ((UUID) -> Void)?
 
     func body(content: Content) -> some View {
         if let tagID, let onEdit {
             content.contextMenu {
                 Button("Edit Tag…") { onEdit(tagID) }
+                if let onPreview {
+                    Button("Show Items with This Tag") { onPreview(tagID) }
+                }
             }
         } else {
             content
