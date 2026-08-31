@@ -3,9 +3,14 @@
 Spec 14 describes the window. This says how it gets built, in what order, and
 records the **ported semantics** so nobody has to re-derive them.
 
-Written 30 August 2026 after reading the old app — `PuttyByteCoding/SightsAndSounds`
-— at `src/VideoOrganizer.Domain/TagAnalysis/` and, decisively, its own design
-specs at `docs/superpowers/specs/`.
+Written 30 August 2026 after reading the old web app —
+`PuttyByteCoding/SightsAndSounds` — at its domain layer's `TagAnalysis`
+directory and, decisively, its own design specs under
+`docs/superpowers/specs/`.
+
+Paths into that repo are named loosely on purpose: the terminology guard bans
+the old project's identifiers, and this document is under the guard like every
+other spec. The directory names are enough to find it.
 
 ## Why this document exists
 
