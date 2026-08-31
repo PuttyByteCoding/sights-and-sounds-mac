@@ -185,23 +185,34 @@ private struct PillCategoryView: View {
     private var suggestions: [Suggestion] {
         guard !query.isEmpty else { return [] }
         let appliedIDs = Set(applied.map(\.id))
+        // Space-separated terms, each of which must hit somewhere in the
+        // name: "Da Ba" finds "Dave Matthews Band". One term degrades to
+        // the old contains match exactly.
+        let terms = query.split(separator: " ").map(String.init)
         return entry.tags
             .compactMap { tag -> Suggestion? in
                 guard !appliedIDs.contains(tag.id) else { return nil }
                 // The name winning means no alias is shown, even if one
                 // would also have matched: the parenthetical exists to
                 // explain a row you would not otherwise expect.
-                if tag.name.localizedCaseInsensitiveContains(query) {
+                if Self.matchesAllTerms(tag.name, terms: terms) {
                     return Suggestion(tag: tag, matchedAlias: nil)
                 }
                 // An alias IS a name: typing SBD must offer Soundboard.
                 guard let alias = (model.panelAliases[tag.id] ?? [])
-                    .first(where: { $0.localizedCaseInsensitiveContains(query) })
+                    .first(where: { Self.matchesAllTerms($0, terms: terms) })
                 else { return nil }
                 return Suggestion(tag: tag, matchedAlias: alias)
             }
             .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
             .map { $0 }
+    }
+
+    /// Every term must appear (case-insensitively) somewhere in the text.
+    /// All-must-match rather than any: adding a second term is how the
+    /// operator NARROWS a long list, so it must never widen one.
+    static func matchesAllTerms(_ text: String, terms: [String]) -> Bool {
+        terms.allSatisfy { text.localizedCaseInsensitiveContains($0) }
     }
 
     /// A tag named exactly what was typed, selected on sight so Enter
