@@ -61,6 +61,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// the job; the Operations window is the one place OCR is *produced*
     /// rather than read, so it is the one place they belong.
     public var ocr: OcrSettings
+    /// App-wide UI zoom, driven by ⌘= / ⌘− / ⌘0. Clamped on the way in
+    /// so a hand-edited file cannot render the app unusable.
+    public var uiScale: Double
 
     public static let defaultVideoExtensions = [
         "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
@@ -87,7 +90,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         videoAnchor: VideoAnchor = .topLeft,
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600,
-        ocr: OcrSettings = OcrSettings()
+        ocr: OcrSettings = OcrSettings(),
+        uiScale: Double = 1.0
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -107,6 +111,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
         self.ocr = ocr
+        self.uiScale = uiScale
     }
 
     public init(from decoder: Decoder) throws {
@@ -147,6 +152,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
             Double.self, forKey: .ocrBudgetSecondsPerRun) ?? defaults.ocrBudgetSecondsPerRun
         ocr = try container.decodeIfPresent(OcrSettings.self, forKey: .ocr) ?? defaults.ocr
+        uiScale = min(1.8, max(0.7, try container.decodeIfPresent(
+            Double.self, forKey: .uiScale) ?? defaults.uiScale))
     }
 }
 

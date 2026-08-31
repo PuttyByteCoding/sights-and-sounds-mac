@@ -40,6 +40,7 @@ struct SightsAndSoundsApp: App {
         Window("Sights and Sounds", id: Self.pickerWindowID) {
             LibraryPickerView()
                 .environment(model)
+                .uiZoomed()
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -65,6 +66,7 @@ struct SightsAndSoundsApp: App {
             if let libraryID {
                 LibraryWindowView(libraryID: libraryID)
                     .environment(model)
+                    .uiZoomed()
                     // The picker's OPEN badge, its Bring Forward, and the
                     // summary cache all key off this.
                     .onAppear { model.libraryWindowAppeared(libraryID) }
@@ -81,6 +83,7 @@ struct SightsAndSoundsApp: App {
             if let request {
                 AuxiliaryWindowView(request: request)
                     .environment(model)
+                    .uiZoomed()
             }
         }
 
@@ -89,6 +92,7 @@ struct SightsAndSoundsApp: App {
             if let libraryID {
                 LibraryPropertiesView(libraryID: libraryID)
                     .environment(model)
+                    .uiZoomed()
             }
         }
 
@@ -97,10 +101,12 @@ struct SightsAndSoundsApp: App {
         Window("Background Tasks", id: "tasks") {
             BackgroundTasksView()
                 .environment(model)
+                .uiZoomed()
         }
 
         Window("Log", id: "log") {
             LogView()
+                .uiZoomed()
         }
 
         Settings {
@@ -442,6 +448,15 @@ struct ViewMenuCommands: View {
             .keyboardShortcut("9", modifiers: [.command, .option])
         Button("Log") { openWindow(id: "log") }
             .keyboardShortcut("0", modifiers: [.command, .option])
+        Divider()
+        // ⌘= is the zoom-in key (the same physical key as +, unshifted —
+        // the convention every browser follows).
+        Button("Zoom In") { UIZoom.shared.zoomIn() }
+            .keyboardShortcut("=", modifiers: .command)
+        Button("Zoom Out") { UIZoom.shared.zoomOut() }
+            .keyboardShortcut("-", modifiers: .command)
+        Button("Actual Size") { UIZoom.shared.reset() }
+            .keyboardShortcut("0", modifiers: .command)
     }
 
     private func aux(
