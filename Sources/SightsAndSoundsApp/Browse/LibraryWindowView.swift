@@ -203,6 +203,16 @@ struct BrowseView: View {
                         Button("Tag Analysis…", systemImage: "tag.square") {
                             openAux(.tagAnalysis)
                         }
+                        Button("Tag Analysis on Filtered Items", systemImage: "sparkle.magnifyingglass") {
+                            // The filtered listing IS the queue the
+                            // player takes, so this is "send the current
+                            // queue to Tag Analysis".
+                            openWindow(
+                                id: "aux",
+                                value: AuxWindowRequest(
+                                    libraryID: model.libraryID, kind: .tagAnalysis,
+                                    itemIDs: model.visibleItems.map(\.id)))
+                        }
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             do {
                                 let url = try model.library.backup(

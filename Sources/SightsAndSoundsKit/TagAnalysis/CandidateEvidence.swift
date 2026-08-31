@@ -42,8 +42,10 @@ extension LibraryDatabase {
     /// is already on the row — a candidate in 4,000 items must not load
     /// 4,000 records to draw six stills.
     public func candidateEvidence(
-        for candidate: TagCandidate, limit: Int = 24, pathSegmenter: PathSubParser? = nil
+        for candidate: TagCandidate, limit: Int = 24, pathSegmenter: PathSubParser? = nil,
+        within scope: Set<UUID>? = nil
     ) throws -> [CandidateEvidence] {
+        let scopeJSON = Self.scopeJSON(scope)
         switch candidate.source {
         case .metadata:
             return try writer.read { db in
@@ -53,9 +55,11 @@ extension LibraryDatabase {
                     SELECT mediaItem.* FROM mediaItem \
                     JOIN embeddedMetadataPair ON embeddedMetadataPair.mediaItemID = mediaItem.id \
                     WHERE embeddedMetadataPair.key = ? AND embeddedMetadataPair.value = ? \
+                    \(Self.scopeClause("mediaItem.id", scopeJSON, prefix: "AND")) \
                     ORDER BY mediaItem.relativePath LIMIT ?
                     """,
-                    arguments: [candidate.key, candidate.value, limit]
+                    arguments: [candidate.key, candidate.value]
+                        + (scopeJSON.map { [$0] } ?? []) + [limit]
                 ).map { CandidateEvidence(item: $0, timeSeconds: nil) }
             }
 
@@ -68,9 +72,10 @@ extension LibraryDatabase {
                     db,
                     sql: """
                     SELECT mediaItemID, MIN(timeSeconds) AS t FROM ocrTextLine \
-                    WHERE text = ? GROUP BY mediaItemID LIMIT ?
+                    WHERE text = ? \(Self.scopeClause("mediaItemID", scopeJSON, prefix: "AND")) \
+                    GROUP BY mediaItemID LIMIT ?
                     """,
-                    arguments: [candidate.value, limit])
+                    arguments: [candidate.value] + (scopeJSON.map { [$0] } ?? []) + [limit])
                 var evidence: [CandidateEvidence] = []
                 for row in rows {
                     let itemID: UUID = row["mediaItemID"]
@@ -96,9 +101,11 @@ extension LibraryDatabase {
                     db,
                     sql: """
                     SELECT * FROM mediaItem WHERE folderPath IN (\(databaseQuestionMarks(count: matching.count))) \
+                    \(Self.scopeClause("id", scopeJSON, prefix: "AND")) \
                     ORDER BY relativePath LIMIT ?
                     """,
-                    arguments: StatementArguments(matching) + [limit]
+                    arguments: StatementArguments(matching)
+                        + (scopeJSON.map { [$0] } ?? []) + [limit]
                 ).map { CandidateEvidence(item: $0, timeSeconds: nil) }
             }
         }
@@ -109,14 +116,15 @@ extension LibraryDatabase {
     /// from the rows: two candidates can share items, so adding their
     /// counts overstates the blast radius.
     public func itemsAffected(
-        by candidates: [TagCandidate], pathSegmenter: PathSubParser? = nil
+        by candidates: [TagCandidate], pathSegmenter: PathSubParser? = nil,
+        within scope: Set<UUID>? = nil
     ) throws -> Int {
         var ids = Set<UUID>()
         for candidate in candidates {
             // No limit here: this is a count, and an underestimate would
             // understate what Apply is about to do.
             for evidence in try candidateEvidence(
-                for: candidate, limit: Int.max, pathSegmenter: pathSegmenter)
+                for: candidate, limit: Int.max, pathSegmenter: pathSegmenter, within: scope)
             {
                 ids.insert(evidence.item.id)
             }
@@ -130,10 +138,15 @@ extension LibraryDatabase {
     /// whichever way it was decided — that is the point of the decisions
     /// table. Category assignment is an ordinary database write, revertible
     /// like any other (spec 14 §9: do not invent a third audit trail).
+    /// `within` limits what an accept touches. An **ignore stays global
+    /// regardless of scope**: the decision table is keyed by (source, key,
+    /// value) because "not a tag" is a fact about the string, not about
+    /// whichever items you happened to be looking at.
     @discardableResult
     public func apply(
         _ candidate: TagCandidate, _ application: CandidateApplication,
-        pathSegmenter: PathSubParser? = nil
+        pathSegmenter: PathSubParser? = nil,
+        within scope: Set<UUID>? = nil
     ) throws -> Int {
         switch application {
         case .ignore:
@@ -150,11 +163,18 @@ extension LibraryDatabase {
         case .assignCategory(let categoryID):
             let tag = try ensureTag(named: candidate.value, inCategory: categoryID)
             let evidence = try candidateEvidence(
-                for: candidate, limit: Int.max, pathSegmenter: pathSegmenter)
+                for: candidate, limit: Int.max, pathSegmenter: pathSegmenter, within: scope)
             for one in evidence {
                 try assignTag(tag.id, to: one.item.id)
             }
-            try decide(candidate, as: .accepted)
+            // A SCOPED accept records no decision: the row would suppress
+            // the string library-wide while only the scoped items were
+            // tagged. The string now names a tag, so the queue excludes
+            // it anyway — and the un-tagged rest stays reachable through
+            // "Missing — no <Category> tag".
+            if scope?.isEmpty ?? true {
+                try decide(candidate, as: .accepted)
+            }
             return evidence.count
         }
     }

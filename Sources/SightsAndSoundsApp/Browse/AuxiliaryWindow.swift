@@ -99,7 +99,7 @@ struct AuxiliaryWindowView: View {
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()
-            case .tagAnalysis: TagAnalysisView()
+            case .tagAnalysis: TagAnalysisView(scopeItemIDs: request.itemIDs)
             }
         }
     }

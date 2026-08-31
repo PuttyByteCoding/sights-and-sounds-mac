@@ -43,6 +43,12 @@ final class TagAnalysisModel {
     let library: LibraryDatabase
     let libraryID: UUID
 
+    /// Nil: the whole library. Set: the queue answers "what is in THESE
+    /// items" — one video, or the play queue that was sent here — and
+    /// counts count inside the scope. Clearing it widens the same window
+    /// rather than opening a second one.
+    private(set) var scope: Set<UUID>?
+
     private(set) var candidates: [TagCandidate] = []
     private(set) var categories: [TagCategory] = []
     private(set) var tagsByCategory: [UUID: [Tag]] = [:]
@@ -75,9 +81,15 @@ final class TagAnalysisModel {
     private(set) var ignoredThisPass = 0
     private(set) var lastDecision: (candidate: TagCandidate, wasAccepted: Bool)?
 
-    init(library: LibraryDatabase, libraryID: UUID) {
+    init(library: LibraryDatabase, libraryID: UUID, scope: Set<UUID>? = nil) {
         self.library = library
         self.libraryID = libraryID
+        self.scope = (scope?.isEmpty ?? true) ? nil : scope
+    }
+
+    func clearScope() {
+        scope = nil
+        reload()
     }
 
     // MARK: - Derived
@@ -151,7 +163,7 @@ final class TagAnalysisModel {
             do {
                 let rules = try library.analysisRules()
                 let vocabulary = try library.vocabulary()
-                let candidates = try library.tagCandidates(rules: rules)
+                let candidates = try library.tagCandidates(rules: rules, within: scope)
                 self.rules = rules
                 self.categories = vocabulary.map(\.category)
                 self.tagsByCategory = Dictionary(
@@ -180,7 +192,7 @@ final class TagAnalysisModel {
         }
         let library = library
         Task {
-            evidence = (try? library.candidateEvidence(for: selected)) ?? []
+            evidence = (try? library.candidateEvidence(for: selected, within: scope)) ?? []
         }
     }
 
@@ -191,7 +203,7 @@ final class TagAnalysisModel {
             return
         }
         Task {
-            itemsAffected = (try? library.itemsAffected(by: picked)) ?? 0
+            itemsAffected = (try? library.itemsAffected(by: picked, within: scope)) ?? 0
         }
     }
 
@@ -218,7 +230,7 @@ final class TagAnalysisModel {
 
     func apply(_ candidate: TagCandidate, _ application: CandidateApplication) {
         do {
-            _ = try library.apply(candidate, application)
+            _ = try library.apply(candidate, application, within: scope)
             lastDecision = (candidate, application != .ignore)
             if application == .ignore { ignoredThisPass += 1 } else { acceptedThisPass += 1 }
             reload()
@@ -236,7 +248,8 @@ final class TagAnalysisModel {
         for candidate in pickedCandidates {
             guard let category = suggestedCategory(for: candidate) else { continue }
             do {
-                _ = try library.apply(candidate, .assignCategory(categoryID: category.id))
+                _ = try library.apply(
+                    candidate, .assignCategory(categoryID: category.id), within: scope)
                 applied += 1
             } catch {
                 loadError = "\(error)"

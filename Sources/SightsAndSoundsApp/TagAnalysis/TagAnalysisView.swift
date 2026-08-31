@@ -17,6 +17,9 @@ import SightsAndSoundsKit
 /// than asking for it again.
 struct TagAnalysisView: View {
     @Environment(BrowseModel.self) private var browse
+    /// Items this window is scoped to — one video, or the play queue that
+    /// was sent here. Empty means the whole library.
+    var scopeItemIDs: [UUID] = []
     @State private var model: TagAnalysisModel?
     @State private var rules: RulesTabModel?
     @State private var mode: Mode = .candidates
@@ -41,10 +44,22 @@ struct TagAnalysisView: View {
         .background(Theme.Surface.content)
         .task {
             guard model == nil else { return }
-            let made = TagAnalysisModel(library: browse.library, libraryID: browse.libraryID)
+            let made = TagAnalysisModel(
+                library: browse.library, libraryID: browse.libraryID,
+                scope: Set(scopeItemIDs))
             made.reload()
             model = made
             rules = RulesTabModel(library: browse.library)
+            // A scoped open sweeps its own items if the sweep has not
+            // reached them — the operator is looking at THESE items now,
+            // and "no metadata yet, wait for the library pass" is an
+            // empty window with no explanation. Checked first so an
+            // already-swept scope queues nothing.
+            if let scope = made.scope,
+               (try? browse.library.unsweptCount(in: scope)) ?? 0 > 0 {
+                made.beginSweep()
+                browse.sweepMetadata(itemIDs: Array(scope)) { made.finishSweep() }
+            }
         }
     }
 
@@ -57,15 +72,39 @@ struct TagAnalysisView: View {
                 emphasis: .neutral)
             Spacer()
             if let model {
+                if let scope = model.scope {
+                    // The scope chip: what the window is answering for,
+                    // and the way back out. Widening reuses this window —
+                    // a second unscoped one would be the same question
+                    // twice.
+                    HStack(spacing: 6) {
+                        Text(scope.count == 1
+                            ? "Scoped to 1 item" : "Scoped to \(scope.count) items")
+                            .font(Theme.mono(10.5))
+                            .foregroundStyle(Theme.Accent.amber)
+                        Button("Entire Library") { model.clearScope() }
+                            .buttonStyle(.plain)
+                            .font(Theme.ui(11))
+                            .foregroundStyle(Theme.Text.quaternary)
+                    }
+                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(Theme.Surface.iconTileSelected))
+                }
                 Text(model.isLoading ? "Scanning…" : "\(model.candidates.count) candidates")
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.Text.quaternary)
-                Button("Rescan library") {
+                Button(model.scope == nil ? "Rescan library" : "Rescan items") {
                     // The queue itself is derived and reloads in a
                     // moment; the SWEEP is what finds metadata that was
-                    // never read, so the button does both.
+                    // never read, so the button does both — scoped to the
+                    // window's items when the window is.
                     model.beginSweep()
-                    browse.sweepMetadata { model.finishSweep() }
+                    browse.sweepMetadata(itemIDs: model.scope.map(Array.init)) {
+                        model.finishSweep()
+                    }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .disabled(model.isLoading)

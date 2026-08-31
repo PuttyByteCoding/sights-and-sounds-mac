@@ -139,6 +139,7 @@ private struct EmptyGridState: View {
 
 private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     let item: MediaItem
     @State private var thumbnail: NSImage?
     /// The tag whose editor is open, from a right-click on one of this
@@ -198,6 +199,12 @@ private struct ItemCell: View {
             .disabled(!model.isOnline(item))
         Button("Open Terminal at Folder", systemImage: "terminal") { openTerminal() }
             .disabled(!model.isOnline(item))
+        Button("Tag Analysis on This Item", systemImage: "sparkle.magnifyingglass") {
+            openWindow(
+                id: "aux",
+                value: AuxWindowRequest(
+                    libraryID: model.libraryID, kind: .tagAnalysis, itemIDs: [item.id]))
+        }
         if item.parentMediaItemID != nil && !item.isExportedClip {
             Button("Export Clip to File", systemImage: "scissors") {
                 model.exportClip(item)

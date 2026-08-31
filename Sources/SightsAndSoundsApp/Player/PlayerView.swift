@@ -296,6 +296,7 @@ private struct PlayerContent: View {
     /// fields need to keep the focus they take.
     let refocus: () -> Void
     @Binding var showKeyMap: Bool
+    @Environment(\.openWindow) private var openWindow
     @State private var showBindingsEditor = false
     /// The stage's rendered width, feeding `stageHeightCap`.
     @State private var stageWidth: CGFloat = 0
@@ -569,6 +570,28 @@ private struct PlayerContent: View {
                     showKeyMap = true
                 }
                 Button("Key Bindings…", systemImage: "keyboard") { showBindingsEditor = true }
+                Divider()
+                // The player is where "what is this string in THIS
+                // video" gets asked, and the queue here is the queue the
+                // operator means by "the current queue".
+                if let item = model.item {
+                    Button("Tag Analysis on This Item", systemImage: "sparkle.magnifyingglass") {
+                        openWindow(
+                            id: "aux",
+                            value: AuxWindowRequest(
+                                libraryID: model.libraryID, kind: .tagAnalysis,
+                                itemIDs: [item.id]))
+                    }
+                }
+                if model.playlist.count > 1 {
+                    Button("Tag Analysis on Queue", systemImage: "sparkle.magnifyingglass") {
+                        openWindow(
+                            id: "aux",
+                            value: AuxWindowRequest(
+                                libraryID: model.libraryID, kind: .tagAnalysis,
+                                itemIDs: model.playlist))
+                    }
+                }
                 Divider()
                 if AppSettingsStore.shared.current.infoBar.showsDownload {
                     Button("Save a Copy…", systemImage: "square.and.arrow.down") {
