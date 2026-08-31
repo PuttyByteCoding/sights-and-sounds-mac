@@ -15,6 +15,11 @@ struct AuxWindowRequest: Codable, Hashable {
         case operations
         case watched
         case tagAnalysis
+        /// A standalone player over a queue the request carries — "the
+        /// videos wearing this tag", or any other set. One window per
+        /// distinct request, each with its own model and queue, which is
+        /// what makes several players-at-once just work.
+        case player
 
         var title: String {
             switch self {
@@ -26,6 +31,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .operations: "Operations"
             case .watched: "Recently Watched"
             case .tagAnalysis: "Tag Analysis"
+            case .player: "Player"
             }
         }
     }
@@ -39,6 +45,9 @@ struct AuxWindowRequest: Codable, Hashable {
     /// Tag Analysis only: where in `itemIDs` to start the walk.
     /// Optional so window state saved before this field decodes.
     var startIndex: Int? = nil
+    /// A display title beating the kind's own — "Tag: Mike Jones" on a
+    /// player window. Optional so saved window state decodes.
+    var title: String? = nil
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -47,6 +56,7 @@ struct AuxWindowRequest: Codable, Hashable {
 /// model writes, every window over that library follows.
 struct AuxiliaryWindowView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
     let request: AuxWindowRequest
     @State private var model: BrowseModel?
     @State private var openError: String?
@@ -56,7 +66,8 @@ struct AuxiliaryWindowView: View {
             if let model {
                 content(model)
                     .environment(model)
-                    .navigationTitle("\(model.libraryName) — \(request.kind.title)")
+                    .navigationTitle(
+                        "\(model.libraryName) — \(request.title ?? request.kind.title)")
             } else if let openError {
                 ContentUnavailableView(
                     "Could Not Open Library",
@@ -70,13 +81,21 @@ struct AuxiliaryWindowView: View {
         .task {
             guard model == nil else { return }
             do {
-                model = BrowseModel(
+                let made = BrowseModel(
                     libraryID: request.libraryID,
                     library: try app.library(for: request.libraryID),
                     runner: try app.runner(for: request.libraryID),
                     onWorkFinished: { [weak app] in
                         app?.signalMaintenance(for: request.libraryID)
                     })
+                // A player window plays on arrival: the request carries
+                // its whole queue, so there is nothing to browse first.
+                if request.kind == .player, let first = request.itemIDs.first {
+                    made.playerRequest = PlayerRequest(
+                        libraryID: request.libraryID, itemID: first,
+                        playlist: request.itemIDs)
+                }
+                model = made
             } catch {
                 openError = "\(error)"
             }
@@ -89,8 +108,14 @@ struct AuxiliaryWindowView: View {
         // right here — same in-place pattern as the library window.
         if let playing = model.playerRequest {
             PlayerView(request: playing) {
-                model.playerRequest = nil
-                model.refreshAll()
+                // A player-kind window IS its player — Back closes the
+                // window rather than stranding an empty shell.
+                if request.kind == .player {
+                    dismiss()
+                } else {
+                    model.playerRequest = nil
+                    model.refreshAll()
+                }
             }
             .id(playing)
         } else {
@@ -105,6 +130,11 @@ struct AuxiliaryWindowView: View {
             case .tagAnalysis:
                 TagAnalysisView(
                     queueIDs: request.itemIDs, startIndex: request.startIndex ?? 0)
+            case .player:
+                // Only reachable when the request carried no items.
+                ContentUnavailableView(
+                    "Nothing to Play", systemImage: "play.slash",
+                    description: Text("No items carry this tag yet."))
             }
         }
     }

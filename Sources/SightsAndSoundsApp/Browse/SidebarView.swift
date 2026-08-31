@@ -898,9 +898,9 @@ private struct CategoryHeader: View {
 /// the gesture people actually reach for.
 private struct TagFilterRow: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     let tag: Tag
     @State private var showEditor = false
-    @State private var showCompany = false
 
     var body: some View {
         // Filtered count while a filter is on — "if I added this, how
@@ -918,14 +918,11 @@ private struct TagFilterRow: View {
             // "edit this" — ⌥-click was a chord you had to be told about.
             .contextMenu {
                 Button("Edit Tag…") { showEditor = true }
-                Button("Show Items with This Tag") { showCompany = true }
-            }
-            .sheet(isPresented: $showCompany) {
-                TagItemsSheet(
-                    tag: tag,
-                    categoryName: model.vocabulary
-                        .first { $0.category.id == tag.tagCategoryID }?.category.name,
-                    library: model.library, libraryID: model.libraryID)
+                Button("Show Items with This Tag") {
+                    openTagPlayerWindow(
+                        tag: tag, library: model.library,
+                        libraryID: model.libraryID, openWindow: openWindow)
+                }
             }
             .sheet(isPresented: $showEditor) {
                 TagSheet(
