@@ -189,6 +189,13 @@ not evidence about another.
   rules dry run.
 - **Accepts stage into a basket** committed on advance / Save / window
   close; values editable up to commit.
+- **Strict single-video evidence (1 Sep 2026).** Folder-level sidecar
+  sharing — chosen in the first design pass — was rejected in use: a
+  mixed folder made every loose text file everyone's evidence ("still
+  grabbing information from other videos"). Sidecars now bind by SAME
+  BASENAME only, and the window shows no library-wide reach anywhere:
+  the Seen column counts places in this video, and Found In lists this
+  video's own origins.
 - Future readers named so far: a web-page parser, and a JSON-schema
   matcher. Both are new `AnalysisReader` / sub-parser registrations.
 

@@ -106,22 +106,27 @@ public struct OcrAnalysisReader: AnalysisReader {
 
 // MARK: - Sidecars
 
-/// Shared plumbing: every `.ext` file in the video's folder. Folder-level
-/// on purpose — "some folders with concerts have a text file about the
-/// show" — which also covers the same-basename convention for free, since
-/// a same-name sidecar lives in the same folder.
+/// Shared plumbing: sidecars that belong to THIS file — same basename,
+/// same folder. Folder-level sharing was tried and rejected in use:
+/// "TagAnalysis is still grabbing information from other videos" — a
+/// mixed folder made every loose text file everyone's evidence. The
+/// analysis is per video, so its evidence is per video: concert.mp4
+/// reads concert.txt and concert.json, and nothing else's.
 enum SidecarFiles {
     /// Files above this size are skipped, not truncated: a 100 MB "txt"
     /// is not show notes, and half a JSON document parses as nothing.
     static let maxBytes = 512 * 1024
 
     static func contents(besideFile fileURL: URL?, extension ext: String) -> [(name: String, text: String)] {
-        guard let folder = fileURL?.deletingLastPathComponent() else { return [] }
+        guard let fileURL else { return [] }
+        let folder = fileURL.deletingLastPathComponent()
+        let base = fileURL.deletingPathExtension().lastPathComponent.lowercased()
         let listing = (try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.fileSizeKey],
             options: [.skipsHiddenFiles])) ?? []
         return listing
             .filter { $0.pathExtension.lowercased() == ext }
+            .filter { $0.deletingPathExtension().lastPathComponent.lowercased() == base }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .compactMap { url in
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -138,9 +143,10 @@ enum SidecarFiles {
     }
 }
 
-/// Unstructured show notes: every `.txt` beside the video, line by line.
-/// Lines are the unit because "tapper: Mike Jones" patterns are lines,
-/// and the rules that strip such prefixes are authored against lines.
+/// Unstructured show notes: the video's OWN `.txt` (same basename),
+/// line by line. Lines are the unit because "tapper: Mike Jones"
+/// patterns are lines, and the rules that strip such prefixes are
+/// authored against lines.
 public struct SidecarTextReader: AnalysisReader {
     public let id = "sidecarText"
     public let displayName = "Text files"
@@ -163,9 +169,10 @@ public struct SidecarTextReader: AnalysisReader {
     }
 }
 
-/// Structured sidecars: every `.json` beside the video, whole — the hub's
-/// JSON sub-parser explodes it into leaves with their keys, which is
-/// what lets a `keyEquals("taper")` rule fire on a value inside the file.
+/// Structured sidecars: the video's OWN `.json` (same basename), whole —
+/// the hub's JSON sub-parser explodes it into leaves with their keys,
+/// which is what lets a `keyEquals("taper")` rule fire on a value inside
+/// the file.
 public struct SidecarJsonReader: AnalysisReader {
     public let id = "sidecarJson"
     public let displayName = "JSON files"

@@ -509,7 +509,7 @@ private struct CandidateTable: View {
             Text("Value").modifier(Theme.sectionLabel())
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("Key").modifier(Theme.sectionLabel()).frame(width: 110, alignment: .leading)
-            Text("Items").modifier(Theme.sectionLabel()).frame(width: 48, alignment: .trailing)
+            Text("Seen").modifier(Theme.sectionLabel()).frame(width: 48, alignment: .trailing)
             Text("Suggestion").modifier(Theme.sectionLabel()).frame(width: 190, alignment: .leading)
             Text("").frame(width: 22)
         }
@@ -572,7 +572,7 @@ private struct CandidateTableRow: View {
                     .lineLimit(1)
                     .frame(width: 110, alignment: .leading)
 
-                Text("\(model.libraryCount(for: candidate))")
+                Text("\(model.occurrenceCount(for: candidate))")
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.Text.secondary)
                     .frame(width: 48, alignment: .trailing)
@@ -812,26 +812,23 @@ private struct DecidePane: View {
     }
 
     private func byline(_ candidate: AnalysisCandidate) -> String {
-        // Name the contributing FILE for sidecar text: a folder-level
-        // info.txt applies to every video in its folder, and without the
-        // name, shared text reads as a leak from another video.
+        // Names only what THIS video's evidence says — the sidecar file,
+        // the key, the path, the screen. Library-wide reach was here and
+        // removed on review: only information pulled from this video.
         let files = Set(candidate.origins.compactMap(\.sourceFile)).sorted()
-        let place: String
         if let key = candidate.key {
-            place = "as metadata key “\(key)”"
-        } else if !files.isEmpty {
-            place = "in \(files.joined(separator: ", ")) beside this video"
-        } else if candidate.origins.contains(where: { $0.readerID == "path" }) {
-            place = "in this video's path"
-        } else if candidate.origins.contains(where: { $0.timeSeconds != nil }) {
-            place = "on screen in this video"
-        } else {
-            place = "in this video's evidence"
+            return "Found as metadata key “\(key)”."
         }
-        let reach = model.libraryCount(for: candidate)
-        return reach > 1
-            ? "Found \(place) · appears in \(reach) items library-wide."
-            : "Found \(place)."
+        if !files.isEmpty {
+            return "Found in \(files.joined(separator: ", ")) beside this video."
+        }
+        if candidate.origins.contains(where: { $0.readerID == "path" }) {
+            return "Found in this video's path."
+        }
+        if candidate.origins.contains(where: { $0.timeSeconds != nil }) {
+            return "Read on screen in this video."
+        }
+        return "Found in this video's evidence."
     }
 
     private func decideBlock(
@@ -924,34 +921,36 @@ private struct DecidePane: View {
 
     private func appearsBlock(_ candidate: AnalysisCandidate) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Appears in").modifier(Theme.sectionLabel())
-                Spacer()
-                Text("\(max(model.appearsIn.total, 1)) items")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.quaternary)
-            }
-            if model.appearsIn.names.isEmpty {
-                Text(model.currentItem?.fileName ?? "this video")
+            Text("Found in").modifier(Theme.sectionLabel())
+            ForEach(originLines(candidate), id: \.self) { line in
+                Text(line)
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.Text.quaternary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-            } else {
-                ForEach(model.appearsIn.names.prefix(6), id: \.self) { name in
-                    Text(name)
-                        .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.quaternary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                if model.appearsIn.total > 6 {
-                    Text("and \(model.appearsIn.total - 6) more")
-                        .font(Theme.ui(10))
-                        .foregroundStyle(Theme.Text.disabled)
-                }
             }
         }
+    }
+
+    /// One line per place in THIS video the string turned up.
+    private func originLines(_ candidate: AnalysisCandidate) -> [String] {
+        var lines: [String] = []
+        for origin in candidate.origins {
+            switch origin.readerID {
+            case "embeddedMetadata":
+                lines.append("embedded metadata\(candidate.key.map { " · \($0)" } ?? "")")
+            case "path":
+                lines.append(model.currentItem?.relativePath ?? "file path")
+            case "onScreen":
+                if let seconds = origin.timeSeconds {
+                    lines.append("on screen at \(TransportBarTime.format(seconds))")
+                }
+            default:
+                lines.append(origin.sourceFile ?? origin.readerID)
+            }
+        }
+        var seen = Set<String>()
+        return lines.filter { seen.insert($0).inserted }
     }
 
     // MARK: The primary action

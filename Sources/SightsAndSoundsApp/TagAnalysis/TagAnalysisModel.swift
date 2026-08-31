@@ -69,13 +69,6 @@ final class TagAnalysisModel {
         }
     }
 
-    /// Library-wide item counts per string — the ITEMS column. "This
-    /// appears in 148 items" is what makes a string worth a tag, even
-    /// though applying stays per-video.
-    private(set) var occurrenceCounts: [String: Int] = [:]
-
-    /// The selected string's library-wide reach — APPEARS IN.
-    private(set) var appearsIn: (names: [String], total: Int) = ([], 0)
 
     init(library: LibraryDatabase, libraryID: UUID, queue: [UUID], startAt: Int = 0) {
         self.library = library
@@ -152,10 +145,11 @@ final class TagAnalysisModel {
             || (row.candidate.key?.localizedCaseInsensitiveContains(query) ?? false)
     }
 
-    /// The ITEMS column: library-wide when known (metadata and OCR),
-    /// otherwise this video's own occurrence count.
-    func libraryCount(for candidate: AnalysisCandidate) -> Int {
-        occurrenceCounts[candidate.id] ?? candidate.origins.count
+    /// How many places in THIS video the string was found. Library-wide
+    /// reach used to show here and was removed on review: "it should
+    /// only have the information pulled from the single video."
+    func occurrenceCount(for candidate: AnalysisCandidate) -> Int {
+        candidate.origins.count
     }
 
     /// Already staged, so a row can say "in the basket" instead of
@@ -284,10 +278,8 @@ final class TagAnalysisModel {
                 self.rules = rules
                 self.categories = categories
                 self.analysis = analysis
-                self.occurrenceCounts = (try? library.stringOccurrenceCounts()) ?? [:]
                 self.appliedTags = (try? library.tags(of: itemID)) ?? []
                 self.reloadPreview()
-                self.refreshAppearsIn()
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)
                 }
@@ -306,19 +298,6 @@ final class TagAnalysisModel {
 
     func select(_ id: AnalysisCandidate.ID?) {
         selectedCandidateID = id
-        refreshAppearsIn()
-    }
-
-    private func refreshAppearsIn() {
-        guard let candidate = selectedCandidate else {
-            appearsIn = ([], 0)
-            return
-        }
-        let library = library
-        Task {
-            appearsIn = (try? library.itemsCarrying(
-                key: candidate.key, value: candidate.value)) ?? ([], 0)
-        }
     }
 
     // MARK: - Decide actions beyond the basket

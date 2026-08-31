@@ -267,18 +267,24 @@ import Testing
         return (library, source, taper, root)
     }
 
-    @Test func folderTextAndJsonFeedTheAnalysis() async throws {
+    @Test func onlyTheVideosOwnSidecarsFeedTheAnalysis() async throws {
         let (library, source, _, root) = try await makeLibraryOnDisk()
         defer { try? FileManager.default.removeItem(at: root) }
         let folder = root.appendingPathComponent("show", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: folder.appendingPathComponent("a.mp4").path, contents: Data())
-        // The folder-level info file — unstructured lines.
+        // The video's OWN sidecars — same basename.
         try "Recorded at Newport\ntapper: Mike Jones\n\n".write(
-            to: folder.appendingPathComponent("info.txt"), atomically: true, encoding: .utf8)
-        // And a structured sidecar, keys intact.
+            to: folder.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
         try #"{"taper": "Sarah Chen"}"#.write(
-            to: folder.appendingPathComponent("show.json"), atomically: true, encoding: .utf8)
+            to: folder.appendingPathComponent("a.json"), atomically: true, encoding: .utf8)
+        // A NEIGHBOUR's sidecars, in the same folder. Their content must
+        // not appear: the analysis is per video, and a mixed folder made
+        // every loose file everyone's evidence — the reported bug.
+        try "tapper: Somebody Else".write(
+            to: folder.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        try "Recorded elsewhere".write(
+            to: folder.appendingPathComponent("info.txt"), atomically: true, encoding: .utf8)
 
         let item = MediaItem(
             sourceID: source.id, kind: .video, relativePath: "show/a.mp4", needsReview: false)
@@ -298,11 +304,13 @@ import Testing
                     ]),
             ])
 
-        // The JSON sidecar's keyed leaf mapped via keyEquals; the txt
-        // line mapped via the prefix rule. Both routes end in Suggested.
+        // Own sidecars feed both routes into Suggested…
         #expect(Set(analysis.suggested.map(\.value)) == ["Mike Jones", "Sarah Chen"])
-        // The txt's other line survives as unmapped judgment material.
         #expect(analysis.unmapped.map(\.value).contains("Recorded at Newport"))
+        // …and the neighbours' content is nowhere on the page.
+        let everything = (analysis.suggested + analysis.unmapped).map(\.value)
+        #expect(!everything.contains("Somebody Else"))
+        #expect(!everything.contains("Recorded elsewhere"))
     }
 
     @Test func anOversizedSidecarIsSkippedNotTruncated() async throws {
@@ -312,7 +320,7 @@ import Testing
         // Over the cap: skipped whole — half a document parses as noise.
         let big = String(repeating: "x", count: SidecarFiles.maxBytes + 1)
         try big.write(
-            to: root.appendingPathComponent("huge.txt"), atomically: true, encoding: .utf8)
+            to: root.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
 
         let item = MediaItem(
             sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
