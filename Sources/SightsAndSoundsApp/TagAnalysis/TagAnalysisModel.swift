@@ -33,6 +33,15 @@ final class TagAnalysisModel {
     /// did not ask for is noise.
     let previewPlayer = AVPlayer()
     private(set) var previewPlaying = false
+    private(set) var previewSeconds: Double = 0
+    private(set) var previewDuration: Double = 0
+    /// Which video the preview currently holds — reload() runs after
+    /// every commit and sweep, and replacing the item each time reset
+    /// playback to a paused first frame ("it appears to be frame by
+    /// frame"). The item is replaced only when the VIDEO changes.
+    private var previewItemID: UUID?
+    private var previewTimeObserver: Any?
+    private var previewEndObserver: NSObjectProtocol?
     /// What the displayed video already wears — the baseline every
     /// decision is made against, so it sits in view instead of in memory.
     private(set) var appliedTags: [(category: TagCategory, tags: [Tag])] = []
@@ -200,17 +209,59 @@ final class TagAnalysisModel {
 
     // MARK: - The preview transport
 
-    /// Point the preview at the current video, paused at the top.
+    /// Point the preview at the current video — only when the video
+    /// actually changed. A reload that changed tags or rules must not
+    /// interrupt playback in flight.
     func reloadPreview() {
+        guard currentItemID != previewItemID else { return }
+        previewItemID = currentItemID
         previewPlayer.pause()
         previewPlaying = false
+        previewSeconds = 0
+        previewDuration = 0
+        if let previewEndObserver {
+            NotificationCenter.default.removeObserver(previewEndObserver)
+            self.previewEndObserver = nil
+        }
         guard let item = currentItem,
               let url = (try? library.resolvedFileURL(for: item)) ?? nil
         else {
             previewPlayer.replaceCurrentItem(with: nil)
             return
         }
-        previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
+        let playerItem = AVPlayerItem(url: url)
+        previewPlayer.replaceCurrentItem(with: playerItem)
+        previewDuration = item.durationSeconds ?? 0
+        installPreviewObservers(for: playerItem)
+    }
+
+    private func installPreviewObservers(for playerItem: AVPlayerItem) {
+        if previewTimeObserver == nil {
+            // One periodic observer for the player's lifetime — it
+            // follows item replacement on its own.
+            previewTimeObserver = previewPlayer.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
+            ) { [weak self] time in
+                Task { @MainActor in self?.previewSeconds = time.seconds }
+            }
+        }
+        previewEndObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
+            object: playerItem, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.previewPlaying = false }
+        }
+    }
+
+    func previewTogglePlay() {
+        previewPlaying ? previewPlayer.pause() : previewPlayer.play()
+        previewPlaying.toggle()
+    }
+
+    /// The mini scrubber's click — a fraction of the duration.
+    func previewSeek(toFraction fraction: Double) {
+        guard previewDuration > 0 else { return }
+        previewSeek(to: fraction.clamped01 * previewDuration)
     }
 
     /// The player window's digit table, verbatim — numpad seeks, 5
@@ -227,8 +278,7 @@ final class TagAnalysisModel {
         case .seek(let seconds):
             previewSeek(by: seconds)
         case .playPause:
-            previewPlaying ? previewPlayer.pause() : previewPlayer.play()
-            previewPlaying.toggle()
+            previewTogglePlay()
         case .seekToStart:
             previewPlayer.seek(to: .zero)
         case .seekToNearEnd:
@@ -243,7 +293,7 @@ final class TagAnalysisModel {
         return true
     }
 
-    private func previewSeek(by seconds: Double) {
+    func previewSeek(by seconds: Double) {
         previewSeek(to: previewPlayer.currentTime().seconds + seconds)
     }
 
