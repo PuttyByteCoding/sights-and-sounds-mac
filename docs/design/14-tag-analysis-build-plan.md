@@ -166,6 +166,34 @@ Reorderable numbered cards, the matcher/action editor, the dry run, and spec
 A and B are pure Kit and carry almost all the risk. C is where the sweep cost
 lands. D and E are presentation over settled logic.
 
+## Superseded: the queue became per-video (31 Aug 2026)
+
+Review of the shipped window replaced spec 14's "three sources, one
+queue" with a **per-video** model, from the operator's own framing: *"when
+a video is displayed... I want the analysis to run on all the places that
+might have metadata for the current video"*. Metadata from one video is
+not evidence about another.
+
+- The window always carries the current play queue and analyses ONE
+  video — the displayed one. SHIFT+arrows walk the queue as the player
+  does. `analyzeItem` in `ItemAnalysis.swift` is the engine.
+- **Readers** are registered as data (`AnalysisReader`): embedded
+  metadata, the path, folder-level sidecar `.txt` and `.json`, OCR
+  lines. This closed two gaps the section below records: sidecar
+  readers now exist, and the recursive parser is finally wired in —
+  JSON inside a metadata value yields keyed leaves.
+- The old queue's **exclusion of known tag names is inverted** here: an
+  existing tag found (word-bounded) inside the evidence is the best
+  possible candidate — apply, not create. The exclusion story below
+  remains true only of the library-wide queue that still backs the
+  rules dry run.
+- **Accepts stage into a basket** committed on advance / Save / window
+  close; values editable up to commit.
+- Future readers named so far: a web-page parser, and a JSON-schema
+  matcher. Both are new `AnalysisReader` / sub-parser registrations.
+
+The section below predates this and stands as history of the first cut.
+
 ## What was built, and what the plan overstated
 
 All five phases shipped (PRs #149, #150, #151, #152, #153). Two places
