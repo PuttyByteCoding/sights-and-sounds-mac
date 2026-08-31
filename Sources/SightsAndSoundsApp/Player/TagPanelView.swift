@@ -17,6 +17,10 @@ struct TagPanelView: View {
     /// can WALK it: each field advances to the next search category, and
     /// a per-field Bool could not know who is next.
     @FocusState private var focusedCategory: UUID?
+    /// Where a dragged category would land — the amber line under the
+    /// pointer. Nil when nothing is in flight.
+    @State private var dropTargetID: UUID?
+    @State private var dropAtEnd = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -49,6 +53,9 @@ struct TagPanelView: View {
                                 Text(label).modifier(Theme.sectionLabel())
                             }
                         }
+                        if dropTargetID == entry.category.id {
+                            DropInsertionLine()
+                        }
                         Group {
                             switch entry.category.displayStyle {
                             case .checkboxes, .radio:
@@ -71,22 +78,32 @@ struct TagPanelView: View {
                         // Dropping a dragged heading on a category slots
                         // it in BEFORE that category.
                         .dropDestination(for: String.self) { dropped, _ in
+                            dropTargetID = nil
                             guard let id = dropped.first.flatMap(UUID.init(uuidString:))
                             else { return false }
                             model.moveCategory(id, before: entry.category.id)
                             return true
+                        } isTargeted: { inside in
+                            dropTargetID = inside ? entry.category.id : (
+                                dropTargetID == entry.category.id ? nil : dropTargetID)
                         }
                     }
                     // …and the space under the list is "make it last".
+                    if dropAtEnd {
+                        DropInsertionLine()
+                    }
                     Rectangle()
                         .fill(.clear)
                         .frame(height: 40)
                         .contentShape(Rectangle())
                         .dropDestination(for: String.self) { dropped, _ in
+                            dropAtEnd = false
                             guard let id = dropped.first.flatMap(UUID.init(uuidString:))
                             else { return false }
                             model.moveCategory(id, before: nil)
                             return true
+                        } isTargeted: { inside in
+                            dropAtEnd = inside
                         }
                 }
                 .padding(.horizontal, 12)
@@ -140,13 +157,16 @@ private struct CategoryHeading: View {
                 .font(Theme.ui(12, .semibold))
                 .foregroundStyle(Theme.Text.primary)
             if draggable {
+                Spacer(minLength: 6)
+                // Far right, where every list puts its grip.
                 Text("≡")
-                    .font(Theme.ui(11))
+                    .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder categories")
                     .draggable(category.id.uuidString)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -232,6 +252,14 @@ private struct PillCategoryView: View {
     /// category draws — applied pill or suggestion alike.
     @State private var editing: Tag?
     private var fieldFocused: Bool { focus.wrappedValue == entry.id }
+
+    /// The sheet takes the keyboard; closing it must hand the keyboard
+    /// BACK to the field the operator was typing in — creating a tag is
+    /// a detour, not a destination.
+    private func restoreFieldFocus() {
+        focus.wrappedValue = entry.id
+        model.tagFieldCategoryID = entry.id
+    }
 
     private var applied: [Tag] {
         model.itemTags.first { $0.id == entry.id }?.tags ?? []
@@ -455,7 +483,7 @@ private struct PillCategoryView: View {
         .task(id: model.item?.id) {
             if takesFocus { focus.wrappedValue = entry.id }
         }
-        .sheet(item: $editing) { tag in
+        .sheet(item: $editing, onDismiss: restoreFieldFocus) { tag in
             TagSheet(
                 mode: .edit(tag),
                 library: model.library,
@@ -463,7 +491,7 @@ private struct PillCategoryView: View {
                 categories: model.panelVocabulary.map(\.category)
             ) { _ in model.refreshTagging() }
         }
-        .sheet(isPresented: $creating) {
+        .sheet(isPresented: $creating, onDismiss: restoreFieldFocus) {
             TagSheet(
                 mode: .create(categoryID: entry.category.id, name: query),
                 library: model.library,
@@ -476,5 +504,16 @@ private struct PillCategoryView: View {
                 highlighted = nil
             }
         }
+    }
+}
+
+/// The landing line: where a dragged category goes when released —
+/// drawn ABOVE the hovered block, because dropping inserts before it.
+private struct DropInsertionLine: View {
+    var body: some View {
+        Capsule()
+            .fill(Theme.Accent.amber)
+            .frame(height: 2.5)
+            .padding(.vertical, 3)
     }
 }
