@@ -217,19 +217,17 @@ private struct RailView: View {
                 // seeks and 5 plays right here, so "is that really the
                 // taper's banner at 4:00?" is answerable without the
                 // player window.
-                ZStack(alignment: .bottomTrailing) {
-                    PlayerSurface(player: model.previewPlayer)
-                        .aspectRatio(16 / 9, contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
-                    Text(model.previewPlaying ? "▶" : "⏸ numpad seeks · 5 plays")
-                        .font(Theme.mono(8.5))
-                        .foregroundStyle(Theme.Accent.amber)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.black.opacity(0.65))
-                        .padding(5)
-                }
+                // A small version of the player, not a still: the
+                // surface plays, a click on it pauses and resumes, and
+                // the strip below is a real scrubber.
+                PlayerSurface(player: model.previewPlayer)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.previewTogglePlay() }
+
+                PreviewTransport(model: model)
 
                 Text(model.currentItem?.fileName ?? "—")
                     .font(Theme.mono(10))
@@ -1141,6 +1139,56 @@ private struct NumpadTransportMonitor: NSViewRepresentable {
         private func remove() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+        }
+    }
+}
+
+// MARK: - Preview transport
+
+/// The mini player's controls: play/pause, a click-and-drag scrubber,
+/// and the timecode — the player window's transport, at rail scale.
+/// Keyboard parity is already there (numpad seeks, 5 plays); this is
+/// the pointer's half.
+private struct PreviewTransport: View {
+    let model: TagAnalysisModel
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Button {
+                model.previewTogglePlay()
+            } label: {
+                Image(systemName: model.previewPlaying ? "pause.fill" : "play.fill")
+                    .font(Theme.ui(10))
+                    .foregroundStyle(Theme.Text.primary)
+                    .frame(width: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(model.previewPlaying ? "Pause (5)" : "Play (5)")
+
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                let fraction = model.previewDuration > 0
+                    ? (model.previewSeconds / model.previewDuration).clamped01 : 0
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.Surface.well).frame(height: 4)
+                    Capsule().fill(Theme.Accent.amber)
+                        .frame(width: max(4, width * fraction), height: 4)
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            model.previewSeek(toFraction: Double(value.location.x / width))
+                        })
+            }
+            .frame(height: 14)
+
+            Text("\(TransportBarTime.format(model.previewSeconds)) / \(TransportBarTime.format(model.previewDuration))")
+                .font(Theme.mono(8.5))
+                .foregroundStyle(Theme.Text.quaternary)
+                .fixedSize()
         }
     }
 }
