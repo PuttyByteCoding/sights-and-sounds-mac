@@ -64,17 +64,24 @@ struct TagAnalysisView: View {
                 press.key == .leftArrow ? model.goPrevious() : model.goNext()
                 return .handled
             }
-            // The player window's numpad transport, verbatim — seeks,
-            // 5 to pause/play, 0 to start, − to near end. Numpad only,
-            // exactly like the player: the digits are separable from a
-            // filter field that is spelling a tag name.
-            if press.modifiers.contains(.numericPad),
-               let character = press.characters.first,
-               character.isNumber || character == "-"
-            {
-                return model.handlePreviewKey(
-                    character: character, shift: false, numpad: true)
-                    ? .handled : .ignored
+            // The player window's digit transport — seeks, 5 to
+            // pause/play, 0 to start, 8/− to near end, space to
+            // pause/play. TOP-ROW digits work whenever no text field has
+            // the keyboard (most Mac keyboards have no numpad at all);
+            // actual numpad digits punch through even while the filter
+            // field is typing, exactly as they do in the player.
+            if let character = press.characters.first {
+                let numpad = press.modifiers.contains(.numericPad)
+                let typing = NSApp.keyWindow?.firstResponder is NSTextView
+                let transportKey = character.isNumber || character == "-"
+                    || character == " " || "!#$^&(".contains(character)
+                if transportKey, numpad || !typing {
+                    return model.handlePreviewKey(
+                        character: character,
+                        shift: press.modifiers.contains(.shift),
+                        numpad: numpad)
+                        ? .handled : .ignored
+                }
             }
             return .ignored
         }
