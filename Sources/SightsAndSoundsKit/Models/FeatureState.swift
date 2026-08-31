@@ -57,3 +57,25 @@ public struct OcrProgress: Codable, Equatable, Sendable, FetchableRecord, Persis
         self.scannedThroughSeconds = scannedThroughSeconds
     }
 }
+
+/// How far the embedded-metadata sweep has reached for this item.
+///
+/// Tracked separately from the pairs themselves for the same reason
+/// `OcrProgress` exists: an item whose file carries no metadata leaves no
+/// pairs behind, yet the sweep still visited it. Without this marker such
+/// an item is re-probed on every run forever.
+public struct MetadataSweepState: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "metadataSweepState"
+
+    public var mediaItemID: UUID
+    public var sweptAt: Date
+    /// ffprobe could not read the file. Kept so a run reports rather than
+    /// silently skipping, and so a retry is a row deletion.
+    public var failureMessage: String?
+
+    public init(mediaItemID: UUID, sweptAt: Date = Date(), failureMessage: String? = nil) {
+        self.mediaItemID = mediaItemID
+        self.sweptAt = sweptAt
+        self.failureMessage = failureMessage
+    }
+}

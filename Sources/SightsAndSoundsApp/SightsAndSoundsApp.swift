@@ -274,6 +274,7 @@ final class AppModel {
             await runner.register(WritebackJob.self)
             await runner.register(RestoreTagsJob.self)
             await runner.register(ValidationJob.self)
+            await runner.register(MetadataSweepJob.self)
         }
         return runner
     }

@@ -687,6 +687,45 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Tag analysis. Embedded metadata pairs are the candidate
+        // queue's largest source and nothing persisted them before: the
+        // tag writers already flatten ffprobe's dictionaries, but only
+        // ever for a snapshot about to be overwritten.
+        //
+        // The decision table is what stops an ignored candidate coming
+        // back next sweep. Keyed by (source, key, value) rather than by a
+        // row id because the queue is DERIVED — it is recomputed from the
+        // underlying data every time, so a decision has to survive the
+        // disappearance of the row that prompted it.
+        migrator.registerMigration("tagAnalysis") { db in
+            try db.create(table: "embeddedMetadataPair") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("mediaItemID", .blob).notNull()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("key", .text).notNull()
+                t.column("value", .text).notNull()
+                t.uniqueKey(["mediaItemID", "key", "value"], onConflict: .ignore)
+            }
+            try db.create(indexOn: "embeddedMetadataPair", columns: ["key", "value"])
+
+            try db.create(table: "metadataSweepState") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("sweptAt", .datetime).notNull()
+                t.column("failureMessage", .text)
+            }
+
+            try db.create(table: "tagCandidateDecision") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("source", .text).notNull()
+                t.column("key", .text)
+                t.column("value", .text).notNull()
+                t.column("decision", .text).notNull()
+                t.column("decidedAt", .datetime).notNull()
+                t.uniqueKey(["source", "key", "value"], onConflict: .replace)
+            }
+        }
+
         return migrator
     }
 
