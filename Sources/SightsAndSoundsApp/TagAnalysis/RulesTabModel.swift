@@ -97,15 +97,20 @@ final class RulesTabModel {
     /// and the entire path from one-off triage to automation.
     @discardableResult
     func makeRule(from candidate: TagCandidate) -> Bool {
+        makeRule(key: candidate.key, value: candidate.value)
+    }
+
+    @discardableResult
+    func makeRule(key: String?, value: String) -> Bool {
         do {
-            if let covering = try library.ruleCovering(candidate) {
+            if let covering = try library.ruleCovering(key: key, value: value) {
                 reload()
                 select(covering)
                 return false
             }
             let made = RuleEngine.Rule(
                 id: UUID(),
-                matcher: LibraryDatabase.matcher(forNewRuleFrom: candidate),
+                matcher: LibraryDatabase.matcher(forKey: key, value: value),
                 actions: [])
             try library.saveAnalysisRule(made)
             reload()

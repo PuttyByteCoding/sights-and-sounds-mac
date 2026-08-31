@@ -4,12 +4,12 @@ import SightsAndSoundsKit
 
 /// Tag analysis — the window, and the switch between its two modes.
 ///
-/// Candidate mining across the library: strings that appear in items with
-/// no tag behind them, triaged in one place. This is the **plural half of
-/// what the player does one item at a time** (spec 14 §2): the player can
-/// copy an on-screen line, make a tag from it or add it as an alias for
-/// the item playing; everything that touches *other* items happens here.
-/// That one rule is what stops the same feature being built twice.
+/// The Candidates side is a per-video triage surface: every place
+/// metadata might live for the DISPLAYED video — embedded fields, JSON
+/// inside them, the path, sidecar text and JSON files, on-screen text —
+/// analysed into three buckets: rule-mapped suggestions, existing tags
+/// found in the evidence, and unmapped text for judgment. Accepted tags
+/// stage into a basket that commits when you advance.
 ///
 /// Candidates is triage, Rules is automation, and §4 is the hinge
 /// between them: deciding the same thing twice is a rule waiting to be
@@ -17,9 +17,8 @@ import SightsAndSoundsKit
 /// than asking for it again.
 struct TagAnalysisView: View {
     @Environment(BrowseModel.self) private var browse
-    /// The queue this window walks, and where in it to start. Analysis is
-    /// always one video at a time — the window exists to iterate the
-    /// queue the way the player does, SHIFT+arrows included.
+    /// The queue this window walks, and where in it to start — the same
+    /// listing the player takes, iterated with the same SHIFT+arrows.
     var queueIDs: [UUID] = []
     var startIndex: Int = 0
     @State private var model: TagAnalysisModel?
@@ -51,6 +50,7 @@ struct TagAnalysisView: View {
         // SHIFT+arrows walk the queue, the player's gesture exactly —
         // and like the player's, they punch through a focused text field
         // (extending a selection by one character is the only cost).
+        // Advancing commits the basket; that is the contract.
         .onKeyPress(phases: [.down, .repeat]) { press in
             guard press.modifiers.contains(.shift),
                   press.key == .leftArrow || press.key == .rightArrow,
@@ -61,9 +61,6 @@ struct TagAnalysisView: View {
         }
         .task {
             guard model == nil else { return }
-            // The queue comes with the request; an empty one falls back
-            // to whatever the hosting window is listing, so a stale
-            // restored window still opens on something real.
             let queue = queueIDs.isEmpty ? browse.visibleItems.map(\.id) : queueIDs
             let made = TagAnalysisModel(
                 library: browse.library, libraryID: browse.libraryID,
@@ -75,15 +72,17 @@ struct TagAnalysisView: View {
             sweepCurrentIfNeeded(made)
         }
         .onChange(of: model?.index ?? -1) { _, _ in
-            // Each video sweeps on display, not on demand: the analysis
-            // is FOR the video being shown, and "no metadata yet, wait
-            // for the library pass" is an empty window with no
-            // explanation. Checked first, so an already-swept video
-            // queues nothing.
             if let model { sweepCurrentIfNeeded(model) }
         }
+        // Closing the window is the third way of saying "done with this
+        // one" — the basket commits rather than evaporating.
+        .onDisappear { model?.commitBasket() }
     }
 
+    /// Each video sweeps on display when the metadata sweep has not
+    /// reached it — "no metadata yet, wait for the library pass" is an
+    /// empty window with no explanation. Checked first, so an
+    /// already-swept video queues nothing.
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
         guard let id = model.currentItemID,
               (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
@@ -102,9 +101,6 @@ struct TagAnalysisView: View {
             Spacer()
             if let model {
                 queueControls(model)
-                Text(model.isLoading ? "Scanning…" : "\(model.candidates.count) candidates")
-                    .font(Theme.mono(11))
-                    .foregroundStyle(Theme.Text.quaternary)
                 Button("Rescan This Video") {
                     // Re-probe on purpose, so the marker clears first —
                     // otherwise the sweep skips a video it has already
@@ -126,9 +122,9 @@ struct TagAnalysisView: View {
         }
     }
 
-    /// The queue walk: which video is on display, where it sits in the
-    /// queue, and the arrows — mirroring the player's transport reading
-    /// of the same queue.
+    /// The queue walk: which video is on display, where it sits, the
+    /// arrows — mirroring the player's transport reading of the same
+    /// queue.
     @ViewBuilder
     private func queueControls(_ model: TagAnalysisModel) -> some View {
         HStack(spacing: 8) {
@@ -140,7 +136,7 @@ struct TagAnalysisView: View {
             .buttonStyle(.plain)
             .foregroundStyle(model.canGoPrevious ? Theme.Text.secondary : Theme.Text.disabled)
             .disabled(!model.canGoPrevious)
-            .help("Previous video in the queue (⇧←)")
+            .help("Previous video — commits the basket (⇧←)")
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.currentItem?.fileName ?? "—")
@@ -162,7 +158,7 @@ struct TagAnalysisView: View {
             .buttonStyle(.plain)
             .foregroundStyle(model.canGoNext ? Theme.Text.secondary : Theme.Text.disabled)
             .disabled(!model.canGoNext)
-            .help("Next video in the queue (⇧→)")
+            .help("Next video — commits the basket (⇧→)")
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)
@@ -175,9 +171,9 @@ struct TagAnalysisView: View {
     /// and it must not require retyping the string. If a rule already
     /// covers the candidate this OPENS that rule rather than adding a
     /// rival, which is why the tab switch happens either way.
-    private func makeRule(from candidate: TagCandidate) {
+    private func makeRule(key: String?, value: String) {
         guard let rules else { return }
-        rules.makeRule(from: candidate)
+        rules.makeRule(key: key, value: value)
         mode = .rules
     }
 }
@@ -185,562 +181,492 @@ struct TagAnalysisView: View {
 // MARK: - Candidates
 
 private struct CandidatesTab: View {
-    @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
-    let onMakeRule: (TagCandidate) -> Void
+    let onMakeRule: (String?, String) -> Void
 
     var body: some View {
         HSplitView {
-            rail
-                .frame(minWidth: 212, idealWidth: 244, maxWidth: 470)
+            buckets
+                .frame(minWidth: 480)
             VStack(spacing: 0) {
-                table
-                if !model.picked.isEmpty { bulkBar }
-                if model.selected != nil { EvidenceStrip(model: model) }
+                DetailPane(model: model, onMakeRule: onMakeRule)
+                BasketPanel(model: model)
             }
-            .frame(minWidth: 420)
-            DetailPane(model: model, onMakeRule: onMakeRule)
-                .frame(minWidth: 300, idealWidth: 340, maxWidth: 460)
+            .frame(minWidth: 320, idealWidth: 360, maxWidth: 480)
+            .background(Theme.Surface.sidebar)
         }
     }
 
-    // MARK: Left rail
-
-    private var rail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                searchField
-
-                section("Evidence sources") {
-                    filterRow(.all, count: model.candidates.count)
-                    ForEach(TagCandidateSource.allCases, id: \.self) { source in
-                        filterRow(.source(source), count: model.count(for: .source(source)))
-                    }
+    private var buckets: some View {
+        VStack(spacing: 0) {
+            searchBar
+            if model.analysis.truncated {
+                // Where the results are, not only in a trail — an
+                // incomplete list that looks complete is worse than a
+                // visibly incomplete one.
+                Text("Analysis ran out of time — these results are incomplete.")
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Status.warnText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Theme.Status.warnBadgeFill)
+            }
+            if let error = model.loadError {
+                ContentUnavailableView(
+                    "Could Not Analyse",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error))
+            } else if model.isLoading && model.analysis == .empty {
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Reading everything that might describe this video…")
+                        .font(Theme.ui(Theme.TypeScale.body))
+                        .foregroundStyle(Theme.Text.quaternary)
                 }
-
-                section("Status") {
-                    ForEach(TagAnalysisModel.StatusFilter.allCases, id: \.self) { status in
-                        statusRow(status)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        if !model.visibleSuggested.isEmpty {
+                            Section(header: bucketHeader(
+                                "Suggested", "a rule mapped these")) {
+                                ForEach(model.visibleSuggested) { candidate in
+                                    SuggestedRow(model: model, candidate: candidate)
+                                }
+                            }
+                        }
+                        if !model.visibleExisting.isEmpty {
+                            Section(header: bucketHeader(
+                                "Existing tags found", "nothing to create — just apply")) {
+                                ForEach(model.visibleExisting) { finding in
+                                    ExistingRow(model: model, finding: finding)
+                                }
+                            }
+                        }
+                        Section(header: bucketHeader(
+                            "Unmapped text", "everything else — your judgment")) {
+                            if model.visibleUnmapped.isEmpty {
+                                Text("Nothing unmapped.")
+                                    .font(Theme.ui(Theme.TypeScale.secondary))
+                                    .foregroundStyle(Theme.Text.quaternary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                            }
+                            ForEach(model.visibleUnmapped) { candidate in
+                                UnmappedRow(model: model, candidate: candidate)
+                            }
+                        }
                     }
-                }
-
-                section("This pass") {
-                    tally("\(model.acceptedThisPass)", "accepted")
-                    tally("\(model.ignoredThisPass)", "ignored")
-                    if model.lastDecision != nil {
-                        Button("Undo last decision") { model.undoLastDecision() }
-                            .buttonStyle(SecondaryButtonStyle(compact: true))
-                            .padding(.top, 4)
-                    }
+                    .padding(.bottom, 12)
                 }
             }
-            .padding(14)
         }
-        .background(Theme.Surface.sidebar)
+        .background(Theme.Surface.content)
     }
 
-    private var searchField: some View {
+    private var searchBar: some View {
         HStack(spacing: 6) {
             Text("⌕").font(Theme.ui(12)).foregroundStyle(Theme.Text.quaternary)
-            TextField("Search candidates", text: Binding(
-                get: { model.searchText }, set: { model.searchText = $0 }))
+            TextField(
+                "Filter this video's strings",
+                text: Binding(get: { model.searchText }, set: { model.searchText = $0 }))
                 .textFieldStyle(.plain)
                 .font(Theme.ui(Theme.TypeScale.body))
                 .foregroundStyle(Theme.Text.primary)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.control)
-                .fill(Theme.Surface.well)
-                .stroke(Theme.Border.standard, lineWidth: 1))
-    }
-
-    @ViewBuilder
-    private func section<Content: View>(
-        _ title: String, @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).modifier(Theme.sectionLabel())
-            content()
-        }
-    }
-
-    private func filterRow(_ filter: TagAnalysisModel.SourceFilter, count: Int) -> some View {
-        let active = model.sourceFilter == filter
-        return Button {
-            model.sourceFilter = filter
-        } label: {
-            HStack(spacing: 8) {
-                Text(filter.label)
-                    .font(Theme.ui(Theme.TypeScale.body, active ? .semibold : .regular))
-                    .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
-                Spacer(minLength: 6)
-                Text("\(count)")
-                    .font(Theme.mono(11))
-                    // Dimmed, not hidden: "this source exists but has
-                    // nothing left" is the information.
-                    .foregroundStyle(count == 0 ? Theme.Text.zeroCount : Theme.Text.quaternary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(rowBackground(active))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func statusRow(_ status: TagAnalysisModel.StatusFilter) -> some View {
-        let active = model.statusFilter == status
-        return Button {
-            // Clicking the active one clears it — the filter is optional,
-            // and there is no "all statuses" row to return to.
-            model.statusFilter = active ? nil : status
-        } label: {
-            HStack(spacing: 8) {
-                Text(status.label)
-                    .font(Theme.ui(Theme.TypeScale.body, active ? .semibold : .regular))
-                    .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
-                Spacer(minLength: 6)
-                Text("\(model.count(for: status))")
-                    .font(Theme.mono(11))
-                    .foregroundStyle(
-                        model.count(for: status) == 0
-                            ? Theme.Text.zeroCount : Theme.Text.quaternary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(rowBackground(active))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func rowBackground(_ active: Bool) -> some View {
-        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-            .fill(active ? Theme.Surface.selectedRow : .clear)
-    }
-
-    private func tally(_ number: String, _ label: String) -> some View {
-        HStack(spacing: 8) {
-            Text(number).font(Theme.mono(13, .semibold)).foregroundStyle(Theme.Text.primary)
-            Text(label).font(Theme.ui(Theme.TypeScale.secondary))
-                .foregroundStyle(Theme.Text.quaternary)
-        }
-    }
-
-    // MARK: Table
-
-    private var table: some View {
-        VStack(spacing: 0) {
-            columnHeader
-            if let error = model.loadError {
-                ContentUnavailableView(
-                    "Could Not Build the Queue",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error))
-            } else if model.visible.isEmpty {
-                emptyQueue
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(model.visible) { candidate in
-                            CandidateRow(
-                                candidate: candidate,
-                                isSelected: candidate.id == model.selectedID,
-                                isPicked: model.picked.contains(candidate.id),
-                                onSelect: { model.select(candidate) },
-                                onTogglePick: { model.togglePicked(candidate) })
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var columnHeader: some View {
-        HStack(spacing: 10) {
-            Text("").frame(width: 18)
-            Text("Value").modifier(Theme.sectionLabel())
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text("Key").modifier(Theme.sectionLabel()).frame(width: 140, alignment: .leading)
-            Text("Items").modifier(Theme.sectionLabel()).frame(width: 54, alignment: .trailing)
-            Text("Suggestion").modifier(Theme.sectionLabel()).frame(width: 128, alignment: .leading)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(Theme.Surface.toolbar)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
     }
 
-    private var emptyQueue: some View {
-        VStack(spacing: 6) {
-            Text("Nothing left in this queue")
-                .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
-                .foregroundStyle(Theme.Text.secondary)
-            Text("Every candidate from this source has been decided.")
-                .font(Theme.ui(Theme.TypeScale.body))
-                .foregroundStyle(Theme.Text.quaternary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: Bulk bar
-
-    private var bulkBar: some View {
-        HStack(spacing: 10) {
-            Text("\(model.picked.count) picked · \(model.itemsAffected) items affected")
-                .font(Theme.mono(11.5))
-                .foregroundStyle(Theme.Text.secondary)
+    private func bucketHeader(_ title: String, _ hint: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title).modifier(Theme.sectionLabel())
+            Text(hint)
+                .font(Theme.ui(10))
+                .foregroundStyle(Theme.Text.disabled)
             Spacer()
-            Button("Apply suggestions") { model.applyPickedSuggestions() }
-                .buttonStyle(PrimaryButtonStyle())
-                // A pick with no suggestion between them has nothing to
-                // apply, and the button says so by being unavailable
-                // rather than by silently doing nothing.
-                .disabled(!model.pickedCandidates.contains { model.suggestedCategory(for: $0) != nil })
-            Button("Ignore") { model.ignorePicked() }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-            Button("Make a rule") {
-                // From the first pick: a rule is authored from ONE string,
-                // and the matcher it starts with generalises from there.
-                if let first = model.pickedCandidates.first { onMakeRule(first) }
-            }
-            .buttonStyle(SecondaryButtonStyle(compact: true))
-            Button("Clear") { model.clearPicks() }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .background(Theme.Surface.toolbar)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        .padding(.vertical, 7)
+        .background(Theme.Surface.content)
+    }
+}
+
+// MARK: - Rows
+
+private struct SuggestedRow: View {
+    let model: TagAnalysisModel
+    let candidate: AnalysisCandidate
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RowSelectTarget(model: model, candidate: candidate) {
+                HStack(spacing: 6) {
+                    Text(candidate.value)
+                        .font(Theme.ui(Theme.TypeScale.row))
+                        .foregroundStyle(Theme.Text.primary)
+                        .lineLimit(1)
+                    if let key = candidate.key { KeyChip(key: key) }
+                    OriginChips(origins: candidate.origins)
+                }
+            }
+            Spacer(minLength: 6)
+            if let name = candidate.category { ThemeBadge(text: name.uppercased()) }
+            stageButton
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(candidate.id == model.selectedCandidateID ? Theme.Surface.selectedRow : .clear)
+    }
+
+    @ViewBuilder
+    private var stageButton: some View {
+        let category = candidate.category.flatMap { model.category(named: $0) }
+        if category == nil {
+            // The rule names a category the library does not have — say
+            // so instead of a button that silently cannot work.
+            Text("no such category")
+                .font(Theme.ui(10))
+                .foregroundStyle(Theme.Status.warnText)
+        } else if model.isStaged(value: candidate.value, categoryID: category?.id) {
+            Text("in basket")
+                .font(Theme.ui(10.5))
+                .foregroundStyle(Theme.Status.greenBright)
+        } else {
+            Button("Accept") {
+                if let category { model.stage(value: candidate.value, categoryID: category.id) }
+            }
+            .buttonStyle(SecondaryButtonStyle(compact: true))
         }
     }
 }
 
-// MARK: - Row
-
-private struct CandidateRow: View {
-    let candidate: TagCandidate
-    let isSelected: Bool
-    let isPicked: Bool
-    let onSelect: () -> Void
-    let onTogglePick: () -> Void
+private struct ExistingRow: View {
+    let model: TagAnalysisModel
+    let finding: ExistingTagFinding
 
     var body: some View {
-        HStack(spacing: 10) {
-            Button(action: onTogglePick) {
-                Text(isPicked ? "✓" : "")
-                    .font(Theme.ui(11, .bold))
-                    .foregroundStyle(Theme.Accent.amber)
-                    .frame(width: 18, height: 18)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                            .fill(isPicked ? Theme.Surface.iconTileSelected : Theme.Surface.well)
-                            .stroke(Theme.Border.standard, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
-            HStack(spacing: 6) {
-                sourceChip
-                Text(candidate.value)
-                    .font(Theme.ui(Theme.TypeScale.row))
-                    .foregroundStyle(Theme.Text.primary)
-                    .lineLimit(1)
-                if candidate.suppressedByRule != nil {
-                    // Struck, not hidden. A mis-authored ignore rule has
-                    // to be diagnosable rather than invisible — the row
-                    // stays and says which rule did it.
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(finding.tag.name)
+                        .font(Theme.ui(Theme.TypeScale.row, .medium))
+                        .foregroundStyle(
+                            finding.alreadyApplied ? Theme.Text.quaternary : Theme.Text.primary)
+                        .strikethrough(finding.alreadyApplied, color: Theme.Text.quaternary)
+                    if finding.matchedText.caseInsensitiveCompare(finding.tag.name) != .orderedSame {
+                        Text("(\(finding.matchedText))")
+                            .font(Theme.ui(11))
+                            .foregroundStyle(Theme.Text.quaternary)
+                    }
                     ThemeBadge(
-                        text: "BY RULE", fill: Theme.Status.warnBadgeFill,
-                        foreground: Theme.Status.orange)
+                        text: finding.categoryName.uppercased(),
+                        fill: Theme.Surface.iconTile, foreground: Theme.Status.blueBright)
                 }
+                Text("found in “\(finding.foundIn)”")
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(candidate.key ?? "—")
-                .font(Theme.mono(11))
-                .foregroundStyle(Theme.Text.quaternary)
-                .lineLimit(1)
-                .frame(width: 140, alignment: .leading)
-
-            Text("\(candidate.itemCount)")
-                .font(Theme.mono(11.5))
-                .foregroundStyle(Theme.Text.secondary)
-                .frame(width: 54, alignment: .trailing)
-
-            HStack(spacing: 4) {
-                if let category = candidate.suggestedCategory {
-                    ThemeBadge(text: category.uppercased())
-                } else {
-                    Text("—").font(Theme.ui(11)).foregroundStyle(Theme.Text.zeroCount)
-                }
-                if candidate.coveredByRuleID != nil {
-                    Text("✓").font(Theme.ui(11)).foregroundStyle(Theme.Status.green)
-                        .help("Already covered by a rule — showing it")
-                }
+            Spacer(minLength: 6)
+            if finding.alreadyApplied {
+                Text("already applied")
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(Theme.Text.quaternary)
+            } else if model.isStaged(tagID: finding.tag.id) {
+                Text("in basket")
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(Theme.Status.greenBright)
+            } else {
+                Button("Apply") { model.stage(finding) }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
             }
-            .frame(width: 128, alignment: .leading)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, Theme.Spacing.rowVertical - 2)
-        .background(isSelected ? Theme.Surface.selectedRow : .clear)
-        .overlay(alignment: .leading) {
-            if isSelected {
-                Rectangle().fill(Theme.Border.selectionInset)
-                    .frame(width: Theme.Border.selectionInsetWidth)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .padding(.vertical, 6)
     }
+}
 
-    private var sourceChip: some View {
-        Text(candidate.source.displayName)
-            .font(Theme.ui(9, .bold))
-            .foregroundStyle(chipColor)
-            .padding(.vertical, 1.5)
-            .padding(.horizontal, 5)
+private struct UnmappedRow: View {
+    let model: TagAnalysisModel
+    let candidate: AnalysisCandidate
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RowSelectTarget(model: model, candidate: candidate) {
+                HStack(spacing: 6) {
+                    Text(candidate.value)
+                        .font(Theme.ui(Theme.TypeScale.row))
+                        .foregroundStyle(
+                            candidate.suppressedByRule == nil
+                                ? Theme.Text.secondary : Theme.Text.disabled)
+                        .strikethrough(candidate.suppressedByRule != nil, color: Theme.Text.disabled)
+                        .lineLimit(1)
+                    if let key = candidate.key { KeyChip(key: key) }
+                    OriginChips(origins: candidate.origins)
+                    if let rule = candidate.suppressedByRule {
+                        Text("ignored — \(rule)")
+                            .font(Theme.ui(9.5))
+                            .foregroundStyle(Theme.Status.orange)
+                    }
+                }
+            }
+            Spacer(minLength: 6)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .background(candidate.id == model.selectedCandidateID ? Theme.Surface.selectedRow : .clear)
+    }
+}
+
+/// The clickable body of a candidate row — selection fills the detail
+/// pane, where the value gets edited and judged.
+private struct RowSelectTarget<Content: View>: View {
+    let model: TagAnalysisModel
+    let candidate: AnalysisCandidate
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Button {
+            model.selectedCandidateID = candidate.id
+        } label: {
+            content.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct KeyChip: View {
+    let key: String
+    var body: some View {
+        Text(key)
+            .font(Theme.mono(9.5))
+            .foregroundStyle(Theme.Status.blueBright)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                    .fill(chipColor.opacity(0.14)))
+                    .fill(Theme.Status.blueBright.opacity(0.12)))
     }
+}
 
-    private var chipColor: Color {
-        switch candidate.source {
-        case .metadata: Theme.Status.blueBright
-        case .onScreen: Theme.Status.mauve
-        case .path: Theme.Segment.song
+private struct OriginChips: View {
+    let origins: [AnalysisOrigin]
+
+    private static let names: [String: String] = [
+        "embeddedMetadata": "metadata", "path": "path", "sidecarText": "txt",
+        "sidecarJson": "json", "onScreen": "on-screen",
+    ]
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(Set(origins.map(\.readerID))).sorted(), id: \.self) { readerID in
+                Text(Self.names[readerID] ?? readerID)
+                    .font(Theme.ui(8.5, .bold))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .padding(.horizontal, 3.5)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(Theme.Surface.iconTile))
+            }
         }
     }
 }
 
 // MARK: - Detail pane
 
+/// Judgment happens here: the selected string, its value editable —
+/// trim "tapper: " by hand, fix casing — a category, and Add to Basket.
 private struct DetailPane: View {
     @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
-    let onMakeRule: (TagCandidate) -> Void
-    @State private var targetCategoryID: UUID?
+    let onMakeRule: (String?, String) -> Void
+
+    @State private var editedValue = ""
+    @State private var categoryID: UUID?
 
     var body: some View {
         ScrollView {
-            if let candidate = model.selected {
-                VStack(alignment: .leading, spacing: 16) {
-                    header(candidate)
-                    decide(candidate)
-                    appearsIn(candidate)
+            if let candidate = model.selectedCandidate {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Candidate").modifier(Theme.sectionLabel())
+                    TextField("", text: $editedValue)
+                        .textFieldStyle(.plain)
+                        .font(Theme.ui(Theme.TypeScale.dialogTitle))
+                        .foregroundStyle(Theme.Text.primary)
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                                .fill(Theme.Surface.well)
+                                .stroke(Theme.Border.standard, lineWidth: 1))
+
+                    if let key = candidate.key {
+                        Text("Found under the key “\(key)”")
+                            .font(Theme.ui(Theme.TypeScale.secondary))
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
+
+                    Picker("", selection: $categoryID) {
+                        Text("Choose a category…").tag(UUID?.none)
+                        ForEach(model.categories, id: \.id) { category in
+                            Text(category.name).tag(UUID?.some(category.id))
+                        }
+                    }
+                    .labelsHidden()
+
+                    Button("Add to Basket") {
+                        guard let categoryID else { return }
+                        model.stage(value: editedValue, categoryID: categoryID)
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(
+                        categoryID == nil
+                            || editedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    Button("Make a rule from this…") {
+                        onMakeRule(candidate.key, candidate.value)
+                    }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
+
+                    // Spec 14 §8, per video: for on-screen text, the
+                    // frame AT THE MOMENT the string was read — the only
+                    // reason a still is worth showing.
+                    let times = candidate.origins.compactMap(\.timeSeconds)
+                    if !times.isEmpty, let item = model.currentItem,
+                       let fileURL = browse.fileURL(for: item) {
+                        Text("Read on screen at").modifier(Theme.sectionLabel())
+                        ForEach(times.sorted().prefix(3), id: \.self) { seconds in
+                            OcrStill(itemID: item.id, fileURL: fileURL, seconds: seconds)
+                        }
+                    }
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // Rebuild the target when the candidate changes, so a
-                // category chosen for one string never silently carries
-                // over to the next.
                 .id(candidate.id)
-                .onAppear { targetCategoryID = model.suggestedCategory(for: candidate)?.id }
+                .onAppear {
+                    editedValue = candidate.value
+                    categoryID = candidate.category
+                        .flatMap { model.category(named: $0)?.id }
+                }
             } else {
-                Text("Select a candidate to see where it appears and what to do with it.")
+                Text("Select a string to edit it and add it as a tag.")
                     .font(Theme.ui(Theme.TypeScale.body))
                     .foregroundStyle(Theme.Text.quaternary)
                     .multilineTextAlignment(.center)
-                    .padding(28)
-            }
-        }
-        .background(Theme.Surface.sidebar)
-    }
-
-    private func header(_ candidate: TagCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Candidate").modifier(Theme.sectionLabel())
-            Text(candidate.value)
-                .font(Theme.ui(Theme.TypeScale.windowHeading, .semibold))
-                .foregroundStyle(Theme.Text.primary)
-                .textSelection(.enabled)
-            Text(summary(candidate))
-                .font(Theme.ui(Theme.TypeScale.secondary))
-                .foregroundStyle(Theme.Text.tertiary)
-            if let rule = candidate.suppressedByRule {
-                Text("A rule would drop this — \(rule). Showing it anyway.")
-                    .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Status.warnText)
-            }
-        }
-    }
-
-    private func summary(_ candidate: TagCandidate) -> String {
-        let where_ = candidate.key.map { "\(candidate.source.displayName) · \($0)" }
-            ?? candidate.source.displayName
-        return "\(where_) · \(candidate.itemCount) item\(candidate.itemCount == 1 ? "" : "s")"
-    }
-
-    private func decide(_ candidate: TagCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Decide").modifier(Theme.sectionLabel())
-
-            Picker("", selection: $targetCategoryID) {
-                Text("Choose a category…").tag(UUID?.none)
-                ForEach(model.categories, id: \.id) { category in
-                    Text(category.name).tag(UUID?.some(category.id))
-                }
-            }
-            .labelsHidden()
-            .font(Theme.ui(Theme.TypeScale.body))
-
-            Button("Make a tag in this category") {
-                guard let targetCategoryID else { return }
-                model.apply(candidate, .assignCategory(categoryID: targetCategoryID))
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(targetCategoryID == nil)
-
-            Button("Ignore this candidate") {
-                model.apply(candidate, .ignore)
-            }
-            .buttonStyle(SecondaryButtonStyle(compact: true))
-
-            Button("Make a rule from this…") { onMakeRule(candidate) }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-            if candidate.coveredByRuleID != nil {
-                Text("Already covered by a rule — showing it")
-                    .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.quaternary)
-            }
-
-            Text("Applying writes tags to \(candidate.itemCount) item\(candidate.itemCount == 1 ? "" : "s"), revertible from the tag history.")
-                .font(Theme.ui(Theme.TypeScale.secondary))
-                .foregroundStyle(Theme.Text.quaternary)
-        }
-    }
-
-    private func appearsIn(_ candidate: TagCandidate) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Appears in").modifier(Theme.sectionLabel())
-            if model.evidence.isEmpty {
-                Text("No reachable items — the source may be offline.")
-                    .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.quaternary)
-            } else {
-                ForEach(model.evidence.prefix(12)) { one in
-                    PathText(path: one.item.relativePath)
-                }
-                if candidate.itemCount > model.evidence.count {
-                    Text("and \(candidate.itemCount - model.evidence.count) more")
-                        .font(Theme.ui(Theme.TypeScale.secondary))
-                        .foregroundStyle(Theme.Text.quaternary)
-                }
+                    .padding(24)
             }
         }
     }
 }
 
-// MARK: - Evidence strip
+// MARK: - Basket
 
-/// One still per matching item — for on-screen text, the frame **at the
-/// moment the string was read** (spec 14 §8). That is the only reason a
-/// still is worth showing: it answers "is this really a band name?"
-/// without opening ten items.
-private struct EvidenceStrip: View {
-    @Environment(BrowseModel.self) private var browse
+/// The tags staged for THIS video. Committed by advance, Save, or the
+/// window closing; Discard drops them. The count is in the header line
+/// so an advance never silently commits more than you think.
+private struct BasketPanel: View {
     let model: TagAnalysisModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Matching frames").modifier(Theme.sectionLabel())
+                Text("Basket").modifier(Theme.sectionLabel())
+                Text("\(model.basket.count)")
+                    .font(Theme.mono(11, .semibold))
+                    .foregroundStyle(
+                        model.basket.isEmpty ? Theme.Text.zeroCount : Theme.Accent.amber)
                 Spacer()
-                Text(label)
-                    .font(Theme.mono(10))
+                Text("\(model.tagsCommittedThisPass) saved this pass")
+                    .font(Theme.mono(9.5))
                     .foregroundStyle(Theme.Text.quaternary)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(model.evidence.prefix(12)) { one in
-                        EvidenceThumb(
-                            evidence: one,
-                            fileURL: browse.fileURL(for: one.item),
-                            libraryID: model.libraryID)
+
+            if model.basket.isEmpty {
+                Text("Accepted tags collect here, and are written when you advance.")
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Text.quaternary)
+            } else {
+                ForEach(model.basket) { pending in
+                    HStack(spacing: 6) {
+                        TextField(
+                            "",
+                            text: Binding(
+                                get: { pending.value },
+                                set: { model.updateStaged(pending.id, value: $0) }))
+                            .textFieldStyle(.plain)
+                            .font(Theme.ui(Theme.TypeScale.body))
+                            .foregroundStyle(Theme.Text.primary)
+                        if let category = model.categories.first(where: { $0.id == pending.categoryID }) {
+                            Text(category.name)
+                                .font(Theme.ui(10))
+                                .foregroundStyle(Theme.Text.tertiary)
+                        }
+                        Button("×") { model.unstage(pending.id) }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.Text.tertiary)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(Theme.Surface.raised))
+                }
+                HStack(spacing: 8) {
+                    Button("Save Now") { model.commitBasket() }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                    Button("Discard") { model.discardBasket() }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                    Spacer()
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(height: 132)
-        .background(Theme.Surface.toolbar)
+        .padding(14)
+        .frame(maxHeight: 300)
         .overlay(alignment: .top) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
     }
-
-    private var label: String {
-        let shown = min(model.evidence.count, 12)
-        guard let selected = model.selected else { return "" }
-        return shown < selected.itemCount
-            ? "\(shown) of \(selected.itemCount)" : "\(shown)"
-    }
 }
 
-private struct EvidenceThumb: View {
-    let evidence: CandidateEvidence
-    let fileURL: URL?
-    let libraryID: UUID
+
+/// One frame, seeked to when the text was read — EvidenceFrameProvider
+/// seeks tight (±0.5s), because a frame the text is not on answers
+/// nothing.
+private struct OcrStill: View {
+    let itemID: UUID
+    let fileURL: URL
+    let seconds: Double
     @State private var image: NSImage?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        ZStack(alignment: .bottomTrailing) {
             Group {
                 if let image {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                 } else {
-                    Rectangle().fill(Theme.Surface.stage)
+                    Rectangle().fill(Theme.Surface.stage).frame(height: 90)
                 }
             }
-            .frame(width: 116, height: 66)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
-            .overlay(alignment: .bottomTrailing) {
-                if let seconds = evidence.timeSeconds {
-                    Text(timecode(seconds))
-                        .font(Theme.mono(9))
-                        .foregroundStyle(Theme.Text.primary)
-                        .padding(.horizontal, 3)
-                        .background(Color.black.opacity(0.65))
-                        .padding(3)
-                }
-            }
-
-            Text(evidence.item.relativePath)
+            Text(TransportBarTime.format(seconds))
                 .font(Theme.mono(9))
-                .foregroundStyle(Theme.Text.quaternary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(width: 116, alignment: .leading)
+                .foregroundStyle(Theme.Text.primary)
+                .padding(.horizontal, 3)
+                .background(Color.black.opacity(0.65))
+                .padding(4)
         }
-        .task(id: evidence.id) { await load() }
-    }
-
-    private func load() async {
-        guard let fileURL else { return }
-        let data: Data?
-        if let seconds = evidence.timeSeconds {
-            data = await EvidenceFrameProvider.shared.frame(
-                itemID: evidence.item.id, fileURL: fileURL, atSeconds: seconds)
-        } else {
-            // No moment to seek to — a metadata or path candidate is a
-            // property of the file, so the grid thumbnail is the honest
-            // still rather than a frame at zero.
-            data = await ThumbnailProvider.shared.thumbnailData(
-                itemID: evidence.item.id, libraryID: libraryID, fileURL: fileURL,
-                durationSeconds: evidence.item.durationSeconds)
+        .task(id: "\(itemID)-\(seconds)") {
+            let data = await EvidenceFrameProvider.shared.frame(
+                itemID: itemID, fileURL: fileURL, atSeconds: seconds)
+            if let data { image = NSImage(data: data) }
         }
-        if let data { image = NSImage(data: data) }
-    }
-
-    private func timecode(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

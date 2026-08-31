@@ -3,88 +3,42 @@ import GRDB
 import Observation
 import SightsAndSoundsKit
 
-/// The Candidates tab's state: the queue, what is filtered, what is
-/// picked, and what the last decision was so it can be taken back.
+/// The per-video analysis window's state: the queue being walked, the
+/// displayed video's analysis, and the basket of tags staged for it.
 ///
-/// The queue is **derived** in the Kit — recomputed from the underlying
-/// data on every load rather than maintained — so this model reloads
-/// after every decision instead of mutating rows in place. That is what
-/// keeps the screen honest when one decision changes another candidate's
-/// count.
+/// **Nothing writes until the basket commits** — on advance (either
+/// direction), window close, or an explicit Save. That is the reviewed
+/// decision: finish judging a video, then its tags land together.
 @Observable
 @MainActor
 final class TagAnalysisModel {
-
-    /// The status filter's options. `all` is not a source: it is the
-    /// absence of one, which is why it is not a `TagCandidateSource` case.
-    enum SourceFilter: Hashable {
-        case all
-        case source(TagCandidateSource)
-
-        var label: String {
-            switch self {
-            case .all: "All sources"
-            case .source(let source): source.displayName
-            }
-        }
-    }
-
-    enum StatusFilter: String, CaseIterable, Hashable {
-        case undecided, suggested, covered
-
-        var label: String {
-            switch self {
-            case .undecided: "Needs a decision"
-            case .suggested: "Has a suggestion"
-            case .covered: "Covered by a rule"
-            }
-        }
-    }
 
     let library: LibraryDatabase
     let libraryID: UUID
 
     /// The queue this window walks — the same listing the player takes.
     /// Analysis always looks at ONE video, `queue[index]`: metadata from
-    /// one video is not evidence about another, so there is no
-    /// whole-library mode and no multi-item mode. The queue exists to be
-    /// walked, exactly as the player walks it.
+    /// one video is not evidence about another.
     private(set) var queue: [UUID]
     private(set) var index: Int
-    /// The video on display, loaded for the header.
     private(set) var currentItem: MediaItem?
 
-    private(set) var candidates: [TagCandidate] = []
-    private(set) var categories: [TagCategory] = []
-    private(set) var tagsByCategory: [UUID: [Tag]] = [:]
-
-    /// Every tag, for the alias picker — the string is another name for
-    /// one of these.
-    var allTags: [Tag] { categories.flatMap { tagsByCategory[$0.id] ?? [] } }
+    private(set) var analysis: ItemAnalysis = .empty
     private(set) var rules: [RuleEngine.Rule] = []
+    private(set) var categories: [TagCategory] = []
     private(set) var isLoading = false
     private(set) var loadError: String?
 
-    var sourceFilter: SourceFilter = .all
-    var statusFilter: StatusFilter?
+    /// Tags staged for the DISPLAYED video. Values stay editable in here
+    /// right up to commit.
+    private(set) var basket: [PendingTag] = []
+
+    /// What this pass over the queue has written so far.
+    private(set) var tagsCommittedThisPass = 0
+    private(set) var videosVisitedThisPass = 1
+
     var searchText = ""
-
-    /// The row shown in the detail pane. Separate from `picked`: looking
-    /// at a candidate is not the same as choosing it for a bulk action,
-    /// and conflating them makes the bulk bar appear on a mere click.
-    var selectedID: TagCandidate.ID?
-    var picked: Set<TagCandidate.ID> = []
-
-    private(set) var evidence: [CandidateEvidence] = []
-    private(set) var itemsAffected = 0
-
-    /// This pass's tally, and the one decision that can be taken back.
-    /// One deep, deliberately: an undo stack over a derived queue would
-    /// promise more than it can keep once a later decision has changed
-    /// what the earlier one applied to.
-    private(set) var acceptedThisPass = 0
-    private(set) var ignoredThisPass = 0
-    private(set) var lastDecision: (candidate: TagCandidate, wasAccepted: Bool)?
+    var selectedCandidateID: AnalysisCandidate.ID?
 
     init(library: LibraryDatabase, libraryID: UUID, queue: [UUID], startAt: Int = 0) {
         self.library = library
@@ -97,9 +51,48 @@ final class TagAnalysisModel {
         queue.indices.contains(index) ? queue[index] : nil
     }
 
-    /// What every Kit call is scoped to: the displayed video, alone.
-    private var scope: Set<UUID>? {
-        currentItemID.map { [$0] }
+    // MARK: - Derived
+
+    var selectedCandidate: AnalysisCandidate? {
+        (analysis.suggested + analysis.unmapped).first { $0.id == selectedCandidateID }
+    }
+
+    var visibleSuggested: [AnalysisCandidate] { filtered(analysis.suggested) }
+    var visibleUnmapped: [AnalysisCandidate] { filtered(analysis.unmapped) }
+
+    var visibleExisting: [ExistingTagFinding] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return analysis.existing }
+        return analysis.existing.filter {
+            $0.tag.name.localizedCaseInsensitiveContains(query)
+                || $0.foundIn.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private func filtered(_ candidates: [AnalysisCandidate]) -> [AnalysisCandidate] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return candidates }
+        return candidates.filter {
+            $0.value.localizedCaseInsensitiveContains(query)
+                || ($0.key?.localizedCaseInsensitiveContains(query) ?? false)
+        }
+    }
+
+    /// Already staged, so a row can say "in the basket" instead of
+    /// offering itself twice.
+    func isStaged(value: String, categoryID: UUID?) -> Bool {
+        basket.contains {
+            $0.value.caseInsensitiveCompare(value) == .orderedSame
+                && (categoryID == nil || $0.categoryID == categoryID)
+        }
+    }
+
+    func isStaged(tagID: UUID) -> Bool {
+        basket.contains { $0.existingTagID == tagID }
+    }
+
+    func category(named name: String) -> TagCategory? {
+        categories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
     // MARK: - Walking the queue
@@ -110,115 +103,51 @@ final class TagAnalysisModel {
     func goNext() { step(1) }
     func goPrevious() { step(-1) }
 
-    /// Clamped at the ends, like the player — SHIFT+arrows walk the same
-    /// queue in both windows and must not disagree about what the last
-    /// item does.
+    /// Clamped at the ends, like the player. **Advancing commits the
+    /// basket first** — that is the contract: finish a video, move on,
+    /// its tags are saved — then the working state clears, because all
+    /// of it points at strings the next video may not contain.
     private func step(_ delta: Int) {
         let next = index + delta
         guard queue.indices.contains(next) else { return }
+        commitBasket()
         index = next
-        // The analysis is per video, so the working state goes with the
-        // video: a selection, a set of picks, or an undoable decision
-        // from the previous one would silently point at strings the new
-        // video may not even contain. The pass tally stays — it counts
-        // the pass over the queue, not one video.
-        selectedID = nil
-        picked = []
-        evidence = []
-        itemsAffected = 0
-        lastDecision = nil
+        videosVisitedThisPass += 1
+        selectedCandidateID = nil
+        searchText = ""
+        analysis = .empty
         reload()
-    }
-
-    // MARK: - Derived
-
-    var selected: TagCandidate? {
-        candidates.first { $0.id == selectedID }
-    }
-
-    var pickedCandidates: [TagCandidate] {
-        candidates.filter { picked.contains($0.id) }
-    }
-
-    /// The rows the table draws. Filtering happens here rather than in SQL
-    /// because the queue is already in memory and bounded, and because
-    /// the counts beside each filter have to be computed off the same
-    /// list they filter — two sources of truth is how a facet count
-    /// stops matching its own list.
-    var visible: [TagCandidate] {
-        candidates.filter { matches($0) }
-    }
-
-    func count(for filter: SourceFilter) -> Int {
-        candidates.count { candidate in
-            guard case .source(let source) = filter else { return true }
-            return candidate.source == source
-        }
-    }
-
-    func count(for filter: StatusFilter) -> Int {
-        candidates.count { matches(status: filter, $0) }
-    }
-
-    private func matches(_ candidate: TagCandidate) -> Bool {
-        if case .source(let source) = sourceFilter, candidate.source != source { return false }
-        if let statusFilter, !matches(status: statusFilter, candidate) { return false }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return true }
-        return candidate.value.localizedCaseInsensitiveContains(query)
-            || (candidate.key?.localizedCaseInsensitiveContains(query) ?? false)
-    }
-
-    private func matches(status: StatusFilter, _ candidate: TagCandidate) -> Bool {
-        switch status {
-        case .undecided: candidate.suggestedCategory == nil && candidate.coveredByRuleID == nil
-        case .suggested: candidate.suggestedCategory != nil
-        case .covered: candidate.coveredByRuleID != nil
-        }
-    }
-
-    /// The category a decision would default to — the rule's suggestion
-    /// when there is one, so accepting is one click and redirecting is a
-    /// deliberate act.
-    func suggestedCategory(for candidate: TagCandidate) -> TagCategory? {
-        guard let name = candidate.suggestedCategory else { return nil }
-        return categories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
     // MARK: - Loading
 
-    /// The sweep runs on the job runner, so the model only tracks that
-    /// one is in flight — progress belongs to the Background Tasks
-    /// window, which already shows every job the same way.
-    func beginSweep() { isLoading = true }
-
-    func finishSweep() { reload() }
-
     func reload() {
+        guard let itemID = currentItemID else {
+            analysis = .empty
+            return
+        }
         isLoading = true
         let library = library
         Task {
             do {
                 let rules = try library.analysisRules()
-                let vocabulary = try library.vocabulary()
-                let candidates = try library.tagCandidates(rules: rules, within: scope)
-                self.currentItem = try self.currentItemID.flatMap { id in
-                    try library.writer.read { try MediaItem.fetchOne($0, key: id) }
-                }
+                let categories = try library.vocabulary().map(\.category)
+                // The pipeline reads disk (sidecars) and walks the parser
+                // — off the main actor, so a slow folder never freezes
+                // the arrows.
+                let analysis = try await Task.detached(priority: .userInitiated) {
+                    try library.analyzeItem(itemID, rules: rules)
+                }.value
+                // The queue may have advanced while this ran; results for
+                // a video no longer displayed are dropped, not shown.
+                guard itemID == self.currentItemID else { return }
                 self.rules = rules
-                self.categories = vocabulary.map(\.category)
-                self.tagsByCategory = Dictionary(
-                    uniqueKeysWithValues: vocabulary.map { ($0.category.id, $0.tags) })
-                self.candidates = candidates
-                self.loadError = nil
-                // A selection that no longer exists is dropped rather than
-                // left pointing at nothing — the detail pane reads off it.
-                if let selectedID, !candidates.contains(where: { $0.id == selectedID }) {
-                    self.selectedID = nil
+                self.categories = categories
+                self.analysis = analysis
+                self.currentItem = try await library.writer.read {
+                    try MediaItem.fetchOne($0, key: itemID)
                 }
-                self.picked = self.picked.intersection(Set(candidates.map(\.id)))
-                self.refreshEvidence()
-                self.refreshAffected()
+                self.loadError = nil
             } catch {
                 self.loadError = "\(error)"
             }
@@ -226,102 +155,58 @@ final class TagAnalysisModel {
         }
     }
 
-    func refreshEvidence() {
-        guard let selected else {
-            evidence = []
-            return
-        }
-        let library = library
-        Task {
-            evidence = (try? library.candidateEvidence(for: selected, within: scope)) ?? []
-        }
+    /// The sweep runs on the job runner; the model only tracks that one
+    /// is in flight.
+    func beginSweep() { isLoading = true }
+    func finishSweep() { reload() }
+
+    // MARK: - The basket
+
+    /// Stage a candidate — value already edited by the caller if the
+    /// operator trimmed it by hand.
+    func stage(value: String, categoryID: UUID, existingTagID: UUID? = nil) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard !isStaged(value: trimmed, categoryID: categoryID) else { return }
+        basket.append(
+            PendingTag(value: trimmed, categoryID: categoryID, existingTagID: existingTagID))
     }
 
-    private func refreshAffected() {
-        let library = library, picked = pickedCandidates
-        guard !picked.isEmpty else {
-            itemsAffected = 0
-            return
-        }
-        Task {
-            itemsAffected = (try? library.itemsAffected(by: picked, within: scope)) ?? 0
-        }
+    func stage(_ finding: ExistingTagFinding) {
+        guard !isStaged(tagID: finding.tag.id) else { return }
+        basket.append(PendingTag(
+            value: finding.tag.name, categoryID: finding.tag.tagCategoryID,
+            existingTagID: finding.tag.id))
     }
 
-    func select(_ candidate: TagCandidate) {
-        selectedID = candidate.id
-        refreshEvidence()
+    func unstage(_ id: PendingTag.ID) {
+        basket.removeAll { $0.id == id }
     }
 
-    func togglePicked(_ candidate: TagCandidate) {
-        if picked.contains(candidate.id) {
-            picked.remove(candidate.id)
-        } else {
-            picked.insert(candidate.id)
-        }
-        refreshAffected()
+    func updateStaged(_ id: PendingTag.ID, value: String) {
+        guard let at = basket.firstIndex(where: { $0.id == id }) else { return }
+        basket[at].value = value
+        // An edited value is no longer the existing tag it came from —
+        // committing it must create/match by NAME, not silently apply a
+        // tag whose name is now different from what the row shows.
+        basket[at].existingTagID = nil
     }
 
-    func clearPicks() {
-        picked.removeAll()
-        itemsAffected = 0
+    func discardBasket() {
+        basket = []
     }
 
-    // MARK: - Deciding
-
-    func apply(_ candidate: TagCandidate, _ application: CandidateApplication) {
+    /// Write the basket for the displayed video. Called by advance, by
+    /// Save, and by the window closing — the three ends of "I am done
+    /// with this one".
+    func commitBasket() {
+        guard let itemID = currentItemID, !basket.isEmpty else { return }
         do {
-            _ = try library.apply(candidate, application, within: scope)
-            lastDecision = (candidate, application != .ignore)
-            if application == .ignore { ignoredThisPass += 1 } else { acceptedThisPass += 1 }
+            tagsCommittedThisPass += try library.commitPendingTags(basket, to: itemID)
+            basket = []
             reload()
         } catch {
             loadError = "\(error)"
         }
-    }
-
-    /// Apply each picked candidate's own suggestion. A candidate without
-    /// one is **skipped, not guessed** — spec 14 §3 leaves the ambiguous
-    /// ones for a human, and inventing a category here would be exactly
-    /// the guess the suggestion column exists to avoid.
-    func applyPickedSuggestions() {
-        var applied = 0
-        for candidate in pickedCandidates {
-            guard let category = suggestedCategory(for: candidate) else { continue }
-            do {
-                _ = try library.apply(
-                    candidate, .assignCategory(categoryID: category.id), within: scope)
-                applied += 1
-            } catch {
-                loadError = "\(error)"
-            }
-        }
-        acceptedThisPass += applied
-        lastDecision = nil  // a bulk run is not one decision to take back
-        clearPicks()
-        reload()
-    }
-
-    func ignorePicked() {
-        let picked = pickedCandidates
-        for candidate in picked {
-            try? library.decide(candidate, as: .ignored)
-        }
-        ignoredThisPass += picked.count
-        lastDecision = nil
-        clearPicks()
-        reload()
-    }
-
-    /// Take back the last single decision. Only the decision row is
-    /// undone; a category assignment that reached items is reverted
-    /// through the ordinary tag history, not from here — spec 14 §9 is
-    /// explicit that there is no third audit trail.
-    func undoLastDecision() {
-        guard let last = lastDecision else { return }
-        try? library.clearDecision(for: last.candidate)
-        if last.wasAccepted { acceptedThisPass -= 1 } else { ignoredThisPass -= 1 }
-        lastDecision = nil
-        reload()
     }
 }

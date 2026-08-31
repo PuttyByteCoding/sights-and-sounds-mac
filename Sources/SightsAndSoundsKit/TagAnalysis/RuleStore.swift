@@ -108,8 +108,12 @@ extension LibraryDatabase {
     /// The rule a "make a rule from this" should OPEN rather than rival —
     /// spec 14 §4. Nil when nothing covers the candidate yet.
     public func ruleCovering(_ candidate: TagCandidate) throws -> RuleEngine.Rule? {
+        try ruleCovering(key: candidate.key, value: candidate.value)
+    }
+
+    public func ruleCovering(key: String?, value: String) throws -> RuleEngine.Rule? {
         try analysisRules().first {
-            RuleEngine.matches($0.matcher, key: candidate.key, value: candidate.value)
+            RuleEngine.matches($0.matcher, key: key, value: value)
         }
     }
 
@@ -120,8 +124,14 @@ extension LibraryDatabase {
     /// this metadata key. An unkeyed one — a path segment or an on-screen
     /// line — has no key to match, so it falls back to the value itself.
     public static func matcher(forNewRuleFrom candidate: TagCandidate) -> RuleMatcher {
-        if let key = candidate.key, !key.isEmpty { return .keyEquals(key: key) }
-        return .valueStartsWith(prefix: candidate.value)
+        matcher(forKey: candidate.key, value: candidate.value)
+    }
+
+    /// The same choice, from a bare (key, value) — the per-video analysis
+    /// hands strings over without a TagCandidate around them.
+    public static func matcher(forKey key: String?, value: String) -> RuleMatcher {
+        if let key, !key.isEmpty { return .keyEquals(key: key) }
+        return .valueStartsWith(prefix: value)
     }
 }
 
