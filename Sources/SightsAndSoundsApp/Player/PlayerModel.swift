@@ -3,6 +3,16 @@ import Foundation
 import SwiftUI
 import SightsAndSoundsKit
 
+/// The app-wide mute for this RUN of the app. Seeded from the
+/// start-muted setting the first time a player exists, then owned by
+/// the operator's own mute toggle until the app closes — the setting
+/// is a default, not a leash.
+@MainActor
+final class SessionAudio {
+    static let shared = SessionAudio()
+    var isMuted: Bool = AppSettingsStore.shared.current.startVideosMuted
+}
+
 /// One player window's state. Owns playback and nothing else — tagging,
 /// OCR and clip authoring stay separate features (the 4,382-line lesson).
 @Observable @MainActor
@@ -234,9 +244,14 @@ final class PlayerModel {
         durationSeconds = loaded.durationSeconds ?? 0
 
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
-        // Each item is a fresh start: videos follow the setting,
-        // audio never begins muted (it would just be silence).
-        isMuted = loaded.kind == .video && AppSettingsStore.shared.current.startVideosMuted
+        // Mute is SESSION state, not per-item: the settings toggle seeds
+        // it once at launch, and from then on the operator's own toggle
+        // is the truth until the app restarts. Re-reading the setting on
+        // every load was silently re-muting each next video after the
+        // operator had turned sound on. Audio never begins muted (it
+        // would just be silence) — playing audio reads past the session
+        // state without changing it.
+        isMuted = loaded.kind == .video && SessionAudio.shared.isMuted
         player.isMuted = isMuted
         isLooping = AppSettingsStore.shared.current.loopVideos
         installObserver()
@@ -279,6 +294,9 @@ final class PlayerModel {
     func toggleMute() {
         isMuted.toggle()
         player.isMuted = isMuted
+        // The toggle IS the session's new truth — every later load, in
+        // every window, follows it until the app restarts.
+        SessionAudio.shared.isMuted = isMuted
     }
 
     /// Session-scoped like mute: each load re-reads the setting.
