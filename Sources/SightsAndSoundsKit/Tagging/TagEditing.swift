@@ -472,3 +472,28 @@ extension LibraryDatabase {
         }
     }
 }
+
+extension LibraryDatabase {
+    /// The items carrying one tag, for "is this tag right?" — seeing the
+    /// company a tag keeps is how a doubtful tagging gets confirmed.
+    /// Bounded, with the true total alongside, newest-imported first so
+    /// recent mistakes surface at the top.
+    public func items(withTag tagID: UUID, limit: Int = 60) throws -> (items: [MediaItem], total: Int) {
+        try writer.read { db in
+            let total = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM mediaItemTag WHERE tagID = ?",
+                arguments: [tagID]) ?? 0
+            let items = try MediaItem.fetchAll(
+                db,
+                sql: """
+                SELECT mediaItem.* FROM mediaItem \
+                JOIN mediaItemTag ON mediaItemTag.mediaItemID = mediaItem.id \
+                WHERE mediaItemTag.tagID = ? \
+                ORDER BY mediaItem.ingestDate DESC, mediaItem.relativePath LIMIT ?
+                """,
+                arguments: [tagID, limit])
+            return (items, total)
+        }
+    }
+}

@@ -156,3 +156,37 @@ import Testing
         #expect(try f.library.keyBindings().isEmpty)
     }
 }
+
+/// The company a tag keeps — items(withTag:) behind the right-click
+/// preview.
+@Suite struct TagCompanyTests {
+    @Test func itemsWithTagAreBoundedWithTrueTotal() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Company")
+        let source = Source(name: "S", rootPath: "/tmp/company")
+        let category = TagCategory(name: "Taper")
+        let tag = Tag(tagCategoryID: category.id, name: "Mike Jones")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try category.insert(db)
+            try tag.insert(db)
+        }
+        for index in 0..<5 {
+            let item = MediaItem(
+                sourceID: source.id, kind: .video,
+                relativePath: "\(index).mp4", needsReview: false)
+            try await library.writer.write { try item.insert($0) }
+            try library.assignTag(tag.id, to: item.id)
+        }
+
+        let (items, total) = try library.items(withTag: tag.id, limit: 3)
+        #expect(items.count == 3)
+        #expect(total == 5)
+
+        let other = Tag(tagCategoryID: category.id, name: "Nobody")
+        try await library.writer.write { try other.insert($0) }
+        let empty = try library.items(withTag: other.id)
+        #expect(empty.items.isEmpty)
+        #expect(empty.total == 0)
+    }
+}
