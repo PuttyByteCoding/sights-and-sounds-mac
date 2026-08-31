@@ -166,6 +166,33 @@ Reorderable numbered cards, the matcher/action editor, the dry run, and spec
 A and B are pure Kit and carry almost all the risk. C is where the sweep cost
 lands. D and E are presentation over settled logic.
 
+## What was built, and what the plan overstated
+
+All five phases shipped (PRs #149, #150, #151, #152, #153). Two places
+where the code is narrower than the plan above, recorded here rather than
+left for someone to discover by looking for a file that does not exist.
+
+**Phase C says five readers. Three were built.** Container metadata
+(`MetadataSweepJob`, new storage) and OCR (`ocrTextLine`, already stored)
+are readers in the sense meant. Path fragments are the third, though the
+plan counts them under *file properties* — of which only the path is
+mined; size, duration and dates are not. **Sidecar `.txt` is not built at
+all.** *Applied tags* turned out not to be a reader: it is the exclusion
+set, and it lives in `knownTagText()` as one, which is the right shape for
+it but is not a fifth source.
+
+The queue's shape does not change when the missing two arrive — a reader
+contributes `(source, key, value, count)` rows and nothing else — so this
+is unfinished, not mis-designed.
+
+**Phase C says suppression carries four reasons. Two were built.** `rule`
+and `alreadyApplied` are live. `fragment` and `weakWord` need
+`FragmentSuppressor` and `WeakWordEvaluator`, which the section below
+already lists as needing their own read before porting. `suppressedByRule`
+is therefore currently a `String?` naming the rule rather than the reason
+enum the plan describes; widening it to the enum is the natural first step
+when those two land.
+
 ## Deliberately not planned yet
 
 - **The pending-changes table.** The old app's `2026-08-19` page design puts a
