@@ -383,6 +383,25 @@ final class PlayerModel {
         return true
     }
 
+    /// Reorder the tag categories — the panel's drag handle. The write
+    /// goes through the kit's single order write, panelVocabulary is the
+    /// FULL vocabulary so no category's order is left behind, and every
+    /// other window follows through the ordinary refresh broadcast.
+    func moveCategory(_ id: UUID, before targetID: UUID?) {
+        var ids = panelVocabulary.map(\.category.id)
+        guard let from = ids.firstIndex(of: id) else { return }
+        ids.remove(at: from)
+        let to = targetID.flatMap { ids.firstIndex(of: $0) } ?? ids.count
+        guard ids.indices.contains(to) || to == ids.count else { return }
+        ids.insert(id, at: to)
+        do {
+            try library.setCategoryOrder(ids)
+            refreshTagging()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
     func refreshTagging() {
         guard let item else { return }
         do {
