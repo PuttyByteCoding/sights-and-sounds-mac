@@ -131,3 +131,48 @@ import Testing
         #expect(try f.names(filter) == f.allVisibleVideoNames)
     }
 }
+
+/// Saved filters: round trip, same-name replacement, stale terms.
+@Suite struct SavedFilterTests {
+    @Test func aFilterRoundTripsWithEveryTermKind() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Filters")
+        let tagID = UUID(), categoryID = UUID()
+        let original = MediaFilter(
+            required: [.tag(tagID), .subtree("shows/2024")],
+            optional: [.status(.favorite), .folder("shows")],
+            excluded: [.missingCategory(categoryID)],
+            searchText: "newport")
+
+        let saved = try library.saveFilter(named: "Good SBDs", original)
+        let loaded = try #require(try library.savedFilters().first)
+        #expect(loaded.id == saved.id)
+        #expect(loaded.name == "Good SBDs")
+        #expect(loaded.filter == original)
+    }
+
+    @Test func savingTheSameNameReplacesNotDuplicates() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Filters")
+        let first = try library.saveFilter(named: "Favorites", MediaFilter(searchText: "a"))
+        // Case-insensitively the same name — one row, updated in place,
+        // same identity so anything holding the id stays valid.
+        let second = try library.saveFilter(named: "favorites", MediaFilter(searchText: "b"))
+        #expect(second.id == first.id)
+
+        let all = try library.savedFilters()
+        #expect(all.count == 1)
+        #expect(all.first?.filter?.searchText == "b")
+    }
+
+    @Test func deletingRemovesAndBlankNamesAreRefused() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Filters")
+        let saved = try library.saveFilter(named: "Doomed", MediaFilter())
+        try library.deleteSavedFilter(saved.id)
+        #expect(try library.savedFilters().isEmpty)
+        #expect(throws: Error.self) {
+            try library.saveFilter(named: "   ", MediaFilter())
+        }
+    }
+}
