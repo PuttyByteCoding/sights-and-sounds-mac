@@ -21,6 +21,10 @@ struct TagPanelView: View {
     /// pointer. Nil when nothing is in flight.
     @State private var dropTargetID: UUID?
     @State private var dropAtEnd = false
+    /// The Universal field's place among the categories — mirrored from
+    /// settings so a drag re-renders immediately and survives relaunch.
+    @State private var universalPosition
+        = AppSettingsStore.shared.current.universalTagFieldPosition
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,9 +38,6 @@ struct TagPanelView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            GlobalTagField()
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     // An empty vocabulary used to render the panel as a
@@ -48,7 +49,10 @@ struct TagPanelView: View {
                             .foregroundStyle(Theme.Text.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    ForEach(model.panelVocabulary) { entry in
+                    if clampedUniversalPosition == 0 {
+                        universalBlock
+                    }
+                    ForEach(Array(model.panelVocabulary.enumerated()), id: \.element.id) { index, entry in
                         if let label = entry.category.sectionLabel {
                             if label.isEmpty {
                                 Divider().overlay(Theme.Border.standard)
@@ -73,7 +77,11 @@ struct TagPanelView: View {
                                     // a flag a category carries — which is one
                                     // setting and one whole class of conflict
                                     // fewer.
-                                    takesFocus: entry.id == model.focusCategoryID,
+                                    // The Universal field outranks the
+                                    // first category when it is ordered
+                                    // first.
+                                    takesFocus: entry.id == model.focusCategoryID
+                                        && clampedUniversalPosition != 0,
                                     focus: $focusedCategory,
                                     onAdvance: { forward in advance(from: entry.id, forward: forward) })
                             }
@@ -84,11 +92,20 @@ struct TagPanelView: View {
                             dropTargetID = nil
                             guard let id = dropped.first.flatMap(UUID.init(uuidString:))
                             else { return false }
-                            model.moveCategory(id, before: entry.category.id)
+                            if id == PlayerModel.universalFieldFocusID {
+                                setUniversalPosition(index)
+                            } else {
+                                model.moveCategory(id, before: entry.category.id)
+                            }
                             return true
                         } isTargeted: { inside in
                             dropTargetID = inside ? entry.category.id : (
                                 dropTargetID == entry.category.id ? nil : dropTargetID)
+                        }
+                        // The Universal field renders AFTER the category
+                        // it is positioned behind.
+                        if clampedUniversalPosition == index + 1 {
+                            universalBlock
                         }
                     }
                     // …and the space under the list is "make it last".
@@ -103,7 +120,11 @@ struct TagPanelView: View {
                             dropAtEnd = false
                             guard let id = dropped.first.flatMap(UUID.init(uuidString:))
                             else { return false }
-                            model.moveCategory(id, before: nil)
+                            if id == PlayerModel.universalFieldFocusID {
+                                setUniversalPosition(model.panelVocabulary.count)
+                            } else {
+                                model.moveCategory(id, before: nil)
+                            }
                             return true
                         } isTargeted: { inside in
                             dropAtEnd = inside
@@ -130,6 +151,63 @@ struct TagPanelView: View {
 
     private var appliedCount: Int {
         model.itemTags.reduce(0) { $0 + $1.tags.count }
+    }
+
+    /// Clamped so a category deletion cannot strand the field past the
+    /// end of the list.
+    private var clampedUniversalPosition: Int {
+        min(max(0, universalPosition), model.panelVocabulary.count)
+    }
+
+    private func setUniversalPosition(_ position: Int) {
+        universalPosition = position
+        AppSettingsStore.shared.update { $0.universalTagFieldPosition = position }
+    }
+
+    /// The Universal search, as a reorderable row like any category:
+    /// labeled heading, far-right ≡ grip, and the same landing line.
+    @ViewBuilder
+    private var universalBlock: some View {
+        if dropTargetID == PlayerModel.universalFieldFocusID {
+            DropInsertionLine()
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Theme.Accent.amber)
+                    .frame(width: 6, height: 6)
+                Text("Universal")
+                    .font(Theme.ui(12, .semibold))
+                    .foregroundStyle(Theme.Text.primary)
+                Spacer(minLength: 6)
+                Text("≡")
+                    .font(Theme.ui(12))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .help("Drag to reorder — the Universal field sits among the categories")
+                    .draggable(PlayerModel.universalFieldFocusID.uuidString)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            GlobalTagField(
+                takesFocus: clampedUniversalPosition == 0,
+                focus: $focusedCategory)
+        }
+        .dropDestination(for: String.self) { dropped, _ in
+            dropTargetID = nil
+            guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
+                  id != PlayerModel.universalFieldFocusID
+            else { return false }
+            // A category dropped ON the Universal row takes its slot,
+            // pushing the field down — insert before the category the
+            // field currently precedes.
+            let following = clampedUniversalPosition < model.panelVocabulary.count
+                ? model.panelVocabulary[clampedUniversalPosition].category.id : nil
+            model.moveCategory(id, before: following)
+            return true
+        } isTargeted: { inside in
+            dropTargetID = inside
+                ? PlayerModel.universalFieldFocusID
+                : (dropTargetID == PlayerModel.universalFieldFocusID ? nil : dropTargetID)
+        }
     }
 
     /// The Tab order lives on the model (search categories only, in
@@ -574,11 +652,19 @@ private struct DropInsertionLine: View {
 /// space-separated term must hit.
 private struct GlobalTagField: View {
     @Environment(PlayerModel.self) private var model
+    /// First in the panel order — takes the keyboard when an item loads.
+    var takesFocus = false
+    /// The panel's shared focus, keyed by the universal sentinel — which
+    /// is what puts this field IN the Tab walk with the categories.
+    var focus: FocusState<UUID?>.Binding
     @State private var draft = ""
     @State private var highlighted: Int?
     @State private var creating = false
     @State private var showingHistory = false
-    @FocusState private var focused: Bool
+
+    private var focused: Bool {
+        focus.wrappedValue == PlayerModel.universalFieldFocusID
+    }
 
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
 
@@ -650,14 +736,14 @@ private struct GlobalTagField: View {
                 TextField("Find or create a tag in any category…", text: $draft)
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12))
-                    .focused($focused)
+                    .focused(focus, equals: PlayerModel.universalFieldFocusID)
                     .onSubmit(commit)
                     .onChange(of: draft) { _, _ in
                         highlighted = nil
                         showingHistory = false
                     }
-                    .onChange(of: focused) { _, now in
-                        if now { model.zone = .tags }
+                    .onChange(of: focus.wrappedValue) { _, now in
+                        if now == PlayerModel.universalFieldFocusID { model.zone = .tags }
                     }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
@@ -706,7 +792,13 @@ private struct GlobalTagField: View {
                 .buttonStyle(.plain)
             }
         }
-        .sheet(isPresented: $creating) {
+        .task(id: model.item?.id) {
+            if takesFocus { focus.wrappedValue = PlayerModel.universalFieldFocusID }
+        }
+        .sheet(isPresented: $creating, onDismiss: {
+            // The sheet is a detour — the keyboard comes back here.
+            focus.wrappedValue = PlayerModel.universalFieldFocusID
+        }) {
             if let first = model.panelVocabulary.first?.category.id {
                 TagSheet(
                     mode: .create(categoryID: first, name: query),

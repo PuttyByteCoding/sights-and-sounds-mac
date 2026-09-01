@@ -412,11 +412,21 @@ final class PlayerModel {
     /// Move the keyboard to the next (or previous) search category's
     /// field, wrapping. False when there is nothing to walk — no search
     /// categories — so the caller can fall back to the zone walk.
+    /// The Universal field's slot in the focus walk — a fixed sentinel
+    /// beside the category IDs, placed by its persisted position.
+    static let universalFieldFocusID = UUID(
+        uuidString: "11111111-1111-1111-1111-111111111111")!
+
     @discardableResult
     func advanceTagField(reverse: Bool) -> Bool {
-        let fields = panelVocabulary
+        var fields = panelVocabulary
             .filter { $0.category.displayStyle == .search }
             .map(\.id)
+        // The Universal field is part of the walk, at its ordered place.
+        let position = min(
+            max(0, AppSettingsStore.shared.current.universalTagFieldPosition),
+            fields.count)
+        fields.insert(Self.universalFieldFocusID, at: position)
         guard !fields.isEmpty else { return false }
         guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
         else {
