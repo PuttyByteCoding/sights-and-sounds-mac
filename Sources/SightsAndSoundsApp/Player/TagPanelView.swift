@@ -362,6 +362,10 @@ private struct PillCategoryView: View {
         var id: UUID { tag.id }
     }
 
+    /// History renders ABOVE the field (newest touching the box) where
+    /// autocomplete renders below — up-arrow reaches upward.
+    private var historyActive: Bool { showingHistory && query.isEmpty }
+
     private var suggestions: [Suggestion] {
         // History mode: the session's recent applies from THIS category,
         // newest first, walkable and pickable exactly like autocomplete.
@@ -376,24 +380,27 @@ private struct PillCategoryView: View {
             }
         }
         let appliedIDs = Set(applied.map(\.id))
-        // Space-separated terms, each of which must hit somewhere in the
-        // name: "Da Ba" finds "Dave Matthews Band". One term degrades to
-        // the old contains match exactly.
-        let terms = query.split(separator: " ").map(String.init)
-        return entry.tags
-            .compactMap { tag -> Suggestion? in
-                guard !appliedIDs.contains(tag.id) else { return nil }
+        // Space-separated terms, folded once, matched against the
+        // model's PRE-FOLDED index — folding live per keystroke across a
+        // large category was the slow half of matching.
+        let foldedTerms = query.split(separator: " ").map { PlayerModel.searchFold(String($0)) }
+        return model.tagSearchIndex
+            .lazy
+            .filter { $0.categoryID == entry.category.id }
+            .compactMap { row -> Suggestion? in
+                guard !appliedIDs.contains(row.tag.id) else { return nil }
                 // The name winning means no alias is shown, even if one
                 // would also have matched: the parenthetical exists to
                 // explain a row you would not otherwise expect.
-                if Self.matchesAllTerms(tag.name, terms: terms) {
-                    return Suggestion(tag: tag, matchedAlias: nil)
+                if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
+                    return Suggestion(tag: row.tag, matchedAlias: nil)
                 }
                 // An alias IS a name: typing SBD must offer Soundboard.
-                guard let alias = (model.panelAliases[tag.id] ?? [])
-                    .first(where: { Self.matchesAllTerms($0, terms: terms) })
+                guard let alias = row.foldedAliases.first(where: { candidate in
+                    foldedTerms.allSatisfy { candidate.folded.contains($0) }
+                })
                 else { return nil }
-                return Suggestion(tag: tag, matchedAlias: alias)
+                return Suggestion(tag: row.tag, matchedAlias: alias.alias)
             }
             .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
             .map { $0 }
@@ -448,6 +455,9 @@ private struct PillCategoryView: View {
             highlighted = suggestions.isEmpty ? nil : 0
             return .handled
         }
+        // History climbs UPWARD from the box: ↑ moves to older (higher
+        // index, drawn higher), ↓ back toward the field.
+        let delta = historyActive ? -delta : delta
         guard !suggestions.isEmpty else { return .ignored }
         switch (highlighted, delta) {
         case (nil, 1): highlighted = 0
@@ -460,6 +470,45 @@ private struct PillCategoryView: View {
         return .handled
     }
 
+    @ViewBuilder
+    private func suggestionRow(_ index: Int, _ suggestion: Suggestion) -> some View {
+                let active = index == activeIndex
+                Button {
+                    apply(suggestion.tag)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus")
+                            .font(Theme.ui(9))
+                            .foregroundStyle(hue)
+                        Text(suggestion.tag.name)
+                            .font(Theme.ui(11.5, active ? .medium : .regular))
+                            .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
+                        // Why this row is here, when the name alone does
+                        // not explain it.
+                        if let alias = suggestion.matchedAlias {
+                            Text("(\(alias))")
+                                .font(Theme.mono(9.5))
+                                .foregroundStyle(Theme.Text.disabled)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(active ? hue.opacity(0.16) : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Edit Tag…") { editing = suggestion.tag }
+                    Button("Show Items with This Tag") {
+                        openTagPlayerWindow(
+                            tag: suggestion.tag, library: model.library,
+                            libraryID: model.libraryID, openWindow: openWindow)
+                    }
+                }
+    }
     /// Enter: apply what is selected, or create when nothing is. A
     /// history pick applies too — the empty-query guard only blocks
     /// CREATING from nothing.
@@ -519,6 +568,13 @@ private struct PillCategoryView: View {
                 }
             }
 
+            if historyActive {
+                // Reversed so index 0 — the LATEST apply — is the row
+                // directly above the box, older ones climbing upward.
+                ForEach(Array(suggestions.enumerated()).reversed(), id: \.element.id) { index, suggestion in
+                    suggestionRow(index, suggestion)
+                }
+            }
             HStack(spacing: 6) {
                 TextField("Add \(entry.category.name)…", text: $draft)
                     .textFieldStyle(.plain)
@@ -562,42 +618,11 @@ private struct PillCategoryView: View {
                         fieldFocused ? Theme.Border.activeControl : Theme.Border.standard,
                         lineWidth: 1))
 
-            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
-                let active = index == activeIndex
-                Button {
-                    apply(suggestion.tag)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus")
-                            .font(Theme.ui(9))
-                            .foregroundStyle(hue)
-                        Text(suggestion.tag.name)
-                            .font(Theme.ui(11.5, active ? .medium : .regular))
-                            .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
-                        // Why this row is here, when the name alone does
-                        // not explain it.
-                        if let alias = suggestion.matchedAlias {
-                            Text("(\(alias))")
-                                .font(Theme.mono(9.5))
-                                .foregroundStyle(Theme.Text.disabled)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(active ? hue.opacity(0.16) : .clear))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("Edit Tag…") { editing = suggestion.tag }
-                    Button("Show Items with This Tag") {
-                        openTagPlayerWindow(
-                            tag: suggestion.tag, library: model.library,
-                            libraryID: model.libraryID, openWindow: openWindow)
-                    }
+            // Autocomplete below; history above (rendered before the
+            // field, newest last so it sits directly on the box).
+            if !historyActive {
+                ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
+                    suggestionRow(index, suggestion)
                 }
             }
         }
@@ -676,6 +701,8 @@ private struct GlobalTagField: View {
         var id: UUID { tag.id }
     }
 
+    private var historyActive: Bool { showingHistory && query.isEmpty }
+
     private var hits: [Hit] {
         // Empty query + ↑: the session's recent applies, every category.
         if query.isEmpty {
@@ -694,28 +721,33 @@ private struct GlobalTagField: View {
                 return nil
             }
         }
-        let terms = query.split(separator: " ").map(String.init)
+        // Folded terms against the model's pre-folded index, lazily, cut
+        // at the limit — never a full pass once enough hits exist. This
+        // computed per keystroke over every tag AND alias, folding each
+        // live, is what made the Universal field slow.
+        let foldedTerms = query.split(separator: " ").map { PlayerModel.searchFold(String($0)) }
         let appliedIDs = Set(model.itemTags.flatMap(\.tags).map(\.id))
-        return model.panelVocabulary.flatMap { entry in
-            entry.tags.compactMap { tag -> Hit? in
-                guard !appliedIDs.contains(tag.id) else { return nil }
-                if PillCategoryView.matchesAllTerms(tag.name, terms: terms) {
+        return model.tagSearchIndex
+            .lazy
+            .compactMap { row -> Hit? in
+                guard !appliedIDs.contains(row.tag.id) else { return nil }
+                if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
                     return Hit(
-                        tag: tag, categoryName: entry.category.name,
-                        categoryHue: Theme.categoryHue(entry.category.colorIndex),
+                        tag: row.tag, categoryName: row.categoryName,
+                        categoryHue: Theme.categoryHue(row.colorIndex),
                         matchedAlias: nil)
                 }
-                guard let alias = (model.panelAliases[tag.id] ?? [])
-                    .first(where: { PillCategoryView.matchesAllTerms($0, terms: terms) })
+                guard let alias = row.foldedAliases.first(where: { candidate in
+                    foldedTerms.allSatisfy { candidate.folded.contains($0) }
+                })
                 else { return nil }
                 return Hit(
-                    tag: tag, categoryName: entry.category.name,
-                    categoryHue: Theme.categoryHue(entry.category.colorIndex),
-                    matchedAlias: alias)
+                    tag: row.tag, categoryName: row.categoryName,
+                    categoryHue: Theme.categoryHue(row.colorIndex),
+                    matchedAlias: alias.alias)
             }
-        }
-        .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
-        .map { $0 }
+            .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
+            .map { $0 }
     }
 
     private var exactMatchIndex: Int? {
@@ -731,6 +763,11 @@ private struct GlobalTagField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if historyActive {
+                ForEach(Array(hits.enumerated()).reversed(), id: \.element.id) { index, hit in
+                    hitRow(index, hit)
+                }
+            }
             HStack(spacing: 6) {
                 Text("⌕").font(Theme.ui(12)).foregroundStyle(Theme.Text.quaternary)
                 TextField("Find or create a tag in any category…", text: $draft)
@@ -762,34 +799,10 @@ private struct GlobalTagField: View {
                         focused ? Theme.Border.activeControl : Theme.Border.standard,
                         lineWidth: 1))
 
-            ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
-                let active = index == activeIndex
-                Button {
-                    apply(hit.tag)
-                } label: {
-                    HStack(spacing: 6) {
-                        Circle().fill(hit.categoryHue).frame(width: 6, height: 6)
-                        Text(hit.tag.name)
-                            .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.primary)
-                        if let alias = hit.matchedAlias {
-                            Text("(\(alias))")
-                                .font(Theme.ui(11))
-                                .foregroundStyle(Theme.Text.quaternary)
-                        }
-                        Spacer(minLength: 6)
-                        Text(hit.categoryName)
-                            .font(Theme.ui(10))
-                            .foregroundStyle(Theme.Text.tertiary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                            .fill(active ? Theme.Surface.selectedRow : .clear))
-                    .contentShape(Rectangle())
+            if !historyActive {
+                ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
+                    hitRow(index, hit)
                 }
-                .buttonStyle(.plain)
             }
         }
         .task(id: model.item?.id) {
@@ -821,6 +834,7 @@ private struct GlobalTagField: View {
             highlighted = hits.isEmpty ? nil : 0
             return .handled
         }
+        let delta = historyActive ? -delta : delta
         guard !hits.isEmpty else { return .ignored }
         switch (highlighted, delta) {
         case (nil, 1): highlighted = 0
@@ -835,6 +849,36 @@ private struct GlobalTagField: View {
 
     /// Enter: apply what is selected, or create when nothing is — the
     /// per-category fields' contract, with the sheet choosing the home.
+    @ViewBuilder
+    private func hitRow(_ index: Int, _ hit: Hit) -> some View {
+                let active = index == activeIndex
+                Button {
+                    apply(hit.tag)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle().fill(hit.categoryHue).frame(width: 6, height: 6)
+                        Text(hit.tag.name)
+                            .font(Theme.ui(12))
+                            .foregroundStyle(Theme.Text.primary)
+                        if let alias = hit.matchedAlias {
+                            Text("(\(alias))")
+                                .font(Theme.ui(11))
+                                .foregroundStyle(Theme.Text.quaternary)
+                        }
+                        Spacer(minLength: 6)
+                        Text(hit.categoryName)
+                            .font(Theme.ui(10))
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(active ? Theme.Surface.selectedRow : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+    }
     private func commit() {
         if let index = activeIndex, hits.indices.contains(index) {
             apply(hits[index].tag)

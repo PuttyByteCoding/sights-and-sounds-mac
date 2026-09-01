@@ -417,6 +417,30 @@ final class PlayerModel {
     static let universalFieldFocusID = UUID(
         uuidString: "11111111-1111-1111-1111-111111111111")!
 
+    /// One pre-folded row per tag, for the search fields. Folding
+    /// (case + diacritics + punctuation) is the expensive half of
+    /// matching, and computing it per keystroke across thousands of
+    /// tags — several times per render — is what made the Universal
+    /// field slow. Built once here, filtered cheaply everywhere.
+    struct TagSearchEntry: Identifiable {
+        let tag: Tag
+        let categoryID: UUID
+        let categoryName: String
+        let colorIndex: Int
+        let foldedName: String
+        let foldedAliases: [(alias: String, folded: String)]
+        var id: UUID { tag.id }
+    }
+
+    private(set) var tagSearchIndex: [TagSearchEntry] = []
+
+    /// The one fold every comparison goes through — names, aliases and
+    /// typed terms alike.
+    static func searchFold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+    }
+
     @discardableResult
     func advanceTagField(reverse: Bool) -> Bool {
         var fields = panelVocabulary
@@ -471,6 +495,19 @@ final class PlayerModel {
             ).mapValues { $0.map(\.alias) }
             boundKeys = Dictionary(
                 uniqueKeysWithValues: try library.keyBindings().map { ($0.key, $0) })
+            tagSearchIndex = panelVocabulary.flatMap { entry in
+                entry.tags.map { tag in
+                    TagSearchEntry(
+                        tag: tag,
+                        categoryID: entry.category.id,
+                        categoryName: entry.category.name,
+                        colorIndex: entry.category.colorIndex,
+                        foldedName: Self.searchFold(tag.name),
+                        foldedAliases: (panelAliases[tag.id] ?? []).map {
+                            ($0, Self.searchFold($0))
+                        })
+                }
+            }
         } catch {
             loadError = "\(error)"
         }
