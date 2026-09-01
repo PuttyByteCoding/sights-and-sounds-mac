@@ -140,6 +140,19 @@ struct TagAnalysisView: View {
                         .fill(Theme.Surface.well)
                         .stroke(Theme.Border.standard, lineWidth: 1))
 
+                Button("Scan On-Screen Text") {
+                    // Vision OCR, on demand — deliberately never part of
+                    // the automatic load (a full-video scan is minutes,
+                    // not the seconds an advance can afford). Budgeted
+                    // and resumable: a long video may take several
+                    // clicks, each scanning further.
+                    guard let id = model.currentItemID else { return }
+                    model.beginSweep()
+                    browse.scanText(itemID: id) { model.finishSweep() }
+                }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .disabled(model.isLoading || model.currentItemID == nil)
+                .help("Read on-screen text with Vision — resumable; click again to scan further")
                 Button("Rescan This Video") {
                     guard let id = model.currentItemID else { return }
                     try? browse.library.resetMetadataSweep(itemIDs: [id])
