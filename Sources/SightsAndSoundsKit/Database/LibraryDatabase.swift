@@ -737,6 +737,18 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // The tag-analysis visited marker, versioned by analyzer
+        // capability so "analyzed under an older analyzer" is a
+        // filterable worklist.
+        migrator.registerMigration("tagAnalysisMarker") { db in
+            try db.create(table: "tagAnalysisState") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("analyzedAt", .datetime).notNull()
+                t.column("analyzerVersion", .integer).notNull()
+            }
+        }
+
         return migrator
     }
 

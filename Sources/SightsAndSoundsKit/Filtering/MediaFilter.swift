@@ -14,6 +14,13 @@ public enum StatusFlag: String, Codable, Sendable, CaseIterable {
     case embedded
     case exported
     case edited
+    /// Tag analysis has visited this item with the CURRENT analyzer.
+    case analyzedCurrent
+    /// Visited, but by an older analyzer — new readers have landed since,
+    /// so a re-pass could find more. The re-triage worklist.
+    case analyzedStale
+    /// Tag analysis has never visited this item.
+    case neverAnalyzed
 }
 
 /// One term of the three-way filter.

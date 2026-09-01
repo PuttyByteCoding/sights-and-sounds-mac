@@ -201,6 +201,25 @@ public enum FilterCompiler {
             case .embedded: "mediaItem.parentMediaItemID IS NOT NULL"
             case .exported: "mediaItem.isExportedClip"
             case .edited: "mediaItem.isEdited"
+            // The analyzer version is a code constant, interpolated as an
+            // integer literal — never user input.
+            case .analyzedCurrent:
+                """
+                EXISTS (SELECT 1 FROM tagAnalysisState \
+                WHERE tagAnalysisState.mediaItemID = mediaItem.id \
+                AND tagAnalysisState.analyzerVersion >= \(ItemAnalysis.analyzerVersion))
+                """
+            case .analyzedStale:
+                """
+                EXISTS (SELECT 1 FROM tagAnalysisState \
+                WHERE tagAnalysisState.mediaItemID = mediaItem.id \
+                AND tagAnalysisState.analyzerVersion < \(ItemAnalysis.analyzerVersion))
+                """
+            case .neverAnalyzed:
+                """
+                NOT EXISTS (SELECT 1 FROM tagAnalysisState \
+                WHERE tagAnalysisState.mediaItemID = mediaItem.id)
+                """
             }
         }
 
