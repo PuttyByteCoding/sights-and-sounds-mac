@@ -64,6 +64,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// App-wide UI zoom, driven by ⌘= / ⌘− / ⌘0. Clamped on the way in
     /// so a hand-edited file cannot render the app unusable.
     public var uiScale: Double
+    /// Where the tag panel's Universal search field sits among the
+    /// categories: an index into the category list, 0 = first. Clamped
+    /// non-negative; an index past the end means last.
+    public var universalTagFieldPosition: Int
 
     public static let defaultVideoExtensions = [
         "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
@@ -91,7 +95,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600,
         ocr: OcrSettings = OcrSettings(),
-        uiScale: Double = 1.0
+        uiScale: Double = 1.0,
+        universalTagFieldPosition: Int = 0
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -112,6 +117,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
         self.ocr = ocr
         self.uiScale = uiScale
+        self.universalTagFieldPosition = universalTagFieldPosition
     }
 
     public init(from decoder: Decoder) throws {
@@ -154,6 +160,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
         ocr = try container.decodeIfPresent(OcrSettings.self, forKey: .ocr) ?? defaults.ocr
         uiScale = min(1.8, max(0.7, try container.decodeIfPresent(
             Double.self, forKey: .uiScale) ?? defaults.uiScale))
+        universalTagFieldPosition = max(0, try container.decodeIfPresent(
+            Int.self, forKey: .universalTagFieldPosition)
+            ?? defaults.universalTagFieldPosition)
     }
 }
 

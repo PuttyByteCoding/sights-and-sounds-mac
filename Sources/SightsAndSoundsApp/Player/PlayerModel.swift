@@ -412,11 +412,45 @@ final class PlayerModel {
     /// Move the keyboard to the next (or previous) search category's
     /// field, wrapping. False when there is nothing to walk — no search
     /// categories — so the caller can fall back to the zone walk.
+    /// The Universal field's slot in the focus walk — a fixed sentinel
+    /// beside the category IDs, placed by its persisted position.
+    static let universalFieldFocusID = UUID(
+        uuidString: "11111111-1111-1111-1111-111111111111")!
+
+    /// One pre-folded row per tag, for the search fields. Folding
+    /// (case + diacritics + punctuation) is the expensive half of
+    /// matching, and computing it per keystroke across thousands of
+    /// tags — several times per render — is what made the Universal
+    /// field slow. Built once here, filtered cheaply everywhere.
+    struct TagSearchEntry: Identifiable {
+        let tag: Tag
+        let categoryID: UUID
+        let categoryName: String
+        let colorIndex: Int
+        let foldedName: String
+        let foldedAliases: [(alias: String, folded: String)]
+        var id: UUID { tag.id }
+    }
+
+    private(set) var tagSearchIndex: [TagSearchEntry] = []
+
+    /// The one fold every comparison goes through — names, aliases and
+    /// typed terms alike.
+    static func searchFold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+    }
+
     @discardableResult
     func advanceTagField(reverse: Bool) -> Bool {
-        let fields = panelVocabulary
+        var fields = panelVocabulary
             .filter { $0.category.displayStyle == .search }
             .map(\.id)
+        // The Universal field is part of the walk, at its ordered place.
+        let position = min(
+            max(0, AppSettingsStore.shared.current.universalTagFieldPosition),
+            fields.count)
+        fields.insert(Self.universalFieldFocusID, at: position)
         guard !fields.isEmpty else { return false }
         guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
         else {
@@ -461,6 +495,19 @@ final class PlayerModel {
             ).mapValues { $0.map(\.alias) }
             boundKeys = Dictionary(
                 uniqueKeysWithValues: try library.keyBindings().map { ($0.key, $0) })
+            tagSearchIndex = panelVocabulary.flatMap { entry in
+                entry.tags.map { tag in
+                    TagSearchEntry(
+                        tag: tag,
+                        categoryID: entry.category.id,
+                        categoryName: entry.category.name,
+                        colorIndex: entry.category.colorIndex,
+                        foldedName: Self.searchFold(tag.name),
+                        foldedAliases: (panelAliases[tag.id] ?? []).map {
+                            ($0, Self.searchFold($0))
+                        })
+                }
+            }
         } catch {
             loadError = "\(error)"
         }
