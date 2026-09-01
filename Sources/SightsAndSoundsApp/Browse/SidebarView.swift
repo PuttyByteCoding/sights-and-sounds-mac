@@ -26,6 +26,7 @@ struct SidebarView: View {
     // What the sidebar said back when it refused a click.
     @State private var refusal: String?
     @State private var showSaveFilter = false
+    @State private var renamingFilter: SavedFilter?
     // How each category's tags are ordered. Session-scoped like the sets
     // above: which way you want a category sorted is a fact about the
     // hunt you are on, not about the library.
@@ -75,6 +76,12 @@ struct SidebarView: View {
 
         .sheet(isPresented: $showSaveFilter) {
             SaveFilterSheet { name in model.saveCurrentFilter(named: name) }
+        }
+        .sheet(item: $renamingFilter) { saved in
+            SaveFilterSheet(
+                title: "Rename Filter", initialName: saved.name,
+                hint: "Another filter's name is refused, not overwritten."
+            ) { name in model.renameSavedFilter(saved, to: name) }
         }
     }
 
@@ -286,6 +293,7 @@ struct SidebarView: View {
                         Spacer(minLength: 0)
                     }
                     .contextMenu {
+                        Button("Rename…") { renamingFilter = saved }
                         Button("Delete Saved Filter") { model.deleteSavedFilter(saved) }
                     }
                 }
@@ -1143,15 +1151,30 @@ private struct SourceRenameSheet: View {
 /// one field, Enter saves, Esc cancels.
 private struct SaveFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
+    var title = "Save Filter"
+    var initialName = ""
+    var hint = "Saving an existing name replaces that filter."
     let onSave: (String) -> Void
-    @State private var name = ""
+    @State private var name: String
     @FocusState private var focused: Bool
+
+    init(
+        title: String = "Save Filter", initialName: String = "",
+        hint: String = "Saving an existing name replaces that filter.",
+        onSave: @escaping (String) -> Void
+    ) {
+        self.title = title
+        self.initialName = initialName
+        self.hint = hint
+        self.onSave = onSave
+        _name = State(initialValue: initialName)
+    }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            Text("Save Filter")
+            Text(title)
                 .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
                 .foregroundStyle(Theme.Text.primary)
             TextField("Name", text: $name)
@@ -1166,7 +1189,7 @@ private struct SaveFilterSheet: View {
                             focused ? Theme.Border.activeControl : Theme.Border.standard,
                             lineWidth: focused ? 2 : 1))
                 .focused($focused)
-            Text("Saving an existing name replaces that filter.")
+            Text(hint)
                 .font(Theme.ui(11))
                 .foregroundStyle(Theme.Text.disabled)
             HStack(spacing: 10) {
