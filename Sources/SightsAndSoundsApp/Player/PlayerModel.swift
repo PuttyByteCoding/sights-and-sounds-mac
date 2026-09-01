@@ -470,10 +470,25 @@ final class PlayerModel {
         itemTags.contains { $0.tags.contains { $0.id == tagID } }
     }
 
+    /// The tags applied this session, newest first — the ↑-history every
+    /// tag field offers on an empty query. Session-scoped on purpose:
+    /// "the tags I've been adding" is a working set, not an archive, and
+    /// it resets with the app like the rest of the working state.
+    private(set) var recentlyAppliedTagIDs: [UUID] = []
+
     func toggleTag(_ tagID: UUID) {
         guard let item else { return }
         do {
-            _ = try library.toggleTag(tagID, on: item.id)
+            let applied = try library.toggleTag(tagID, on: item.id)
+            // Only APPLYING records history — removing a tag is not
+            // something you want offered back.
+            if applied {
+                recentlyAppliedTagIDs.removeAll { $0 == tagID }
+                recentlyAppliedTagIDs.insert(tagID, at: 0)
+                if recentlyAppliedTagIDs.count > 30 {
+                    recentlyAppliedTagIDs.removeLast()
+                }
+            }
             refreshTagging()
         } catch {
             loadError = "\(error)"
