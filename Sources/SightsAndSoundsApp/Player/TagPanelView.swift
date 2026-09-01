@@ -629,6 +629,12 @@ private struct PillCategoryView: View {
         .task(id: model.item?.id) {
             if takesFocus { focus.wrappedValue = entry.id }
         }
+        .onChange(of: model.item?.id) { _, _ in
+            // A new video is a fresh judgment — an open history overlay
+            // from the last one must not hang over its field.
+            showingHistory = false
+            highlighted = nil
+        }
         .sheet(item: $editing, onDismiss: restoreFieldFocus) { tag in
             TagSheet(
                 mode: .edit(tag),
@@ -807,6 +813,10 @@ private struct GlobalTagField: View {
         }
         .task(id: model.item?.id) {
             if takesFocus { focus.wrappedValue = PlayerModel.universalFieldFocusID }
+        }
+        .onChange(of: model.item?.id) { _, _ in
+            showingHistory = false
+            highlighted = nil
         }
         .sheet(isPresented: $creating, onDismiss: {
             // The sheet is a detour — the keyboard comes back here.
