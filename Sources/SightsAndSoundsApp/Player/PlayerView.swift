@@ -363,8 +363,15 @@ private struct PlayerContent: View {
 
     private var effectiveQueueHeight: CGFloat {
         guard rawQueueHeight > 0 else { return 0 }
-        guard contentSize.height > 0, chromeHeight > 0 else { return rawQueueHeight }
-        return min(rawQueueHeight, drawerCeiling(excluding: effectiveTextHeight))
+        guard contentSize.height > 0, chromeHeight > 0 else {
+            return max(rawQueueHeight, queueMinHeight)
+        }
+        // Floor BEFORE ceiling: a strip too short to show its own
+        // metadata is broken, and the floor moves when the operator
+        // enables more values under the thumbnails — the stored height
+        // must not pin the strip below what its labels need.
+        let ceiling = drawerCeiling(excluding: effectiveTextHeight)
+        return min(max(rawQueueHeight, queueMinHeight), max(ceiling, queueMinHeight))
     }
 
     private func dragRail(_ translation: CGFloat) {
@@ -1619,7 +1626,14 @@ private struct QueueCell: View {
     static func metadataHeight(for grid: GridSettings) -> CGFloat {
         let view = grid.activeView
         let strips = [TileSlot.above, .below].filter { !view.entries(in: $0).isEmpty }
-        return strips.isEmpty ? 0 : CGFloat(strips.count) * 16 + 5
+        guard !strips.isEmpty else { return 0 }
+        // A wrapping strip earns a second line's worth of reserve — the
+        // whole point of turning Wrap on is seeing the rest of the text.
+        let height = strips.reduce(CGFloat(0)) { total, slot in
+            let wraps = view.entries(in: slot).contains { $0.wraps(in: slot) }
+            return total + (wraps ? 34 : 18)
+        }
+        return height + 6
     }
 
     private var cellWidth: CGFloat { thumbHeight * 16 / 9 }
