@@ -18,7 +18,7 @@ struct FlowRow: Layout {
             for placed in row.items {
                 subviews[placed.index].place(
                     at: CGPoint(x: bounds.minX + placed.x, y: bounds.minY + row.y),
-                    proposal: .unspecified)
+                    proposal: placed.proposal)
             }
         }
     }
@@ -27,23 +27,33 @@ struct FlowRow: Layout {
         var y: CGFloat
         var height: CGFloat
         var width: CGFloat
-        var items: [(index: Int, x: CGFloat)]
+        var items: [(index: Int, x: CGFloat, proposal: ProposedViewSize)]
     }
 
     private func layout(_ subviews: Subviews, width: CGFloat) -> [Row] {
         var rows: [Row] = []
         var current = Row(y: 0, height: 0, width: 0, items: [])
         for (index, subview) in subviews.enumerated() {
-            let size = subview.sizeThatFits(.unspecified)
+            // Ideal size first. A child too wide for ANY row — a long
+            // filename with wrapping on — is re-measured constrained to
+            // the row width, which is what lets multi-line Text actually
+            // wrap: measured only at .unspecified it reports one ideal
+            // line forever, and the "Wrap" view option did nothing.
+            var size = subview.sizeThatFits(.unspecified)
+            var proposal = ProposedViewSize.unspecified
+            if size.width > width, width.isFinite {
+                proposal = ProposedViewSize(width: width, height: nil)
+                size = subview.sizeThatFits(proposal)
+            }
             let x = current.items.isEmpty ? 0 : current.width + spacing
             if !current.items.isEmpty, x + size.width > width {
                 rows.append(current)
                 current = Row(
                     y: current.y + current.height + spacing, height: 0, width: 0, items: [])
-                current.items.append((index, 0))
+                current.items.append((index, 0, proposal))
                 current.width = size.width
             } else {
-                current.items.append((index, x))
+                current.items.append((index, x, proposal))
                 current.width = x + size.width
             }
             current.height = max(current.height, size.height)
