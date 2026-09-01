@@ -251,6 +251,10 @@ private struct PillCategoryView: View {
     /// nil is exactly what makes Enter create rather than apply.
     @State private var highlighted: Int?
     @State private var creating = false
+    /// Empty query + ↑ shows the session's recently applied tags (this
+    /// category's) instead of autocomplete. Typing anything returns to
+    /// the ordinary suggestions.
+    @State private var showingHistory = false
     /// The tag whose editor is open, from a right-click on any tag this
     /// category draws — applied pill or suggestion alike.
     @State private var editing: Tag?
@@ -281,7 +285,18 @@ private struct PillCategoryView: View {
     }
 
     private var suggestions: [Suggestion] {
-        guard !query.isEmpty else { return [] }
+        // History mode: the session's recent applies from THIS category,
+        // newest first, walkable and pickable exactly like autocomplete.
+        if query.isEmpty {
+            guard showingHistory else { return [] }
+            let appliedIDs = Set(applied.map(\.id))
+            return model.recentlyAppliedTagIDs.compactMap { id in
+                guard !appliedIDs.contains(id),
+                      let tag = entry.tags.first(where: { $0.id == id })
+                else { return nil }
+                return Suggestion(tag: tag, matchedAlias: nil)
+            }
+        }
         let appliedIDs = Set(applied.map(\.id))
         // Space-separated terms, each of which must hit somewhere in the
         // name: "Da Ba" finds "Dave Matthews Band". One term degrades to
@@ -335,6 +350,12 @@ private struct PillCategoryView: View {
     /// rather than wrapping, because "nothing selected" is a real state
     /// here — it is the one where Enter creates.
     private func move(_ delta: Int) -> KeyPress.Result {
+        // ↑ on an empty field opens the history — see, then choose.
+        if query.isEmpty, !showingHistory, delta == -1 {
+            showingHistory = true
+            highlighted = suggestions.isEmpty ? nil : 0
+            return .handled
+        }
         guard !suggestions.isEmpty else { return .ignored }
         switch (highlighted, delta) {
         case (nil, 1): highlighted = 0
@@ -347,20 +368,23 @@ private struct PillCategoryView: View {
         return .handled
     }
 
-    /// Enter: apply what is selected, or create when nothing is.
+    /// Enter: apply what is selected, or create when nothing is. A
+    /// history pick applies too — the empty-query guard only blocks
+    /// CREATING from nothing.
     private func commit() {
-        guard !query.isEmpty else { return }
         if let index = activeIndex, suggestions.indices.contains(index) {
             apply(suggestions[index].tag)
-        } else {
-            creating = true
+            return
         }
+        guard !query.isEmpty else { return }
+        creating = true
     }
 
     private func apply(_ tag: Tag) {
         model.toggleTag(tag.id)
         draft = ""
         highlighted = nil
+        showingHistory = false
     }
 
     var body: some View {
@@ -418,8 +442,10 @@ private struct PillCategoryView: View {
                         return .handled
                     }
                     .onChange(of: draft) { _, _ in
-                        // A new query invalidates the old highlight.
+                        // A new query invalidates the old highlight, and
+                        // typing leaves history mode.
                         highlighted = nil
+                        showingHistory = false
                     }
                     .onChange(of: focus.wrappedValue) { _, now in
                         if now == entry.id { model.zone = .tags }
@@ -537,6 +563,7 @@ private struct GlobalTagField: View {
     @State private var draft = ""
     @State private var highlighted: Int?
     @State private var creating = false
+    @State private var showingHistory = false
     @FocusState private var focused: Bool
 
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
@@ -550,7 +577,23 @@ private struct GlobalTagField: View {
     }
 
     private var hits: [Hit] {
-        guard !query.isEmpty else { return [] }
+        // Empty query + ↑: the session's recent applies, every category.
+        if query.isEmpty {
+            guard showingHistory else { return [] }
+            let appliedIDs = Set(model.itemTags.flatMap(\.tags).map(\.id))
+            return model.recentlyAppliedTagIDs.compactMap { id in
+                guard !appliedIDs.contains(id) else { return nil }
+                for entry in model.panelVocabulary {
+                    if let tag = entry.tags.first(where: { $0.id == id }) {
+                        return Hit(
+                            tag: tag, categoryName: entry.category.name,
+                            categoryHue: Theme.categoryHue(entry.category.colorIndex),
+                            matchedAlias: nil)
+                    }
+                }
+                return nil
+            }
+        }
         let terms = query.split(separator: " ").map(String.init)
         let appliedIDs = Set(model.itemTags.flatMap(\.tags).map(\.id))
         return model.panelVocabulary.flatMap { entry in
@@ -594,7 +637,10 @@ private struct GlobalTagField: View {
                     .font(Theme.ui(12))
                     .focused($focused)
                     .onSubmit(commit)
-                    .onChange(of: draft) { _, _ in highlighted = nil }
+                    .onChange(of: draft) { _, _ in
+                        highlighted = nil
+                        showingHistory = false
+                    }
                     .onChange(of: focused) { _, now in
                         if now { model.zone = .tags }
                     }
@@ -663,6 +709,11 @@ private struct GlobalTagField: View {
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {
+        if query.isEmpty, !showingHistory, delta == -1 {
+            showingHistory = true
+            highlighted = hits.isEmpty ? nil : 0
+            return .handled
+        }
         guard !hits.isEmpty else { return .ignored }
         switch (highlighted, delta) {
         case (nil, 1): highlighted = 0
@@ -678,17 +729,18 @@ private struct GlobalTagField: View {
     /// Enter: apply what is selected, or create when nothing is — the
     /// per-category fields' contract, with the sheet choosing the home.
     private func commit() {
-        guard !query.isEmpty else { return }
         if let index = activeIndex, hits.indices.contains(index) {
             apply(hits[index].tag)
-        } else {
-            creating = true
+            return
         }
+        guard !query.isEmpty else { return }
+        creating = true
     }
 
     private func apply(_ tag: Tag) {
         model.toggleTag(tag.id)
         draft = ""
         highlighted = nil
+        showingHistory = false
     }
 }
