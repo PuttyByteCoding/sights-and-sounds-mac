@@ -27,6 +27,9 @@ final class BrowseModel {
     /// The library's named filters, alphabetical — the sidebar's Saved
     /// Filters section.
     private(set) var savedFilters: [SavedFilter] = []
+    /// What each saved filter would show, under the CURRENT media kinds —
+    /// the number beside its sidebar row.
+    private(set) var savedFilterCounts: [UUID: Int] = [:]
     var selectedFolderPath: String?
 
     /// The offline banner's toggle. It hides items from the LISTING;
@@ -232,6 +235,7 @@ final class BrowseModel {
                     self.onlineSourceIDs = onlineIDs
                     self.vocabulary = vocabulary
                     self.savedFilters = (try? library.savedFilters()) ?? []
+                    self.refreshSavedFilterCounts()
                     self.tagAliases = aliases
                     self.folderTrees = trees
                     self.counts = counts
@@ -472,6 +476,25 @@ final class BrowseModel {
     }
 
     // MARK: - Saved filters
+
+    /// One count query per saved filter, off the main actor — a handful
+    /// of indexed counts, recomputed whenever the vocabulary refresh
+    /// runs so tagging keeps the numbers honest.
+    func refreshSavedFilterCounts() {
+        let library = library, kinds = kinds, filters = savedFilters
+        Task {
+            let counts = await Task.detached(priority: .utility) { () -> [UUID: Int] in
+                var counts: [UUID: Int] = [:]
+                for saved in filters {
+                    guard let filter = saved.filter else { continue }
+                    counts[saved.id] = (try? library.mediaItemCount(
+                        matching: filter, kinds: kinds)) ?? 0
+                }
+                return counts
+            }.value
+            self.savedFilterCounts = counts
+        }
+    }
 
     func saveCurrentFilter(named name: String) {
         do {

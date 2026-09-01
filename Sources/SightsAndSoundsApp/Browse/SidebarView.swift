@@ -291,6 +291,7 @@ struct SidebarView: View {
                             .foregroundStyle(Theme.Text.primary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
+                        CountText(model.savedFilterCounts[saved.id] ?? 0, size: 11)
                     }
                     .contextMenu {
                         Button("Rename…") { renamingFilter = saved }

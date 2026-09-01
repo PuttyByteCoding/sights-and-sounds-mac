@@ -829,4 +829,17 @@ public final class LibraryDatabase: Sendable {
             try MediaItem.fetchAll(db, sql: compiled.sql, arguments: compiled.arguments)
         }
     }
+
+    /// How many items a filter matches — the central query, counted
+    /// instead of fetched, so a saved filter's number and clicking it can
+    /// never disagree.
+    public func mediaItemCount(matching filter: MediaFilter, kinds: MediaKinds) throws -> Int {
+        let compiled = FilterCompiler.compile(filter: filter, kinds: kinds)
+        return try writer.read { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM (\(compiled.sql))",
+                arguments: compiled.arguments) ?? 0
+        }
+    }
 }
