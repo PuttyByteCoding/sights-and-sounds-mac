@@ -321,19 +321,33 @@ private struct PillCategoryView: View {
             .map { $0 }
     }
 
-    /// Every term must appear (case-insensitively) somewhere in the text.
-    /// All-must-match rather than any: adding a second term is how the
-    /// operator NARROWS a long list, so it must never widen one.
+    /// Every term must appear somewhere in the text — case-, diacritic-
+    /// AND punctuation-insensitively: "oneil" hits "O'Neil", "acdc" hits
+    /// "AC/DC", "motorhead" hits "Motörhead". All-must-match rather than
+    /// any: adding a second term is how the operator NARROWS a long
+    /// list, so it must never widen one.
     static func matchesAllTerms(_ text: String, terms: [String]) -> Bool {
-        terms.allSatisfy { text.localizedCaseInsensitiveContains($0) }
+        let folded = searchFold(text)
+        return terms.allSatisfy { folded.contains(searchFold($0)) }
     }
 
-    /// A tag named exactly what was typed, selected on sight so Enter
-    /// applies it instead of offering to create a duplicate.
+    /// The one fold both sides of every comparison go through — the
+    /// contains match above and the exact-equality that pre-selects a
+    /// row for Enter. Two folds is how "Tim oneil" ends up matching for
+    /// display but creating a duplicate on commit.
+    static func searchFold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+    }
+
+    /// A tag named exactly what was typed — through the same fold as the
+    /// matching, so "tim oneil" IS "Tim O'Neil" — selected on sight so
+    /// Enter applies it instead of offering to create a near-duplicate.
     private var exactMatchIndex: Int? {
-        suggestions.firstIndex {
-            $0.tag.name.localizedCaseInsensitiveCompare(query) == .orderedSame
-                || ($0.matchedAlias?.localizedCaseInsensitiveCompare(query) == .orderedSame)
+        let folded = PillCategoryView.searchFold(query)
+        return suggestions.firstIndex {
+            PillCategoryView.searchFold($0.tag.name) == folded
+                || $0.matchedAlias.map { PillCategoryView.searchFold($0) == folded } == true
         }
     }
 
@@ -619,9 +633,10 @@ private struct GlobalTagField: View {
     }
 
     private var exactMatchIndex: Int? {
-        hits.firstIndex {
-            $0.tag.name.localizedCaseInsensitiveCompare(query) == .orderedSame
-                || ($0.matchedAlias?.localizedCaseInsensitiveCompare(query) == .orderedSame)
+        let folded = PillCategoryView.searchFold(query)
+        return hits.firstIndex {
+            PillCategoryView.searchFold($0.tag.name) == folded
+                || $0.matchedAlias.map { PillCategoryView.searchFold($0) == folded } == true
         }
     }
 
