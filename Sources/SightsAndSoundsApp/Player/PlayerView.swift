@@ -700,6 +700,15 @@ private struct TransportBlock: View {
         }
     }
 
+    /// "x of y" against the playlist. Nil for a single-item queue —
+    /// "1 of 1" is furniture, not information.
+    private var queuePosition: String? {
+        guard model.playlist.count > 1, let item = model.item,
+              let index = model.playlist.firstIndex(of: item.id)
+        else { return nil }
+        return "\(index + 1) of \(model.playlist.count)"
+    }
+
     private var controlRow: some View {
         HStack(spacing: 14) {
             transportButton("backward.end.fill", help: "Previous item (\(model.keyMap.labels.previousNext))") {
@@ -730,6 +739,15 @@ private struct TransportBlock: View {
             Text(timeText)
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.Text.quaternary)
+
+            // Where you are in the queue — every surface that walks one
+            // says so (the analysis rail already does).
+            if let position = queuePosition {
+                Text(position)
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .help("Position in the play queue")
+            }
 
             Spacer()
 
