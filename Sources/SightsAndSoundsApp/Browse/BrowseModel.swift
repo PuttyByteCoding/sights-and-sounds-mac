@@ -789,6 +789,21 @@ final class BrowseModel {
         }
     }
 
+    /// The same OCR scan, with a completion — Tag Analysis reloads its
+    /// evidence when the scan lands rather than waiting for a broadcast.
+    func scanText(itemID: UUID, then finished: @escaping @MainActor @Sendable () -> Void) {
+        let runner = jobRunner
+        Task {
+            do {
+                _ = try await OcrJob.enqueue(on: runner, itemID: itemID)
+                try await runner.runPending()
+            } catch {
+                errorMessage = "\(error)"
+            }
+            finished()
+        }
+    }
+
     func joinFolder(of item: MediaItem) {
         runOperation { runner in
             _ = try await JoinJob.enqueue(
