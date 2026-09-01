@@ -346,3 +346,115 @@ import Testing
         #expect(analysis.unmapped.contains { $0.value == "Mike Jones" })
     }
 }
+
+/// Authored JSON schemas: recognition and key mapping.
+@Suite struct JsonSchemaTests {
+
+    private func makeLibrary() async throws -> (LibraryDatabase, Source) {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Schemas")
+        let source = Source(name: "S", rootPath: "/tmp/schemas")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try TagCategory(name: "Taper").insert(db)
+            try TagCategory(name: "Venue").insert(db)
+        }
+        return (library, source)
+    }
+
+    @Test func aMatchedSchemaMapsItsKeysIntoSuggested() async throws {
+        let (library, source) = try await makeLibrary()
+        try library.saveJsonSchema(named: "ShowNotes", keys: [
+            SchemaKey(key: "taper", required: true, category: "Taper"),
+            SchemaKey(key: "venue", required: true, category: "Venue"),
+            SchemaKey(key: "notes", required: false),
+        ])
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"{"taper": "Mike Jones", "venue": "Newport", "notes": "great set"}"#),
+        ])
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.matchedSchemas == ["ShowNotes"])
+        let taper = try #require(analysis.suggested.first { $0.value == "Mike Jones" })
+        #expect(taper.category == "Taper")
+        #expect(taper.mappedBySchema == "ShowNotes")
+        #expect(analysis.suggested.contains { $0.value == "Newport" && $0.category == "Venue" })
+        // The unmapped optional key's value survives as judgment material.
+        #expect(analysis.unmapped.contains { $0.value == "great set" })
+    }
+
+    @Test func aPayloadMissingARequiredKeyDoesNotMatch() async throws {
+        let (library, source) = try await makeLibrary()
+        try library.saveJsonSchema(named: "ShowNotes", keys: [
+            SchemaKey(key: "taper", required: true, category: "Taper"),
+            SchemaKey(key: "venue", required: true, category: "Venue"),
+        ])
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+        // taper alone — venue is required and absent.
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"{"taper": "Mike Jones"}"#),
+        ])
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.matchedSchemas.isEmpty)
+        #expect(analysis.suggested.isEmpty)
+        #expect(analysis.unmapped.contains { $0.value == "Mike Jones" })
+    }
+
+    @Test func keysMatchThroughTheEnginesOneFold() async throws {
+        let (library, source) = try await makeLibrary()
+        try library.saveJsonSchema(named: "ShowNotes", keys: [
+            SchemaKey(key: "Taper", required: true, category: "Taper"),
+        ])
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+        // Lowercase in the payload, TitleCase in the schema — the same
+        // fold keyEquals uses says they are one key.
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"{"taper": "Mike Jones"}"#),
+        ])
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.matchedSchemas == ["ShowNotes"])
+        #expect(analysis.suggested.first?.category == "Taper")
+    }
+
+    @Test func aRulesMappingBeatsTheSchemas() async throws {
+        let (library, source) = try await makeLibrary()
+        try library.saveJsonSchema(named: "ShowNotes", keys: [
+            SchemaKey(key: "taper", required: true, category: "Venue"),  // wrong on purpose
+        ])
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"{"taper": "Mike Jones"}"#),
+        ])
+
+        let analysis = try library.analyzeItem(
+            item.id,
+            rules: [RuleEngine.Rule(
+                id: UUID(), matcher: .keyEquals(key: "taper"),
+                actions: [.assignCategory(category: "Taper")])])
+        let taper = try #require(analysis.suggested.first { $0.value == "Mike Jones" })
+        // Rules are the sharper instrument; the schema is the net.
+        #expect(taper.category == "Taper")
+        #expect(taper.mappedBySchema == nil)
+    }
+
+    @Test func savingTheSameNameReplaces() async throws {
+        let (library, _) = try await makeLibrary()
+        let first = try library.saveJsonSchema(named: "Notes", keys: [SchemaKey(key: "a")])
+        let second = try library.saveJsonSchema(named: "notes", keys: [SchemaKey(key: "b")])
+        #expect(second.id == first.id)
+        let all = try library.jsonSchemas()
+        #expect(all.count == 1)
+        #expect(all.first?.keys.map(\.key) == ["b"])
+    }
+}

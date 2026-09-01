@@ -19,10 +19,11 @@ struct TagAnalysisView: View {
     var startIndex: Int = 0
     @State private var model: TagAnalysisModel?
     @State private var rules: RulesTabModel?
+    @State private var schemas: SchemasTabModel?
     @State private var mode: Mode = .candidates
     @FocusState private var focused: Bool
 
-    enum Mode: String, Hashable { case candidates, rules }
+    enum Mode: String, Hashable { case candidates, rules, schemas }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,6 +40,8 @@ struct TagAnalysisView: View {
                             .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
                     case .rules:
                         RulesTabView(model: rules)
+                    case .schemas:
+                        if let schemas { SchemasTabView(model: schemas) }
                     }
                 }
                 if mode == .candidates {
@@ -80,6 +83,7 @@ struct TagAnalysisView: View {
             made.reload()
             model = made
             rules = RulesTabModel(library: browse.library)
+            schemas = SchemasTabModel(library: browse.library)
             focused = true
             sweepCurrentIfNeeded(made)
         }
@@ -114,7 +118,7 @@ struct TagAnalysisView: View {
         HStack(spacing: 12) {
             ThemeSegmentedControl(
                 selection: $mode,
-                options: [(.candidates, "Candidates"), (.rules, "Rules")],
+                options: [(.candidates, "Candidates"), (.rules, "Rules"), (.schemas, "Schemas")],
                 emphasis: .neutral)
             if let model {
                 Text(headline(model))
@@ -493,6 +497,15 @@ private struct CandidateTable: View {
     var body: some View {
         VStack(spacing: 0) {
             columnHeader
+            if !model.analysis.matchedSchemas.isEmpty {
+                Text("Recognised: \(model.analysis.matchedSchemas.joined(separator: ", "))")
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Status.greenBright)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+                    .background(Theme.Status.goodBadgeFill)
+            }
             if model.analysis.truncated {
                 Text("Analysis ran out of time — these results are incomplete.")
                     .font(Theme.ui(Theme.TypeScale.secondary))
@@ -879,6 +892,9 @@ private struct DecidePane: View {
     }
 
     private func byline(_ candidate: AnalysisCandidate) -> String {
+        if let schema = candidate.mappedBySchema {
+            return "Mapped by schema “\(schema)”" + (candidate.key.map { " · key “\($0)”." } ?? ".")
+        }
         // Names only what THIS video's evidence says — the sidecar file,
         // the key, the path, the screen. Library-wide reach was here and
         // removed on review: only information pulled from this video.
