@@ -34,6 +34,9 @@ struct TagPanelView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+            GlobalTagField()
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     // An empty vocabulary used to render the panel as a
@@ -515,5 +518,177 @@ private struct DropInsertionLine: View {
             .fill(Theme.Accent.amber)
             .frame(height: 2.5)
             .padding(.vertical, 3)
+    }
+}
+
+// MARK: - The global tag finder
+
+/// One field that searches EVERY category — for when you know the tag
+/// but not which category it lives in, or it does not exist yet. Picking
+/// a hit applies it to the playing item; Enter with nothing picked opens
+/// the New Tag sheet, whose category picker decides where the tag lands.
+///
+/// The per-category fields keep their jobs (their suggestions are scoped
+/// and their Enter creates INTO that category with no dialog detour);
+/// this is the panel-wide complement, same matching rule — every
+/// space-separated term must hit.
+private struct GlobalTagField: View {
+    @Environment(PlayerModel.self) private var model
+    @State private var draft = ""
+    @State private var highlighted: Int?
+    @State private var creating = false
+    @FocusState private var focused: Bool
+
+    private var query: String { draft.trimmingCharacters(in: .whitespaces) }
+
+    private struct Hit: Identifiable {
+        let tag: Tag
+        let categoryName: String
+        let categoryHue: Color
+        let matchedAlias: String?
+        var id: UUID { tag.id }
+    }
+
+    private var hits: [Hit] {
+        guard !query.isEmpty else { return [] }
+        let terms = query.split(separator: " ").map(String.init)
+        let appliedIDs = Set(model.itemTags.flatMap(\.tags).map(\.id))
+        return model.panelVocabulary.flatMap { entry in
+            entry.tags.compactMap { tag -> Hit? in
+                guard !appliedIDs.contains(tag.id) else { return nil }
+                if PillCategoryView.matchesAllTerms(tag.name, terms: terms) {
+                    return Hit(
+                        tag: tag, categoryName: entry.category.name,
+                        categoryHue: Theme.categoryHue(entry.category.colorIndex),
+                        matchedAlias: nil)
+                }
+                guard let alias = (model.panelAliases[tag.id] ?? [])
+                    .first(where: { PillCategoryView.matchesAllTerms($0, terms: terms) })
+                else { return nil }
+                return Hit(
+                    tag: tag, categoryName: entry.category.name,
+                    categoryHue: Theme.categoryHue(entry.category.colorIndex),
+                    matchedAlias: alias)
+            }
+        }
+        .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
+        .map { $0 }
+    }
+
+    private var exactMatchIndex: Int? {
+        hits.firstIndex {
+            $0.tag.name.localizedCaseInsensitiveCompare(query) == .orderedSame
+                || ($0.matchedAlias?.localizedCaseInsensitiveCompare(query) == .orderedSame)
+        }
+    }
+
+    private var activeIndex: Int? { highlighted ?? exactMatchIndex }
+    private var willCreate: Bool { !query.isEmpty && activeIndex == nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("⌕").font(Theme.ui(12)).foregroundStyle(Theme.Text.quaternary)
+                TextField("Find or create a tag in any category…", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(12))
+                    .focused($focused)
+                    .onSubmit(commit)
+                    .onChange(of: draft) { _, _ in highlighted = nil }
+                    .onChange(of: focused) { _, now in
+                        if now { model.zone = .tags }
+                    }
+                    .onKeyPress(.upArrow) { move(-1) }
+                    .onKeyPress(.downArrow) { move(1) }
+                if willCreate {
+                    Text("(New Tag)")
+                        .font(Theme.mono(9.5))
+                        .foregroundStyle(Theme.Accent.amber)
+                }
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(Theme.Surface.well)
+                    .stroke(
+                        focused ? Theme.Border.activeControl : Theme.Border.standard,
+                        lineWidth: 1))
+
+            ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
+                let active = index == activeIndex
+                Button {
+                    apply(hit.tag)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle().fill(hit.categoryHue).frame(width: 6, height: 6)
+                        Text(hit.tag.name)
+                            .font(Theme.ui(12))
+                            .foregroundStyle(Theme.Text.primary)
+                        if let alias = hit.matchedAlias {
+                            Text("(\(alias))")
+                                .font(Theme.ui(11))
+                                .foregroundStyle(Theme.Text.quaternary)
+                        }
+                        Spacer(minLength: 6)
+                        Text(hit.categoryName)
+                            .font(Theme.ui(10))
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(active ? Theme.Surface.selectedRow : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $creating) {
+            if let first = model.panelVocabulary.first?.category.id {
+                TagSheet(
+                    mode: .create(categoryID: first, name: query),
+                    library: model.library,
+                    libraryID: model.libraryID,
+                    categories: model.panelVocabulary.map(\.category)
+                ) { tag in
+                    model.refreshTagging()
+                    model.toggleTag(tag.id)
+                    draft = ""
+                    highlighted = nil
+                }
+            }
+        }
+    }
+
+    private func move(_ delta: Int) -> KeyPress.Result {
+        guard !hits.isEmpty else { return .ignored }
+        switch (highlighted, delta) {
+        case (nil, 1): highlighted = 0
+        case (nil, -1): highlighted = hits.count - 1
+        case (let current?, _):
+            let next = current + delta
+            highlighted = hits.indices.contains(next) ? next : nil
+        default: break
+        }
+        return .handled
+    }
+
+    /// Enter: apply what is selected, or create when nothing is — the
+    /// per-category fields' contract, with the sheet choosing the home.
+    private func commit() {
+        guard !query.isEmpty else { return }
+        if let index = activeIndex, hits.indices.contains(index) {
+            apply(hits[index].tag)
+        } else {
+            creating = true
+        }
+    }
+
+    private func apply(_ tag: Tag) {
+        model.toggleTag(tag.id)
+        draft = ""
+        highlighted = nil
     }
 }
