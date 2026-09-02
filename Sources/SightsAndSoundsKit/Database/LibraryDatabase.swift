@@ -749,6 +749,17 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Named JSON shapes for tag analysis — authored, so they live in
+        // the library like rules do.
+        migrator.registerMigration("jsonSchemas") { db in
+            try db.create(table: "jsonSchema") { t in
+                t.primaryKey("id", .blob)
+                t.column("name", .text).notNull().collate(.nocase).unique()
+                t.column("definitionJSON", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 

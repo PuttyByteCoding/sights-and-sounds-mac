@@ -23,6 +23,9 @@ public struct AnalysisCandidate: Equatable, Sendable, Identifiable {
     /// are skipped by existing-tag matching, which is the false-positive
     /// reduction the ignore-words exist for.
     public let suppressedByRule: String?
+    /// Non-nil when the category came from a MATCHED JSON SCHEMA rather
+    /// than a rule — the decide pane says which one.
+    public let mappedBySchema: String?
     public let origins: [AnalysisOrigin]
 
     public var id: String { "\(KeyNormalizer.normalize(key ?? ""))|\(value.lowercased())" }
@@ -52,6 +55,8 @@ public struct ItemAnalysis: Equatable, Sendable {
     public let existing: [ExistingTagFinding]
     public let unmapped: [AnalysisCandidate]
     public let md5s: [String]
+    /// Schemas that recognised a JSON payload in this video's evidence.
+    public let matchedSchemas: [String]
     /// The parse hit its deadline — surfaced where the results are,
     /// because an incomplete list that looks complete is worse than a
     /// visibly incomplete one.
@@ -59,7 +64,8 @@ public struct ItemAnalysis: Equatable, Sendable {
     public let provenance: [ProvenanceStep]
 
     public static let empty = ItemAnalysis(
-        suggested: [], existing: [], unmapped: [], md5s: [], truncated: false, provenance: [])
+        suggested: [], existing: [], unmapped: [], md5s: [], matchedSchemas: [],
+        truncated: false, provenance: [])
 
     /// The analyzer's CAPABILITY version, stamped on every item the
     /// operator advances past. Derived from what the analyzer can read,
@@ -73,7 +79,9 @@ public struct ItemAnalysis: Equatable, Sendable {
     ///
     /// 1 · embedded metadata, path, same-basename sidecars (.txt/.json),
     ///     OCR, the recursive parser.
-    public static let analyzerVersion = 1
+    /// 2 · JSON schema matching — payloads recognised against authored
+    ///     schemas, their key mappings feeding Suggested.
+    public static let analyzerVersion = 2
 }
 
 /// The visited marker: tag analysis showed the operator this item, under
@@ -170,6 +178,12 @@ extension LibraryDatabase {
         // rather than sinking the run: five sources of evidence must
         // degrade one at a time.
         var merged: [String: (candidate: ParsedCandidate, origins: [AnalysisOrigin])] = [:]
+        // Which schema, if any, claimed each JSON key found in this
+        // video's payloads. First matched schema wins a contested key —
+        // schemas are ordered by name, so the winner is deterministic.
+        let schemas = (try? jsonSchemas()) ?? []
+        var schemaMappings: [String: (category: String, schemaName: String)] = [:]
+        var matchedSchemaNames: [String] = []
         var order: [String] = []
         var md5s: [String] = []
         var provenance: [ProvenanceStep] = []
@@ -181,6 +195,23 @@ extension LibraryDatabase {
                 // The reader's key enters the walk at the top, so the
                 // rule fold sees it exactly once — a keyed metadata value
                 // and a JSON leaf take the same path through the engine.
+                // A structured payload is checked against the KNOWN
+                // schemas before parsing: a match turns the schema's key
+                // mappings into suggestions for every leaf under those
+                // keys.
+                if !schemas.isEmpty, JsonLeafExtractor.isStructuredJSON(source.text) {
+                    let payloadKeys = Set(
+                        JsonLeafExtractor.extract(source.text).compactMap(\.rawKey))
+                    for schema in schemas where schema.matches(payloadKeys: payloadKeys) {
+                        if !matchedSchemaNames.contains(schema.name) {
+                            matchedSchemaNames.append(schema.name)
+                        }
+                        for (foldedKey, category) in schema.categoryByFoldedKey
+                        where schemaMappings[foldedKey] == nil {
+                            schemaMappings[foldedKey] = (category, schema.name)
+                        }
+                    }
+                }
                 let result = parser.parse(
                     source.text, key: source.key, rules: rules, deadline: deadline)
                 truncated = truncated || result.truncated
@@ -227,10 +258,22 @@ extension LibraryDatabase {
 
         for dedupeKey in order {
             guard let entry = merged[dedupeKey] else { continue }
+            // A rule's category wins over a schema's — rules are the
+            // sharper instrument, and the schema is the net beneath them.
+            var category = entry.candidate.category
+            var mappedBySchema: String? = nil
+            if category == nil, entry.candidate.suppressedByRule == nil,
+               let key = entry.candidate.key,
+               let mapping = schemaMappings[KeyNormalizer.normalize(key)]
+            {
+                category = mapping.category
+                mappedBySchema = mapping.schemaName
+            }
             let candidate = AnalysisCandidate(
                 value: entry.candidate.value, key: entry.candidate.key,
-                category: entry.candidate.category,
+                category: category,
                 suppressedByRule: entry.candidate.suppressedByRule,
+                mappedBySchema: mappedBySchema,
                 origins: entry.origins)
 
             if candidate.category != nil, candidate.suppressedByRule == nil {
@@ -259,7 +302,8 @@ extension LibraryDatabase {
                 ($0.alreadyApplied ? 1 : 0, $0.tag.name) < ($1.alreadyApplied ? 1 : 0, $1.tag.name)
             },
             unmapped: unmapped,
-            md5s: md5s, truncated: truncated, provenance: provenance)
+            md5s: md5s, matchedSchemas: matchedSchemaNames,
+            truncated: truncated, provenance: provenance)
     }
 
     // MARK: - The existing-tag pass
