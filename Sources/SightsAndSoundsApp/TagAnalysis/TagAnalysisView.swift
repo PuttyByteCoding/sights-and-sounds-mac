@@ -22,7 +22,6 @@ struct TagAnalysisView: View {
     @State private var schemas: SchemasTabModel?
     @State private var mode: Mode = .candidates
     @FocusState private var focused: Bool
-    @State private var showReaderIO = false
 
     enum Mode: String, Hashable { case candidates, rules, schemas }
 
@@ -35,10 +34,15 @@ struct TagAnalysisView: View {
                         .frame(minWidth: 210, idealWidth: 240, maxWidth: 320)
                     switch mode {
                     case .candidates:
-                        CandidateTable(model: model)
-                            .frame(minWidth: 460)
-                        DecidePane(model: model, onMakeRule: makeRule)
-                            .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
+                        if model.showingReaderIO {
+                            ReaderIOView(model: model)
+                                .frame(minWidth: 620)
+                        } else {
+                            CandidateTable(model: model)
+                                .frame(minWidth: 460)
+                            DecidePane(model: model, onMakeRule: makeRule)
+                                .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
+                        }
                     case .rules:
                         RulesTabView(model: rules)
                     case .schemas:
@@ -90,9 +94,6 @@ struct TagAnalysisView: View {
         }
         .onChange(of: model?.index ?? -1) { _, _ in
             if let model { sweepCurrentIfNeeded(model) }
-        }
-        .sheet(isPresented: $showReaderIO) {
-            if let model { ReaderIOSheet(model: model) }
         }
         .onDisappear {
             // Closing the window is the other way of leaving a video:
@@ -148,9 +149,6 @@ struct TagAnalysisView: View {
                         .fill(Theme.Surface.well)
                         .stroke(Theme.Border.standard, lineWidth: 1))
 
-                Button("Reader I/O") { showReaderIO = true }
-                    .buttonStyle(SecondaryButtonStyle(compact: true))
-                    .help("Raw in and processed out, per reader, for this video")
                 Button("Scan On-Screen Text") {
                     // Vision OCR, on demand — deliberately never part of
                     // the automatic load (a full-video scan is minutes,
@@ -212,6 +210,7 @@ private struct RailView: View {
                 preview
                 appliedBlock
                 sources
+                readerIO
                 status
                 thisPass
             }
@@ -353,6 +352,48 @@ private struct RailView: View {
             ForEach(LibraryDatabase.defaultAnalysisReaders(), id: \.id) { reader in
                 sourceRow(reader.id, reader.displayName)
             }
+        }
+    }
+
+    /// The Reader I/O page's rail entry — a sibling of Evidence Sources,
+    /// because it answers the sibling question: sources say WHAT KIND of
+    /// evidence, this says exactly what each reader put in and what
+    /// came out.
+    private var readerIO: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Reader I/O").modifier(Theme.sectionLabel())
+                .padding(.bottom, 4)
+            Button {
+                model.showingReaderIO.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(Theme.ui(9))
+                        .foregroundStyle(
+                            model.showingReaderIO ? Theme.Accent.amber : Theme.Text.disabled)
+                        .frame(width: 13)
+                    Text("Raw in · processed out")
+                        .font(Theme.ui(Theme.TypeScale.body,
+                                       model.showingReaderIO ? .semibold : .regular))
+                        .foregroundStyle(
+                            model.showingReaderIO ? Theme.Text.primary : Theme.Text.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                        .fill(model.showingReaderIO ? Theme.Surface.selectedRow : .clear))
+                .overlay(alignment: .leading) {
+                    if model.showingReaderIO {
+                        Rectangle().fill(Theme.Border.selectionInset)
+                            .frame(width: Theme.Border.selectionInsetWidth)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Show what each reader handed the pipeline, and what it became — click again for the candidates")
         }
     }
 
@@ -555,6 +596,7 @@ private struct CandidateTable: View {
             Text("Value").modifier(Theme.sectionLabel())
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text("Key").modifier(Theme.sectionLabel()).frame(width: 110, alignment: .leading)
+            Text("Readers").modifier(Theme.sectionLabel()).frame(width: 96, alignment: .leading)
             Text("Seen").modifier(Theme.sectionLabel()).frame(width: 48, alignment: .trailing)
             Text("Suggestion").modifier(Theme.sectionLabel()).frame(width: 190, alignment: .leading)
             Text("").frame(width: 22)
@@ -617,6 +659,9 @@ private struct CandidateTableRow: View {
                     .foregroundStyle(Theme.Text.quaternary)
                     .lineLimit(1)
                     .frame(width: 110, alignment: .leading)
+
+                ReaderChips(origins: candidate.origins)
+                    .frame(width: 96, alignment: .leading)
 
                 Text("\(model.occurrenceCount(for: candidate))")
                     .font(Theme.mono(11))
@@ -1303,5 +1348,47 @@ private struct PreviewTransport: View {
                 .foregroundStyle(Theme.Text.quaternary)
                 .fixedSize()
         }
+    }
+}
+
+// MARK: - Reader chips
+
+/// Which reader(s) produced a value — compact, hue-matched to the rail's
+/// evidence-source dots, with the sidecar's actual filename in the
+/// tooltip.
+private struct ReaderChips: View {
+    let origins: [AnalysisOrigin]
+
+    private static let short: [String: (label: String, hue: Color)] = [
+        "embeddedMetadata": ("meta", Theme.Status.blueBright),
+        "path": ("path", Theme.Segment.song),
+        "sidecarText": ("txt", Theme.Status.orangeMuted),
+        "sidecarJson": ("json", Theme.Status.green),
+        "onScreen": ("ocr", Theme.Status.mauve),
+    ]
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(Set(origins.map(\.readerID))).sorted(), id: \.self) { readerID in
+                let info = Self.short[readerID] ?? (readerID, Theme.Text.quaternary)
+                Text(info.label)
+                    .font(Theme.mono(8.5))
+                    .foregroundStyle(info.hue)
+                    .padding(.horizontal, 3.5)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                            .fill(info.hue.opacity(0.12)))
+                    .help(tooltip(readerID))
+            }
+        }
+    }
+
+    private func tooltip(_ readerID: String) -> String {
+        let files = Set(
+            origins.filter { $0.readerID == readerID }.compactMap(\.sourceFile)).sorted()
+        let base = LibraryDatabase.defaultAnalysisReaders()
+            .first { $0.id == readerID }?.displayName ?? readerID
+        return files.isEmpty ? base : "\(base) — \(files.joined(separator: ", "))"
     }
 }

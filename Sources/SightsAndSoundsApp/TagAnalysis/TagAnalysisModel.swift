@@ -65,6 +65,10 @@ final class TagAnalysisModel {
     var searchText = ""
     var selectedCandidateID: AnalysisCandidate.ID?
 
+    /// The rail's Reader I/O page replaces the candidate table while on
+    /// — a sibling view of the same video, following the queue walk.
+    var showingReaderIO = false
+
     /// Left-rail filters — the comp's EVIDENCE SOURCES and STATUS blocks.
     var readerFilter: String?
     var statusFilter: StatusFilter = .undecided
