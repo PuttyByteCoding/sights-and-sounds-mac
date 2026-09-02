@@ -537,3 +537,25 @@ extension EmbeddedJsonTests {
         #expect(analysis.suggested.first { $0.value == "Mike Jones" }?.mappedBySchema == "ShowNotes")
     }
 }
+
+extension EmbeddedJsonTests {
+    @Test func readerReportsCarryRawInPerReaderInOrder() async throws {
+        let (library, item) = try await makeLibrary()
+        try library.recordMetadataPairs(itemID: item.id, pairs: [("taper", "Mike Jones")])
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        // Every registered reader reports, in registration order —
+        // "found nothing" is a report too.
+        #expect(analysis.readerReports.map(\.readerID)
+            == ["embeddedMetadata", "path", "sidecarText", "sidecarJson", "onScreen"])
+        let metadata = try #require(
+            analysis.readerReports.first { $0.readerID == "embeddedMetadata" })
+        #expect(metadata.sources.count == 1)
+        #expect(metadata.sources.first?.key == "taper")
+        #expect(metadata.sources.first?.text == "Mike Jones")
+        #expect(metadata.error == nil)
+        // The path reader reported its one raw string too.
+        let path = try #require(analysis.readerReports.first { $0.readerID == "path" })
+        #expect(path.sources.first?.text == "a.mp4")
+    }
+}

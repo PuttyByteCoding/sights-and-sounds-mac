@@ -52,6 +52,22 @@ public struct ExistingTagFinding: Equatable, Sendable, Identifiable {
     public var id: String { "\(tag.id)|\(foundIn.lowercased())" }
 }
 
+/// One reader's half of the ledger: exactly what it handed the
+/// pipeline, raw. The processed half needs no storage — every candidate
+/// already carries its origins, so "what came OUT of this reader" is a
+/// filter over the buckets.
+public struct ReaderReport: Equatable, Sendable, Identifiable {
+    public let readerID: String
+    public let displayName: String
+    public let sources: [AnalysisSourceText]
+    /// The reader threw. A throwing reader contributes nothing rather
+    /// than sinking the run — but silence here made that indistinguishable
+    /// from "found nothing", which is exactly what an inspector is for.
+    public let error: String?
+
+    public var id: String { readerID }
+}
+
 /// Everything the analysis found for one video, bucketed the way the
 /// operator triages: rule-mapped first, known tags second, judgment last.
 public struct ItemAnalysis: Equatable, Sendable {
@@ -61,6 +77,9 @@ public struct ItemAnalysis: Equatable, Sendable {
     public let md5s: [String]
     /// Schemas that recognised a JSON payload in this video's evidence.
     public let matchedSchemas: [String]
+    /// Raw in, per reader, in registration order — the inspector's left
+    /// column. What came out is a filter over the buckets by origin.
+    public let readerReports: [ReaderReport]
     /// The parse hit its deadline — surfaced where the results are,
     /// because an incomplete list that looks complete is worse than a
     /// visibly incomplete one.
@@ -69,7 +88,7 @@ public struct ItemAnalysis: Equatable, Sendable {
 
     public static let empty = ItemAnalysis(
         suggested: [], existing: [], unmapped: [], md5s: [], matchedSchemas: [],
-        truncated: false, provenance: [])
+        readerReports: [], truncated: false, provenance: [])
 
     /// The analyzer's CAPABILITY version, stamped on every item the
     /// operator advances past. Derived from what the analyzer can read,
@@ -193,8 +212,19 @@ extension LibraryDatabase {
         var provenance: [ProvenanceStep] = []
         var truncated = false
 
+        var readerReports: [ReaderReport] = []
         for reader in readers ?? Self.defaultAnalysisReaders() {
-            let sources = (try? reader.read(item: item, fileURL: fileURL, library: self)) ?? []
+            var readerError: String?
+            let sources: [AnalysisSourceText]
+            do {
+                sources = try reader.read(item: item, fileURL: fileURL, library: self)
+            } catch {
+                sources = []
+                readerError = "\(error)"
+            }
+            readerReports.append(ReaderReport(
+                readerID: reader.id, displayName: reader.displayName,
+                sources: sources, error: readerError))
             for source in sources {
                 // The reader's key enters the walk at the top, so the
                 // rule fold sees it exactly once — a keyed metadata value
@@ -323,6 +353,7 @@ extension LibraryDatabase {
             },
             unmapped: unmapped,
             md5s: md5s, matchedSchemas: matchedSchemaNames,
+            readerReports: readerReports,
             truncated: truncated, provenance: provenance)
     }
 
