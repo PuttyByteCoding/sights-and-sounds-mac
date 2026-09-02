@@ -26,6 +26,10 @@ public struct AnalysisCandidate: Equatable, Sendable, Identifiable {
     /// Non-nil when the category came from a MATCHED JSON SCHEMA rather
     /// than a rule — the decide pane says which one.
     public let mappedBySchema: String?
+    /// The road back to the source: the reader's label, then each tool
+    /// the recursive walk went through. "Embedded metadata · comment →
+    /// jsonParser" is how a value three layers deep stays traceable.
+    public let trail: [String]
     public let origins: [AnalysisOrigin]
 
     public var id: String { "\(KeyNormalizer.normalize(key ?? ""))|\(value.lowercased())" }
@@ -199,9 +203,15 @@ extension LibraryDatabase {
                 // schemas before parsing: a match turns the schema's key
                 // mappings into suggestions for every leaf under those
                 // keys.
-                if !schemas.isEmpty, JsonLeafExtractor.isStructuredJSON(source.text) {
+                if !schemas.isEmpty {
+                    // Whole-string JSON, or spans embedded in prose —
+                    // each PAYLOAD is matched on its own key set.
+                    let payloads: [String] = JsonLeafExtractor.isStructuredJSON(source.text)
+                        ? [source.text]
+                        : JsonLeafExtractor.embeddedSpans(in: source.text).map(\.json)
+                    for payload in payloads {
                     let payloadKeys = Set(
-                        JsonLeafExtractor.extract(source.text).compactMap(\.rawKey))
+                        JsonLeafExtractor.extract(payload).compactMap(\.rawKey))
                     for schema in schemas where schema.matches(payloadKeys: payloadKeys) {
                         if !matchedSchemaNames.contains(schema.name) {
                             matchedSchemaNames.append(schema.name)
@@ -211,9 +221,16 @@ extension LibraryDatabase {
                             schemaMappings[foldedKey] = (category, schema.name)
                         }
                     }
+                    }
                 }
+                let sourceLabel: String = {
+                    if let file = source.sourceFile { return file }
+                    if let key = source.key { return "\(reader.displayName) · \(key)" }
+                    return reader.displayName
+                }()
                 let result = parser.parse(
-                    source.text, key: source.key, rules: rules, deadline: deadline)
+                    source.text, key: source.key, rules: rules, deadline: deadline,
+                    origin: [sourceLabel])
                 truncated = truncated || result.truncated
                 provenance += result.provenance
                 for hash in result.md5s where !md5s.contains(hash) { md5s.append(hash) }
@@ -233,14 +250,16 @@ extension LibraryDatabase {
                         if known.candidate.category == nil, folded.category != nil {
                             known.candidate = ParsedCandidate(
                                 value: known.candidate.value, category: folded.category,
-                                suppressedByRule: known.candidate.suppressedByRule, key: key)
+                                suppressedByRule: known.candidate.suppressedByRule, key: key,
+                                trail: known.candidate.trail)
                         }
                         merged[dedupeKey] = known
                     } else {
                         merged[dedupeKey] = (
                             ParsedCandidate(
                                 value: value, category: folded.category,
-                                suppressedByRule: folded.suppressedByRule, key: key),
+                                suppressedByRule: folded.suppressedByRule, key: key,
+                                trail: folded.trail),
                             [origin])
                         order.append(dedupeKey)
                     }
@@ -274,6 +293,7 @@ extension LibraryDatabase {
                 category: category,
                 suppressedByRule: entry.candidate.suppressedByRule,
                 mappedBySchema: mappedBySchema,
+                trail: entry.candidate.trail,
                 origins: entry.origins)
 
             if candidate.category != nil, candidate.suppressedByRule == nil {
