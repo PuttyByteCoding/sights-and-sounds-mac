@@ -122,6 +122,14 @@ final class TagAnalysisModel {
         allRows.filter { matches($0) }
     }
 
+    /// The inspector's right column: everything this reader's strings
+    /// became, whichever bucket they landed in.
+    func candidates(fromReader readerID: String) -> [TableRow] {
+        allRows.filter { row in
+            row.candidate.origins.contains { $0.readerID == readerID }
+        }
+    }
+
     func count(reader: String?) -> Int {
         allRows.count { row in
             (reader == nil || row.candidate.origins.contains { $0.readerID == reader })

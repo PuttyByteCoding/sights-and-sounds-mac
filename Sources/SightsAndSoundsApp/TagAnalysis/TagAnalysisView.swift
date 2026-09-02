@@ -22,6 +22,7 @@ struct TagAnalysisView: View {
     @State private var schemas: SchemasTabModel?
     @State private var mode: Mode = .candidates
     @FocusState private var focused: Bool
+    @State private var showReaderIO = false
 
     enum Mode: String, Hashable { case candidates, rules, schemas }
 
@@ -90,6 +91,9 @@ struct TagAnalysisView: View {
         .onChange(of: model?.index ?? -1) { _, _ in
             if let model { sweepCurrentIfNeeded(model) }
         }
+        .sheet(isPresented: $showReaderIO) {
+            if let model { ReaderIOSheet(model: model) }
+        }
         .onDisappear {
             // Closing the window is the other way of leaving a video:
             // the basket lands and the visited marker is stamped.
@@ -144,6 +148,9 @@ struct TagAnalysisView: View {
                         .fill(Theme.Surface.well)
                         .stroke(Theme.Border.standard, lineWidth: 1))
 
+                Button("Reader I/O") { showReaderIO = true }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
+                    .help("Raw in and processed out, per reader, for this video")
                 Button("Scan On-Screen Text") {
                     // Vision OCR, on demand — deliberately never part of
                     // the automatic load (a full-video scan is minutes,
