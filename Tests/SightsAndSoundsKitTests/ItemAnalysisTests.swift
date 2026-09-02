@@ -559,3 +559,40 @@ extension EmbeddedJsonTests {
         #expect(path.sources.first?.text == "a.mp4")
     }
 }
+
+extension EmbeddedJsonTests {
+    @Test func wrappedJSONCarriersAllResolve() async throws {
+        // Double-encoded: a JSON string literal whose contents are JSON.
+        let doubled = #""{\"taper\": \"Mike Jones\"}""#
+        let d = try #require(JsonLeafExtractor.effectiveJSONText(doubled))
+        #expect(d.carrier == .doubleEncoded)
+        #expect(JsonLeafExtractor.extract(d.text).first?.rawKey == "taper")
+
+        // Escaped quotes with the wrapper lost.
+        let escaped = #"{\"taper\": \"Mike Jones\"}"#
+        let e = try #require(JsonLeafExtractor.effectiveJSONText(escaped))
+        #expect(e.carrier == .unescaped)
+
+        // BOM-prefixed plain JSON.
+        let bom = "\u{FEFF}{\"taper\": \"Mike\"}"
+        let b = try #require(JsonLeafExtractor.effectiveJSONText(bom))
+        #expect(b.carrier == .whole)
+
+        // Braces that are not JSON stay nil — no false positives.
+        #expect(JsonLeafExtractor.effectiveJSONText("set {brightness} high") == nil)
+    }
+
+    @Test func aDoubleEncodedCommentYieldsKeyedLeaves() async throws {
+        let (library, item) = try await makeLibrary()
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #""{\"taper\": \"Mike Jones\"}""#),
+        ])
+
+        let analysis = try library.analyzeItem(
+            item.id,
+            rules: [RuleEngine.Rule(
+                id: UUID(), matcher: .keyEquals(key: "taper"),
+                actions: [.assignCategory(category: "Taper")])])
+        #expect(analysis.suggested.first { $0.value == "Mike Jones" }?.key == "taper")
+    }
+}
