@@ -1,13 +1,14 @@
 import SwiftUI
 import SightsAndSoundsKit
 
-/// The inspector: raw in and processed out, per reader, for the
-/// displayed video. The left of each section is EXACTLY what the reader
-/// handed the pipeline; the right is every candidate whose origins name
-/// that reader — so "the reader saw it but nothing came out" and "the
-/// reader never saw it" stop looking identical.
-struct ReaderIOSheet: View {
-    @Environment(\.dismiss) private var dismiss
+/// The inspector PAGE: raw in and processed out, per reader, for the
+/// displayed video. Reached from the rail — a sibling of Evidence
+/// Sources — and it follows the queue walk like the rest of the window.
+/// The left of each section is EXACTLY what the reader handed the
+/// pipeline; the right is every candidate whose origins name that
+/// reader — so "the reader saw it but nothing came out" and "the reader
+/// never saw it" stop looking identical.
+struct ReaderIOView: View {
     let model: TagAnalysisModel
 
     var body: some View {
@@ -22,15 +23,7 @@ struct ReaderIOSheet: View {
                 .padding(14)
             }
         }
-        .frame(width: 760, height: 560)
-        .background(Theme.Surface.dialog)
-        .onKeyPress { press in
-            if press.key == .escape {
-                dismiss()
-                return .handled
-            }
-            return .ignored
-        }
+        .background(Theme.Surface.content)
     }
 
     private var header: some View {
@@ -42,9 +35,6 @@ struct ReaderIOSheet: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Button("Done") { dismiss() }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-                .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
