@@ -17,15 +17,19 @@ public struct ParsedCandidate: Equatable, Sendable {
     /// one — "the key beside the value could indicate which value is the
     /// taper's name", so the display must be able to show it.
     public let key: String?
+    /// The road back: the reader's own label, then each tool the walk
+    /// went through — "Embedded metadata · comment → jsonParser".
+    public let trail: [String]
 
     public init(
         value: String, category: String? = nil, suppressedByRule: String? = nil,
-        key: String? = nil
+        key: String? = nil, trail: [String] = []
     ) {
         self.value = value
         self.category = category
         self.suppressedByRule = suppressedByRule
         self.key = key
+        self.trail = trail
     }
 }
 
@@ -92,7 +96,12 @@ public struct SubParserNextItem: Equatable, Sendable {
 public protocol SubParser: Sendable {
     var id: String { get }
     func detect(_ raw: String) -> Bool
-    func parse(_ raw: String) -> [SubParserNextItem]
+    /// `key` is the ENCLOSING key the raw string arrived under — a
+    /// sub-parser that emits leftover text (the prose around an embedded
+    /// JSON span) hands it back under that key, so a keyEquals rule on
+    /// the field still sees the prose. Path segments stay unkeyed as
+    /// ever: a directory name has no enclosing key.
+    func parse(_ raw: String, key: String?) -> [SubParserNextItem]
 }
 
 /// How long a parse may run.
@@ -173,8 +182,19 @@ public struct TextParser: Sendable {
     public func parse(
         _ raw: String, key: String?, rules: [RuleEngine.Rule], deadline: ParseDeadline
     ) -> TextParseResult {
+        parse(raw, key: key, rules: rules, deadline: deadline, origin: [])
+    }
+
+    /// As above, with the breadcrumb the caller knows — "Embedded
+    /// metadata · comment", "info.txt" — prepended to every candidate's
+    /// trail, so a value found three layers deep can say the whole road
+    /// back to where it came from.
+    public func parse(
+        _ raw: String, key: String?, rules: [RuleEngine.Rule], deadline: ParseDeadline,
+        origin: [String]
+    ) -> TextParseResult {
         var state = State()
-        var work: [(raw: String, key: String?, depth: Int)] = [(raw, key, 0)]
+        var work: [(raw: String, key: String?, depth: Int, trail: [String])] = [(raw, key, 0, origin)]
 
         while let node = work.popLast() {
             // Truncation stops the drain entirely. Everything still queued
@@ -191,11 +211,12 @@ public struct TextParser: Sendable {
 
     /// One node. Returns false the instant truncation is discovered.
     private func process(
-        _ node: (raw: String, key: String?, depth: Int),
+        _ node: (raw: String, key: String?, depth: Int, trail: [String]),
         rules: [RuleEngine.Rule], state: inout State,
-        work: inout [(raw: String, key: String?, depth: Int)], deadline: ParseDeadline
+        work: inout [(raw: String, key: String?, depth: Int, trail: [String])],
+        deadline: ParseDeadline
     ) -> Bool {
-        let (raw, key, depth) = node
+        let (raw, key, depth, _) = node
 
         if deadline.isExpired {
             state.truncated = true
@@ -220,8 +241,8 @@ public struct TextParser: Sendable {
             // Pushed in reverse so popping reproduces left-to-right,
             // depth-first order — provenance and candidate ordering are
             // pinned to it.
-            for item in sub.parse(raw).reversed() {
-                work.append((item.raw, item.key, depth + 1))
+            for item in sub.parse(raw, key: key).reversed() {
+                work.append((item.raw, item.key, depth + 1, node.trail + [sub.id]))
             }
             return true  // first matching sub-parser wins
         }
@@ -249,7 +270,7 @@ public struct TextParser: Sendable {
         state.candidates.append(
             ParsedCandidate(
                 value: outcome.value, category: outcome.category,
-                suppressedByRule: suppressedBy, key: key))
+                suppressedByRule: suppressedBy, key: key, trail: node.trail))
         return true
     }
 

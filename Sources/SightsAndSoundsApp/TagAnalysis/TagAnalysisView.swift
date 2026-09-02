@@ -1005,6 +1005,16 @@ private struct DecidePane: View {
     private func appearsBlock(_ candidate: AnalysisCandidate) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Found in").modifier(Theme.sectionLabel())
+            if candidate.trail.count > 1 || candidate.key != nil {
+                // The road back: reader → each parsing step → the key.
+                // "comment → jsonParser → taper" answers "where did this
+                // come from" for a value three layers deep.
+                Text(trailText(candidate))
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Status.blueBright)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(originLines(candidate), id: \.self) { line in
                 Text(line)
                     .font(Theme.mono(10))
@@ -1013,6 +1023,18 @@ private struct DecidePane: View {
                     .truncationMode(.middle)
             }
         }
+    }
+
+    private func trailText(_ candidate: AnalysisCandidate) -> String {
+        var steps = candidate.trail.map { step in
+            switch step {
+            case "jsonParser": "JSON"
+            case "pathParser": "path"
+            default: step
+            }
+        }
+        if let key = candidate.key, steps.last != key { steps.append("“\(key)”") }
+        return steps.joined(separator: " → ")
     }
 
     /// One line per place in THIS video the string turned up.

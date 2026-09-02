@@ -458,3 +458,82 @@ import Testing
         #expect(all.first?.keys.map(\.key) == ["b"])
     }
 }
+
+/// JSON buried in prose — the reported miss — and the road back.
+@Suite struct EmbeddedJsonTests {
+
+    private func makeLibrary() async throws -> (LibraryDatabase, MediaItem) {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Embedded")
+        let source = Source(name: "S", rootPath: "/tmp/embedded")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try TagCategory(name: "Taper").insert(db)
+        }
+        let item = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { try item.insert($0) }
+        return (library, item)
+    }
+
+    @Test func jsonInsideALongerCommentIsFoundAndKeyed() async throws {
+        let (library, item) = try await makeLibrary()
+        // The reported case verbatim in shape: prose, then JSON, then
+        // prose — the strict starts-with detector never saw it.
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"Ripped by X {"taper": "Mike Jones"} enjoy the show"#),
+        ])
+
+        let analysis = try library.analyzeItem(
+            item.id,
+            rules: [RuleEngine.Rule(
+                id: UUID(), matcher: .keyEquals(key: "taper"),
+                actions: [.assignCategory(category: "Taper")])])
+        let taper = try #require(analysis.suggested.first { $0.value == "Mike Jones" })
+        #expect(taper.key == "taper")
+        // The prose around the span survives, still under the field's
+        // own key, so rules on "comment" still see it.
+        #expect(analysis.unmapped.contains { $0.value == "Ripped by X" && $0.key == "comment" })
+        #expect(analysis.unmapped.contains { $0.value == "enjoy the show" })
+    }
+
+    @Test func embeddedSpansIgnoreStrayBracesInProse() async throws {
+        let spans = JsonLeafExtractor.embeddedSpans(
+            in: #"a {not json} b {"k": "v"} c"#)
+        #expect(spans.count == 1)
+        #expect(spans.first?.json == #"{"k": "v"}"#)
+        // Braces inside JSON strings do not break the balance.
+        let tricky = JsonLeafExtractor.embeddedSpans(
+            in: #"x {"a": "{brace} in string"} y"#)
+        #expect(tricky.count == 1)
+    }
+
+    @Test func theTrailSaysTheWholeRoadBack() async throws {
+        let (library, item) = try await makeLibrary()
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"notes {"taper": "Mike Jones"}"#),
+        ])
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        let taper = try #require(
+            (analysis.suggested + analysis.unmapped).first { $0.value == "Mike Jones" })
+        // Reader label first, then the parser step — back to the source.
+        #expect(taper.trail == ["Embedded metadata · comment", "jsonParser"])
+    }
+}
+
+extension EmbeddedJsonTests {
+    @Test func anEmbeddedPayloadStillMatchesSchemas() async throws {
+        let (library, item) = try await makeLibrary()
+        try library.saveJsonSchema(named: "ShowNotes", keys: [
+            SchemaKey(key: "taper", required: true, category: "Taper"),
+        ])
+        try library.recordMetadataPairs(itemID: item.id, pairs: [
+            ("comment", #"see notes {"taper": "Mike Jones"} end"#),
+        ])
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.matchedSchemas == ["ShowNotes"])
+        #expect(analysis.suggested.first { $0.value == "Mike Jones" }?.mappedBySchema == "ShowNotes")
+    }
+}

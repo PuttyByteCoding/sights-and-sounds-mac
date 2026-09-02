@@ -107,11 +107,108 @@ public struct JsonSubParser: SubParser {
 
     public init() {}
 
-    public func detect(_ raw: String) -> Bool { JsonLeafExtractor.isStructuredJSON(raw) }
+    /// Strict whole-string JSON, or JSON EMBEDDED in a longer string —
+    /// a comment field's "Ripped by X {…} enjoy" counts. The embedded
+    /// path was the reported miss: real comment fields bury their JSON
+    /// in prose, and the starts-with check never saw it.
+    public func detect(_ raw: String) -> Bool {
+        JsonLeafExtractor.isStructuredJSON(raw)
+            || !JsonLeafExtractor.embeddedSpans(in: raw).isEmpty
+    }
 
-    public func parse(_ raw: String) -> [SubParserNextItem] {
-        JsonLeafExtractor.extract(raw).map {
-            SubParserNextItem(raw: $0.text, key: $0.rawKey)
+    public func parse(_ raw: String, key: String?) -> [SubParserNextItem] {
+        if JsonLeafExtractor.isStructuredJSON(raw) {
+            return JsonLeafExtractor.extract(raw).map {
+                SubParserNextItem(raw: $0.text, key: $0.rawKey)
+            }
         }
+        // Embedded: each span explodes into keyed leaves, and the prose
+        // AROUND the spans survives as text under the ORIGINAL key — a
+        // rule authored against the field still sees it.
+        let spans = JsonLeafExtractor.embeddedSpans(in: raw)
+        var items: [SubParserNextItem] = []
+        var cursor = raw.startIndex
+        for span in spans {
+            let before = String(raw[cursor..<span.range.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !before.isEmpty { items.append(SubParserNextItem(raw: before, key: key)) }
+            items += JsonLeafExtractor.extract(span.json).map {
+                SubParserNextItem(raw: $0.text, key: $0.rawKey)
+            }
+            cursor = span.range.upperBound
+        }
+        let after = String(raw[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !after.isEmpty { items.append(SubParserNextItem(raw: after, key: key)) }
+        return items
+    }
+}
+
+extension JsonLeafExtractor {
+
+    /// A balanced, parseable JSON span found INSIDE a longer string —
+    /// "Ripped by X {"taper": "Mike"} enjoy" carries one. The strict
+    /// detector requires the whole string to be JSON; real comment
+    /// fields bury their JSON in prose, and that was the reported miss.
+    public struct EmbeddedSpan: Equatable, Sendable {
+        public let json: String
+        public let range: Range<String.Index>
+    }
+
+    /// Every embedded span, left to right, non-overlapping. A span must
+    /// balance its brackets (string-aware, escape-aware) AND parse as an
+    /// object or array — a stray brace in prose fails one or the other
+    /// and contributes nothing.
+    public static func embeddedSpans(in raw: String) -> [EmbeddedSpan] {
+        var spans: [EmbeddedSpan] = []
+        var index = raw.startIndex
+        while index < raw.endIndex {
+            let ch = raw[index]
+            guard ch == "{" || ch == "[" else {
+                index = raw.index(after: index)
+                continue
+            }
+            guard let end = balancedEnd(in: raw, from: index) else {
+                index = raw.index(after: index)
+                continue
+            }
+            let candidate = String(raw[index...end])
+            if isStructuredJSON(candidate) {
+                spans.append(EmbeddedSpan(json: candidate, range: index..<raw.index(after: end)))
+                index = raw.index(after: end)
+            } else {
+                index = raw.index(after: index)
+            }
+        }
+        return spans
+    }
+
+    /// The index of the bracket closing the one at `start`, honouring
+    /// strings and escapes. Nil when the text runs out first.
+    private static func balancedEnd(in raw: String, from start: String.Index) -> String.Index? {
+        let open = raw[start]
+        let close: Character = open == "{" ? "}" : "]"
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var index = start
+        while index < raw.endIndex {
+            let ch = raw[index]
+            if escaped {
+                escaped = false
+            } else if inString {
+                if ch == "\\" { escaped = true } else if ch == "\"" { inString = false }
+            } else {
+                switch ch {
+                case "\"": inString = true
+                case open: depth += 1
+                case close:
+                    depth -= 1
+                    if depth == 0 { return index }
+                default: break
+                }
+            }
+            index = raw.index(after: index)
+        }
+        return nil
     }
 }

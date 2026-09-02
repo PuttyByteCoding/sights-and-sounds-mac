@@ -43,7 +43,9 @@ public struct PathSubParser: SubParser {
         return trimmed.contains("/") || trimmed.contains("\\")
     }
 
-    public func parse(_ raw: String) -> [SubParserNextItem] {
+    public func parse(_ raw: String, key: String?) -> [SubParserNextItem] {
+        // Deliberately ignores the enclosing key: a directory name has
+        // no key, and must never satisfy a keyEquals rule.
         segments(of: raw).map { SubParserNextItem(raw: $0, key: nil) }
     }
 
