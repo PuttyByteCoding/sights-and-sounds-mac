@@ -112,24 +112,27 @@ public struct JsonSubParser: SubParser {
     /// path was the reported miss: real comment fields bury their JSON
     /// in prose, and the starts-with check never saw it.
     public func detect(_ raw: String) -> Bool {
-        JsonLeafExtractor.isStructuredJSON(raw)
-            || !JsonLeafExtractor.embeddedSpans(in: raw).isEmpty
+        JsonLeafExtractor.effectiveJSONText(raw) != nil
     }
 
     public func parse(_ raw: String, key: String?) -> [SubParserNextItem] {
-        if JsonLeafExtractor.isStructuredJSON(raw) {
-            return JsonLeafExtractor.extract(raw).map {
+        // Through the carrier ladder: BOM-stripped, double-encoded and
+        // backslash-wrapped JSON all resolve to parseable text first.
+        guard let effective = JsonLeafExtractor.effectiveJSONText(raw) else { return [] }
+        let text = effective.text
+        if JsonLeafExtractor.isStructuredJSON(text) {
+            return JsonLeafExtractor.extract(text).map {
                 SubParserNextItem(raw: $0.text, key: $0.rawKey)
             }
         }
         // Embedded: each span explodes into keyed leaves, and the prose
         // AROUND the spans survives as text under the ORIGINAL key — a
         // rule authored against the field still sees it.
-        let spans = JsonLeafExtractor.embeddedSpans(in: raw)
+        let spans = JsonLeafExtractor.embeddedSpans(in: text)
         var items: [SubParserNextItem] = []
-        var cursor = raw.startIndex
+        var cursor = text.startIndex
         for span in spans {
-            let before = String(raw[cursor..<span.range.lowerBound])
+            let before = String(text[cursor..<span.range.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !before.isEmpty { items.append(SubParserNextItem(raw: before, key: key)) }
             items += JsonLeafExtractor.extract(span.json).map {
@@ -137,7 +140,7 @@ public struct JsonSubParser: SubParser {
             }
             cursor = span.range.upperBound
         }
-        let after = String(raw[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let after = String(text[cursor...]).trimmingCharacters(in: .whitespacesAndNewlines)
         if !after.isEmpty { items.append(SubParserNextItem(raw: after, key: key)) }
         return items
     }
@@ -210,5 +213,70 @@ extension JsonLeafExtractor {
             index = raw.index(after: index)
         }
         return nil
+    }
+}
+
+extension JsonLeafExtractor {
+
+    /// How a string turned out to be carrying JSON — shown in the
+    /// Reader I/O page so a miss diagnoses itself instead of becoming a
+    /// bug report with no data.
+    public enum JSONCarrier: Equatable, Sendable {
+        /// The whole (cleaned) string is JSON.
+        case whole
+        /// JSON spans embedded in prose.
+        case embedded
+        /// The string was a JSON-encoded STRING whose contents carry
+        /// JSON — "double-encoded", the classic export-of-an-export.
+        case doubleEncoded
+        /// Backslash-escaped quotes hid the JSON: {\"k\": \"v\"} with
+        /// the outer quotes lost somewhere along the way.
+        case unescaped
+    }
+
+    /// The text to actually parse as JSON, and how it was recovered.
+    /// Nil when no reading of the string yields JSON.
+    ///
+    /// The ladder, cheapest first:
+    /// 1. Strip BOM and zero-width characters, then the strict and
+    ///    embedded checks as before.
+    /// 2. If the whole string is a JSON STRING literal, decode it and
+    ///    try again (bounded — an export of an export of an export).
+    /// 3. If backslash-escaped quotes appear beside braces, unescape
+    ///    and try once more.
+    public static func effectiveJSONText(_ raw: String) -> (text: String, carrier: JSONCarrier)? {
+        let cleaned = stripInvisibles(raw)
+        if isStructuredJSON(cleaned) { return (cleaned, .whole) }
+        if !embeddedSpans(in: cleaned).isEmpty { return (cleaned, .embedded) }
+
+        // Double-encoded: the value IS a JSON string literal.
+        var unwrapped = cleaned
+        for _ in 0..<3 {
+            guard unwrapped.hasPrefix("\""),
+                  let data = unwrapped.data(using: .utf8),
+                  let inner = try? JSONSerialization.jsonObject(
+                    with: data, options: [.fragmentsAllowed]) as? String
+            else { break }
+            unwrapped = stripInvisibles(inner)
+            if isStructuredJSON(unwrapped) { return (unwrapped, .doubleEncoded) }
+            if !embeddedSpans(in: unwrapped).isEmpty { return (unwrapped, .doubleEncoded) }
+        }
+
+        // Escaped quotes without their wrapper: {\"taper\": \"Mike\"}.
+        if cleaned.contains("\\\""), cleaned.contains("{") || cleaned.contains("[") {
+            let unescaped = cleaned
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .replacingOccurrences(of: "\\\\", with: "\\")
+            if isStructuredJSON(unescaped) { return (unescaped, .unescaped) }
+            if !embeddedSpans(in: unescaped).isEmpty { return (unescaped, .unescaped) }
+        }
+        return nil
+    }
+
+    /// BOM and zero-width characters — invisible on screen, fatal to a
+    /// starts-with check.
+    static func stripInvisibles(_ raw: String) -> String {
+        raw.filter { !"\u{FEFF}\u{200B}\u{200C}\u{200D}".contains($0) }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

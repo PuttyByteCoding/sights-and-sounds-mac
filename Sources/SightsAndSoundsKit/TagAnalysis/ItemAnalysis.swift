@@ -236,9 +236,13 @@ extension LibraryDatabase {
                 if !schemas.isEmpty {
                     // Whole-string JSON, or spans embedded in prose —
                     // each PAYLOAD is matched on its own key set.
-                    let payloads: [String] = JsonLeafExtractor.isStructuredJSON(source.text)
-                        ? [source.text]
-                        : JsonLeafExtractor.embeddedSpans(in: source.text).map(\.json)
+                    let payloads: [String] = {
+                        guard let effective = JsonLeafExtractor.effectiveJSONText(source.text)
+                        else { return [] }
+                        return JsonLeafExtractor.isStructuredJSON(effective.text)
+                            ? [effective.text]
+                            : JsonLeafExtractor.embeddedSpans(in: effective.text).map(\.json)
+                    }()
                     for payload in payloads {
                     let payloadKeys = Set(
                         JsonLeafExtractor.extract(payload).compactMap(\.rawKey))

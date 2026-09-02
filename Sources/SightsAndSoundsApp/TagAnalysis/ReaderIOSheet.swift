@@ -122,17 +122,54 @@ struct ReaderIOView: View {
                         .font(Theme.mono(9))
                         .foregroundStyle(Theme.Text.quaternary)
                 }
+                Spacer(minLength: 4)
+                jsonVerdict(source.text)
             }
+            // The FULL text — an inspector that truncates its own raw
+            // data answers nothing. Long payloads scroll with the page.
             Text(source.text)
                 .font(Theme.mono(10))
                 .foregroundStyle(Theme.Text.secondary)
                 .textSelection(.enabled)
-                .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.chip).fill(Theme.Surface.well))
+    }
+
+    /// What the JSON detector concluded about this exact string — so
+    /// "clearly JSON but not identified" diagnoses itself on the page
+    /// instead of becoming a bug report with no data.
+    @ViewBuilder
+    private func jsonVerdict(_ text: String) -> some View {
+        if let effective = JsonLeafExtractor.effectiveJSONText(text) {
+            let label = switch effective.carrier {
+            case .whole: "JSON"
+            case .embedded: "JSON · embedded"
+            case .doubleEncoded: "JSON · double-encoded"
+            case .unescaped: "JSON · unescaped"
+            }
+            Text(label)
+                .font(Theme.mono(8.5))
+                .foregroundStyle(Theme.Status.greenBright)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                        .fill(Theme.Status.goodBadgeFill))
+        } else if text.contains("{") || text.contains("[") {
+            // Braces without parseable JSON: the one case worth calling
+            // out, because it LOOKS like JSON to a person.
+            Text("braces, not valid JSON")
+                .font(Theme.mono(8.5))
+                .foregroundStyle(Theme.Status.orange)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                        .fill(Theme.Status.warnBadgeFill))
+        }
     }
 
     private func producedRow(_ row: TagAnalysisModel.TableRow) -> some View {
@@ -143,7 +180,9 @@ struct ReaderIOView: View {
                     row.candidate.suppressedByRule == nil
                         ? Theme.Text.primary : Theme.Text.disabled)
                 .strikethrough(row.candidate.suppressedByRule != nil)
-                .lineLimit(1)
+                .textSelection(.enabled)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Text(bucketLabel(row))
                 .font(Theme.ui(9))
