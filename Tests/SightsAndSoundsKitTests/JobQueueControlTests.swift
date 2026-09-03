@@ -101,3 +101,61 @@ private struct FailingJob: Job {
     init(payload: Data?) throws {}
     func run(_ context: JobContext) async throws {}
 }
+
+/// The sweep maintenance surface: status counts and the three moves.
+@Suite struct SweepMaintenanceTests {
+    @Test func statusRetryAndResetBehaveForContentHashes() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Sweeps")
+        let source = Source(name: "S", rootPath: "/tmp/sweeps")
+        try await library.writer.write { try source.insert($0) }
+
+        let hashed = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "a.mp4",
+            contentHash: "abc", needsReview: false)
+        let unhashed = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "b.mp4", needsReview: false)
+        try await library.writer.write { db in
+            try hashed.insert(db)
+            try unhashed.insert(db)
+            try ContentHashFailure(mediaItemID: unhashed.id, message: "io").insert(db)
+        }
+
+        var status = try library.contentHashStatus()
+        #expect(status.missing == 1)
+        #expect(status.failed == 1)
+
+        // Retry: the failure row goes; the data stays.
+        try library.retryContentHashFailures()
+        status = try library.contentHashStatus()
+        #expect(status.failed == 0)
+        #expect(status.missing == 1)
+
+        // Recalculate: everything is missing again, failures gone too.
+        try library.resetContentHashes()
+        status = try library.contentHashStatus()
+        #expect(status.missing == 2)
+        #expect(status.failed == 0)
+    }
+
+    @Test func metadataRetryClearsOnlyFailedMarkers() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Sweeps")
+        let source = Source(name: "S", rootPath: "/tmp/sweeps")
+        try await library.writer.write { try source.insert($0) }
+        let good = MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        let bad = MediaItem(sourceID: source.id, kind: .video, relativePath: "b.mp4", needsReview: false)
+        try await library.writer.write { db in
+            try good.insert(db)
+            try bad.insert(db)
+        }
+        try library.recordMetadataPairs(itemID: good.id, pairs: [("k", "v")])
+        try library.recordMetadataPairs(itemID: bad.id, pairs: [], failure: "ffprobe failed")
+
+        try library.retryMetadataSweepFailures()
+        let status = try library.metadataSweepStatus()
+        // The failed one is eligible again; the good one's marker stays.
+        #expect(status.missing == 1)
+        #expect(status.failed == 0)
+    }
+}

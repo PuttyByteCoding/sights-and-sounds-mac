@@ -57,6 +57,7 @@ struct BackgroundTasksView: View {
         VStack(spacing: 0) {
             toolbar
             if app.tasksPaused { pausedBanner }
+            SweepPanel()
             if !lanes.isEmpty { laneCards }
             HStack(spacing: 0) {
                 table
