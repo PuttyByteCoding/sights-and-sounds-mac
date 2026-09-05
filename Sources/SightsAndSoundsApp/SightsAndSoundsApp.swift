@@ -346,9 +346,7 @@ final class AppModel {
             do {
                 let runner = try runner(for: libraryID)
                 _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
-                _ = try await runner.enqueueUnlessPending(
-                    ThumbnailBatchJob.self,
-                    payload: JSONEncoder().encode(ThumbnailBatchJob.Payload(libraryID: libraryID)))
+                _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
                 // Duplicates ride the same signal: hash pairs after hashing,
                 // fingerprints after capture, matches after both.
                 _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)

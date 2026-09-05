@@ -187,7 +187,7 @@ struct SweepPanel: View {
                 case .metadata:
                     _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
                 case .thumbnails:
-                    _ = try await runner.enqueueUnlessPending(ThumbnailBatchJob.self)
+                    _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
                 case .duplicates:
                     _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
                     _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
