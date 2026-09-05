@@ -153,14 +153,17 @@ public struct FingerprintCaptureJob: Job {
             let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             throw FpcalcError(message: "fpcalc exited \(process.terminationStatus): \(stderr.prefix(200))")
         }
+        // Raw sub-fingerprints are unsigned 32-bit on the wire; about half
+        // of any real fingerprint exceeds Int32.max, so decode unsigned and
+        // keep the bit pattern (the matcher only ever XORs them).
         struct Output: Decodable {
             let duration: Double
-            let fingerprint: [Int32]
+            let fingerprint: [UInt32]
         }
         let decoded = try JSONDecoder().decode(Output.self, from: stdout)
         return FpcalcResult(
             duration: decoded.duration,
-            fingerprint: decoded.fingerprint,
+            fingerprint: decoded.fingerprint.map { Int32(bitPattern: $0) },
             toolVersion: "fpcalc")
     }
 }
