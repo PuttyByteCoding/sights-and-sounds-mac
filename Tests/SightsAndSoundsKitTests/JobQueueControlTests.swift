@@ -159,3 +159,47 @@ private struct FailingJob: Job {
         #expect(status.failed == 0)
     }
 }
+
+/// A row left in `running` when the process died is a zombie: the
+/// footer shows its progress forever and enqueueUnlessPending treats
+/// it as pending, so the sweep never runs again. A new runner is the
+/// proof the old lane is dead, and settles such rows as failed.
+@Suite struct InterruptedJobTests {
+
+    @Test func newRunnerFailsRowsLeftRunning() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        let zombie: JobRecord = {
+            var row = JobRecord(kind: ValidationJob.kind, payload: nil)
+            row.state = .running
+            row.startedAt = Date()
+            row.progressCurrent = 5104
+            row.progressTotal = 31090
+            return row
+        }()
+        let queued = JobRecord(kind: ValidationJob.kind, payload: nil)
+        try await library.writer.write { db in
+            try zombie.insert(db)
+            try queued.insert(db)
+        }
+
+        let runner = JobRunner(library: library)
+
+        let settled = try await library.writer.read { try JobRecord.fetchOne($0, key: zombie.id)! }
+        #expect(settled.state == .failed)
+        #expect(settled.error?.contains("interrupted") == true)
+        #expect(settled.finishedAt != nil)
+        #expect(settled.progressCurrent == 5104)  // evidence of how far it got survives
+
+        let untouched = try await library.writer.read { try JobRecord.fetchOne($0, key: queued.id)! }
+        #expect(untouched.state == .queued)
+
+        // The lane is free again: the kind is no longer "pending".
+        await runner.register(ValidationJob.self)
+        _ = try await runner.retry(zombie.id)  // dashboard Retry still works on it
+        let pending = try await library.writer.read { db in
+            try JobRecord.filter(sql: "kind = ? AND state = 'queued'", arguments: [ValidationJob.kind])
+                .fetchCount(db)
+        }
+        #expect(pending == 2)
+    }
+}
