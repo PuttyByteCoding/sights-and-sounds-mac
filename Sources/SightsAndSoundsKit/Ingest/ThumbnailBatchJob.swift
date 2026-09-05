@@ -44,6 +44,15 @@ public struct ThumbnailBatchJob: Job {
         fileAccess = LiveFileAccess()
     }
 
+    /// The one way to queue a sweep. The payload names the library whose
+    /// cache folder is being filled; a row without it fails on
+    /// construction, so no caller builds the payload by hand.
+    @discardableResult
+    public static func enqueueUnlessPending(on runner: JobRunner, libraryID: UUID) async throws -> JobRecord? {
+        try await runner.enqueueUnlessPending(
+            ThumbnailBatchJob.self, payload: JSONEncoder().encode(Payload(libraryID: libraryID)))
+    }
+
     public func run(_ context: JobContext) async throws {
         let library = context.library
         let sources = try await library.writer.read { db in
