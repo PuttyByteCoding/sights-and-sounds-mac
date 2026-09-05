@@ -156,3 +156,38 @@ import Testing
         #expect(row.summary?.contains("brew install chromaprint") == true)
     }
 }
+
+/// The fpcalc bridge: raw sub-fingerprints are unsigned 32-bit values
+/// on the wire, and roughly half of any real fingerprint sits above
+/// `Int32.max`. They must land as the same bit patterns the matcher
+/// XORs, not as a decoding failure.
+@Suite struct FpcalcOutputTests {
+
+    /// A stand-in fpcalc: an executable script that prints the fixture
+    /// and ignores its arguments.
+    private func stubTool(printing json: String) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fpcalc-stub-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let tool = dir.appendingPathComponent("fpcalc")
+        let script = "#!/bin/sh\ncat <<'JSON'\n\(json)\nJSON\n"
+        try script.write(to: tool, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        return tool
+    }
+
+    @Test func valuesAboveInt32MaxDecodeAsBitPatterns() throws {
+        let tool = try stubTool(printing: """
+            {"duration": 2040.7, "fingerprint": [4292056688, 2146836971, 0, 4294967295]}
+            """)
+        defer { try? FileManager.default.removeItem(at: tool.deletingLastPathComponent()) }
+
+        let result = try FingerprintCaptureJob.runFpcalc(
+            tool: tool.path, file: URL(fileURLWithPath: "/tmp/ignored.mp4"))
+
+        #expect(result.duration == 2040.7)
+        #expect(result.fingerprint == [
+            Int32(bitPattern: 4292056688), 2146836971, 0, Int32(bitPattern: 4294967295),
+        ])
+    }
+}

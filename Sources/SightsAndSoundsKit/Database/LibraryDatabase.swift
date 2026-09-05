@@ -760,6 +760,14 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // The fpcalc bridge once decoded unsigned sub-fingerprints as Int32,
+        // so nearly every file failed with "not representable". Those rows
+        // would block the fixed sweep forever; forget them so it retries.
+        migrator.registerMigration("fingerprintUnsignedRetry") { db in
+            try db.execute(
+                sql: "DELETE FROM fingerprintFailure WHERE message LIKE '%not representable in Swift%'")
+        }
+
         return migrator
     }
 
