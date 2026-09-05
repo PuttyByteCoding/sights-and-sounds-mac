@@ -14,6 +14,35 @@ public actor JobRunner {
 
     public init(library: LibraryDatabase) {
         self.library = library
+        Self.settleInterrupted(in: library)
+    }
+
+    /// Rows still `running` when a runner is created were abandoned by a
+    /// process that died mid-job. This runner is the lane's only executor,
+    /// so nothing can finish them — and left alone they are zombies: the
+    /// grid footer shows their progress forever and enqueueUnlessPending
+    /// counts them as pending, so the kind never runs again. Settle them
+    /// as failed with the evidence (progress, start time) intact; Retry
+    /// on the dashboard and the next maintenance signal both work again.
+    private static func settleInterrupted(in library: LibraryDatabase) {
+        do {
+            let settled = try library.writer.write { db -> Int in
+                try db.execute(
+                    sql: "UPDATE job SET state = ?, error = ?, finishedAt = ? WHERE state = ?",
+                    arguments: [
+                        JobState.failed.rawValue,
+                        "interrupted: the app quit while this job was running",
+                        Date(),
+                        JobState.running.rawValue,
+                    ])
+                return db.changesCount
+            }
+            if settled > 0 {
+                AppLog.shared.warning("jobs", "\(settled) interrupted job(s) settled as failed")
+            }
+        } catch {
+            AppLog.shared.error("jobs", "could not settle interrupted jobs: \(error)")
+        }
     }
 
     /// Make a job kind runnable. Registering twice replaces (test hook).

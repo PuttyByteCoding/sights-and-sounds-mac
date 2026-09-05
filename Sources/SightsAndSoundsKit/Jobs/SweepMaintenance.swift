@@ -129,7 +129,8 @@ extension LibraryDatabase {
         // the failed column is always zero here.
         let items = try writer.read { db in
             try Row.fetchAll(
-                db, sql: "SELECT id FROM mediaItem WHERE kind = 'video'")
+                db, sql: "SELECT id FROM mediaItem WHERE kind = ?",
+                arguments: [MediaKind.video.rawValue])
                 .map { $0["id"] as UUID }
         }
         let missing = items.count { itemID in
