@@ -206,6 +206,15 @@ private struct ItemCell: View {
             .disabled(!model.isOnline(item))
         Button("Open Terminal at Folder", systemImage: "terminal") { openTerminal() }
             .disabled(!model.isOnline(item))
+        Divider()
+        // The name as it is on disk, and a search-box-friendly form with
+        // the punctuation turned into spaces. Neither needs the file online.
+        Button("Copy File Name", systemImage: "doc.on.doc") {
+            copyToPasteboard(item.fileName)
+        }
+        Button("Copy File Name (Letters and Numbers)", systemImage: "doc.on.doc") {
+            copyToPasteboard(item.fileName.lettersAndNumbersOnly)
+        }
         Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
             // The whole queue rides along, positioned at this video —
             // analysis is per video, but the window walks the queue the
@@ -290,6 +299,11 @@ private struct ItemCell: View {
         model.playerRequest = PlayerRequest(
             libraryID: model.libraryID, itemID: item.id,
             playlist: model.visibleItems.map(\.id))
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // An embedded clip resolves to its parent's file — the file on disk.
