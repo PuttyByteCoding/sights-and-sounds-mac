@@ -34,6 +34,19 @@ struct PlayerView: View {
                     showKeyMap: $showKeyMap)
                     .environment(model)
                     .navigationTitle(model.title)
+                    // The title IS the file name, so the title's own menu
+                    // is where copying it belongs — the same two forms
+                    // the grid tile offers.
+                    .toolbarTitleMenu {
+                        if let name = model.item?.fileName {
+                            Button("Copy File Name", systemImage: "doc.on.doc") {
+                                Clipboard.copy(name)
+                            }
+                            Button("Copy File Name (Letters and Numbers)", systemImage: "doc.on.doc") {
+                                Clipboard.copy(name.lettersAndNumbersOnly)
+                            }
+                        }
+                    }
             } else if let openError {
                 ContentUnavailableView(
                     "Cannot Play", systemImage: "play.slash",
