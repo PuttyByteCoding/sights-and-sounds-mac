@@ -126,7 +126,10 @@ struct WatchedView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { play(item) }
         .contextMenu {
+            Button("Play", systemImage: "play") { play(item) }
+                .disabled(!model.isOnline(item))
             Button("Reveal in Finder") { reveal(item) }
                 .disabled(!model.isOnline(item))
         }
@@ -177,6 +180,16 @@ struct WatchedView: View {
         } catch {
             loadError = "\(error)"
         }
+    }
+
+    /// Plays right here: the auxiliary window swaps to the player in
+    /// place and Back returns to this list, reloaded — so the row you
+    /// just played moves to the top. The queue is the history itself,
+    /// so the player's arrows walk what you watched, most recent first.
+    private func play(_ item: MediaItem) {
+        guard model.isOnline(item) else { return }
+        model.playerRequest = PlayerRequest(
+            libraryID: model.libraryID, itemID: item.id, playlist: rows.map(\.id))
     }
 
     private func reveal(_ item: MediaItem) {
