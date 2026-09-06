@@ -227,3 +227,15 @@ public struct MediaItem: Codable, Equatable, Identifiable, Sendable, FetchableRe
         fileName = MediaPath.fileName(of: normalized)
     }
 }
+
+extension String {
+    /// The string with every character that is not a letter, a number or a
+    /// space replaced by a space — the "Copy File Name (Letters and
+    /// Numbers)" form, which pastes cleanly into a search box that would
+    /// otherwise trip over underscores, dots and brackets. Nothing is
+    /// collapsed or trimmed: the caller asked for a substitution, not a
+    /// rewrite.
+    public var lettersAndNumbersOnly: String {
+        String(map { $0.isLetter || $0.isNumber || $0 == " " ? $0 : " " })
+    }
+}
