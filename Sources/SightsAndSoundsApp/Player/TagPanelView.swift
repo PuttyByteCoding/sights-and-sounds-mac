@@ -913,6 +913,17 @@ private struct GlobalTagField: View {
             index: model.tagSearchIndex,
             appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
             recentTagIDs: model.recentlyAppliedTagIDs,
+            // What the companion found leads the list — only while a
+            // companion is open, since no scan runs otherwise.
+            analysisTagIDs: model.analysisSession.flatMap { session in
+                session.companionIsOpen
+                    ? AnalysisResultsField.candidates(
+                        analysis: session.analysis,
+                        appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
+                        categories: model.panelVocabulary.map(\.category), query: "")
+                        .map(\.tag.id)
+                    : nil
+            } ?? [],
             categories: model.panelVocabulary.map(\.category),
             library: model.library,
             libraryID: model.libraryID,
