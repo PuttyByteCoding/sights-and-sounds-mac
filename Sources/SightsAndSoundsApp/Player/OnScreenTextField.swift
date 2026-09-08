@@ -193,17 +193,23 @@ struct OnScreenTextField: View {
         let seconds = currentSeconds
         let settings = AppSettingsStore.shared.current.ocr
         Task {
-            let text = await Task.detached(priority: .userInitiated) { () -> String? in
-                let generator = AVAssetImageGenerator(asset: AVURLAsset(url: fileURL))
-                generator.appliesPreferredTrackTransform = true
-                generator.requestedTimeToleranceBefore = .zero
-                generator.requestedTimeToleranceAfter = .zero
-                return await OcrJob.recognizeText(
-                    generator: generator, at: seconds, settings: settings)
+            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<[String], Error> in
+                do {
+                    return .success(try await OcrJob.readLines(
+                        fileURL: fileURL, atSeconds: seconds, settings: settings))
+                } catch {
+                    return .failure(error)
+                }
             }.value
-            lines = text.map { $0.components(separatedBy: "\n") } ?? []
+            switch outcome {
+            case .success(let found):
+                lines = found
+                highlightedLine = rows.first
+            case .failure(let error):
+                lines = []
+                readError = "Could not read the frame: \(error)"
+            }
             reading = false
-            highlightedLine = rows.first
         }
     }
 

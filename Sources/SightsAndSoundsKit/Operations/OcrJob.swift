@@ -160,6 +160,55 @@ public struct OcrJob: Job {
         await context.setSummary(summary)
     }
 
+    public struct FrameReadError: Error, CustomStringConvertible {
+        public let reason: String
+        public var description: String { reason }
+    }
+
+    /// One frame at a moment, on demand — the player's On-screen Text
+    /// field. The lines Vision finds, in reading order; an empty list
+    /// means the frame held no text; a thrown error means the frame
+    /// could not be produced, which is a different fact and is said.
+    /// The generator is configured as the evidence stills are: the
+    /// preferred transform applied, half a second of tolerance either
+    /// way (an exact seek on a long-GOP encode decodes from the
+    /// previous keyframe and can take seconds).
+    public static func readLines(
+        fileURL: URL, atSeconds seconds: Double, settings: OcrSettings = OcrSettings()
+    ) async throws -> [String] {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: fileURL))
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
+        let time = CMTime(seconds: seconds, preferredTimescale: 600)
+        let image: CGImage = try await withCheckedThrowingContinuation { continuation in
+            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) {
+                _, cgImage, _, result, error in
+                if let cgImage, result == .succeeded {
+                    continuation.resume(returning: cgImage)
+                } else {
+                    continuation.resume(throwing: FrameReadError(
+                        reason: error.map { "\($0.localizedDescription)" }
+                            ?? "The frame could not be produced."))
+                }
+            }
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = settings.recognitionLevel == .fast ? .fast : .accurate
+        request.usesLanguageCorrection = settings.usesLanguageCorrection
+        request.minimumTextHeight = Float(settings.minimumTextHeight)
+        if !settings.region.isFull {
+            request.regionOfInterest = CGRect(
+                x: settings.region.x, y: settings.region.y,
+                width: settings.region.width, height: settings.region.height)
+        }
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? [])
+            .compactMap { $0.topCandidates(1).first?.string }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     /// One frame → recognized text (lines joined), or nil. The generator
     /// stays in this isolation region; Vision runs on the CGImage inside
     /// the continuation's callback.
