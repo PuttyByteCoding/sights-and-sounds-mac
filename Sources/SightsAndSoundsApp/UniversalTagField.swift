@@ -267,28 +267,28 @@ struct UniversalTagField: View {
         }
     }
 
+    /// On an empty field, the FIRST arrow picks a list — ↑ the history,
+    /// ↓ the analysis — and every arrow after that walks that list and
+    /// only that list, clamped at its ends. Leaving is Esc or typing;
+    /// stepping off the top of one list must never open the other.
     private func move(_ delta: Int) -> KeyPress.Result {
-        if query.isEmpty, !showingHistory, delta == -1, !recentTagIDs.isEmpty {
-            showingHistory = true
+        if query.isEmpty, !showingHistory, !browsingAll {
+            if delta == -1, !recentTagIDs.isEmpty {
+                showingHistory = true
+            } else if delta == 1 {
+                browsingAll = true
+            } else {
+                return .ignored
+            }
             highlighted = hits.isEmpty ? nil : 0
             return .handled
         }
-        // ↓ on an empty field opens the whole list the same way.
-        if query.isEmpty, !showingHistory, !browsingAll, delta == 1 {
-            browsingAll = true
-            highlighted = hits.isEmpty ? nil : 0
-            return .handled
-        }
+        guard !hits.isEmpty else { return .handled }
+        // History climbs UPWARD from the box: ↑ moves to older (higher
+        // index, drawn higher), ↓ back toward the field.
         let delta = historyActive ? -delta : delta
-        guard !hits.isEmpty else { return .ignored }
-        switch (highlighted, delta) {
-        case (nil, 1): highlighted = 0
-        case (nil, -1): highlighted = hits.count - 1
-        case (let current?, _):
-            let next = current + delta
-            highlighted = hits.indices.contains(next) ? next : nil
-        default: break
-        }
+        let current = highlighted ?? (delta > 0 ? -1 : hits.count)
+        highlighted = min(max(0, current + delta), hits.count - 1)
         return .handled
     }
 
