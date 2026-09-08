@@ -1666,8 +1666,14 @@ private struct QueuePanel: View {
     @Environment(PlayerModel.self) private var model
     let height: CGFloat
 
-    /// The header: the queue's name, its count, and Refresh.
+    /// The header: the queue's name, its count, Sort and Refresh.
     static let headerHeight: CGFloat = 22
+
+    private var sortBinding: Binding<QueueSort> {
+        Binding(
+            get: { model.queue.sort },
+            set: { model.queue.sort = $0 })
+    }
 
     var body: some View {
         let grid = GridDisplaySettings.shared.grid
@@ -1687,6 +1693,32 @@ private struct QueuePanel: View {
                 if model.isRefreshingQueue {
                     ProgressView().controlSize(.mini)
                 }
+                // The browse Sort menu's choices, applied to the snapshot
+                // in place — no re-run. Shuffled shows no picked row.
+                Menu {
+                    Picker("Order", selection: sortBinding) {
+                        Text("Queue order").tag(QueueSort.definition)
+                        Text("Name").tag(QueueSort.fileName)
+                        Text("Path").tag(QueueSort.relativePath)
+                        Text("File Size (largest first)").tag(QueueSort.largestFirst)
+                        Text("Duration (longest first)").tag(QueueSort.longestFirst)
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Button(model.queue.sort.isShuffled ? "Reshuffle" : "Shuffle") {
+                        model.queue.sort = .shuffled()
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(Theme.ui(11))
+                        .foregroundStyle(
+                            model.queue.sort == .definition ? Theme.Text.tertiary : Theme.Accent.amber)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Order this queue — re-sorts the snapshot without re-running it")
                 Button {
                     model.refreshQueue()
                 } label: {
