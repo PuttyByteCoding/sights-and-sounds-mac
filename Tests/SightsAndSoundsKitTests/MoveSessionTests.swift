@@ -103,6 +103,6 @@ import Testing
         let errors = OrganizeTemplate.validate("%Bnad/%Year", categoryNames: ["Band", "Year"])
         #expect(errors.count == 1)
         #expect(errors[0].message.contains("\"Bnad\""))
-        #expect(errors[0].message.contains("Categories & Fields"))
+        #expect(errors[0].message.contains("Tag Manager"))
     }
 }

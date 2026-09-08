@@ -81,6 +81,9 @@ struct TagTable: View {
     @Binding var picks: Set<UUID>
     @Binding var selectedTagID: UUID?
     let onSelect: (Tag) -> Void
+    /// Double-click: the tag sheet, the same editor the grid and the
+    /// player open — not the inspector beside the table.
+    let onOpen: (Tag) -> Void
     let onToggleFavorite: (Tag) -> Void
     let onHide: (Tag) -> Void
     let onDelete: (Tag) -> Void
@@ -241,6 +244,7 @@ struct TagTable: View {
         .padding(.vertical, 7)
         .background(selected ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { onOpen(tag) }
         .onTapGesture { onSelect(tag) }
     }
 }

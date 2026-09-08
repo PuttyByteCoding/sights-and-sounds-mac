@@ -41,6 +41,9 @@ struct CategoryManagerView: View {
     @State private var mergeNewName = ""
     @State private var mergeTargetID: UUID?
     @State private var showPaste = false
+    /// The tag sheet, over a tag being edited or a category to create in.
+    @State private var editingTag: Tag?
+    @State private var creatingIn: TagCategory?
     @State private var inspectorTab: InspectorTab = .category
 
     enum InspectorTab: String, CaseIterable { case category = "Category", tag = "Tag" }
@@ -68,6 +71,28 @@ struct CategoryManagerView: View {
                 }
             }
         }
+        .sheet(item: $editingTag) { tag in
+            tagSheet(.edit(tag))
+        }
+        .sheet(item: $creatingIn) { category in
+            tagSheet(.create(categoryID: category.id, name: ""))
+        }
+    }
+
+    /// One editor for both: the sheet the grid and the player open.
+    /// Saving lands the tag in the table and selects it.
+    private func tagSheet(_ mode: TagSheet.Mode) -> some View {
+        TagSheet(
+            mode: mode,
+            library: model.library,
+            libraryID: model.libraryID,
+            categories: categories,
+            onSaved: { tag in
+                reloadTags()
+                selectedTagID = tag.id
+                inspectorTab = .tag
+                model.refreshAll()
+            })
     }
 
     // MARK: - Sidebar
@@ -232,6 +257,7 @@ struct CategoryManagerView: View {
                             selectedTagID = tag.id
                             inspectorTab = .tag
                         },
+                        onOpen: { tag in editingTag = tag },
                         onToggleFavorite: { tag in
                             try? model.library.setTagFavorite(tag.id, !tag.isFavorite)
                             reloadTags()
@@ -527,14 +553,12 @@ struct CategoryManagerView: View {
         } catch { errorText = "\(error)" }
     }
 
+    /// The + button: the create sheet, not a row called "New tag" to
+    /// rename in place — the same dialog that creates a tag anywhere
+    /// else, with its aliases, notes and flags on the way in.
     private func addTag() {
         guard let category = selectedCategory else { return }
-        do {
-            let tag = try model.library.ensureTag(named: "New tag", inCategory: category.id)
-            reloadTags()
-            selectedTagID = tag.id
-            inspectorTab = .tag
-        } catch { errorText = "\(error)" }
+        creatingIn = category
     }
 
     private func performMerge(in category: TagCategory) {

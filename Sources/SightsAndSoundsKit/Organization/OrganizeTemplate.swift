@@ -59,7 +59,7 @@ public enum OrganizeTemplate {
                 errors.append(ValidationError(
                     message: """
                         No category called "\(name)" — check the spelling, or create it in \
-                        Categories & Fields.
+                        Tag Manager.
                         """))
             }
         }
