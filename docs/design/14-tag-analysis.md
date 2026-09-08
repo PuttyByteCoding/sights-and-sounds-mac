@@ -60,6 +60,13 @@ strings exactly — they are the ported vocabulary, not a naming opportunity.
    database write; anything that reaches a file goes through write-back and its run history
    (spec 10 §4). Do not invent a third audit trail.
 
+10. **A companion, not a second player.** Tag Analysis follows one player window through a
+    shared session: the video plays there, tagging happens there, and this window shows the
+    evidence and the decisions for whatever that player is showing. Accepting applies at once —
+    no basket, no commit step; the player's next/previous just moves on. With the companion
+    closed, no scan runs and the player's Tag Analysis Results field is dimmed. Design:
+    `docs/superpowers/specs/2026-09-08-tag-analysis-companion-design.md`.
+
 ## Model changes
 
 This is a build, not a redesign. The pieces:
@@ -76,19 +83,16 @@ This is a build, not a redesign. The pieces:
 
 Window `1520` wide. Mode tabs **Candidates · Rules** with a mono headline.
 
-**Candidates.** Left rail (draggable, 210–900 pt, the width kept between launches — the
-preview fills it, so dragging the rail is how the video is sized): the preview, the player's Universal
-find-or-create field (Enter applies to this video now, not into the basket), Applied tags,
-then Candidate
-tags — every known tag the evidence names that the video does not yet wear, one pill per
-tag under its category; a click stages it into the basket, a second click takes it out —
-then source filter (all / metadata / on-screen /
-file), status filter, search, then candidate rows — source chip, the string, mono item count,
-suggestion chip, and a ✓ when a rule already covers it. Selecting one fills the centre: the
-string large, where it came from, the suggested decision with a category picker beside it, and
-**Make a rule from this**. Below, the evidence strip — one still per matching item, OCR stills
-seeking to the read timestamp, with a peek on hover. A bulk bar appears with a selection:
-`<n> picked · <n> items affected`, then Apply suggestions · Ignore · Make a rule.
+**Candidates.** Header: mode control, mono headline, the followed player's position (`3 of 41`;
+⇧← ⇧→ walk it from here), the filter field, Scan On-Screen Text, Rescan This Video. Left rail
+(draggable, 210–900 pt, kept between launches): evidence sources, Reader I/O, status filter
+(Undecided · Applied · Ignored · Everything), This pass (`tags applied` · `videos visited`).
+Centre: candidate rows — the string, key, source chips, mono count, suggestion chip, and ⊕ to
+take the suggestion now. Selecting one fills the decide pane: the string large, where it came
+from, the decision radios with a category picker for Assign, **Apply** / **Apply Existing**,
+and **Make a rule from this**. Below, the evidence strip — one still per origin, OCR stills
+seeking to the read timestamp. No preview, no queue strip: the player has both. Player gone:
+`The player this window follows has closed.` and a Close button.
 
 **Rules.** A note that both orders matter, then rule cards: order number, matcher chip in blue
 `#8FA6D6`, arrow, action chips in green `#8FCF8F` (or the amber `no actions yet`), the dry-run
