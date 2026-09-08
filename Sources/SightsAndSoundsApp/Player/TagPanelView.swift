@@ -672,15 +672,12 @@ private struct DropInsertionLine: View {
 
 // MARK: - The global tag finder
 
-/// One field that searches EVERY category — for when you know the tag
-/// but not which category it lives in, or it does not exist yet. Picking
-/// a hit applies it to the playing item; Enter with nothing picked opens
-/// the New Tag sheet, whose category picker decides where the tag lands.
-///
-/// The per-category fields keep their jobs (their suggestions are scoped
-/// and their Enter creates INTO that category with no dialog detour);
-/// this is the panel-wide complement, same matching rule — every
-/// space-separated term must hit.
+/// The panel's Universal field — `UniversalTagField` bound to the
+/// player: its index and applied set, its session history for ↑, its
+/// focus walk, and apply-means-toggle-on-the-playing-item. The per-
+/// category fields keep their jobs (their suggestions are scoped and
+/// their Enter creates INTO that category with no dialog detour); this
+/// is the panel-wide complement, same matching rule.
 private struct GlobalTagField: View {
     @Environment(PlayerModel.self) private var model
     /// First in the panel order — takes the keyboard when an item loads.
@@ -688,220 +685,24 @@ private struct GlobalTagField: View {
     /// The panel's shared focus, keyed by the universal sentinel — which
     /// is what puts this field IN the Tab walk with the categories.
     var focus: FocusState<UUID?>.Binding
-    @State private var draft = ""
-    @State private var highlighted: Int?
-    @State private var creating = false
-    @State private var showingHistory = false
-
-    private var focused: Bool {
-        focus.wrappedValue == PlayerModel.universalFieldFocusID
-    }
-
-    private var query: String { draft.trimmingCharacters(in: .whitespaces) }
-
-    private struct Hit: Identifiable {
-        let tag: Tag
-        let categoryName: String
-        let categoryHue: Color
-        let matchedAlias: String?
-        var id: UUID { tag.id }
-    }
-
-    private var historyActive: Bool { showingHistory && query.isEmpty }
-
-    private var hits: [Hit] {
-        // Empty query + ↑: the session's recent applies, every category.
-        if query.isEmpty {
-            guard showingHistory else { return [] }
-            let appliedIDs = Set(model.itemTags.flatMap(\.tags).map(\.id))
-            return model.recentlyAppliedTagIDs.compactMap { id in
-                guard !appliedIDs.contains(id) else { return nil }
-                for entry in model.panelVocabulary {
-                    if let tag = entry.tags.first(where: { $0.id == id }) {
-                        return Hit(
-                            tag: tag, categoryName: entry.category.name,
-                            categoryHue: Theme.categoryHue(entry.category.colorIndex),
-                            matchedAlias: nil)
-                    }
-                }
-                return nil
-            }
-        }
-        // Folded terms against the model's pre-folded index, lazily, cut
-        // at the limit — never a full pass once enough hits exist. This
-        // computed per keystroke over every tag AND alias, folding each
-        // live, is what made the Universal field slow.
-        let foldedTerms = query.split(separator: " ").map { PlayerModel.searchFold(String($0)) }
-        let appliedIDs = Set(model.itemTags.flatMap(\.tags).map(\.id))
-        return model.tagSearchIndex
-            .lazy
-            .compactMap { row -> Hit? in
-                guard !appliedIDs.contains(row.tag.id) else { return nil }
-                if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
-                    return Hit(
-                        tag: row.tag, categoryName: row.categoryName,
-                        categoryHue: Theme.categoryHue(row.colorIndex),
-                        matchedAlias: nil)
-                }
-                guard let alias = row.foldedAliases.first(where: { candidate in
-                    foldedTerms.allSatisfy { candidate.folded.contains($0) }
-                })
-                else { return nil }
-                return Hit(
-                    tag: row.tag, categoryName: row.categoryName,
-                    categoryHue: Theme.categoryHue(row.colorIndex),
-                    matchedAlias: alias.alias)
-            }
-            .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
-            .map { $0 }
-    }
-
-    private var exactMatchIndex: Int? {
-        let folded = PillCategoryView.searchFold(query)
-        return hits.firstIndex {
-            PillCategoryView.searchFold($0.tag.name) == folded
-                || $0.matchedAlias.map { PillCategoryView.searchFold($0) == folded } == true
-        }
-    }
-
-    private var activeIndex: Int? { highlighted ?? exactMatchIndex }
-    private var willCreate: Bool { !query.isEmpty && activeIndex == nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if historyActive {
-                ForEach(Array(hits.enumerated()).reversed(), id: \.element.id) { index, hit in
-                    hitRow(index, hit)
-                }
-            }
-            HStack(spacing: 6) {
-                Text("⌕").font(Theme.ui(12)).foregroundStyle(Theme.Text.quaternary)
-                TextField("Find or create a tag in any category…", text: $draft)
-                    .textFieldStyle(.plain)
-                    .font(Theme.ui(12))
-                    .focused(focus, equals: PlayerModel.universalFieldFocusID)
-                    .onSubmit(commit)
-                    .onChange(of: draft) { _, _ in
-                        highlighted = nil
-                        showingHistory = false
-                    }
-                    .onChange(of: focus.wrappedValue) { _, now in
-                        if now == PlayerModel.universalFieldFocusID { model.zone = .tags }
-                    }
-                    .onKeyPress(.upArrow) { move(-1) }
-                    .onKeyPress(.downArrow) { move(1) }
-                if willCreate {
-                    Text("(New Tag)")
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Accent.amber)
-                }
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 9)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control)
-                    .fill(Theme.Surface.well)
-                    .stroke(
-                        focused ? Theme.Border.activeControl : Theme.Border.standard,
-                        lineWidth: 1))
-
-            if !historyActive {
-                ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
-                    hitRow(index, hit)
-                }
-            }
-        }
-        .task(id: model.item?.id) {
-            if takesFocus { focus.wrappedValue = PlayerModel.universalFieldFocusID }
-        }
-        .onChange(of: model.item?.id) { _, _ in
-            showingHistory = false
-            highlighted = nil
-        }
-        .sheet(isPresented: $creating, onDismiss: {
-            // The sheet is a detour — the keyboard comes back here.
-            focus.wrappedValue = PlayerModel.universalFieldFocusID
-        }) {
-            if let first = model.panelVocabulary.first?.category.id {
-                TagSheet(
-                    mode: .create(categoryID: first, name: query),
-                    library: model.library,
-                    libraryID: model.libraryID,
-                    categories: model.panelVocabulary.map(\.category)
-                ) { tag in
-                    model.refreshTagging()
-                    model.toggleTag(tag.id)
-                    draft = ""
-                    highlighted = nil
-                }
-            }
-        }
-    }
-
-    private func move(_ delta: Int) -> KeyPress.Result {
-        if query.isEmpty, !showingHistory, delta == -1 {
-            showingHistory = true
-            highlighted = hits.isEmpty ? nil : 0
-            return .handled
-        }
-        let delta = historyActive ? -delta : delta
-        guard !hits.isEmpty else { return .ignored }
-        switch (highlighted, delta) {
-        case (nil, 1): highlighted = 0
-        case (nil, -1): highlighted = hits.count - 1
-        case (let current?, _):
-            let next = current + delta
-            highlighted = hits.indices.contains(next) ? next : nil
-        default: break
-        }
-        return .handled
-    }
-
-    /// Enter: apply what is selected, or create when nothing is — the
-    /// per-category fields' contract, with the sheet choosing the home.
-    @ViewBuilder
-    private func hitRow(_ index: Int, _ hit: Hit) -> some View {
-                let active = index == activeIndex
-                Button {
-                    apply(hit.tag)
-                } label: {
-                    HStack(spacing: 6) {
-                        Circle().fill(hit.categoryHue).frame(width: 6, height: 6)
-                        Text(hit.tag.name)
-                            .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.primary)
-                        if let alias = hit.matchedAlias {
-                            Text("(\(alias))")
-                                .font(Theme.ui(11))
-                                .foregroundStyle(Theme.Text.quaternary)
-                        }
-                        Spacer(minLength: 6)
-                        Text(hit.categoryName)
-                            .font(Theme.ui(10))
-                            .foregroundStyle(Theme.Text.tertiary)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                            .fill(active ? Theme.Surface.selectedRow : .clear))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-    }
-    private func commit() {
-        if let index = activeIndex, hits.indices.contains(index) {
-            apply(hits[index].tag)
-            return
-        }
-        guard !query.isEmpty else { return }
-        creating = true
-    }
-
-    private func apply(_ tag: Tag) {
-        model.toggleTag(tag.id)
-        draft = ""
-        highlighted = nil
-        showingHistory = false
+        UniversalTagField(
+            index: model.tagSearchIndex,
+            appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
+            recentTagIDs: model.recentlyAppliedTagIDs,
+            categories: model.panelVocabulary.map(\.category),
+            library: model.library,
+            libraryID: model.libraryID,
+            focus: focus,
+            focusID: PlayerModel.universalFieldFocusID,
+            itemID: model.item?.id,
+            takesFocus: takesFocus,
+            onFocus: { model.zone = .tags },
+            onApply: { model.toggleTag($0.id) },
+            onCreated: { tag in
+                model.refreshTagging()
+                model.toggleTag(tag.id)
+            })
     }
 }

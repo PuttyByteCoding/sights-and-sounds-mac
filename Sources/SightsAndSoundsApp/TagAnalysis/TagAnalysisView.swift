@@ -203,11 +203,17 @@ private struct RailView: View {
     @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
     @State private var previewCollapsed = false
+    /// The Universal field's focus, keyed the way the player keys its
+    /// panel — one slot, since the rail has no other tagging field.
+    @FocusState private var fieldFocus: UUID?
+    private static let universalFocusID = UUID(
+        uuidString: "22222222-2222-2222-2222-222222222222")!
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 preview
+                universalBlock
                 appliedBlock
                 candidateBlock
                 sources
@@ -288,6 +294,35 @@ private struct RailView: View {
         }
     }
 
+
+    // MARK: Universal field
+
+    /// The player's find-or-create field, directly under the video:
+    /// type a tag from any category and Enter applies it to this video
+    /// now; Enter on nothing found opens the New Tag sheet. Apply, not
+    /// stage — this is the player's gesture brought here, and it means
+    /// what it means there.
+    private var universalBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Theme.Accent.amber)
+                    .frame(width: 6, height: 6)
+                Text("Universal").modifier(Theme.sectionLabel())
+            }
+            UniversalTagField(
+                index: model.tagSearchIndex,
+                appliedIDs: Set(model.appliedTags.flatMap(\.tags).map(\.id)),
+                categories: model.categories,
+                library: model.library,
+                libraryID: model.libraryID,
+                focus: $fieldFocus,
+                focusID: Self.universalFocusID,
+                itemID: model.currentItemID,
+                onApply: { model.applyNow($0) },
+                onCreated: { model.applyNow($0) })
+        }
+    }
 
     // MARK: Applied tags
 
