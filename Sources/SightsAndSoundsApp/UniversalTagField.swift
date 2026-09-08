@@ -81,8 +81,8 @@ struct UniversalTagField: View {
     @State private var highlighted: Int?
     @State private var creating = false
     @State private var showingHistory = false
-    /// Empty query + ↓ lists every tag not on the item, in vocabulary
-    /// order (category by category), capped like autocomplete.
+    /// Empty query + ↓ lists what Tag Analysis found for the item, or
+    /// says that nothing was.
     @State private var browsingAll = false
 
     private var focused: Bool { focus.wrappedValue == focusID }
@@ -139,14 +139,10 @@ struct UniversalTagField: View {
                         matchedAlias: nil)
                 }
             }
+            // ↓ lists what Tag Analysis found, and only that: the
+            // vocabulary is for typing into. Nothing found says so.
             guard browsingAll else { return [] }
-            let limit = AppSettingsStore.shared.current.tagSuggestionLimit
-            let rest = index
-                .lazy
-                .filter { !appliedIDs.contains($0.tag.id) }
-                .map { self.hit($0) }
-                .prefix(limit)
-            return Self.merged(analysis: analysisHits, rest: Array(rest), limit: limit)
+            return Array(analysisHits.prefix(AppSettingsStore.shared.current.tagSuggestionLimit))
         }
         // Folded terms against the pre-folded index, lazily, cut at the
         // limit — never a full pass once enough hits exist.
@@ -233,6 +229,12 @@ struct UniversalTagField: View {
                         lineWidth: 1))
 
             if !historyActive {
+                if browsingAll, query.isEmpty, hits.isEmpty {
+                    Text("No Tags from Tag Analysis")
+                        .font(Theme.ui(11))
+                        .foregroundStyle(Theme.Text.disabled)
+                        .padding(.horizontal, 8)
+                }
                 ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
                     hitRow(index, hit)
                 }
