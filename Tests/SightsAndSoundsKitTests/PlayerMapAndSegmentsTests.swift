@@ -23,7 +23,7 @@ import Testing
     @Test func labelsComeFromTheChosenMap() {
         #expect(KeyMapStyle.mac.labels.segmentOpen == "⌃{")
         #expect(KeyMapStyle.web.labels.segmentOpen == "[")
-        #expect(KeyMapStyle.mac.labels.previousNext == "← →")
+        #expect(KeyMapStyle.mac.labels.previousNext == "← → · ⇧← ⇧→")
         #expect(KeyMapStyle.web.labels.previousNext == "⇧← ⇧→")
     }
 
@@ -33,7 +33,11 @@ import Testing
         // On the web map a bare arrow belongs to the text cursor.
         #expect(PlayerKeyMap.playlistStep(arrow: .right, shift: false, style: .web) == nil)
         #expect(PlayerKeyMap.playlistStep(arrow: .right, shift: true, style: .web) == 1)
-        #expect(PlayerKeyMap.playlistStep(arrow: .right, shift: true, style: .mac) == nil)
+        // Shifted arrows walk on BOTH maps — the one gesture that always
+        // reaches the next video, whichever map is on and whatever has
+        // the keyboard.
+        #expect(PlayerKeyMap.playlistStep(arrow: .right, shift: true, style: .mac) == 1)
+        #expect(PlayerKeyMap.playlistStep(arrow: .left, shift: true, style: .mac) == -1)
     }
 
     @Test func segmentMarksFollowTheMap() {
