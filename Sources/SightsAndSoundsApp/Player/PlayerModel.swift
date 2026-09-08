@@ -170,6 +170,22 @@ final class PlayerModel {
         if case .listing = request.definition { panels.rail = false } else { panels.rail = true }
         load(itemID: request.itemID)
         loadSnapshot(request.playlist)
+        // History is the one live queue: another player's load over this
+        // library re-runs it. Its own loads are excluded by token, so
+        // walking the history never reorders it under you.
+        if case .history = request.definition {
+            loadObserver = NotificationCenter.default.addObserver(
+                forName: .sasPlaybackDidLoad, object: nil, queue: .main
+            ) { [weak self] note in
+                let changed = note.userInfo?["libraryID"] as? UUID
+                let sender = note.userInfo?["sender"] as? UUID
+                Task { @MainActor in
+                    guard let self, changed == self.libraryID, sender != self.playerToken
+                    else { return }
+                    self.refreshQueue()
+                }
+            }
+        }
         // Tag edits anywhere reshape the rail's counts. Same library
         // only; the player's own edits recount directly.
         changeObserver = NotificationCenter.default.addObserver(
@@ -184,6 +200,10 @@ final class PlayerModel {
     }
 
     private var changeObserver: (any NSObjectProtocol)?
+    private var loadObserver: (any NSObjectProtocol)?
+    /// This player's identity on the load broadcast, so a History queue
+    /// can tell another player's load from its own.
+    let playerToken = UUID()
 
     // MARK: - Play queue
 
@@ -309,6 +329,16 @@ final class PlayerModel {
         item = loaded
         fileURL = url
         durationSeconds = loaded.durationSeconds ?? 0
+
+        // A load is a watch, even a brief one: the history stamps now,
+        // and every History queue over this library hears about it —
+        // except this player's own, which never reorders on its plays.
+        if loaded.clipStartSeconds == nil {
+            try? library.recordPlaybackStart(itemID: loaded.id)
+        }
+        NotificationCenter.default.post(
+            name: .sasPlaybackDidLoad, object: nil,
+            userInfo: ["libraryID": libraryID, "sender": playerToken])
 
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         // Mute is SESSION state, not per-item: the settings toggle seeds
@@ -994,6 +1024,8 @@ final class PlayerModel {
     func shutdown() {
         if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
         changeObserver = nil
+        if let loadObserver { NotificationCenter.default.removeObserver(loadObserver) }
+        loadObserver = nil
         analysisSession?.playerDidClose()
         pause()
         removeObserver()
@@ -1081,4 +1113,10 @@ struct SegmentRow: Identifiable, Equatable {
     /// Only songs and clips are renameable rows — a hide block has no
     /// name to give, because it is not a thing you can browse to.
     var isRenameable: Bool { kind != .hide }
+}
+
+extension Notification.Name {
+    /// A player loaded an item. userInfo: `libraryID`, `sender` (the
+    /// player's token). History queues over the library re-run on it.
+    static let sasPlaybackDidLoad = Notification.Name("sasPlaybackDidLoad")
 }
