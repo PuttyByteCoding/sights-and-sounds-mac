@@ -120,6 +120,9 @@ The tag panel's rows are the categories plus two pseudo-fields, each draggable t
 Results** (`analysisResultsFieldPosition`): ↓ lists the tags the companion found for this
 video that it does not yet wear, typing narrows, Enter applies through the player. Dimmed —
 `Open Tag Analysis to see results` — while no companion is open; a spinner while it scans.
+**On-screen Text** (`onScreenTextFieldPosition`): ↓ reads the frame at the playhead with
+Vision and lists its lines; Enter applies the tag a line names, or opens New Tag seeded with
+it. `No video frame to read` for audio.
 
 Floors, all existing and all kept: video 150×150, tag panel 220, text panel 240, queue = one
 whole cell (`QueueCell.metadataHeight` + 42). The rail's floor is now the tag floor; the two

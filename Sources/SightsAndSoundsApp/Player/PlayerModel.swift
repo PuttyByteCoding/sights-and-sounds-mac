@@ -468,22 +468,33 @@ final class PlayerModel {
     static let analysisResultsFieldFocusID = UUID(
         uuidString: "22222222-2222-2222-2222-222222222222")!
 
+    /// The On-screen Text field's slot in the focus walk.
+    static let onScreenTextFieldFocusID = UUID(
+        uuidString: "33333333-3333-3333-3333-333333333333")!
+
     /// The panel's Tab order: the search categories in panel order with
-    /// the two pseudo-fields inserted at their positions. Positions are
-    /// indexes into the category list; past the end means last; both at
-    /// one index render — and walk — Universal first.
+    /// the pseudo-fields inserted at their positions. Positions are
+    /// indexes into the category list; past the end means last. Fields
+    /// sorted by position (ties in declared order: Universal, Results,
+    /// On-screen) and inserted in that order, each shifted by how many
+    /// went in before it — so every field lands where its position says
+    /// relative to the categories, whatever the others chose.
     static func tagFieldOrder(
-        searchCategoryIDs: [UUID], universalPosition: Int, resultsPosition: Int
+        searchCategoryIDs: [UUID], universalPosition: Int, resultsPosition: Int,
+        onScreenPosition: Int
     ) -> [UUID] {
         var fields = searchCategoryIDs
-        let universal = min(max(0, universalPosition), fields.count)
-        let results = min(max(0, resultsPosition), fields.count)
-        if results >= universal {
-            fields.insert(analysisResultsFieldFocusID, at: results)
-            fields.insert(universalFieldFocusID, at: universal)
-        } else {
-            fields.insert(universalFieldFocusID, at: universal)
-            fields.insert(analysisResultsFieldFocusID, at: results)
+        let count = fields.count
+        let pseudo: [(id: UUID, position: Int)] = [
+            (universalFieldFocusID, min(max(0, universalPosition), count)),
+            (analysisResultsFieldFocusID, min(max(0, resultsPosition), count)),
+            (onScreenTextFieldFocusID, min(max(0, onScreenPosition), count)),
+        ]
+        let ordered = pseudo.enumerated().sorted {
+            ($0.element.position, $0.offset) < ($1.element.position, $1.offset)
+        }
+        for (inserted, entry) in ordered.enumerated() {
+            fields.insert(entry.element.id, at: entry.element.position + inserted)
         }
         return fields
     }
@@ -505,7 +516,8 @@ final class PlayerModel {
                 .filter { $0.category.displayStyle == .search }
                 .map(\.id),
             universalPosition: settings.universalTagFieldPosition,
-            resultsPosition: settings.analysisResultsFieldPosition)
+            resultsPosition: settings.analysisResultsFieldPosition,
+            onScreenPosition: settings.onScreenTextFieldPosition)
         guard !fields.isEmpty else { return false }
         guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
         else {

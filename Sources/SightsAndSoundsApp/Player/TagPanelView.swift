@@ -28,6 +28,9 @@ struct TagPanelView: View {
     /// The Tag Analysis Results field's place — same rule, own setting.
     @State private var resultsPosition
         = AppSettingsStore.shared.current.analysisResultsFieldPosition
+    /// The On-screen Text field's place — same rule, own setting.
+    @State private var onScreenPosition
+        = AppSettingsStore.shared.current.onScreenTextFieldPosition
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -57,6 +60,9 @@ struct TagPanelView: View {
                     }
                     if clampedResultsPosition == 0 {
                         resultsBlock
+                    }
+                    if clampedOnScreenPosition == 0 {
+                        onScreenBlock
                     }
                     ForEach(Array(model.panelVocabulary.enumerated()), id: \.element.id) { index, entry in
                         if let label = entry.category.sectionLabel {
@@ -113,6 +119,9 @@ struct TagPanelView: View {
                         }
                         if clampedResultsPosition == index + 1 {
                             resultsBlock
+                        }
+                        if clampedOnScreenPosition == index + 1 {
+                            onScreenBlock
                         }
                     }
                     // …and the space under the list is "make it last".
@@ -178,10 +187,20 @@ struct TagPanelView: View {
         AppSettingsStore.shared.update { $0.analysisResultsFieldPosition = position }
     }
 
-    /// A dragged heading's id, if it is one of the two pseudo-fields.
+    private var clampedOnScreenPosition: Int {
+        min(max(0, onScreenPosition), model.panelVocabulary.count)
+    }
+
+    private func setOnScreenPosition(_ position: Int) {
+        onScreenPosition = position
+        AppSettingsStore.shared.update { $0.onScreenTextFieldPosition = position }
+    }
+
+    /// A dragged heading's id, if it is one of the pseudo-fields.
     private func setPseudoFieldPosition(_ id: UUID, to position: Int) -> Bool {
         if id == PlayerModel.universalFieldFocusID { setUniversalPosition(position); return true }
         if id == PlayerModel.analysisResultsFieldFocusID { setResultsPosition(position); return true }
+        if id == PlayerModel.onScreenTextFieldFocusID { setOnScreenPosition(position); return true }
         return false
     }
 
@@ -220,10 +239,7 @@ struct TagPanelView: View {
             // The other pseudo-field dropped here takes this slot; a
             // category dropped here takes it and pushes the field down —
             // insert before the category the field currently precedes.
-            if id == PlayerModel.analysisResultsFieldFocusID {
-                setResultsPosition(clampedUniversalPosition)
-                return true
-            }
+            if setPseudoFieldPosition(id, to: clampedUniversalPosition) { return true }
             let following = clampedUniversalPosition < model.panelVocabulary.count
                 ? model.panelVocabulary[clampedUniversalPosition].category.id : nil
             model.moveCategory(id, before: following)
@@ -272,10 +288,7 @@ struct TagPanelView: View {
             guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
                   id != PlayerModel.analysisResultsFieldFocusID
             else { return false }
-            if id == PlayerModel.universalFieldFocusID {
-                setUniversalPosition(clampedResultsPosition)
-                return true
-            }
+            if setPseudoFieldPosition(id, to: clampedResultsPosition) { return true }
             let following = clampedResultsPosition < model.panelVocabulary.count
                 ? model.panelVocabulary[clampedResultsPosition].category.id : nil
             model.moveCategory(id, before: following)
@@ -284,6 +297,62 @@ struct TagPanelView: View {
             dropTargetID = inside
                 ? PlayerModel.analysisResultsFieldFocusID
                 : (dropTargetID == PlayerModel.analysisResultsFieldFocusID ? nil : dropTargetID)
+        }
+    }
+
+    /// The On-screen Text row, reorderable like the other two.
+    @ViewBuilder
+    private var onScreenBlock: some View {
+        if dropTargetID == PlayerModel.onScreenTextFieldFocusID {
+            DropInsertionLine()
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Theme.Accent.amber)
+                    .frame(width: 6, height: 6)
+                Text("On-screen Text")
+                    .font(Theme.ui(12, .semibold))
+                    .foregroundStyle(Theme.Text.primary)
+                Spacer(minLength: 6)
+                Text("≡")
+                    .font(Theme.ui(12))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .help("Drag to reorder — the field sits among the categories")
+                    .draggable(PlayerModel.onScreenTextFieldFocusID.uuidString)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            OnScreenTextField(
+                fileURL: model.fileURL,
+                isAudio: model.isAudio,
+                currentSeconds: model.currentSeconds,
+                index: model.tagSearchIndex,
+                categories: model.panelVocabulary.map(\.category),
+                library: model.library,
+                libraryID: model.libraryID,
+                focus: $focusedCategory,
+                focusID: PlayerModel.onScreenTextFieldFocusID,
+                itemID: model.item?.id,
+                onApply: { model.applyTag($0.id) },
+                onCreated: { tag in
+                    model.refreshTagging()
+                    model.applyTag(tag.id)
+                })
+        }
+        .dropDestination(for: String.self) { dropped, _ in
+            dropTargetID = nil
+            guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
+                  id != PlayerModel.onScreenTextFieldFocusID
+            else { return false }
+            if setPseudoFieldPosition(id, to: clampedOnScreenPosition) { return true }
+            let following = clampedOnScreenPosition < model.panelVocabulary.count
+                ? model.panelVocabulary[clampedOnScreenPosition].category.id : nil
+            model.moveCategory(id, before: following)
+            return true
+        } isTargeted: { inside in
+            dropTargetID = inside
+                ? PlayerModel.onScreenTextFieldFocusID
+                : (dropTargetID == PlayerModel.onScreenTextFieldFocusID ? nil : dropTargetID)
         }
     }
 

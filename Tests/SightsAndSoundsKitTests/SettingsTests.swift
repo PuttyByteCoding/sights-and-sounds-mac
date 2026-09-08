@@ -324,3 +324,23 @@ import Testing
         #expect(decoded.analysisResultsFieldPosition == 0)
     }
 }
+
+/// The On-screen Text field's place among the tag panel's categories —
+/// the same rule as the other two pseudo-fields, one slot later.
+@Suite struct OnScreenTextFieldPositionTests {
+    @Test func theDefaultSitsAfterTheResultsField() {
+        #expect(AppSettings().onScreenTextFieldPosition == 2)
+    }
+
+    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(decoded.onScreenTextFieldPosition == 2)
+    }
+
+    @Test func aNegativeValueIsClampedToFirst() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"onScreenTextFieldPosition": -1}"#.utf8))
+        #expect(decoded.onScreenTextFieldPosition == 0)
+    }
+}
