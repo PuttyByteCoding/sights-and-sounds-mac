@@ -689,6 +689,11 @@ private struct PillCategoryView: View {
                     // arrows still walk the playlist.
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.return) {
+                        guard activeSuggestion != nil else { return .ignored }
+                        commit()
+                        return .handled
+                    }
                 if willCreate {
                     Text("(New Tag)")
                         .font(Theme.mono(9.5))
