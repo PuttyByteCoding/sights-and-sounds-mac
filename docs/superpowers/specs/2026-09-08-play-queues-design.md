@@ -102,8 +102,7 @@ enum QueueSort: Equatable {
 ### The queue panel (PlayerView)
 
 The existing strip gains a header row: the queue title, `n of m` when
-narrowed, a Sort menu (`QueueSort` choices, Shuffle / Reshuffle), a
-Refresh button (also F5 and ⌘R while the player owns the window), and a
+narrowed, a Sort menu (`QueueSort` choices, Shuffle / Reshuffle), a Refresh button (also ⌘R while the player owns the window), and a
 Rail toggle. The strip shows `visible`, the current item ringed as now.
 
 ### The rail (new `QueueRailView`, a left panel of the player)
@@ -148,8 +147,8 @@ out of scope here.
 
 ## Keys
 
-- Refresh: F5 and ⌘R in a player. Sort and Shuffle: the panel header
-  menu only.
+- Refresh: ⌘R in a player, and the strip's header button. (F5 is a
+  bindable tag key already.) Sort and Shuffle: the panel header menu only.
 - Existing playlist keys (arrows, Shift+arrows) walk `visible`.
 
 ## Error handling
@@ -174,7 +173,7 @@ out of scope here.
 ## Delivery
 
 1. `feature/play-queues` — `PlayQueue`, `QueueDefinition`, the
-   `PlayerModel` switch to a snapshot, Refresh (button, F5, ⌘R), the
+   `PlayerModel` switch to a snapshot, Refresh (button, ⌘R), the
    regression test. This alone fixes the clobbering and freezes queues.
 2. `feature/queue-sort` — the Sort menu and Shuffle on the snapshot.
 3. `feature/queue-rail` — `tagCounts(forItems:)`, `QueueRailView`, the
