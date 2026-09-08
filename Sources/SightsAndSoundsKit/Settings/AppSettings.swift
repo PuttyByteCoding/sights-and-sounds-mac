@@ -59,6 +59,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// kept between launches like the player's rail.
     public var tagAnalysisRailWidth: Double
 
+    /// The Tag Analysis table's four fixed column widths, dragged to
+    /// taste and kept between launches. The Value column takes the rest.
+    public var tagAnalysisColumns: TagAnalysisColumnWidths
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -106,6 +110,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         tagAnalysisRailWidth: Double = 240,
+        tagAnalysisColumns: TagAnalysisColumnWidths = TagAnalysisColumnWidths(),
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600,
         ocr: OcrSettings = OcrSettings(),
@@ -130,6 +135,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.tagAnalysisRailWidth = tagAnalysisRailWidth
+        self.tagAnalysisColumns = tagAnalysisColumns
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
         self.ocr = ocr
@@ -176,6 +182,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         // the cap that keeps the table on screen.
         tagAnalysisRailWidth = min(900, max(210, try container.decodeIfPresent(
             Double.self, forKey: .tagAnalysisRailWidth) ?? defaults.tagAnalysisRailWidth))
+        tagAnalysisColumns = try container.decodeIfPresent(
+            TagAnalysisColumnWidths.self, forKey: .tagAnalysisColumns) ?? defaults.tagAnalysisColumns
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(
@@ -663,5 +671,41 @@ public final class AppSettingsStore: @unchecked Sendable {
         else { return }
         update { $0.skip = legacy }
         AppLog.shared.info("settings", "migrated seek distances into settings.json")
+    }
+}
+
+/// The Tag Analysis candidate table's fixed columns, points. Per-key
+/// tolerant like every setting: a file from before a column existed
+/// keeps that column's default, and a hand-edited value is clamped so
+/// no column can vanish or swallow the window.
+public struct TagAnalysisColumnWidths: Codable, Equatable, Sendable {
+    public static let minimum: Double = 32
+    public static let maximum: Double = 600
+
+    public var key: Double
+    public var readers: Double
+    public var seen: Double
+    public var suggestion: Double
+
+    public init(key: Double = 110, readers: Double = 96, seen: Double = 48, suggestion: Double = 190) {
+        self.key = key
+        self.readers = readers
+        self.seen = seen
+        self.suggestion = suggestion
+    }
+
+    public static func clamped(_ width: Double) -> Double {
+        min(maximum, max(minimum, width))
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = TagAnalysisColumnWidths()
+        key = Self.clamped(try container.decodeIfPresent(Double.self, forKey: .key) ?? defaults.key)
+        readers = Self.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .readers) ?? defaults.readers)
+        seen = Self.clamped(try container.decodeIfPresent(Double.self, forKey: .seen) ?? defaults.seen)
+        suggestion = Self.clamped(
+            try container.decodeIfPresent(Double.self, forKey: .suggestion) ?? defaults.suggestion)
     }
 }
