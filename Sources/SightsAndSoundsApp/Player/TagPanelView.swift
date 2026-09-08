@@ -389,7 +389,9 @@ private struct PillCategoryView: View {
     @State private var draft = ""
     /// Which suggestion the arrows have landed on. Nil means none — and
     /// nil is exactly what makes Enter create rather than apply.
-    @State private var highlighted: Int?
+    /// The arrowed-to row, by tag, so a list that reshapes under Enter
+    /// still applies the row that was lit.
+    @State private var highlightedID: UUID?
     @State private var creating = false
     /// Empty query + ↑ shows the session's recently applied tags (this
     /// category's) instead of autocomplete. Typing anything returns to
@@ -503,20 +505,26 @@ private struct PillCategoryView: View {
     /// A tag named exactly what was typed — through the same fold as the
     /// matching, so "tim oneil" IS "Tim O'Neil" — selected on sight so
     /// Enter applies it instead of offering to create a near-duplicate.
-    private var exactMatchIndex: Int? {
+    private var exactMatch: Suggestion? {
         let folded = PillCategoryView.searchFold(query)
-        return suggestions.firstIndex {
+        return suggestions.first {
             PillCategoryView.searchFold($0.tag.name) == folded
                 || $0.matchedAlias.map { PillCategoryView.searchFold($0) == folded } == true
         }
     }
 
-    /// What Enter acts on: the arrowed-to row, else the exact match.
-    private var activeIndex: Int? { highlighted ?? exactMatchIndex }
+    /// What Enter acts on: the arrowed-to row if it is still listed,
+    /// else the exact match.
+    private var activeSuggestion: Suggestion? {
+        highlightedID.flatMap { id in suggestions.first { $0.id == id } } ?? exactMatch
+    }
+    private var highlightedIndex: Int? {
+        highlightedID.flatMap { id in suggestions.firstIndex { $0.id == id } }
+    }
 
     /// Nothing selected and something typed — Enter will make a new tag,
     /// and the field says so rather than letting you find out.
-    private var willCreate: Bool { !query.isEmpty && activeIndex == nil }
+    private var willCreate: Bool { !query.isEmpty && activeSuggestion == nil }
 
     private var hue: Color { Theme.categoryHue(entry.category.colorIndex) }
 
@@ -534,21 +542,21 @@ private struct PillCategoryView: View {
             } else {
                 browsingAll = true
             }
-            highlighted = suggestions.isEmpty ? nil : 0
+            highlightedID = suggestions.first?.id
             return .handled
         }
         guard !suggestions.isEmpty else { return .handled }
         // History climbs UPWARD from the box: ↑ moves to older (higher
         // index, drawn higher), ↓ back toward the field.
         let delta = historyActive ? -delta : delta
-        let current = highlighted ?? (delta > 0 ? -1 : suggestions.count)
-        highlighted = min(max(0, current + delta), suggestions.count - 1)
+        let current = highlightedIndex ?? (delta > 0 ? -1 : suggestions.count)
+        highlightedID = suggestions[min(max(0, current + delta), suggestions.count - 1)].id
         return .handled
     }
 
     @ViewBuilder
     private func suggestionRow(_ index: Int, _ suggestion: Suggestion) -> some View {
-                let active = index == activeIndex
+                let active = suggestion.id == activeSuggestion?.id
                 Button {
                     apply(suggestion.tag)
                 } label: {
@@ -589,8 +597,8 @@ private struct PillCategoryView: View {
     /// history pick applies too — the empty-query guard only blocks
     /// CREATING from nothing.
     private func commit() {
-        if let index = activeIndex, suggestions.indices.contains(index) {
-            apply(suggestions[index].tag)
+        if let suggestion = activeSuggestion {
+            apply(suggestion.tag)
             return
         }
         guard !query.isEmpty else { return }
@@ -600,7 +608,7 @@ private struct PillCategoryView: View {
     private func apply(_ tag: Tag) {
         model.toggleTag(tag.id)
         draft = ""
-        highlighted = nil
+        highlightedID = nil
         showingHistory = false
         browsingAll = false
     }
@@ -669,7 +677,7 @@ private struct PillCategoryView: View {
                     .onChange(of: draft) { _, _ in
                         // A new query invalidates the old highlight, and
                         // typing leaves history mode.
-                        highlighted = nil
+                        highlightedID = nil
                         showingHistory = false
                         browsingAll = false
                     }
@@ -712,7 +720,7 @@ private struct PillCategoryView: View {
             // from the last one must not hang over its field.
             showingHistory = false
             browsingAll = false
-            highlighted = nil
+            highlightedID = nil
         }
         .sheet(item: $editing, onDismiss: restoreFieldFocus) { tag in
             TagSheet(
@@ -732,7 +740,7 @@ private struct PillCategoryView: View {
                 model.refreshTagging()
                 model.toggleTag(tag.id)
                 draft = ""
-                highlighted = nil
+                highlightedID = nil
             }
         }
     }

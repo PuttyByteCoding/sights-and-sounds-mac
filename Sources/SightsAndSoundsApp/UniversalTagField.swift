@@ -78,7 +78,11 @@ struct UniversalTagField: View {
     let onCreated: (Tag) -> Void
 
     @State private var draft = ""
-    @State private var highlighted: Int?
+    /// The arrowed-to row, by TAG rather than by position: the list can
+    /// reshape between a draw and the Enter that acts on it (an apply
+    /// elsewhere, a reload), and a position would then name a different
+    /// row from the one that was lit.
+    @State private var highlightedID: UUID?
     @State private var creating = false
     @State private var showingHistory = false
     /// Empty query + ↓ lists what Tag Analysis found for the item, or
@@ -178,16 +182,23 @@ struct UniversalTagField: View {
     /// A tag named exactly what was typed — through the same fold as the
     /// matching — selected on sight so Enter applies it instead of
     /// offering to create a near-duplicate.
-    private var exactMatchIndex: Int? {
+    private var exactMatch: Hit? {
         let folded = TagSearchEntry.fold(query)
-        return hits.firstIndex {
+        return hits.first {
             TagSearchEntry.fold($0.tag.name) == folded
                 || $0.matchedAlias.map { TagSearchEntry.fold($0) == folded } == true
         }
     }
 
-    private var activeIndex: Int? { highlighted ?? exactMatchIndex }
-    private var willCreate: Bool { !query.isEmpty && activeIndex == nil }
+    /// What Enter acts on: the arrowed-to row if it is still listed,
+    /// else the exact match.
+    private var activeHit: Hit? {
+        highlightedID.flatMap { id in hits.first { $0.id == id } } ?? exactMatch
+    }
+    private var highlightedIndex: Int? {
+        highlightedID.flatMap { id in hits.firstIndex { $0.id == id } }
+    }
+    private var willCreate: Bool { !query.isEmpty && activeHit == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -204,7 +215,7 @@ struct UniversalTagField: View {
                     .focused(focus, equals: focusID)
                     .onSubmit(commit)
                     .onChange(of: draft) { _, _ in
-                        highlighted = nil
+                        highlightedID = nil
                         showingHistory = false
                         browsingAll = false
                     }
@@ -246,7 +257,7 @@ struct UniversalTagField: View {
         .onChange(of: itemID) { _, _ in
             showingHistory = false
             browsingAll = false
-            highlighted = nil
+            highlightedID = nil
         }
         .sheet(isPresented: $creating, onDismiss: {
             // The sheet is a detour — the keyboard comes back here.
@@ -261,7 +272,7 @@ struct UniversalTagField: View {
                 ) { tag in
                     onCreated(tag)
                     draft = ""
-                    highlighted = nil
+                    highlightedID = nil
                 }
             }
         }
@@ -280,21 +291,21 @@ struct UniversalTagField: View {
             } else {
                 return .ignored
             }
-            highlighted = hits.isEmpty ? nil : 0
+            highlightedID = hits.first?.id
             return .handled
         }
         guard !hits.isEmpty else { return .handled }
         // History climbs UPWARD from the box: ↑ moves to older (higher
         // index, drawn higher), ↓ back toward the field.
         let delta = historyActive ? -delta : delta
-        let current = highlighted ?? (delta > 0 ? -1 : hits.count)
-        highlighted = min(max(0, current + delta), hits.count - 1)
+        let current = highlightedIndex ?? (delta > 0 ? -1 : hits.count)
+        highlightedID = hits[min(max(0, current + delta), hits.count - 1)].id
         return .handled
     }
 
     @ViewBuilder
     private func hitRow(_ index: Int, _ hit: Hit) -> some View {
-        let active = index == activeIndex
+        let active = hit.id == activeHit?.id
         Button {
             apply(hit.tag)
         } label: {
@@ -330,8 +341,8 @@ struct UniversalTagField: View {
 
     /// Enter: apply what is selected, or create when nothing is.
     private func commit() {
-        if let index = activeIndex, hits.indices.contains(index) {
-            apply(hits[index].tag)
+        if let hit = activeHit {
+            apply(hit.tag)
             return
         }
         guard !query.isEmpty else { return }
@@ -341,7 +352,7 @@ struct UniversalTagField: View {
     private func apply(_ tag: Tag) {
         onApply(tag)
         draft = ""
-        highlighted = nil
+        highlightedID = nil
         showingHistory = false
         browsingAll = false
     }
