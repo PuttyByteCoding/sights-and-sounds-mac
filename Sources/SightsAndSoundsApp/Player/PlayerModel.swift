@@ -24,6 +24,39 @@ final class PlayerModel {
     /// being the snapshot the player opened with.
     private(set) var playlist: [UUID]
 
+    /// The companion's handshake, created the first time Tag Analysis
+    /// is opened from this player and kept for the player's life. The
+    /// player only ever writes what it is showing; see the session.
+    private(set) var analysisSession: TagAnalysisSession?
+
+    /// The session for this player, registered on first use so the
+    /// companion's window can find it by id.
+    func analysisSession(registeringIn app: AppModel) -> TagAnalysisSession {
+        if let analysisSession { return analysisSession }
+        let session = TagAnalysisSession(libraryID: libraryID, library: library)
+        session.apply = { [weak self] tag in self?.applyTag(tag.id) }
+        session.step = { [weak self] delta in
+            delta < 0 ? self?.goPrevious() : self?.goNext()
+        }
+        app.registerAnalysisSession(session)
+        analysisSession = session
+        publishToSession()
+        return session
+    }
+
+    /// What the companion follows: the shown item and its place in the
+    /// playlist. Cheap and idempotent — called on every load and every
+    /// playlist change.
+    private func publishToSession() {
+        guard let analysisSession else { return }
+        let position: (index: Int, count: Int)? = {
+            guard playlist.count > 1, let item, let index = playlist.firstIndex(of: item.id)
+            else { return nil }
+            return (index, playlist.count)
+        }()
+        analysisSession.playerDidShow(itemID: item?.id, position: position)
+    }
+
     private(set) var item: MediaItem?
     private(set) var player = AVPlayer()
     private(set) var isPlaying = false
@@ -148,6 +181,7 @@ final class PlayerModel {
         let droppedCurrent = item.map { !ids.contains($0.id) } ?? false
         playlist = ids
         loadQueueItems()
+        publishToSession()
         // The playing item no longer matches, so it stops and the new
         // queue starts from its first item.
         //
@@ -236,6 +270,7 @@ final class PlayerModel {
         }
         guard let url else {
             item = loaded
+            publishToSession()
             loadError = "The item's source is offline."
             return
         }
@@ -259,6 +294,7 @@ final class PlayerModel {
         installObserver()
         refreshTagging()
         refreshBlocks()
+        publishToSession()
 
         // Clips start at their in-point; everything else starts at the
         // beginning. The stored resume position is deliberately NOT
@@ -510,6 +546,25 @@ final class PlayerModel {
                 if recentlyAppliedTagIDs.count > 30 {
                     recentlyAppliedTagIDs.removeLast()
                 }
+            }
+            refreshTagging()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// Apply (never remove) one tag — the companion's path in, and the
+    /// results field's. Records the session history like a toggle-on
+    /// does, and refreshes the panel, so a tag applied from the other
+    /// window appears here at once without a broadcast.
+    func applyTag(_ tagID: UUID) {
+        guard let item else { return }
+        do {
+            try library.assignTag(tagID, to: item.id)
+            recentlyAppliedTagIDs.removeAll { $0 == tagID }
+            recentlyAppliedTagIDs.insert(tagID, at: 0)
+            if recentlyAppliedTagIDs.count > 30 {
+                recentlyAppliedTagIDs.removeLast()
             }
             refreshTagging()
         } catch {
@@ -851,6 +906,7 @@ final class PlayerModel {
     }
 
     func shutdown() {
+        analysisSession?.playerDidClose()
         pause()
         removeObserver()
         if let item {
