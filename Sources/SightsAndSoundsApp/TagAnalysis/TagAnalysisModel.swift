@@ -387,10 +387,14 @@ final class TagAnalysisModel {
                 self.appliedTags = (try? library.tags(of: itemID)) ?? []
                 self.tagSearchIndex = TagSearchEntry.index(
                     vocabulary: vocabulary.map { ($0.category, $0.tags) }, aliases: aliases)
-                self.reloadPreview()
+                // The row BEFORE the preview: `reloadPreview` resolves the
+                // file from `currentItem`, and pointing it at the video
+                // first left the first video's preview empty and every
+                // later one a video behind — numpad 5 played nothing.
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)
                 }
+                self.reloadPreview()
                 self.loadError = nil
             } catch {
                 self.loadError = "\(error)"
