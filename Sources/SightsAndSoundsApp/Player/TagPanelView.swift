@@ -160,7 +160,7 @@ struct TagPanelView: View {
                     fileURL: model.fileURL,
                     isAudio: model.isAudio,
                     currentSeconds: model.currentSeconds,
-                    index: model.tagSearchIndex,
+                    appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
                     categories: model.panelVocabulary.map(\.category),
                     library: model.library,
                     libraryID: model.libraryID,

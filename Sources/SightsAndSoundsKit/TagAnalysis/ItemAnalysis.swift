@@ -389,6 +389,27 @@ extension LibraryDatabase {
 
     // MARK: - The existing-tag pass
 
+    /// The existing tags named inside free text — the On-screen Text
+    /// field's pass over what Vision just read, through the same
+    /// word-run match the per-item analysis uses, over the whole
+    /// vocabulary and its aliases. One finding per tag, carrying the
+    /// first line it was found in.
+    public func existingTags(inLines lines: [String]) throws -> [ExistingTagFinding] {
+        guard !lines.isEmpty else { return [] }
+        let inventory = try tagInventory()
+        var seen = Set<UUID>()
+        var findings: [ExistingTagFinding] = []
+        for line in lines {
+            for hit in Self.findTags(in: line, inventory: inventory)
+            where seen.insert(hit.tag.id).inserted {
+                findings.append(ExistingTagFinding(
+                    tag: hit.tag, categoryName: hit.categoryName,
+                    matchedText: hit.matchedText, foundIn: line, alreadyApplied: false))
+            }
+        }
+        return findings
+    }
+
     struct TagNeedle: Sendable {
         let needle: String  // lowercased name or alias
         let matchedText: String
