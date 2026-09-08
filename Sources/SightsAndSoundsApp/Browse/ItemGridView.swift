@@ -216,17 +216,9 @@ private struct ItemCell: View {
             Clipboard.copy(item.fileName.lettersAndNumbersOnly)
         }
         Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
-            // The whole queue rides along, positioned at this video —
-            // analysis is per video, but the window walks the queue the
-            // way the player does, and arriving with only one item would
-            // strand the arrows.
-            let queue = model.visibleItems.map(\.id)
-            openWindow(
-                id: "aux",
-                value: AuxWindowRequest(
-                    libraryID: model.libraryID, kind: .tagAnalysis,
-                    itemIDs: queue,
-                    startIndex: queue.firstIndex(of: item.id) ?? 0))
+            // The companion follows a player, so the player opens first
+            // at this video, over the whole listing, and opens it.
+            model.openPlayerForAnalysis(at: item.id)
         }
         if item.parentMediaItemID != nil && !item.isExportedClip {
             Button("Export Clip to File", systemImage: "scissors") {

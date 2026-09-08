@@ -18,6 +18,7 @@ struct PlayerView: View {
     /// listing that opened it is still right there — which is what lets
     /// the queue follow the filter instead of being a snapshot.
     @Environment(BrowseModel.self) private var browse
+    @Environment(\.openWindow) private var openWindow
     let request: PlayerRequest
     let onClose: () -> Void
 
@@ -100,7 +101,25 @@ struct PlayerView: View {
         .onChange(of: browse.visibleItems.map(\.id)) { _, ids in
             model?.updatePlaylist(ids)
         }
+        // A browse entry point asked for Tag Analysis: the player is up
+        // now, so the companion can follow it.
+        .onChange(of: model == nil) { _, absent in
+            guard !absent, browse.pendingAnalysisOpen, let model else { return }
+            browse.pendingAnalysisOpen = false
+            openTagAnalysis(for: model)
+        }
         .onDisappear { model?.shutdown() }
+    }
+
+    /// One companion per player session: the request is keyed on the
+    /// session id, so opening twice brings the same window forward.
+    private func openTagAnalysis(for model: PlayerModel) {
+        let session = model.analysisSession(registeringIn: app)
+        openWindow(
+            id: "aux",
+            value: AuxWindowRequest(
+                libraryID: model.libraryID, kind: .tagAnalysis,
+                title: "Tag Analysis", sessionID: session.id))
     }
 
     /// Option+digit reaches us as the layout's option glyph on most
@@ -314,6 +333,7 @@ struct PlayerView: View {
 
 private struct PlayerContent: View {
     @Environment(PlayerModel.self) private var model
+    @Environment(AppModel.self) private var app
     @Environment(\.displayScale) private var displayScale
     /// Re-claims the player's keyboard focus. Wired to clicks on the
     /// video/transport area only — never the tag panel, whose text
@@ -635,25 +655,25 @@ private struct PlayerContent: View {
             PanelToggles()
         }
         ToolbarItem {
+            // The companion follows THIS player: one session per player,
+            // keyed into the window request, so a second click brings
+            // the same window forward.
+            Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
+                let session = model.analysisSession(registeringIn: app)
+                openWindow(
+                    id: "aux",
+                    value: AuxWindowRequest(
+                        libraryID: model.libraryID, kind: .tagAnalysis,
+                        title: "Tag Analysis", sessionID: session.id))
+            }
+            .help("Open the Tag Analysis companion beside this player")
+        }
+        ToolbarItem {
             Menu {
                 Button("Keyboard Map…", systemImage: "questionmark.square") {
                     showKeyMap = true
                 }
                 Button("Key Bindings…", systemImage: "keyboard") { showBindingsEditor = true }
-                Divider()
-                // Tag Analysis carries the player's own queue, opened
-                // at the playing item — both windows walk the same list
-                // with the same SHIFT+arrows.
-                if let item = model.item {
-                    Button("Tag Analysis", systemImage: "sparkle.magnifyingglass") {
-                        openWindow(
-                            id: "aux",
-                            value: AuxWindowRequest(
-                                libraryID: model.libraryID, kind: .tagAnalysis,
-                                itemIDs: model.playlist,
-                                startIndex: model.playlist.firstIndex(of: item.id) ?? 0))
-                    }
-                }
                 Divider()
                 if AppSettingsStore.shared.current.infoBar.showsDownload {
                     Button("Save a Copy…", systemImage: "square.and.arrow.down") {

@@ -346,12 +346,13 @@ struct CommandPalette: View {
     }
 
     private func aux(_ kind: AuxWindowRequest.Kind) {
-        openWindow(
-            id: "aux",
-            value: AuxWindowRequest(
-                libraryID: model.libraryID, kind: kind,
-                // Tag Analysis always walks the current queue.
-                itemIDs: kind == .tagAnalysis ? model.visibleItems.map(\.id) : []))
+        // Tag Analysis follows a player: open one first, and it opens
+        // the companion.
+        if kind == .tagAnalysis {
+            model.openPlayerForAnalysis()
+            return
+        }
+        openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
     }
 
     private var goTo: [PaletteCommand] {

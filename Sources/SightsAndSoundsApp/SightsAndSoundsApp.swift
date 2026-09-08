@@ -483,14 +483,15 @@ struct ViewMenuCommands: View {
     ) -> some View {
         Button(title) {
             guard let focusedLibraryID else { return }
+            // Tag Analysis follows a player: the focused window opens
+            // one first, and it opens the companion.
+            if kind == .tagAnalysis {
+                focusedBrowse?.openPlayerForAnalysis()
+                return
+            }
             openWindow(
                 id: "aux",
-                value: AuxWindowRequest(
-                    libraryID: focusedLibraryID, kind: kind,
-                    // Tag Analysis always walks the focused window's
-                    // current listing — the queue.
-                    itemIDs: kind == .tagAnalysis
-                        ? focusedBrowse?.visibleItems.map(\.id) ?? [] : []))
+                value: AuxWindowRequest(libraryID: focusedLibraryID, kind: kind))
         }
         .keyboardShortcut(KeyEquivalent(key), modifiers: [.command, .option])
     }

@@ -59,14 +59,10 @@ struct BrowseView: View {
     /// The former sheets open as WINDOWS (#73) — draggable, resizable,
     /// usable beside the grid.
     private func openAux(_ kind: AuxWindowRequest.Kind) {
-        // Tag Analysis is always the current queue — the same listing
-        // the player takes — walked one video at a time.
+        // Tag Analysis follows a player: open one on the listing's first
+        // item, and it opens the companion.
         if kind == .tagAnalysis {
-            openWindow(
-                id: "aux",
-                value: AuxWindowRequest(
-                    libraryID: model.libraryID, kind: kind,
-                    itemIDs: model.visibleItems.map(\.id)))
+            model.openPlayerForAnalysis()
             return
         }
         openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
