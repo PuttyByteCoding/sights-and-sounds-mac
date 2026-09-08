@@ -294,7 +294,12 @@ struct SidebarView: View {
                         CountText(model.savedFilterCounts[saved.id] ?? 0, size: 11)
                     }
                     .contextMenu {
+                        // Nothing to write when the screen is empty or
+                        // already what the row says.
+                        Button("Update with Current Filter") { model.updateSavedFilter(saved) }
+                            .disabled(model.filter.isEmpty || saved.filter == model.filter)
                         Button("Rename…") { renamingFilter = saved }
+                        Divider()
                         Button("Delete Saved Filter") { model.deleteSavedFilter(saved) }
                     }
                 }

@@ -536,6 +536,18 @@ final class BrowseModel {
         filter = decoded
     }
 
+    /// Make a saved filter mean what is on screen now. Counts follow on
+    /// the next refresh, so the sidebar's number changes with it.
+    func updateSavedFilter(_ saved: SavedFilter) {
+        do {
+            try library.updateSavedFilter(saved.id, to: filter)
+            savedFilters = (try? library.savedFilters()) ?? savedFilters
+            refreshAll()
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
     func renameSavedFilter(_ saved: SavedFilter, to name: String) {
         do {
             try library.renameSavedFilter(saved.id, to: name)

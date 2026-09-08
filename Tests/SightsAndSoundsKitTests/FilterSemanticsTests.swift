@@ -165,6 +165,23 @@ import Testing
         #expect(all.first?.filter?.searchText == "b")
     }
 
+    /// Update in place: the row keeps its name and identity, only the
+    /// definition changes — "make Favorites mean what I have on screen".
+    @Test func updatingReplacesTheDefinitionAndKeepsNameAndIdentity() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Filters")
+        let saved = try library.saveFilter(named: "Favorites", MediaFilter(searchText: "a"))
+        try library.updateSavedFilter(saved.id, to: MediaFilter(searchText: "b"))
+        let all = try library.savedFilters()
+        #expect(all.count == 1)
+        #expect(all.first?.id == saved.id)
+        #expect(all.first?.name == "Favorites")
+        #expect(all.first?.filter?.searchText == "b")
+        // An unknown id changes nothing and is not an error.
+        try library.updateSavedFilter(UUID(), to: MediaFilter(searchText: "c"))
+        #expect(try library.savedFilters().first?.filter?.searchText == "b")
+    }
+
     @Test func deletingRemovesAndBlankNamesAreRefused() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Filters")
