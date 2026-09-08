@@ -73,7 +73,7 @@ extension KeyMapStyle {
         switch self {
         case .mac:
             KeyMapLabels(
-                previousNext: "← →", segmentOpen: "⌃{", segmentClose: "⌃}",
+                previousNext: "← → · ⇧← ⇧→", segmentOpen: "⌃{", segmentClose: "⌃}",
                 triage: "bound letters + advance")
         case .web:
             KeyMapLabels(
@@ -108,7 +108,7 @@ extension KeyMapStyle {
         KeyMapRow(
             label: "Seek ∓4m / ∓30s / ∓2s",
             web: "numpad 7 9 · 4 6 · 1 3", mac: "numpad 7 9 · 4 6 · 1 3"),
-        KeyMapRow(label: "Previous / next item", web: "⇧← ⇧→", mac: "← →"),
+        KeyMapRow(label: "Previous / next item", web: "⇧← ⇧→", mac: "← → · ⇧← ⇧→"),
         KeyMapRow(label: "Open / close a segment", web: "[  ]", mac: "⌃{  ⌃}"),
         KeyMapRow(label: "Close as a clip", web: "C", mac: "C"),
         KeyMapRow(label: "Open / close a hide block", web: "{  }", mac: "{  }"),
@@ -159,16 +159,15 @@ public enum PlayerKeyMap {
 
     public enum Arrow: Sendable { case left, right }
 
-    /// Walking the playlist: bare arrows on the Mac map, shifted arrows
-    /// on the web map (where bare arrows belong to the text cursor).
+    /// Walking the playlist. Shifted arrows walk on BOTH maps — the one
+    /// gesture that always reaches the next video, whichever map is on
+    /// and whatever has the keyboard. The Mac map walks on bare arrows
+    /// as well; on the web map a bare arrow belongs to the text cursor.
     /// Returns the step, or nil when this press does not walk.
     public static func playlistStep(
         arrow: Arrow, shift: Bool, style: KeyMapStyle
     ) -> Int? {
-        switch style {
-        case .mac: guard !shift else { return nil }
-        case .web: guard shift else { return nil }
-        }
+        if !shift, style == .web { return nil }
         return arrow == .left ? -1 : 1
     }
 
