@@ -2,21 +2,23 @@ import AppKit
 import SwiftUI
 import SightsAndSoundsKit
 
-/// Tag analysis, wearing the comp's layout (`Mac Tag Analysis Window`):
-/// left rail with the always-there preview, evidence-source and status
+/// Tag analysis as a COMPANION: it follows one player window through a
+/// shared session and shows the evidence and the decisions for whatever
+/// that player is showing. Left rail with the evidence-source and status
 /// filters and this pass's tally; one candidate table in the centre with
 /// the suggestion column carrying each row's classification; the decide
-/// pane on the right.
+/// pane on the right. The video, the tagging fields and the tag lists
+/// live in the player.
 ///
-/// The comp predates the per-video redesign, so its "deciding once
-/// applies across every item" copy does NOT survive: analysis and
-/// applying are per displayed video, accepts stage into the basket (in
-/// the rail, under THIS PASS), and the ITEMS column shows a string's
-/// library-wide reach as evidence of worth, not as blast radius.
+/// Accepting applies at once — no basket, no commit step. The player's
+/// next/previous is the walk; ⇧← ⇧→ here forward to it.
 struct TagAnalysisView: View {
     @Environment(BrowseModel.self) private var browse
-    var queueIDs: [UUID] = []
-    var startIndex: Int = 0
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    /// The player session to follow. nil, or an id the app no longer
+    /// holds, is the closed state.
+    var sessionID: UUID?
     @State private var model: TagAnalysisModel?
     @State private var rules: RulesTabModel?
     @State private var schemas: SchemasTabModel?
@@ -24,50 +26,56 @@ struct TagAnalysisView: View {
     @FocusState private var focused: Bool
     /// The rail opens at its saved width; a drag records the new one and
     /// persists it once the drag settles, so settings.json is not
-    /// rewritten at drag rate. The preview fills the rail, so this is
-    /// how the video is sized.
+    /// rewritten at drag rate.
     @State private var railWidth = AppSettingsStore.shared.current.tagAnalysisRailWidth
     @State private var railPersist: Task<Void, Never>?
 
     enum Mode: String, Hashable { case candidates, rules, schemas }
 
+    private var sessionIsKnown: Bool {
+        sessionID.flatMap { app.analysisSession(for: $0) } != nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             if let model, let rules {
-                HSplitView {
-                    RailView(model: model)
-                        .frame(minWidth: 210, idealWidth: railWidth, maxWidth: 900)
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
-                            guard width > 0, Double(width) != railWidth else { return }
-                            railWidth = Double(width)
-                            railPersist?.cancel()
-                            railPersist = Task {
-                                try? await Task.sleep(for: .milliseconds(400))
-                                guard !Task.isCancelled else { return }
-                                AppSettingsStore.shared.update { $0.tagAnalysisRailWidth = width }
+                if !model.playerIsOpen {
+                    playerClosed
+                } else {
+                    HSplitView {
+                        RailView(model: model)
+                            .frame(minWidth: 210, idealWidth: railWidth, maxWidth: 900)
+                            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
+                                guard width > 0, Double(width) != railWidth else { return }
+                                railWidth = Double(width)
+                                railPersist?.cancel()
+                                railPersist = Task {
+                                    try? await Task.sleep(for: .milliseconds(400))
+                                    guard !Task.isCancelled else { return }
+                                    AppSettingsStore.shared.update { $0.tagAnalysisRailWidth = width }
+                                }
                             }
+                        switch mode {
+                        case .candidates:
+                            if model.showingReaderIO {
+                                ReaderIOView(model: model)
+                                    .frame(minWidth: 620)
+                            } else {
+                                CandidateTable(model: model)
+                                    .frame(minWidth: 460)
+                                DecidePane(model: model, onMakeRule: makeRule)
+                                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
+                            }
+                        case .rules:
+                            RulesTabView(model: rules)
+                        case .schemas:
+                            if let schemas { SchemasTabView(model: schemas) }
                         }
-                    switch mode {
-                    case .candidates:
-                        if model.showingReaderIO {
-                            ReaderIOView(model: model)
-                                .frame(minWidth: 620)
-                        } else {
-                            CandidateTable(model: model)
-                                .frame(minWidth: 460)
-                            DecidePane(model: model, onMakeRule: makeRule)
-                                .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
-                        }
-                    case .rules:
-                        RulesTabView(model: rules)
-                    case .schemas:
-                        if let schemas { SchemasTabView(model: schemas) }
                     }
                 }
-                if mode == .candidates {
-                    QueueStrip(model: model)
-                }
+            } else if !sessionIsKnown {
+                playerClosed
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -77,54 +85,49 @@ struct TagAnalysisView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        // SHIFT+arrows walk the queue, the player's gesture exactly —
-        // punching through a focused text field as the player's do.
-        // Advancing commits the basket; that is the contract.
+        // SHIFT+arrows walk the PLAYER's queue from here — punching
+        // through a focused text field as the player's do.
         .onKeyPress(phases: [.down, .repeat]) { press in
             guard let model else { return .ignored }
             if press.modifiers.contains(.shift),
                press.key == .leftArrow || press.key == .rightArrow
             {
-                press.key == .leftArrow ? model.goPrevious() : model.goNext()
+                model.session.step(press.key == .leftArrow ? -1 : 1)
                 return .handled
             }
-            // Numpad transport is handled by the AppKit monitor below —
-            // SwiftUI's key presses do not reliably carry the
-            // numeric-pad flag, and top-row digits must NOT drive the
-            // preview (they are separable from a filter field spelling
-            // a tag name only when they stay out entirely).
             return .ignored
         }
         .task {
-            guard model == nil else { return }
-            let queue = queueIDs.isEmpty ? browse.visibleItems.map(\.id) : queueIDs
-            let made = TagAnalysisModel(
-                library: browse.library, libraryID: browse.libraryID,
-                queue: queue, startAt: startIndex)
-            made.reload()
+            guard model == nil, let sessionID, let session = app.analysisSession(for: sessionID)
+            else { return }
+            let made = TagAnalysisModel(session: session)
             model = made
-            rules = RulesTabModel(library: browse.library)
-            schemas = SchemasTabModel(library: browse.library)
+            rules = RulesTabModel(library: session.library)
+            schemas = SchemasTabModel(library: session.library)
             focused = true
             sweepCurrentIfNeeded(made)
         }
-        .onChange(of: model?.index ?? -1) { _, _ in
+        .onChange(of: model?.currentItemID) { _, _ in
             if let model { sweepCurrentIfNeeded(model) }
         }
         .onDisappear {
-            // Closing the window is the other way of leaving a video:
-            // the basket lands and the visited marker is stamped.
-            model?.commitBasket()
-            model?.markCurrentAnalyzed()
+            model?.close()
+            if let sessionID { app.releaseAnalysisSessionIfFinished(sessionID) }
         }
-        // The numpad transport, at the AppKit layer. NSEvent's
-        // numeric-pad flag is trustworthy where SwiftUI's is not, and a
-        // local monitor sees keypad digits even while the filter field
-        // owns the keyboard — the player's exception, kept exactly:
-        // NUMPAD seeks mid-word; top-row digits never do.
-        .background(NumpadTransportMonitor(handle: { character in
-            model?.handlePreviewKey(character: character, shift: false, numpad: true) ?? false
-        }))
+    }
+
+    /// The followed player is gone (or was never found): say so and
+    /// offer the one useful action.
+    private var playerClosed: some View {
+        VStack(spacing: 12) {
+            ContentUnavailableView(
+                "The player this window follows has closed.",
+                systemImage: "play.slash",
+                description: Text("Open Tag Analysis again from a player window."))
+            Button("Close") { dismiss() }
+                .buttonStyle(PrimaryButtonStyle())
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
@@ -145,6 +148,12 @@ struct TagAnalysisView: View {
                 Text(headline(model))
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.Text.tertiary)
+                if let position = model.positionText {
+                    Text(position)
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.Text.quaternary)
+                        .help("The followed player's place in its queue — ⇧← ⇧→ walk it from here")
+                }
             }
             Spacer()
             if let model {
@@ -168,9 +177,8 @@ struct TagAnalysisView: View {
                 Button("Scan On-Screen Text") {
                     // Vision OCR, on demand — deliberately never part of
                     // the automatic load (a full-video scan is minutes,
-                    // not the seconds an advance can afford). Budgeted
-                    // and resumable: a long video may take several
-                    // clicks, each scanning further.
+                    // not the seconds a load can afford). Budgeted and
+                    // resumable: a long video may take several clicks.
                     guard let id = model.currentItemID else { return }
                     model.beginSweep()
                     browse.scanText(itemID: id) { model.finishSweep() }
@@ -212,26 +220,15 @@ struct TagAnalysisView: View {
 
 // MARK: - Left rail
 
-/// PREVIEW · EVIDENCE SOURCES · STATUS · THIS PASS (with the basket).
-/// The preview is always there, above the filters, per the comp — and
-/// its ‹ › are the queue walk, so the rail is also the transport.
+/// EVIDENCE SOURCES · READER I/O · STATUS · THIS PASS. The preview, the
+/// tagging fields and the tag lists live in the player this window
+/// follows.
 private struct RailView: View {
-    @Environment(BrowseModel.self) private var browse
     let model: TagAnalysisModel
-    @State private var previewCollapsed = false
-    /// The Universal field's focus, keyed the way the player keys its
-    /// panel — one slot, since the rail has no other tagging field.
-    @FocusState private var fieldFocus: UUID?
-    private static let universalFocusID = UUID(
-        uuidString: "22222222-2222-2222-2222-222222222222")!
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                preview
-                universalBlock
-                appliedBlock
-                candidateBlock
                 sources
                 readerIO
                 status
@@ -240,236 +237,6 @@ private struct RailView: View {
             .padding(12)
         }
         .background(Theme.Surface.sidebar)
-        .onChange(of: model.universalFocusRequests) { _, _ in
-            fieldFocus = Self.universalFocusID
-        }
-    }
-
-    // MARK: Preview
-
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Button {
-                    previewCollapsed.toggle()
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(previewCollapsed ? "›" : "⌄").font(Theme.ui(10))
-                        Text("Preview").modifier(Theme.sectionLabel())
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Text("\(model.index + 1) / \(model.queue.count)")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.quaternary)
-            }
-
-            if !previewCollapsed {
-                // A LIVE surface, not a still: the numpad transport
-                // seeks and 5 plays right here, so "is that really the
-                // taper's banner at 4:00?" is answerable without the
-                // player window.
-                // A small version of the player, not a still: the
-                // surface plays, a click on it pauses and resumes, and
-                // the strip below is a real scrubber.
-                PlayerSurface(player: model.previewPlayer)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .overlay {
-                        if model.previewBuffering {
-                            ZStack {
-                                Color.black.opacity(0.25)
-                                ProgressView().controlSize(.small)
-                            }
-                            .allowsHitTesting(false)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
-                    .contentShape(Rectangle())
-                    .onTapGesture { model.previewTogglePlay() }
-
-                PreviewTransport(model: model)
-
-                Text(model.currentItem?.fileName ?? "—")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                HStack(spacing: 6) {
-                    Button("‹") { model.goPrevious() }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                        .disabled(!model.canGoPrevious)
-                        .help("Previous video — commits the basket (⇧←)")
-                    Button("›") { model.goNext() }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                        .disabled(!model.canGoNext)
-                        .help("Next video — commits the basket (⇧→)")
-                    Spacer()
-                }
-            }
-        }
-    }
-
-
-    // MARK: Universal field
-
-    /// The player's find-or-create field, directly under the video:
-    /// type a tag from any category and Enter applies it to this video
-    /// now; Enter on nothing found opens the New Tag sheet. Apply, not
-    /// stage — this is the player's gesture brought here, and it means
-    /// what it means there.
-    private var universalBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Theme.Accent.amber)
-                    .frame(width: 6, height: 6)
-                Text("Universal").modifier(Theme.sectionLabel())
-            }
-            UniversalTagField(
-                index: model.tagSearchIndex,
-                appliedIDs: Set(model.appliedTags.flatMap(\.tags).map(\.id)),
-                categories: model.categories,
-                library: model.library,
-                libraryID: model.libraryID,
-                focus: $fieldFocus,
-                focusID: Self.universalFocusID,
-                itemID: model.currentItemID,
-                onApply: { model.applyNow($0) },
-                onCreated: { model.applyNow($0) })
-        }
-    }
-
-    // MARK: Applied tags
-
-    /// The tags the displayed video already wears, category-hued — the
-    /// baseline for every decision. A basket commit or an advance
-    /// refreshes it with the rest of the reload, so accepting a tag is
-    /// visibly "it moved up here".
-    @ViewBuilder
-    private var appliedBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Applied tags").modifier(Theme.sectionLabel())
-                Spacer()
-                Text("\(model.appliedTags.reduce(0) { $0 + $1.tags.count })")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(
-                        model.appliedTags.isEmpty
-                            ? Theme.Text.zeroCount : Theme.Text.quaternary)
-            }
-            if model.appliedTags.isEmpty {
-                Text("Nothing yet — that is what this window is for.")
-                    .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.quaternary)
-            } else {
-                ForEach(model.appliedTags, id: \.category.id) { entry in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(entry.category.name)
-                            .font(Theme.ui(10, .semibold))
-                            .foregroundStyle(Theme.Text.tertiary)
-                        FlowRow(spacing: 4) {
-                            ForEach(entry.tags) { tag in
-                                let hue = Theme.categoryHue(entry.category.colorIndex)
-                                Text(tag.name)
-                                    .font(Theme.ui(10.5))
-                                    .foregroundStyle(hue)
-                                    .padding(.vertical, 2)
-                                    .padding(.horizontal, 7)
-                                    .background(Capsule().fill(hue.opacity(0.13)))
-                                    .overlay(Capsule().stroke(hue.opacity(0.35), lineWidth: 1))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: Candidate tags
-
-    /// Known tags the evidence names that the video does not yet wear —
-    /// one per tag, category-grouped like the block above, so the two
-    /// read as "has" and "could have". A click stages the tag into the
-    /// basket (this window's one way of accepting anything); a second
-    /// click takes it back out. Commit moves it up into Applied on the
-    /// same reload the window already does.
-    private var candidateGroups: [(category: TagCategory, findings: [ExistingTagFinding])] {
-        var seen = Set<UUID>()
-        var byCategory: [UUID: [ExistingTagFinding]] = [:]
-        for finding in model.analysis.existing where !finding.alreadyApplied {
-            guard seen.insert(finding.tag.id).inserted else { continue }
-            byCategory[finding.tag.tagCategoryID, default: []].append(finding)
-        }
-        return model.categories.compactMap { category in
-            guard let findings = byCategory[category.id] else { return nil }
-            return (category, findings.sorted {
-                $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending
-            })
-        }
-    }
-
-    @ViewBuilder
-    private var candidateBlock: some View {
-        let groups = candidateGroups
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Candidate tags").modifier(Theme.sectionLabel())
-                Spacer()
-                Text("\(groups.reduce(0) { $0 + $1.findings.count })")
-                    .font(Theme.mono(10))
-                    .foregroundStyle(groups.isEmpty ? Theme.Text.zeroCount : Theme.Text.quaternary)
-            }
-            if groups.isEmpty {
-                Text("No known tag appears in this video's evidence.")
-                    .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.quaternary)
-            } else {
-                ForEach(groups, id: \.category.id) { entry in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(entry.category.name)
-                            .font(Theme.ui(10, .semibold))
-                            .foregroundStyle(Theme.Text.tertiary)
-                        FlowRow(spacing: 4) {
-                            ForEach(entry.findings) { finding in
-                                candidatePill(
-                                    finding, hue: Theme.categoryHue(entry.category.colorIndex))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func candidatePill(_ finding: ExistingTagFinding, hue: Color) -> some View {
-        let staged = model.isStaged(tagID: finding.tag.id)
-        return Button {
-            if let pending = model.basket.first(where: { $0.existingTagID == finding.tag.id }) {
-                model.unstage(pending.id)
-            } else {
-                model.stage(finding)
-            }
-        } label: {
-            HStack(spacing: 4) {
-                if staged {
-                    Image(systemName: "checkmark").font(Theme.ui(9, .bold))
-                }
-                Text(finding.tag.name).font(Theme.ui(10.5))
-            }
-            .foregroundStyle(staged ? Theme.Text.onAmber : hue)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 7)
-            .background(Capsule().fill(staged ? Theme.Accent.amber : hue.opacity(0.13)))
-            .overlay(Capsule().stroke(staged ? Theme.Accent.amber : hue.opacity(0.35), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .help(staged
-            ? "In the basket — click to take it out"
-            : "Found in “\(finding.foundIn)” — click to stage it")
     }
 
     // MARK: Filters
@@ -611,55 +378,19 @@ private struct RailView: View {
     private func statusHue(_ filter: TagAnalysisModel.StatusFilter) -> Color {
         switch filter {
         case .undecided: Theme.Accent.amber
-        case .inBasket: Theme.Status.green
+        case .applied: Theme.Status.green
         case .ignored: Theme.Text.disabled
         case .everything: Theme.Text.quaternary
         }
     }
 
-    // MARK: This pass + basket
+    // MARK: This pass
 
     private var thisPass: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("This pass").modifier(Theme.sectionLabel())
-            tally(model.tagsCommittedThisPass, "tags saved")
+            tally(model.tagsAppliedThisPass, "tags applied")
             tally(model.videosVisitedThisPass, "videos visited")
-
-            if !model.basket.isEmpty {
-                Text("Basket").modifier(Theme.sectionLabel(Theme.Accent.amber))
-                    .padding(.top, 6)
-                ForEach(model.basket) { pending in
-                    HStack(spacing: 5) {
-                        Text(pending.value)
-                            .font(Theme.ui(Theme.TypeScale.secondary))
-                            .foregroundStyle(Theme.Text.primary)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        if let category = model.categories.first(where: { $0.id == pending.categoryID }) {
-                            Text(category.name)
-                                .font(Theme.ui(9.5))
-                                .foregroundStyle(Theme.Text.quaternary)
-                        }
-                        Button("×") { model.unstage(pending.id) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.Text.tertiary)
-                    }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                            .fill(Theme.Surface.raised))
-                }
-                HStack(spacing: 6) {
-                    Button("Save Now") { model.commitBasket() }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                    Button("Discard") { model.discardBasket() }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                }
-                Text("Advancing saves the basket automatically.")
-                    .font(Theme.ui(9.5))
-                    .foregroundStyle(Theme.Text.quaternary)
-            }
         }
     }
 
@@ -828,9 +559,7 @@ private struct CandidateTableRow: View {
 
     @ViewBuilder
     private var suggestionChip: some View {
-        if model.status(of: row) == .inBasket {
-            chip("In basket", Theme.Status.greenBright)
-        } else if let category = candidate.category {
+        if let category = candidate.category {
             chip("Assign to category · \(category)", Theme.Status.greenBright)
         } else if let finding = row.findings.first(where: { !$0.alreadyApplied }) {
             chip("Apply · \(finding.tag.name)", Theme.Status.blueBright)
@@ -854,16 +583,16 @@ private struct CandidateTableRow: View {
                 RoundedRectangle(cornerRadius: Theme.Radius.chip).fill(color.opacity(0.13)))
     }
 
-    /// The ⊕: take the row's own suggestion in one click — stage the
-    /// mapped category, or apply the found tag. Rows with neither have
-    /// nothing quick to do, and the button says so by its absence.
+    /// The ⊕: take the row's own suggestion in one click — apply the
+    /// mapped category's tag, or the found tag, now. Rows with neither
+    /// have nothing quick to do, and the button says so by its absence.
     @ViewBuilder
     private var quickAccept: some View {
-        if model.status(of: row) != .inBasket {
+        if model.status(of: row) == .undecided {
             if let name = candidate.category, let category = model.category(named: name) {
-                plusButton { model.stage(value: candidate.value, categoryID: category.id) }
+                plusButton { model.applyNew(value: candidate.value, categoryID: category.id) }
             } else if let finding = row.findings.first(where: { !$0.alreadyApplied }) {
-                plusButton { model.stage(finding) }
+                plusButton { model.applyNow(finding.tag) }
             }
         }
     }
@@ -876,7 +605,7 @@ private struct CandidateTableRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Take the suggestion — stages into the basket")
+        .help("Take the suggestion — applies to the video now")
     }
 }
 
@@ -965,7 +694,7 @@ private struct StripStill: View {
 // MARK: - Decide pane
 
 /// CANDIDATE · DECIDE · CATEGORY · APPEARS IN, per the comp — with the
-/// per-video difference that the primary button stages into the basket.
+/// per-video difference that the primary button applies to the video now.
 private struct DecidePane: View {
     let model: TagAnalysisModel
     let onMakeRule: (String?, String) -> Void
@@ -1012,13 +741,10 @@ private struct DecidePane: View {
                             categories: model.categories
                         ) { tag in
                             // Creating from THIS video's evidence means
-                            // tagging THIS video: the new tag goes into
-                            // the basket, and the reload's existing-tag
-                            // pass now recognises the string everywhere.
-                            model.stage(
-                                value: tag.name, categoryID: tag.tagCategoryID,
-                                existingTagID: tag.id)
-                            model.reload()
+                            // tagging THIS video: the new tag applies at
+                            // once, and the reload's existing-tag pass
+                            // now recognises the string everywhere.
+                            model.applyNow(tag)
                         }
                     }
                 }
@@ -1110,7 +836,7 @@ private struct DecidePane: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Decide").modifier(Theme.sectionLabel())
             radio(.assign, "Assign to a category",
-                  "Creates the tag if needed and stages it for this video.")
+                  "Creates the tag if needed and applies it to this video.")
             if let target = findings.first(where: { !$0.alreadyApplied }) {
                 radio(.applyExisting, "Apply existing · \(target.tag.name)",
                       "The tag already exists in \(target.categoryName) — just apply it.")
@@ -1257,17 +983,17 @@ private struct DecidePane: View {
         let target = findings.first { !$0.alreadyApplied }
         switch decision {
         case .assign:
-            Button("Add to Basket") {
+            Button("Apply") {
                 guard let categoryID else { return }
-                model.stage(value: editedValue, categoryID: categoryID)
+                model.applyNew(value: editedValue, categoryID: categoryID)
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(
                 categoryID == nil
                     || editedValue.trimmingCharacters(in: .whitespaces).isEmpty)
         case .applyExisting:
-            Button("Apply to This Video") {
-                if let target { model.stage(target) }
+            Button("Apply Existing") {
+                if let target { model.applyNow(target.tag) }
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(target == nil)
@@ -1287,204 +1013,6 @@ private struct DecidePane: View {
                 model.hidePrefixRule(root: candidate.value)
             }
             .buttonStyle(PrimaryButtonStyle())
-        }
-    }
-}
-
-// MARK: - Queue strip
-
-/// The queue as thumbnails across the window's bottom — the walk made
-/// visible. The current video wears the amber ring; a click is the same
-/// commit-then-move as the arrows, and the strip follows the walk so
-/// the current video is always in view.
-private struct QueueStrip: View {
-    @Environment(BrowseModel.self) private var browse
-    let model: TagAnalysisModel
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
-                    ForEach(Array(model.queue.enumerated()), id: \.element) { index, itemID in
-                        QueueThumb(
-                            itemID: itemID,
-                            libraryID: model.libraryID,
-                            library: model.library,
-                            isCurrent: index == model.index,
-                            onTap: { model.jump(to: index) })
-                            .id(itemID)
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-            }
-            .frame(height: 92)
-            .background(Theme.Surface.toolbar)
-            .overlay(alignment: .top) {
-                Rectangle().fill(Theme.Border.standard).frame(height: 1)
-            }
-            .onChange(of: model.index) { _, _ in
-                if let id = model.currentItemID {
-                    withAnimation { proxy.scrollTo(id, anchor: .center) }
-                }
-            }
-            .onAppear {
-                if let id = model.currentItemID {
-                    proxy.scrollTo(id, anchor: .center)
-                }
-            }
-        }
-    }
-}
-
-private struct QueueThumb: View {
-    let itemID: UUID
-    let libraryID: UUID
-    let library: LibraryDatabase
-    let isCurrent: Bool
-    let onTap: () -> Void
-    @State private var thumbnail: NSImage?
-
-    var body: some View {
-        Button(action: onTap) {
-            ZStack {
-                if let thumbnail {
-                    Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    Rectangle().fill(Theme.Surface.stage)
-                }
-            }
-            .frame(width: 118, height: 68)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                    .stroke(
-                        isCurrent ? Theme.Accent.amber : Theme.Border.standard,
-                        lineWidth: isCurrent ? 2 : 1))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .task(id: itemID) {
-            guard thumbnail == nil else { return }
-            let item = try? await library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
-            guard let item else { return }
-            let fileURL = (try? library.resolvedFileURL(for: item)) ?? nil
-            let data = await ThumbnailProvider.shared.thumbnailData(
-                itemID: itemID, libraryID: libraryID, fileURL: fileURL,
-                durationSeconds: item.durationSeconds)
-            if let data { thumbnail = NSImage(data: data) }
-        }
-    }
-}
-
-// MARK: - Numpad monitor
-
-/// A window-scoped AppKit key monitor for the preview transport.
-///
-/// SwiftUI's `KeyPress.modifiers` does not dependably include
-/// `.numericPad` for keypad digits on macOS — the player never noticed
-/// because bare digits reach the same table there. Here bare digits are
-/// excluded on purpose, so the keypad must be told apart at the AppKit
-/// layer, where the flag is reliable. The monitor only acts when its own
-/// window is key, and swallows exactly the events it handled.
-private struct NumpadTransportMonitor: NSViewRepresentable {
-    let handle: (Character) -> Bool
-
-    func makeNSView(context: Context) -> MonitorView {
-        let view = MonitorView()
-        view.handle = handle
-        return view
-    }
-
-    func updateNSView(_ view: MonitorView, context: Context) {
-        view.handle = handle
-    }
-
-    final class MonitorView: NSView {
-        var handle: ((Character) -> Bool)?
-        private var monitor: Any?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if window == nil {
-                // Leaving the window is the teardown path — SwiftUI
-                // removes the representable from its window before
-                // releasing it, so no deinit is needed (and a deinit
-                // could not touch this main-actor state anyway).
-                remove()
-            } else if monitor == nil {
-                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                    // Local key monitors fire on the main thread; say so
-                    // to the compiler rather than leaving the closure's
-                    // isolation to a toolchain's mood. Only a Bool
-                    // crosses the boundary — NSEvent is not Sendable.
-                    let handled = MainActor.assumeIsolated { () -> Bool in
-                        guard let self, let window = self.window, event.window === window,
-                              window.isKeyWindow,
-                              event.modifierFlags.contains(.numericPad),
-                              let character = event.charactersIgnoringModifiers?.first,
-                              character.isNumber || character == "-"
-                        else { return false }
-                        return self.handle?(character) == true
-                    }
-                    return handled ? nil : event
-                }
-            }
-        }
-
-        private func remove() {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-            monitor = nil
-        }
-    }
-}
-
-// MARK: - Preview transport
-
-/// The mini player's controls: play/pause, a click-and-drag scrubber,
-/// and the timecode — the player window's transport, at rail scale.
-/// Keyboard parity is already there (numpad seeks, 5 plays); this is
-/// the pointer's half.
-private struct PreviewTransport: View {
-    let model: TagAnalysisModel
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Button {
-                model.previewTogglePlay()
-            } label: {
-                Image(systemName: model.previewPlaying ? "pause.fill" : "play.fill")
-                    .font(Theme.ui(10))
-                    .foregroundStyle(Theme.Text.primary)
-                    .frame(width: 16)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(model.previewPlaying ? "Pause (5)" : "Play (5)")
-
-            GeometryReader { geometry in
-                let width = geometry.size.width
-                let fraction = model.previewDuration > 0
-                    ? (model.previewSeconds / model.previewDuration).clamped01 : 0
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.Surface.well).frame(height: 4)
-                    Capsule().fill(Theme.Accent.amber)
-                        .frame(width: max(4, width * fraction), height: 4)
-                }
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            model.previewSeek(toFraction: Double(value.location.x / width))
-                        })
-            }
-            .frame(height: 14)
-
-            Text("\(TransportBarTime.format(model.previewSeconds)) / \(TransportBarTime.format(model.previewDuration))")
-                .font(Theme.mono(8.5))
-                .foregroundStyle(Theme.Text.quaternary)
-                .fixedSize()
         }
     }
 }

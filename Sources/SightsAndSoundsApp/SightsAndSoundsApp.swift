@@ -130,6 +130,27 @@ final class AppModel {
         }
     }
 
+    // MARK: - Tag Analysis sessions
+
+    /// One per player that has opened a companion. Keyed by id because
+    /// the companion's window request carries the id, not the object.
+    private(set) var analysisSessions: [UUID: TagAnalysisSession] = [:]
+
+    func registerAnalysisSession(_ session: TagAnalysisSession) {
+        analysisSessions[session.id] = session
+    }
+
+    func analysisSession(for id: UUID) -> TagAnalysisSession? {
+        analysisSessions[id]
+    }
+
+    /// Drop a session both sides have closed. Called by whichever side
+    /// closes last; harmless when the other is still up.
+    func releaseAnalysisSessionIfFinished(_ id: UUID) {
+        guard let session = analysisSessions[id], session.isFinished else { return }
+        analysisSessions[id] = nil
+    }
+
     init() {
         do {
             let dir = try FileManager.default.url(
@@ -462,14 +483,15 @@ struct ViewMenuCommands: View {
     ) -> some View {
         Button(title) {
             guard let focusedLibraryID else { return }
+            // Tag Analysis follows a player: the focused window opens
+            // one first, and it opens the companion.
+            if kind == .tagAnalysis {
+                focusedBrowse?.openPlayerForAnalysis()
+                return
+            }
             openWindow(
                 id: "aux",
-                value: AuxWindowRequest(
-                    libraryID: focusedLibraryID, kind: kind,
-                    // Tag Analysis always walks the focused window's
-                    // current listing — the queue.
-                    itemIDs: kind == .tagAnalysis
-                        ? focusedBrowse?.visibleItems.map(\.id) ?? [] : []))
+                value: AuxWindowRequest(libraryID: focusedLibraryID, kind: kind))
         }
         .keyboardShortcut(KeyEquivalent(key), modifiers: [.command, .option])
     }

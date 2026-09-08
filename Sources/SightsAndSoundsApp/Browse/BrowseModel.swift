@@ -59,6 +59,24 @@ final class BrowseModel {
     /// when playback closes.
     var playerRequest: PlayerRequest?
 
+    /// Set by the browse entry points for Tag Analysis: the player is
+    /// opened first, and the player view opens the companion as soon as
+    /// its model exists, then clears this. The companion needs a player
+    /// to follow; a grid has none.
+    var pendingAnalysisOpen = false
+
+    /// Open the player at `itemID` (or the first visible item) with the
+    /// companion pending. Nothing to play means nothing to analyse, and
+    /// the caller's control stays inert.
+    func openPlayerForAnalysis(at itemID: UUID? = nil) {
+        let online = visibleItems.filter(isOnline)
+        guard let first = itemID.flatMap({ id in online.first { $0.id == id } }) ?? online.first
+        else { return }
+        pendingAnalysisOpen = true
+        playerRequest = PlayerRequest(
+            libraryID: libraryID, itemID: first.id, playlist: visibleItems.map(\.id))
+    }
+
     private(set) var items: [MediaItem] = []
     /// One folder tree per enabled source — the sidebar nests each under
     /// its source row.
