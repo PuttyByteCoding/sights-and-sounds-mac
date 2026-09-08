@@ -159,7 +159,7 @@ struct TagSheet: View {
                         }
                     }
                     HStack(spacing: 8) {
-                        TextField("Add alias and press Enter", text: $newAlias)
+                        TextField("Add alias and press Enter — or paste a list", text: $newAlias)
                             .textFieldStyle(.plain)
                             .font(Theme.ui(12))
                             .padding(.vertical, 7)
@@ -172,6 +172,9 @@ struct TagSheet: View {
                         Button("Add", action: addAlias)
                             .buttonStyle(SecondaryButtonStyle(compact: true))
                             .disabled(newAlias.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Paste List", action: pasteAliasList)
+                            .buttonStyle(SecondaryButtonStyle(compact: true))
+                            .help("Add every alias on the clipboard — one per line, or separated by commas, semicolons or tabs")
                     }
                 }
             }
@@ -272,19 +275,31 @@ struct TagSheet: View {
         }) ?? []
     }
 
+    /// The field takes one alias — or a whole list, if that is what
+    /// landed in it. Both go through the same parse.
     private func addAlias() {
-        let trimmed = newAlias.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !aliases.contains(trimmed) else { return }
+        addAliases(from: newAlias)
+        newAlias = ""
+    }
+
+    private func pasteAliasList() {
+        addAliases(from: NSPasteboard.general.string(forType: .string) ?? "")
+    }
+
+    private func addAliases(from text: String) {
+        // The tag's own name is not an alias of itself.
+        let additions = AliasList.parse(text, excluding: aliases + [trimmedName])
         // Editing writes immediately — an alias is its own fact, and a
         // half-finished rename should not take it with it.
-        if let tag = editingTag {
-            do { try library.addAlias(trimmed, toTag: tag.id) } catch {
-                errorText = "\(error)"
-                return
+        for alias in additions {
+            if let tag = editingTag {
+                do { try library.addAlias(alias, toTag: tag.id) } catch {
+                    errorText = "\(error)"
+                    return
+                }
             }
+            aliases.append(alias)
         }
-        aliases.append(trimmed)
-        newAlias = ""
     }
 
     private func removeAlias(_ alias: String) {
