@@ -197,3 +197,26 @@ extension LibraryDatabase {
         }
     }
 }
+
+extension LibraryDatabase {
+    /// Which tags each of the given items wears — the raw material for a
+    /// player's queue rail, which counts tags over the queue's own items
+    /// rather than the listing. Every asked-for item is present (an
+    /// untagged one with an empty set); nothing else is.
+    public func tagIDsByItem(forItems ids: [UUID]) throws -> [UUID: Set<UUID>] {
+        guard !ids.isEmpty else { return [:] }
+        return try writer.read { db in
+            var membership: [UUID: Set<UUID>] = Dictionary(
+                uniqueKeysWithValues: Set(ids).map { ($0, Set<UUID>()) })
+            let marks = Array(repeating: "?", count: ids.count).joined(separator: ",")
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT mediaItemID, tagID FROM mediaItemTag WHERE mediaItemID IN (\(marks))",
+                arguments: StatementArguments(ids))
+            for row in rows {
+                membership[row["mediaItemID"] as UUID, default: []].insert(row["tagID"] as UUID)
+            }
+            return membership
+        }
+    }
+}
