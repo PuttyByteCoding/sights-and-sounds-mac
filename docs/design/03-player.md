@@ -106,8 +106,8 @@ Window content splits into a left column and a 352 pt right rail; a 30 pt footer
 
 Left column, top to bottom: file-name strip on `#17130E` (the name as selectable mono
 text, up to two lines; right-click copies it in the grid tile's two forms) · video stage on
-`#0A0806` (fitted, anchored; a marked-for-deletion item plays on through a grey scrim with
-the tile's trash can centred over it) ·
+`#0A0806` (fitted, anchored; a marked-for-deletion or playback-issue item plays on through a
+grey scrim with the tile's mark centred over it, trash can or wrench) ·
 transport block on `#17130E` — 44 pt scrubber with the segment lanes, then one control row
 (transport buttons, mono time, mark in/out, loop/mute) · on-screen-text drawer, 112 pt,
 collapsed by default · queue drawer, 146 pt.
@@ -131,6 +131,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | No segments | `No songs or clips yet. Press <open key> to open a segment, <close key> to close it.` |
 | Segment counts | `<n> songs · <n> clips` |
 | Key map sheet title | `Keyboard map` |
+| Tag field, empty, ↓ | the whole list — the category's tags (Universal: every tag), unapplied, name order, capped like autocomplete |
 | Numpad 8 | focus the Universal tag field, opening the tag panel if it is closed; top-row 8 and numpad − keep the near-end seek |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
 | Key map footnote | `Rows that differ are highlighted. Everything else is identical in both maps.` |

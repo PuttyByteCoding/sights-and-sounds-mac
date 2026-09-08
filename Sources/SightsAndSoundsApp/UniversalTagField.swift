@@ -76,6 +76,9 @@ struct UniversalTagField: View {
     @State private var highlighted: Int?
     @State private var creating = false
     @State private var showingHistory = false
+    /// Empty query + ↓ lists every tag not on the item, in vocabulary
+    /// order (category by category), capped like autocomplete.
+    @State private var browsingAll = false
 
     private var focused: Bool { focus.wrappedValue == focusID }
 
@@ -94,16 +97,29 @@ struct UniversalTagField: View {
     private var hits: [Hit] {
         // Empty query + ↑: the session's recent applies, every category.
         if query.isEmpty {
-            guard showingHistory else { return [] }
-            return recentTagIDs.compactMap { id in
-                guard !appliedIDs.contains(id),
-                      let row = index.first(where: { $0.tag.id == id })
-                else { return nil }
-                return Hit(
-                    tag: row.tag, categoryName: row.categoryName,
-                    categoryHue: Theme.categoryHue(row.colorIndex),
-                    matchedAlias: nil)
+            if showingHistory {
+                return recentTagIDs.compactMap { id in
+                    guard !appliedIDs.contains(id),
+                          let row = index.first(where: { $0.tag.id == id })
+                    else { return nil }
+                    return Hit(
+                        tag: row.tag, categoryName: row.categoryName,
+                        categoryHue: Theme.categoryHue(row.colorIndex),
+                        matchedAlias: nil)
+                }
             }
+            guard browsingAll else { return [] }
+            return index
+                .lazy
+                .filter { !appliedIDs.contains($0.tag.id) }
+                .map { row in
+                    Hit(
+                        tag: row.tag, categoryName: row.categoryName,
+                        categoryHue: Theme.categoryHue(row.colorIndex),
+                        matchedAlias: nil)
+                }
+                .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
+                .map { $0 }
         }
         // Folded terms against the pre-folded index, lazily, cut at the
         // limit — never a full pass once enough hits exist.
@@ -162,6 +178,7 @@ struct UniversalTagField: View {
                     .onChange(of: draft) { _, _ in
                         highlighted = nil
                         showingHistory = false
+                        browsingAll = false
                     }
                     .onChange(of: focus.wrappedValue) { _, now in
                         if now == focusID { onFocus() }
@@ -194,6 +211,7 @@ struct UniversalTagField: View {
         }
         .onChange(of: itemID) { _, _ in
             showingHistory = false
+            browsingAll = false
             highlighted = nil
         }
         .sheet(isPresented: $creating, onDismiss: {
@@ -218,6 +236,12 @@ struct UniversalTagField: View {
     private func move(_ delta: Int) -> KeyPress.Result {
         if query.isEmpty, !showingHistory, delta == -1, !recentTagIDs.isEmpty {
             showingHistory = true
+            highlighted = hits.isEmpty ? nil : 0
+            return .handled
+        }
+        // ↓ on an empty field opens the whole list the same way.
+        if query.isEmpty, !showingHistory, !browsingAll, delta == 1 {
+            browsingAll = true
             highlighted = hits.isEmpty ? nil : 0
             return .handled
         }
@@ -280,5 +304,6 @@ struct UniversalTagField: View {
         draft = ""
         highlighted = nil
         showingHistory = false
+        browsingAll = false
     }
 }
