@@ -78,6 +78,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// category list, 0 = first, past the end = last. Both pseudo-fields
     /// at one index render Universal first.
     public var analysisResultsFieldPosition: Int
+    /// Where the tag panel's On-screen Text field sits among the
+    /// categories — the same rule as the other two pseudo-fields.
+    public var onScreenTextFieldPosition: Int
 
     public static let defaultVideoExtensions = [
         "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
@@ -108,7 +111,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         ocr: OcrSettings = OcrSettings(),
         uiScale: Double = 1.0,
         universalTagFieldPosition: Int = 0,
-        analysisResultsFieldPosition: Int = 1
+        analysisResultsFieldPosition: Int = 1,
+        onScreenTextFieldPosition: Int = 2
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -132,6 +136,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.uiScale = uiScale
         self.universalTagFieldPosition = universalTagFieldPosition
         self.analysisResultsFieldPosition = analysisResultsFieldPosition
+        self.onScreenTextFieldPosition = onScreenTextFieldPosition
     }
 
     public init(from decoder: Decoder) throws {
@@ -184,6 +189,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
         analysisResultsFieldPosition = max(0, try container.decodeIfPresent(
             Int.self, forKey: .analysisResultsFieldPosition)
             ?? defaults.analysisResultsFieldPosition)
+        onScreenTextFieldPosition = max(0, try container.decodeIfPresent(
+            Int.self, forKey: .onScreenTextFieldPosition)
+            ?? defaults.onScreenTextFieldPosition)
     }
 }
 

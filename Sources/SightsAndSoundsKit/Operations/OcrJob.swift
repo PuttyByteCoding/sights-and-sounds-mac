@@ -163,7 +163,7 @@ public struct OcrJob: Job {
     /// One frame → recognized text (lines joined), or nil. The generator
     /// stays in this isolation region; Vision runs on the CGImage inside
     /// the continuation's callback.
-    static func recognizeText(
+    public static func recognizeText(
         generator: AVAssetImageGenerator, at seconds: Double,
         settings: OcrSettings = OcrSettings()
     ) async -> String? {
