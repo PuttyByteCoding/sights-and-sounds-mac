@@ -53,6 +53,7 @@ final class TagAnalysisSession {
     var step: (Int) -> Void                 // ±1: the player's next/previous
     // Written by the companion:
     private(set) var analysis: ItemAnalysis // .empty when closed
+    private(set) var isAnalyzing: Bool      // a reload is in flight
     private(set) var companionIsOpen: Bool
 }
 ```
@@ -63,8 +64,8 @@ final class TagAnalysisSession {
   toggle), record in the session history, `refreshTagging()`. Every apply
   from either window goes through it, so the panel and the up-arrow
   history stay right without a broadcast.
-- The companion sets `analysis` after each reload and clears it and
-  `companionIsOpen` on close.
+- The companion sets `isAnalyzing` for the life of each reload, then
+  `analysis`; it clears both and `companionIsOpen` on close.
 - `AppModel.analysisSessions: [UUID: TagAnalysisSession]`. A session is
   removed when both sides are closed. A restored companion window whose
   id is unknown (relaunch) shows "The player this window follows has
@@ -123,8 +124,41 @@ reload so "Already applied" chips update. `applyNew(value:categoryID:)`
   the query, then releases to the video as everywhere else.
 - Unavailable: no session, or `companionIsOpen == false` — the row stays,
   dimmed, placeholder "Open Tag Analysis to see results", field disabled.
+- Running: while `session.isAnalyzing`, a small spinner sits at the
+  field's trailing edge and the list shows "Scanning…" instead of rows.
+  The last results stay selectable until the new ones land.
 - A pure `AnalysisResultsField.candidates(analysis:appliedIDs:query:)`
   does the dedupe/filter, tested in the app test target.
+
+### The player: "On-screen Text" field (TagPanelView)
+
+Kept separate from the results field on purpose: how the two combine is
+still being decided, and one field per source keeps either easy to move
+or remove.
+
+- A pseudo-field row like the other two: heading "On-screen Text", ≡
+  grip, position persisted as `AppSettings.onScreenTextFieldPosition`
+  (Int, default: after the results field), in the Tab walk via a third
+  sentinel id.
+- ↓ on an empty field reads the text on screen NOW: the frame at the
+  player's current playhead (`EvidenceFrameProvider.frame(...)` at
+  `currentSeconds`, tight seek) through the Kit's Vision recognizer
+  (`OcrJob.recognizeText`, the same call the OCR sweep makes), off the
+  main actor. A spinner sits at the field's trailing edge and the list
+  reads "Reading the frame…" until the lines arrive. Nothing is stored:
+  this is a look, not a sweep.
+- The list: one row per recognized line, in reading order, duplicates
+  dropped; typing filters the lines with the shared fold; ↑/↓ move.
+- Enter applies the highlighted line the way the Universal field treats
+  typed text: a tag whose name or alias folds equal to the line applies
+  at once; otherwise the New Tag sheet opens seeded with the line, and
+  the created tag applies. Esc clears the list.
+- Empty result: "No text on this frame." A recognizer error shows its
+  message in the same place.
+- Unavailable while the item is audio or has no file: dimmed, "No video
+  frame to read".
+- Pure and tested: `OnScreenTextField.rows(lines:query:)` (dedupe, order,
+  filtering).
 
 ### Entry points
 
@@ -175,6 +209,9 @@ App test target (`SightsAndSoundsAppTests`):
 - `applyNow` calls the installed hook once and bumps the tally.
 - `AnalysisResultsField.candidates`: dedupe, applied exclusion, category
   grouping, term filtering with aliases, empty query lists all.
+- `session.isAnalyzing` is true from reload start to finish and false
+  after close.
+- `OnScreenTextField.rows`: dedupe, reading order, term filtering.
 - `advanceTagField` walks Universal → categories → Results in the
   persisted order.
 
@@ -190,8 +227,10 @@ zero-warning build, both guard scripts and a launch of the bundle.
    handling. Independent.
 2. `feature/tag-analysis-companion` — the session, the companion rewrite,
    the entry points, `docs/design/14-tag-analysis.md` rewritten, this spec.
-3. `feature/player-analysis-results-field` — the panel field, stacked on
-   2 until it merges, then retargeted to dev.
+3. `feature/player-analysis-results-field` — the panel field with its
+   spinner, stacked on 2 until it merges, then retargeted to dev.
+4. `feature/player-on-screen-text-field` — the on-screen text field.
+   Independent of 2 and 3 (it needs only the player), so off dev.
 
 ## Out of scope
 
