@@ -4,40 +4,36 @@ import Testing
 @testable import SightsAndSoundsApp
 
 /// The tag panel's Tab walk: the search categories in panel order, with
-/// the Universal and Tag Analysis Results fields inserted at their
-/// positions. Universal first when both land on one index.
+/// the Universal, Tag Analysis Results and On-screen Text fields
+/// inserted at their positions. Ties keep that declared order.
 @Suite @MainActor struct TagFieldOrderTests {
     private let a = UUID(), b = UUID(), c = UUID()
     private let universal = PlayerModel.universalFieldFocusID
     private let results = PlayerModel.analysisResultsFieldFocusID
+    private let onScreen = PlayerModel.onScreenTextFieldFocusID
 
-    @Test func defaultsPutUniversalFirstThenResults() {
-        let order = PlayerModel.tagFieldOrder(
-            searchCategoryIDs: [a, b, c], universalPosition: 0, resultsPosition: 1)
-        #expect(order == [universal, a, results, b, c])
+    private func order(_ ids: [UUID], _ u: Int, _ r: Int, _ o: Int) -> [UUID] {
+        PlayerModel.tagFieldOrder(
+            searchCategoryIDs: ids, universalPosition: u, resultsPosition: r, onScreenPosition: o)
     }
 
-    @Test func bothAtOneIndexKeepUniversalFirst() {
-        let order = PlayerModel.tagFieldOrder(
-            searchCategoryIDs: [a, b], universalPosition: 1, resultsPosition: 1)
-        #expect(order == [a, universal, results, b])
+    @Test func defaultsPutTheThreeFieldsFirstThenTheCategories() {
+        #expect(order([a, b, c], 0, 1, 2) == [universal, a, results, b, onScreen, c])
     }
 
-    @Test func resultsBeforeUniversalWhenPositionedSo() {
-        let order = PlayerModel.tagFieldOrder(
-            searchCategoryIDs: [a, b], universalPosition: 2, resultsPosition: 0)
-        #expect(order == [results, a, b, universal])
+    @Test func aThreeWayTieKeepsTheDeclaredOrder() {
+        #expect(order([a, b], 1, 1, 1) == [a, universal, results, onScreen, b])
+    }
+
+    @Test func anyPermutationLandsWhereItsPositionSays() {
+        #expect(order([a, b], 2, 0, 1) == [results, a, onScreen, b, universal])
     }
 
     @Test func positionsPastTheEndMeanLast() {
-        let order = PlayerModel.tagFieldOrder(
-            searchCategoryIDs: [a], universalPosition: 9, resultsPosition: 9)
-        #expect(order == [a, universal, results])
+        #expect(order([a], 9, 9, 9) == [a, universal, results, onScreen])
     }
 
-    @Test func noCategoriesStillWalksTheTwoFields() {
-        let order = PlayerModel.tagFieldOrder(
-            searchCategoryIDs: [], universalPosition: 0, resultsPosition: 1)
-        #expect(order == [universal, results])
+    @Test func noCategoriesStillWalksTheThreeFields() {
+        #expect(order([], 0, 1, 2) == [universal, results, onScreen])
     }
 }
