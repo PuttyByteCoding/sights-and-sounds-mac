@@ -394,43 +394,61 @@ extension LibraryDatabase {
         }
     }
 
-    /// Word-boundary search for every needle inside one string. "taped by
-    /// Mike Jones 2019" finds the tag "Mike Jones"; "Jonestown" does not.
+    /// Word-run search for every needle inside one string. "taped by
+    /// Mike Jones 2019" finds the tag "Mike Jones"; so do
+    /// "show-with_MikeJones-2019" and "mike.jones", because a file name
+    /// writes a tag with its space squashed, or with whatever separator
+    /// the naming scheme uses, and the gap is never what identifies the
+    /// tag. Both sides are broken into words (runs of letters and
+    /// digits), and a hit is a run of consecutive words in the text that,
+    /// joined, spells the joined needle exactly. Word-level, so a needle
+    /// inside a longer word never hits: "Jonestown" is one word and is
+    /// not "Jones"; "benfoldsfive" is not "Ben Folds".
     ///
     /// Needles under three characters are skipped — a two-letter tag
     /// name matching inside every third sentence is a false-positive
     /// storm, and a tag that short is findable by eye anyway.
     static func findTags(in text: String, inventory: [TagNeedle]) -> [TagNeedle] {
-        let haystack = text.lowercased()
+        let words = words(of: text)
+        guard !words.isEmpty else { return [] }
         var hits: [TagNeedle] = []
         var seenTags = Set<UUID>()
-        for needle in inventory where needle.needle.count >= 3 {
+        for needle in inventory {
             guard !seenTags.contains(needle.tag.id) else { continue }
-            var searchRange = haystack.startIndex..<haystack.endIndex
-            while let range = haystack.range(of: needle.needle, range: searchRange) {
-                if isWordBounded(range, in: haystack) {
-                    hits.append(needle)
-                    seenTags.insert(needle.tag.id)
-                    break
-                }
-                searchRange = range.upperBound..<haystack.endIndex
+            let target = Self.words(of: needle.needle).joined()
+            guard target.count >= 3 else { continue }
+            if contains(words, run: target) {
+                hits.append(needle)
+                seenTags.insert(needle.tag.id)
             }
         }
         return hits
     }
 
-    /// Bounded when the characters just outside the match are not
-    /// letters or digits — so a needle inside a longer word never hits.
-    private static func isWordBounded(_ range: Range<String.Index>, in text: String) -> Bool {
-        if range.lowerBound > text.startIndex {
-            let before = text[text.index(before: range.lowerBound)]
-            if before.isLetter || before.isNumber { return false }
+    /// Lowercased runs of letters and digits. Every other character —
+    /// space, dash, underscore, dot, slash, bracket — is a word break.
+    static func words(of text: String) -> [String] {
+        text.lowercased()
+            .split { !($0.isLetter || $0.isNumber) }
+            .map(String.init)
+    }
+
+    /// True when some run of consecutive words, joined, is exactly
+    /// `target`. Each start position extends until the joined run is at
+    /// least as long as the target; longer means a different word was
+    /// crossed and the run cannot match.
+    private static func contains(_ words: [String], run target: String) -> Bool {
+        for start in words.indices {
+            var joined = ""
+            for word in words[start...] {
+                joined += word
+                if joined.count >= target.count {
+                    if joined == target { return true }
+                    break
+                }
+            }
         }
-        if range.upperBound < text.endIndex {
-            let after = text[range.upperBound]
-            if after.isLetter || after.isNumber { return false }
-        }
-        return true
+        return false
     }
 
     // MARK: - The basket

@@ -144,6 +144,39 @@ import Testing
         #expect(analysis.existing.isEmpty)
     }
 
+    /// A file name writes the tag without its space, or with a separator
+    /// in its place. The words are all there; only the spelling of the
+    /// gap differs, and the gap is never what identifies a tag.
+    @Test func aTagSquashedOrSeparatedInsideAFileNameIsFound() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+
+        for path in [
+            "shows/show-with_BenFolds-in-seattle.mp4",
+            "shows/show-with-ben_folds-in-seattle.mp4",
+            "shows/show.with.Ben.Folds.in.seattle.mp4",
+        ] {
+            let item = try await insertItem(library, source, path: path)
+            let analysis = try library.analyzeItem(item.id, rules: [])
+            let finding = try #require(analysis.existing.first, "no hit in \(path)")
+            #expect(finding.tag.id == ben.id)
+        }
+    }
+
+    /// The squash must not loosen the word boundary: a tag inside a
+    /// longer run of letters is still not a hit.
+    @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        try await library.writer.write {
+            try Tag(tagCategoryID: taper.id, name: "Ben Folds").insert($0)
+        }
+        let item = try await insertItem(library, source, path: "shows/benfoldsfive-live.mp4")
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.existing.isEmpty)
+    }
+
     @Test func aliasesFindTheirTagAndCollisionsListEveryCategory() async throws {
         let (library, source, taper) = try await makeLibrary()
         let band = TagCategory(name: "Band")
