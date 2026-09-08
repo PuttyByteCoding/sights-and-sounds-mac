@@ -152,6 +152,7 @@ struct TagPanelView: View {
                     focus: $focusedCategory,
                     focusID: PlayerModel.analysisResultsFieldFocusID,
                     itemID: model.item?.id,
+                    onListChange: { model.tagFieldListOpen = $0 },
                     onApply: { model.applyTag($0.id) })
             }
         case .onScreen:
@@ -167,6 +168,7 @@ struct TagPanelView: View {
                     focus: $focusedCategory,
                     focusID: PlayerModel.onScreenTextFieldFocusID,
                     itemID: model.item?.id,
+                    onListChange: { model.tagFieldListOpen = $0 },
                     onApply: { model.applyTag($0.id) },
                     onCreated: { tag in
                         model.refreshTagging()
@@ -433,6 +435,7 @@ private struct PillCategoryView: View {
     /// History renders ABOVE the field (newest touching the box) where
     /// autocomplete renders below — up-arrow reaches upward.
     private var historyActive: Bool { showingHistory && query.isEmpty }
+    private var listOpen: Bool { showingHistory || browsingAll || !query.isEmpty }
 
     private var suggestions: [Suggestion] {
         // History mode: the session's recent applies from THIS category,
@@ -689,6 +692,14 @@ private struct PillCategoryView: View {
                     // arrows still walk the playlist.
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.escape) {
+                        guard listOpen else { return .ignored }
+                        draft = ""
+                        showingHistory = false
+                        browsingAll = false
+                        highlightedID = nil
+                        return .handled
+                    }
                     .onKeyPress(.return) {
                         guard activeSuggestion != nil else { return .ignored }
                         commit()
@@ -720,6 +731,7 @@ private struct PillCategoryView: View {
         .task(id: model.item?.id) {
             if takesFocus { focus.wrappedValue = entry.id }
         }
+        .onChange(of: listOpen) { _, open in model.tagFieldListOpen = open }
         .onChange(of: model.item?.id) { _, _ in
             // A new video is a fresh judgment — an open history overlay
             // from the last one must not hang over its field.
@@ -840,6 +852,7 @@ private struct GlobalTagField: View {
             itemID: model.item?.id,
             takesFocus: takesFocus,
             onFocus: { model.zone = .tags },
+            onListChange: { model.tagFieldListOpen = $0 },
             onApply: { model.toggleTag($0.id) },
             onCreated: { tag in
                 model.refreshTagging()

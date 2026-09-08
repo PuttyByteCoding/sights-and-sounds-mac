@@ -145,6 +145,13 @@ struct PlayerView: View {
             return true
         }
 
+        // A tag field with a list open takes Esc itself: the list closes
+        // and the field stays, empty and focused. The next Esc unwinds.
+        if press.key == .escape, model.tagFieldListOpen,
+           NSApp.keyWindow?.firstResponder is NSTextView {
+            return false
+        }
+
         // Esc unwinds EXACTLY ONE layer, in this order: an open mark, the
         // focus zone, then the player. Never two — clearing a selection
         // and leaving in one press is how you lose work you could see.

@@ -14,6 +14,7 @@ struct AnalysisResultsField: View {
     var focus: FocusState<UUID?>.Binding
     let focusID: UUID
     var itemID: UUID?
+    var onListChange: (Bool) -> Void = { _ in }
     let onApply: (Tag) -> Void
 
     @State private var draft = ""
@@ -116,6 +117,13 @@ struct AnalysisResultsField: View {
                     }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.escape) {
+                        guard listOpen else { return .ignored }
+                        draft = ""
+                        highlightedID = nil
+                        browsing = false
+                        return .handled
+                    }
                     .onKeyPress(.return) {
                         guard activeRow != nil else { return .ignored }
                         commit()
@@ -161,6 +169,7 @@ struct AnalysisResultsField: View {
             highlightedID = nil
             browsing = false
         }
+        .onChange(of: listOpen) { _, open in onListChange(open) }
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {
