@@ -13,6 +13,29 @@ import Testing
             itemID: id, positionSeconds: position, durationSeconds: 600, at: date)
     }
 
+    /// A load is a watch, even a brief one: the history stamps at once,
+    /// and nothing else moves — the resume position and the tally are
+    /// the stop's and the completion's to write.
+    @Test func aLoadStampsTheHistoryAndNothingElse() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "History")
+        let source = Source(name: "S", rootPath: "/tmp/h-\(UUID().uuidString)")
+        let item = MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
+        try await library.writer.write { db in
+            try source.insert(db)
+            try item.insert(db)
+        }
+        try library.recordPlaybackStop(itemID: item.id, positionSeconds: 40, durationSeconds: 100,
+                                       at: Date(timeIntervalSince1970: 1_000))
+        try library.recordPlaybackStart(itemID: item.id, at: Date(timeIntervalSince1970: 2_000))
+
+        let row = try #require(try await library.writer.read { try MediaItem.fetchOne($0, key: item.id) })
+        #expect(row.lastWatchedAt == Date(timeIntervalSince1970: 2_000))
+        #expect(row.resumePositionSeconds == 40)
+        #expect(row.watchCount == 0)
+        #expect(!row.completed)
+    }
+
     @Test func mostRecentFirst() throws {
         let f = try FilterFixture()
         let old = Date(timeIntervalSince1970: 1_000_000)

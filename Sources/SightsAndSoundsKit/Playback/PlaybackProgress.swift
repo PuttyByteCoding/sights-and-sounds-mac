@@ -22,6 +22,18 @@ extension LibraryDatabase {
         }
     }
 
+    /// Record that an item was loaded — a watch, even a brief one, so the
+    /// history and a History queue can show it at once. Only the date
+    /// moves: the resume position is the stop's to write, the tally the
+    /// completion's.
+    public func recordPlaybackStart(itemID: UUID, at date: Date = Date()) throws {
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE mediaItem SET lastWatchedAt = ? WHERE id = ?",
+                arguments: [date, itemID])
+        }
+    }
+
     /// Record that a play-through happened (the player calls this once per
     /// session, on first crossing 90%): tally the watch, mark completed.
     public func recordPlaybackCompletion(itemID: UUID, at date: Date = Date()) throws {
