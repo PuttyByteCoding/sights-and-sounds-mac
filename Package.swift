@@ -35,5 +35,11 @@ let package = Package(
             name: "SightsAndSoundsKitTests",
             dependencies: ["SightsAndSoundsKit"]
         ),
+        // The app's models, where they can be driven without a window —
+        // the Tag Analysis preview transport was the first to need it.
+        .testTarget(
+            name: "SightsAndSoundsAppTests",
+            dependencies: ["SightsAndSoundsApp", "SightsAndSoundsKit"]
+        ),
     ]
 )
