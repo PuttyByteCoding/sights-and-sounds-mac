@@ -55,6 +55,9 @@ action fails. So:
 
 - Tile: small `◍` badge and slight desaturation, **not** a blocking overlay. The thumbnail is
   real and current; pretending otherwise is worse.
+- Marked for deletion is the one exception: the thumbnail goes fully grey and dim with a
+  trash can centred over it (`DeletionMark`, shared with the player's stage). The item is on
+  its way out, and the tile should say so before the ⌫ badge is even enabled.
 - A banner above the grid stating exactly what still works: *"N of these M items live on
   <Source> — tags, fields and thumbnails are local and current. Only playback and file
   operations are unavailable."*

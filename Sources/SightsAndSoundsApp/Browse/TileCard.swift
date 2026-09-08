@@ -32,6 +32,26 @@ private struct TileBadge: Hashable {
     var tagID: UUID?
 }
 
+/// The trash can over anything marked for deletion. The tile's thumbnail
+/// and the player's stage draw the same mark, sized to whatever frame it
+/// covers, so the grid, the queue strip and the stage all say "on the
+/// delete list" the same way. Grey rather than red: the list is
+/// reversible right up to Purge, and the mark should read as a state,
+/// not an alarm.
+struct DeletionMark: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height)
+            Image(systemName: "trash")
+                .font(.system(size: max(14, side * 0.3), weight: .regular))
+                .foregroundStyle(Theme.Text.tertiary)
+                .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// A tile, drawn from the active view.
 ///
 /// Shared by the browse grid and the player's queue strip — the queue is
@@ -87,11 +107,18 @@ struct TileCard: View {
                     .aspectRatio(contentMode: .fit)
                     // An offline source's thumbnail is real and current —
                     // desaturated, not hidden behind a blocking overlay.
-                    .saturation(context.isOnline ? 1 : 0.35)
+                    // Marked for deletion goes further: grey and dim,
+                    // because the item is on its way out.
+                    .saturation(item.markedForDeletion ? 0 : context.isOnline ? 1 : 0.35)
+                    .opacity(item.markedForDeletion ? 0.4 : 1)
             } else {
                 Image(systemName: item.kind == .audio ? "waveform" : "film")
                     .font(.largeTitle)
                     .foregroundStyle(Theme.Text.disabled)
+                    .opacity(item.markedForDeletion ? 0.4 : 1)
+            }
+            if item.markedForDeletion {
+                DeletionMark()
             }
             overlaySlots
             if isSelected {
