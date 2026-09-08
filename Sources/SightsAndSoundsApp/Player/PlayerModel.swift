@@ -473,7 +473,16 @@ final class PlayerModel {
         case .toggleMarkedForDeletion: toggle(.markedForDeletion)
         case .togglePlaybackIssue: toggle(.playbackIssue)
         case .focusUniversalField: focusUniversalField()
+        case .focusOnScreenTextField: focusOnScreenTextField()
         }
+    }
+
+    /// Numpad 2: the On-screen Text field, the same way — panel open,
+    /// zone on it, keyboard in the field.
+    func focusOnScreenTextField() {
+        if !panels.tags { togglePanel(.tags) }
+        zone = .tags
+        tagFieldCategoryID = Self.onScreenTextFieldFocusID
     }
 
     /// Numpad 8: open the tag panel if it is closed, point the zone at
