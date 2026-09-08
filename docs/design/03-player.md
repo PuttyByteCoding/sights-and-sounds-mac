@@ -149,7 +149,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | No segments | `No songs or clips yet. Press <open key> to open a segment, <close key> to close it.` |
 | Segment counts | `<n> songs · <n> clips` |
 | Key map sheet title | `Keyboard map` |
-| Tag field, empty, ↓ | the whole list — the category's tags (Universal: every tag), unapplied, name order, capped like autocomplete |
+| Tag field, empty, ↓ | the whole list — the category's tags (Universal: what Tag Analysis found first, marked `analysis`, then every tag), unapplied, capped like autocomplete |
 | Numpad 8 | focus the Universal tag field, opening the tag panel if it is closed; top-row 8 and numpad − keep the near-end seek |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
 | Key map footnote | `Rows that differ are highlighted. Everything else is identical in both maps.` |

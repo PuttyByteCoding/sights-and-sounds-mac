@@ -57,6 +57,11 @@ struct UniversalTagField: View {
     /// The session's recent applies, newest first, for ↑ on an empty
     /// query. Empty disables the gesture.
     var recentTagIDs: [UUID] = []
+    /// What the Tag Analysis companion found for this item, in its
+    /// order — listed FIRST on ↓ and ranked first while typing, so the
+    /// tags the evidence names are one keystroke away. Empty when no
+    /// companion is open.
+    var analysisTagIDs: [UUID] = []
     let categories: [TagCategory]
     let library: LibraryDatabase
     let libraryID: UUID
@@ -84,12 +89,38 @@ struct UniversalTagField: View {
 
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
 
-    private struct Hit: Identifiable {
+    struct Hit: Identifiable {
         let tag: Tag
         let categoryName: String
         let categoryHue: Color
         let matchedAlias: String?
+        var fromAnalysis = false
         var id: UUID { tag.id }
+    }
+
+    /// Analysis rows first, then the rest with those tags dropped, the
+    /// whole list capped. Pure, so it is tested.
+    static func merged(analysis: [Hit], rest: [Hit], limit: Int) -> [Hit] {
+        let leading = Array(analysis.prefix(limit))
+        let seen = Set(leading.map(\.id))
+        return leading + rest.lazy.filter { !seen.contains($0.id) }.prefix(max(0, limit - leading.count))
+    }
+
+    private func hit(_ row: TagSearchEntry, alias: String? = nil, fromAnalysis: Bool = false) -> Hit {
+        Hit(
+            tag: row.tag, categoryName: row.categoryName,
+            categoryHue: Theme.categoryHue(row.colorIndex),
+            matchedAlias: alias, fromAnalysis: fromAnalysis)
+    }
+
+    /// The analysis's tags as rows, in its order, minus the applied.
+    private var analysisHits: [Hit] {
+        guard !analysisTagIDs.isEmpty else { return [] }
+        let byID = Dictionary(uniqueKeysWithValues: index.map { ($0.tag.id, $0) })
+        return analysisTagIDs.compactMap { id in
+            guard !appliedIDs.contains(id), let row = byID[id] else { return nil }
+            return hit(row, fromAnalysis: true)
+        }
     }
 
     private var historyActive: Bool { showingHistory && query.isEmpty }
@@ -109,42 +140,43 @@ struct UniversalTagField: View {
                 }
             }
             guard browsingAll else { return [] }
-            return index
+            let limit = AppSettingsStore.shared.current.tagSuggestionLimit
+            let rest = index
                 .lazy
                 .filter { !appliedIDs.contains($0.tag.id) }
-                .map { row in
-                    Hit(
-                        tag: row.tag, categoryName: row.categoryName,
-                        categoryHue: Theme.categoryHue(row.colorIndex),
-                        matchedAlias: nil)
-                }
-                .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
-                .map { $0 }
+                .map { self.hit($0) }
+                .prefix(limit)
+            return Self.merged(analysis: analysisHits, rest: Array(rest), limit: limit)
         }
         // Folded terms against the pre-folded index, lazily, cut at the
         // limit — never a full pass once enough hits exist.
         let foldedTerms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
-        return index
+        let limit = AppSettingsStore.shared.current.tagSuggestionLimit
+        func match(_ row: TagSearchEntry, fromAnalysis: Bool) -> Hit? {
+            if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
+                return hit(row, fromAnalysis: fromAnalysis)
+            }
+            guard let alias = row.foldedAliases.first(where: { candidate in
+                foldedTerms.allSatisfy { candidate.folded.contains($0) }
+            })
+            else { return nil }
+            return hit(row, alias: alias.alias, fromAnalysis: fromAnalysis)
+        }
+        // The analysis's matches lead — the tags the evidence names are
+        // the likeliest answer to whatever is being typed.
+        let byID = Dictionary(uniqueKeysWithValues: index.map { ($0.tag.id, $0) })
+        let leading = analysisTagIDs.compactMap { id -> Hit? in
+            guard !appliedIDs.contains(id), let row = byID[id] else { return nil }
+            return match(row, fromAnalysis: true)
+        }
+        let rest = index
             .lazy
             .compactMap { row -> Hit? in
                 guard !appliedIDs.contains(row.tag.id) else { return nil }
-                if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
-                    return Hit(
-                        tag: row.tag, categoryName: row.categoryName,
-                        categoryHue: Theme.categoryHue(row.colorIndex),
-                        matchedAlias: nil)
-                }
-                guard let alias = row.foldedAliases.first(where: { candidate in
-                    foldedTerms.allSatisfy { candidate.folded.contains($0) }
-                })
-                else { return nil }
-                return Hit(
-                    tag: row.tag, categoryName: row.categoryName,
-                    categoryHue: Theme.categoryHue(row.colorIndex),
-                    matchedAlias: alias.alias)
+                return match(row, fromAnalysis: false)
             }
-            .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
-            .map { $0 }
+            .prefix(limit)
+        return Self.merged(analysis: leading, rest: Array(rest), limit: limit)
     }
 
     /// A tag named exactly what was typed — through the same fold as the
@@ -273,6 +305,11 @@ struct UniversalTagField: View {
                     Text("(\(alias))")
                         .font(Theme.ui(11))
                         .foregroundStyle(Theme.Text.quaternary)
+                }
+                if hit.fromAnalysis {
+                    Text("analysis")
+                        .font(Theme.mono(9))
+                        .foregroundStyle(Theme.Accent.amber)
                 }
                 Spacer(minLength: 6)
                 Text(hit.categoryName)
