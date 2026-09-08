@@ -49,6 +49,17 @@ public struct ExistingTagFinding: Equatable, Sendable, Identifiable {
     /// isn't this offered" has a visible answer.
     public let alreadyApplied: Bool
 
+    public init(
+        tag: Tag, categoryName: String, matchedText: String, foundIn: String,
+        alreadyApplied: Bool
+    ) {
+        self.tag = tag
+        self.categoryName = categoryName
+        self.matchedText = matchedText
+        self.foundIn = foundIn
+        self.alreadyApplied = alreadyApplied
+    }
+
     public var id: String { "\(tag.id)|\(foundIn.lowercased())" }
 }
 

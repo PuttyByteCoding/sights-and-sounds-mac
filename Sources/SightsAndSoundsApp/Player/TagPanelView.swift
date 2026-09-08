@@ -25,6 +25,9 @@ struct TagPanelView: View {
     /// settings so a drag re-renders immediately and survives relaunch.
     @State private var universalPosition
         = AppSettingsStore.shared.current.universalTagFieldPosition
+    /// The Tag Analysis Results field's place — same rule, own setting.
+    @State private var resultsPosition
+        = AppSettingsStore.shared.current.analysisResultsFieldPosition
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,6 +54,9 @@ struct TagPanelView: View {
                     }
                     if clampedUniversalPosition == 0 {
                         universalBlock
+                    }
+                    if clampedResultsPosition == 0 {
+                        resultsBlock
                     }
                     ForEach(Array(model.panelVocabulary.enumerated()), id: \.element.id) { index, entry in
                         if let label = entry.category.sectionLabel {
@@ -92,9 +98,7 @@ struct TagPanelView: View {
                             dropTargetID = nil
                             guard let id = dropped.first.flatMap(UUID.init(uuidString:))
                             else { return false }
-                            if id == PlayerModel.universalFieldFocusID {
-                                setUniversalPosition(index)
-                            } else {
+                            if !setPseudoFieldPosition(id, to: index) {
                                 model.moveCategory(id, before: entry.category.id)
                             }
                             return true
@@ -106,6 +110,9 @@ struct TagPanelView: View {
                         // it is positioned behind.
                         if clampedUniversalPosition == index + 1 {
                             universalBlock
+                        }
+                        if clampedResultsPosition == index + 1 {
+                            resultsBlock
                         }
                     }
                     // …and the space under the list is "make it last".
@@ -120,9 +127,7 @@ struct TagPanelView: View {
                             dropAtEnd = false
                             guard let id = dropped.first.flatMap(UUID.init(uuidString:))
                             else { return false }
-                            if id == PlayerModel.universalFieldFocusID {
-                                setUniversalPosition(model.panelVocabulary.count)
-                            } else {
+                            if !setPseudoFieldPosition(id, to: model.panelVocabulary.count) {
                                 model.moveCategory(id, before: nil)
                             }
                             return true
@@ -164,6 +169,22 @@ struct TagPanelView: View {
         AppSettingsStore.shared.update { $0.universalTagFieldPosition = position }
     }
 
+    private var clampedResultsPosition: Int {
+        min(max(0, resultsPosition), model.panelVocabulary.count)
+    }
+
+    private func setResultsPosition(_ position: Int) {
+        resultsPosition = position
+        AppSettingsStore.shared.update { $0.analysisResultsFieldPosition = position }
+    }
+
+    /// A dragged heading's id, if it is one of the two pseudo-fields.
+    private func setPseudoFieldPosition(_ id: UUID, to position: Int) -> Bool {
+        if id == PlayerModel.universalFieldFocusID { setUniversalPosition(position); return true }
+        if id == PlayerModel.analysisResultsFieldFocusID { setResultsPosition(position); return true }
+        return false
+    }
+
     /// The Universal search, as a reorderable row like any category:
     /// labeled heading, far-right ≡ grip, and the same landing line.
     @ViewBuilder
@@ -196,9 +217,13 @@ struct TagPanelView: View {
             guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
                   id != PlayerModel.universalFieldFocusID
             else { return false }
-            // A category dropped ON the Universal row takes its slot,
-            // pushing the field down — insert before the category the
-            // field currently precedes.
+            // The other pseudo-field dropped here takes this slot; a
+            // category dropped here takes it and pushes the field down —
+            // insert before the category the field currently precedes.
+            if id == PlayerModel.analysisResultsFieldFocusID {
+                setResultsPosition(clampedUniversalPosition)
+                return true
+            }
             let following = clampedUniversalPosition < model.panelVocabulary.count
                 ? model.panelVocabulary[clampedUniversalPosition].category.id : nil
             model.moveCategory(id, before: following)
@@ -207,6 +232,58 @@ struct TagPanelView: View {
             dropTargetID = inside
                 ? PlayerModel.universalFieldFocusID
                 : (dropTargetID == PlayerModel.universalFieldFocusID ? nil : dropTargetID)
+        }
+    }
+
+    /// The Tag Analysis Results row, reorderable like the Universal one:
+    /// heading, ≡ grip, the same landing line, the field underneath.
+    @ViewBuilder
+    private var resultsBlock: some View {
+        if dropTargetID == PlayerModel.analysisResultsFieldFocusID {
+            DropInsertionLine()
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Theme.Accent.amber)
+                    .frame(width: 6, height: 6)
+                Text("Tag Analysis Results")
+                    .font(Theme.ui(12, .semibold))
+                    .foregroundStyle(Theme.Text.primary)
+                Spacer(minLength: 6)
+                Text("≡")
+                    .font(Theme.ui(12))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .help("Drag to reorder — the field sits among the categories")
+                    .draggable(PlayerModel.analysisResultsFieldFocusID.uuidString)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            AnalysisResultsField(
+                session: model.analysisSession,
+                appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
+                categories: model.panelVocabulary.map(\.category),
+                focus: $focusedCategory,
+                focusID: PlayerModel.analysisResultsFieldFocusID,
+                itemID: model.item?.id,
+                onApply: { model.applyTag($0.id) })
+        }
+        .dropDestination(for: String.self) { dropped, _ in
+            dropTargetID = nil
+            guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
+                  id != PlayerModel.analysisResultsFieldFocusID
+            else { return false }
+            if id == PlayerModel.universalFieldFocusID {
+                setUniversalPosition(clampedResultsPosition)
+                return true
+            }
+            let following = clampedResultsPosition < model.panelVocabulary.count
+                ? model.panelVocabulary[clampedResultsPosition].category.id : nil
+            model.moveCategory(id, before: following)
+            return true
+        } isTargeted: { inside in
+            dropTargetID = inside
+                ? PlayerModel.analysisResultsFieldFocusID
+                : (dropTargetID == PlayerModel.analysisResultsFieldFocusID ? nil : dropTargetID)
         }
     }
 

@@ -73,6 +73,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// categories: an index into the category list, 0 = first. Clamped
     /// non-negative; an index past the end means last.
     public var universalTagFieldPosition: Int
+    /// Where the tag panel's Tag Analysis Results field sits among the
+    /// categories, the Universal field's rule: an index into the
+    /// category list, 0 = first, past the end = last. Both pseudo-fields
+    /// at one index render Universal first.
+    public var analysisResultsFieldPosition: Int
 
     public static let defaultVideoExtensions = [
         "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
@@ -102,7 +107,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         ocrBudgetSecondsPerRun: Double = 600,
         ocr: OcrSettings = OcrSettings(),
         uiScale: Double = 1.0,
-        universalTagFieldPosition: Int = 0
+        universalTagFieldPosition: Int = 0,
+        analysisResultsFieldPosition: Int = 1
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -125,6 +131,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.ocr = ocr
         self.uiScale = uiScale
         self.universalTagFieldPosition = universalTagFieldPosition
+        self.analysisResultsFieldPosition = analysisResultsFieldPosition
     }
 
     public init(from decoder: Decoder) throws {
@@ -174,6 +181,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
         universalTagFieldPosition = max(0, try container.decodeIfPresent(
             Int.self, forKey: .universalTagFieldPosition)
             ?? defaults.universalTagFieldPosition)
+        analysisResultsFieldPosition = max(0, try container.decodeIfPresent(
+            Int.self, forKey: .analysisResultsFieldPosition)
+            ?? defaults.analysisResultsFieldPosition)
     }
 }
 

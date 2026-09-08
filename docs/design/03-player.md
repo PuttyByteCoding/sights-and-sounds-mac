@@ -115,6 +115,12 @@ collapsed by default · queue drawer, 146 pt.
 Right rail: tags (flex 1.35) over segments (flex 1), divided by a 1 pt rule, each with a
 10 px section label and a Tab badge that lights amber when the zone holds focus.
 
+The tag panel's rows are the categories plus two pseudo-fields, each draggable to any slot:
+**Universal** (find or create in any category, `universalTagFieldPosition`) and **Tag Analysis
+Results** (`analysisResultsFieldPosition`): ↓ lists the tags the companion found for this
+video that it does not yet wear, typing narrows, Enter applies through the player. Dimmed —
+`Open Tag Analysis to see results` — while no companion is open; a spinner while it scans.
+
 Floors, all existing and all kept: video 150×150, tag panel 220, text panel 240, queue = one
 whole cell (`QueueCell.metadataHeight` + 42). The rail's floor is now the tag floor; the two
 panes inside it share the height and never resolve against each other.
