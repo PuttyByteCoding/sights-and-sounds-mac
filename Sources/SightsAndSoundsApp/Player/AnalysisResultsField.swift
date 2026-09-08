@@ -116,6 +116,11 @@ struct AnalysisResultsField: View {
                     }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.return) {
+                        guard activeRow != nil else { return .ignored }
+                        commit()
+                        return .handled
+                    }
                 if session?.isAnalyzing == true {
                     ProgressView().controlSize(.mini)
                         .help("Tag Analysis is scanning this video")
