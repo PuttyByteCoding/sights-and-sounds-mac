@@ -65,6 +65,65 @@ extension LibraryDatabase {
         }
     }
 
+    /// Move a tag to another category. Its taggings, aliases, notes and
+    /// flags travel; its name is re-normalized under the target's format;
+    /// it lands last in the target's order. Field values belong to the
+    /// old category's fields, so they are dropped.
+    ///
+    /// Two cases refuse rather than guess, because either would change
+    /// data silently: a tag of the same name already in the target
+    /// (merging is the deliberate operation, as with rename), and a
+    /// single-select target where some carrying items already wear one
+    /// of its tags — the message says how many.
+    @discardableResult
+    public func moveTag(_ tagID: UUID, toCategory categoryID: UUID) throws -> Tag {
+        try writer.write { db in
+            guard let tag = try Tag.fetchOne(db, key: tagID) else {
+                throw DatabaseError(message: "no such tag")
+            }
+            guard let target = try TagCategory.fetchOne(db, key: categoryID) else {
+                throw DatabaseError(message: "no such category")
+            }
+            if tag.tagCategoryID == target.id { return tag }
+            let name = TagNameFormatter.format(
+                tag.name.trimmingCharacters(in: .whitespaces), for: target,
+                separatorCharacters: try LibraryInfo.fetchOne(db)?.separatorCharacters ?? "-._")
+            guard !name.isEmpty else { throw DatabaseError(message: "empty tag name") }
+            if try Tag
+                .filter(sql: "tagCategoryID = ? AND name = ? COLLATE NOCASE", arguments: [target.id, name])
+                .fetchOne(db) != nil {
+                throw DatabaseError(
+                    message: "\(target.name) already has a tag named \(name) — merge them from the Categories window instead")
+            }
+            if !target.allowMultiple {
+                let conflicts = try Int.fetchOne(
+                    db,
+                    sql: """
+                    SELECT COUNT(DISTINCT moving.mediaItemID) FROM mediaItemTag AS moving \
+                    JOIN mediaItemTag AS other ON other.mediaItemID = moving.mediaItemID \
+                    JOIN tag ON tag.id = other.tagID \
+                    WHERE moving.tagID = ? AND tag.tagCategoryID = ? AND other.tagID != ?
+                    """,
+                    arguments: [tag.id, target.id, tag.id]) ?? 0
+                if conflicts > 0 {
+                    throw DatabaseError(
+                        message: "\(conflicts) item\(conflicts == 1 ? "" : "s") already carr\(conflicts == 1 ? "ies" : "y") a \(target.name) tag; \(target.name) allows one, so the move would give \(conflicts == 1 ? "it" : "them") two")
+                }
+            }
+            let last = try Int.fetchOne(
+                db, sql: "SELECT MAX(sortOrder) FROM tag WHERE tagCategoryID = ?",
+                arguments: [target.id]) ?? 0
+            try db.execute(
+                sql: "DELETE FROM tagFieldValue WHERE tagID = ?", arguments: [tag.id])
+            var moved = tag
+            moved.tagCategoryID = target.id
+            moved.name = name
+            moved.sortOrder = last + 10
+            try moved.update(db)
+            return moved
+        }
+    }
+
     public func deleteTag(_ tagID: UUID) throws {
         _ = try writer.write { db in
             try Tag.deleteOne(db, key: tagID)  // links/aliases/values cascade
