@@ -111,7 +111,8 @@ grey scrim with the tile's mark centred over it, trash can or wrench) ·
 transport block on `#17130E` — 44 pt scrubber with the segment lanes, then one control row
 (transport buttons, mono time, mark in/out, loop/mute) · on-screen-text drawer, 112 pt,
 collapsed by default · queue drawer, 146 pt — a 22 pt header names the queue, counts it and
-holds Refresh; the queue is a snapshot the player owns, re-run only by Refresh (⌘R) — see
+holds Refresh and a Sort menu (Name · Path · File Size · Duration · Shuffle) that re-orders the
+snapshot in place; the queue is a snapshot the player owns, re-run only by Refresh (⌘R) — see
 `docs/superpowers/specs/2026-09-08-play-queues-design.md`.
 
 Right rail: tags (flex 1.35) over segments (flex 1), divided by a 1 pt rule, each with a
