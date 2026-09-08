@@ -587,6 +587,20 @@ private struct PlayerContent: View {
                                 .allowsHitTesting(false)
                             }
                         }
+                        // Marked for deletion: the video keeps playing —
+                        // a last look before Purge is the point — but
+                        // through a grey scrim with the trash can over
+                        // it, the same mark the tile wears. Toggling D
+                        // reloads the item, so the scrim follows at once.
+                        .overlay {
+                            if model.item?.markedForDeletion == true {
+                                ZStack {
+                                    Color(white: 0.35, opacity: 0.65)
+                                    DeletionMark()
+                                }
+                                .allowsHitTesting(false)
+                            }
+                        }
                         // The anchor setting (#92): placement only — the
                         // fitted-size math is untouched.
                         .frame(
