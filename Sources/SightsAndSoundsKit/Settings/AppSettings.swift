@@ -483,14 +483,21 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
     public var queue: Bool
     /// On-screen text starts collapsed: most items have none.
     public var text: Bool
+    /// The queue rail. Per window in practice — on in Tag Pivot and other
+    /// aux players, off in the library window whose sidebar sits there —
+    /// so the player does not write it back; the stored value is only a
+    /// decode default.
+    public var rail: Bool
 
     public init(
-        tags: Bool = true, segments: Bool = true, queue: Bool = true, text: Bool = false
+        tags: Bool = true, segments: Bool = true, queue: Bool = true, text: Bool = false,
+        rail: Bool = false
     ) {
         self.tags = tags
         self.segments = segments
         self.queue = queue
         self.text = text
+        self.rail = rail
     }
 
     public init(from decoder: Decoder) throws {
@@ -500,6 +507,7 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
         segments = try container.decodeIfPresent(Bool.self, forKey: .segments) ?? defaults.segments
         queue = try container.decodeIfPresent(Bool.self, forKey: .queue) ?? defaults.queue
         text = try container.decodeIfPresent(Bool.self, forKey: .text) ?? defaults.text
+        rail = try container.decodeIfPresent(Bool.self, forKey: .rail) ?? defaults.rail
     }
 }
 

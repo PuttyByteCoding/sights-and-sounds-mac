@@ -71,11 +71,49 @@ final class PlayQueue {
     private(set) var items: [MediaItem]
     /// The order on screen. Sorting never re-runs the definition.
     var sort: QueueSort = .definition
+    /// The rail's narrowing: every required tag must be on an item for it
+    /// to show. View state over the snapshot, never the snapshot.
+    var requiredTagIDs: Set<UUID> = []
+    /// Which tags each snapshot item wears — from the Kit, applied by the
+    /// player after a load, a refresh, or a tag change anywhere.
+    private(set) var tagIDsByItem: [UUID: Set<UUID>] = [:]
 
     var title: String { definition.title }
-    /// The snapshot under the sort — what the strip shows and ←/→ walk.
-    var visible: [MediaItem] { Self.sorted(items, by: sort) }
+    /// The snapshot narrowed, then sorted — what the strip shows and ←/→
+    /// walk.
+    var visible: [MediaItem] {
+        Self.sorted(
+            Self.narrowed(items, requiring: requiredTagIDs, membership: tagIDsByItem), by: sort)
+    }
     var ids: [UUID] { visible.map(\.id) }
+
+    /// How many snapshot items wear each tag — the rail's numbers. Tags
+    /// with nothing are absent, not zero: a tag not on the queue is not a
+    /// choice.
+    var tagCounts: [UUID: Int] {
+        var counts: [UUID: Int] = [:]
+        for item in items {
+            for tagID in tagIDsByItem[item.id] ?? [] { counts[tagID, default: 0] += 1 }
+        }
+        return counts
+    }
+
+    /// Pure: the items wearing every required tag, in the given order.
+    static func narrowed(
+        _ items: [MediaItem], requiring required: Set<UUID>, membership: [UUID: Set<UUID>]
+    ) -> [MediaItem] {
+        guard !required.isEmpty else { return items }
+        return items.filter { required.isSubset(of: membership[$0.id] ?? []) }
+    }
+
+    /// Fresh membership landed. A required tag that no longer occurs on
+    /// any snapshot item is dropped, so a narrowing can never hide
+    /// everything for a reason the rail no longer shows.
+    func apply(membership: [UUID: Set<UUID>]) {
+        tagIDsByItem = membership
+        let occurring = Set(membership.values.flatMap { $0 })
+        requiredTagIDs = requiredTagIDs.intersection(occurring)
+    }
 
     /// Pure, so it is tested without a queue. Unknown durations sort
     /// last under Duration; ties fall back to the path so the order is

@@ -114,6 +114,9 @@ collapsed by default · queue drawer, 146 pt — a 22 pt header names the queue,
 holds Refresh and a Sort menu (Name · Path · File Size · Duration · Shuffle) that re-orders the
 snapshot in place; the queue is a snapshot the player owns, re-run only by Refresh (⌘R) — see
 `docs/superpowers/specs/2026-09-08-play-queues-design.md`.
+A left **rail** panel (on by default in Tag Pivot and other aux players, off in the library window)
+lists only the tags on the queue's items with their counts; clicking narrows the strip and the
+arrows without touching the snapshot.
 
 Right rail: tags (flex 1.35) over segments (flex 1), divided by a 1 pt rule, each with a
 10 px section label and a Tab badge that lights amber when the zone holds focus.

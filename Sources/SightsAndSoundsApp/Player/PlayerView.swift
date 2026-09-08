@@ -380,7 +380,8 @@ private struct PlayerContent: View {
         guard model.showsRail else { return 0 }
         let stored = CGFloat(layout.railWidth)
         guard contentSize.width > 0 else { return stored }
-        let ceiling = max(220, contentSize.width - Self.videoFloor - Self.handleThickness)
+        let leftRail = model.panels.rail ? QueueRailView.width : 0
+        let ceiling = max(220, contentSize.width - Self.videoFloor - Self.handleThickness - leftRail)
         return min(stored, ceiling)
     }
 
@@ -474,6 +475,9 @@ private struct PlayerContent: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
+                if model.panels.rail {
+                    QueueRailView()
+                }
                 leftColumn
                 if model.showsRail {
                     VerticalResizeHandle(
@@ -499,7 +503,11 @@ private struct PlayerContent: View {
                 .environment(model)
         }
         .onChange(of: model.panels) { _, panels in
-            layout.panels = panels
+            // The rail is per window, so its stored value stays what it
+            // was: the library window and an aux player disagree on it.
+            var persisted = panels
+            persisted.rail = layout.panels.rail
+            layout.panels = persisted
             AppSettingsStore.shared.update { $0.playerLayout = layout }
         }
     }
@@ -1010,6 +1018,7 @@ private struct PanelToggles: View {
 
     var body: some View {
         HStack(spacing: 2) {
+            toggle(.rail, "Rail")
             toggle(.tags, "Tags")
             toggle(.segments, "Segments")
             toggle(.queue, "Queue")

@@ -164,9 +164,26 @@ final class PlayerModel {
         self.queue = PlayQueue(definition: request.definition, items: [])
         _ = appDatabase  // legacy pref migrates into settings.json at launch
         skipSettings = AppSettingsStore.shared.current.skip
+        // The rail is per window: on where there is no sidebar to narrow
+        // with (Tag Pivot, History, a selection), off in the library
+        // window whose sidebar sits in the same place.
+        if case .listing = request.definition { panels.rail = false } else { panels.rail = true }
         load(itemID: request.itemID)
         loadSnapshot(request.playlist)
+        // Tag edits anywhere reshape the rail's counts. Same library
+        // only; the player's own edits recount directly.
+        changeObserver = NotificationCenter.default.addObserver(
+            forName: .sasLibraryDataChanged, object: nil, queue: .main
+        ) { [weak self] note in
+            let changed = note.userInfo?["libraryID"] as? UUID
+            Task { @MainActor in
+                guard let self, changed == self.libraryID else { return }
+                self.recountQueue()
+            }
+        }
     }
+
+    private var changeObserver: (any NSObjectProtocol)?
 
     // MARK: - Play queue
 
@@ -184,7 +201,22 @@ final class PlayerModel {
             await MainActor.run { [weak self] in
                 self?.queue.apply(ordered)
                 self?.publishToSession()
+                self?.recountQueue()
             }
+        }
+    }
+
+    /// Which tags the snapshot's items wear, off the main actor — the
+    /// rail's counts and the narrowing follow.
+    func recountQueue() {
+        let library = library, ids = queue.items.map(\.id)
+        guard !ids.isEmpty else {
+            queue.apply(membership: [:])
+            return
+        }
+        Task.detached(priority: .utility) { [weak self] in
+            let membership = (try? library.tagIDsByItem(forItems: ids)) ?? [:]
+            await MainActor.run { [weak self] in self?.queue.apply(membership: membership) }
         }
     }
 
@@ -213,6 +245,7 @@ final class PlayerModel {
                 }
                 self.isRefreshingQueue = false
                 self.publishToSession()
+                self.recountQueue()
             }
         }
     }
@@ -542,6 +575,7 @@ final class PlayerModel {
         do {
             try library.setCategoryOrder(ids)
             refreshTagging()
+            recountQueue()
         } catch {
             loadError = "\(error)"
         }
@@ -593,6 +627,7 @@ final class PlayerModel {
                 }
             }
             refreshTagging()
+            recountQueue()
         } catch {
             loadError = "\(error)"
         }
@@ -612,6 +647,7 @@ final class PlayerModel {
                 recentlyAppliedTagIDs.removeLast()
             }
             refreshTagging()
+            recountQueue()
         } catch {
             loadError = "\(error)"
         }
@@ -623,6 +659,7 @@ final class PlayerModel {
         do {
             try library.renameTag(tagID, to: name)
             refreshTagging()
+            recountQueue()
         } catch {
             loadError = "\(error)"
         }
@@ -635,6 +672,7 @@ final class PlayerModel {
             let tag = try library.ensureTag(named: raw, inCategory: categoryID)
             try library.assignTag(tag.id, to: item.id)
             refreshTagging()
+            recountQueue()
         } catch {
             loadError = "\(error)"
         }
@@ -647,6 +685,7 @@ final class PlayerModel {
         do {
             try library.addAlias(alias, toTag: tagID)
             refreshTagging()
+            recountQueue()
         } catch {
             loadError = "\(error)"
         }
@@ -953,6 +992,8 @@ final class PlayerModel {
     }
 
     func shutdown() {
+        if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
+        changeObserver = nil
         analysisSession?.playerDidClose()
         pause()
         removeObserver()
@@ -989,7 +1030,7 @@ enum PlayerZone: String, CaseIterable, Sendable {
 
 /// One of the player's four collapsible panels.
 enum PlayerPanel: String, CaseIterable, Sendable {
-    case tags, segments, queue, text
+    case tags, segments, queue, text, rail
 }
 
 extension PlayerPanels {
@@ -1000,6 +1041,7 @@ extension PlayerPanels {
             case .segments: segments
             case .queue: queue
             case .text: text
+            case .rail: rail
             }
         }
         set {
@@ -1008,6 +1050,7 @@ extension PlayerPanels {
             case .segments: segments = newValue
             case .queue: queue = newValue
             case .text: text = newValue
+            case .rail: rail = newValue
             }
         }
     }
