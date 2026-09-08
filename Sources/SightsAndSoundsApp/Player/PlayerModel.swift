@@ -22,10 +22,10 @@ final class PlayerModel {
     /// This player's queue: a snapshot with a definition. Nothing outside
     /// the player replaces it; Refresh re-runs the definition.
     let queue: PlayQueue
-    /// The queue's ids — what ←/→ walk.
+    /// The queue's ids under its sort — what ←/→ walk.
     var playlist: [UUID] { queue.ids }
-    /// The queue's rows — the strip's data.
-    var queueItems: [MediaItem] { queue.items }
+    /// The queue's rows under its sort — the strip's data.
+    var queueItems: [MediaItem] { queue.visible }
     private(set) var isRefreshingQueue = false
 
     /// The companion's handshake, created the first time Tag Analysis
