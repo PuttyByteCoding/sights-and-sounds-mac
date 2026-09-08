@@ -19,5 +19,5 @@ func openTagPlayerWindow(
         id: "aux",
         value: AuxWindowRequest(
             libraryID: libraryID, kind: .player, itemIDs: ids,
-            title: "Tag: \(tag.name)"))
+            title: "Tag: \(tag.name)", tagID: tag.id))
 }

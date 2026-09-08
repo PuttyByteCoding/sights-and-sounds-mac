@@ -1010,7 +1010,8 @@ private struct ComparePane: View {
                     // (AuxiliaryWindowView), same pattern as the library
                     // window.
                     model.playerRequest = PlayerRequest(
-                        libraryID: model.libraryID, itemID: item.id, playlist: [item.id])
+                        libraryID: model.libraryID, itemID: item.id, playlist: [item.id],
+                        name: "Compare")
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .disabled(!model.isOnline(item))

@@ -290,6 +290,7 @@ private struct ItemCell: View {
         guard model.isOnline(item) else { return }
         model.playerRequest = PlayerRequest(
             libraryID: model.libraryID, itemID: item.id,
+            definition: .listing(filter: model.filter, kinds: model.kinds, ordering: model.ordering),
             playlist: model.visibleItems.map(\.id))
     }
 

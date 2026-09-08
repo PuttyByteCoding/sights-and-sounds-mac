@@ -52,6 +52,9 @@ struct AuxWindowRequest: Codable, Hashable {
     /// Optional so saved window state decodes; a missing or unknown id
     /// renders the companion's closed state.
     var sessionID: UUID? = nil
+    /// Player kind: the tag whose items the queue holds, so Refresh can
+    /// re-run it. Optional so saved window state decodes.
+    var tagID: UUID? = nil
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -95,9 +98,12 @@ struct AuxiliaryWindowView: View {
                 // A player window plays on arrival: the request carries
                 // its whole queue, so there is nothing to browse first.
                 if request.kind == .player, let first = request.itemIDs.first {
+                    let definition: QueueDefinition = request.tagID.map {
+                        .tag(id: $0, name: request.title?.replacingOccurrences(of: "Tag: ", with: "") ?? "Tag")
+                    } ?? .explicit(ids: request.itemIDs, name: request.title ?? "Queue")
                     made.playerRequest = PlayerRequest(
                         libraryID: request.libraryID, itemID: first,
-                        playlist: request.itemIDs)
+                        definition: definition, playlist: request.itemIDs)
                 }
                 model = made
             } catch {
