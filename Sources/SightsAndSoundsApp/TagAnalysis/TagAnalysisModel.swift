@@ -1,75 +1,40 @@
-import AVFoundation
 import Foundation
 import GRDB
 import Observation
 import SightsAndSoundsKit
 
-/// The per-video analysis window's state: the queue being walked, the
-/// displayed video's analysis, and the basket of tags staged for it.
-///
-/// **Nothing writes until the basket commits** — on advance (either
-/// direction), window close, or an explicit Save. That is the reviewed
-/// decision: finish judging a video, then its tags land together.
+/// The companion window's state: the analysis of whatever the followed
+/// player is showing, and the filters over it. It does not own a video
+/// or a queue — the session says which item, and the player owns the
+/// walk. Accepting applies at once through the session's hook, so the
+/// player's panel refreshes on the same call.
 @Observable
 @MainActor
 final class TagAnalysisModel {
 
-    let library: LibraryDatabase
-    let libraryID: UUID
-
-    /// The queue this window walks — the same listing the player takes.
-    /// Analysis always looks at ONE video, `queue[index]`: metadata from
-    /// one video is not evidence about another.
-    private(set) var queue: [UUID]
-    private(set) var index: Int
-    private(set) var currentItem: MediaItem?
+    let session: TagAnalysisSession
+    var library: LibraryDatabase { session.library }
+    var libraryID: UUID { session.libraryID }
 
     private(set) var analysis: ItemAnalysis = .empty
-
-    /// The rail preview's own player — the numpad transport works here
-    /// exactly as in the player window, off the same key map and the
-    /// same skip settings, because seek distances are muscle memory.
-    /// Loads paused: this is a triage surface, and sound the operator
-    /// did not ask for is noise.
-    let previewPlayer = AVPlayer()
-    private(set) var previewPlaying = false
-    private(set) var previewSeconds: Double = 0
-    private(set) var previewDuration: Double = 0
-    /// Which video the preview currently holds — reload() runs after
-    /// every commit and sweep, and replacing the item each time reset
-    /// playback to a paused first frame ("it appears to be frame by
-    /// frame"). The item is replaced only when the VIDEO changes.
-    private var previewItemID: UUID?
-    /// Where the operator has ASKED to be — seeks stack from this while
-    /// the video buffers, and the transport shows loading.
-    private var previewSeekTarget: Double?
-    private(set) var previewBuffering = false
-    private var previewTimeObserver: Any?
-    private var previewEndObserver: NSObjectProtocol?
-    /// What the displayed video already wears — the baseline every
-    /// decision is made against, so it sits in view instead of in memory.
-    private(set) var appliedTags: [(category: TagCategory, tags: [Tag])] = []
-    /// The pre-folded rows the rail's Universal field searches — the
-    /// player's index, built the same way from the same vocabulary.
-    private(set) var tagSearchIndex: [TagSearchEntry] = []
+    /// The shown item's row — its name for the panes, its file for the
+    /// evidence stills. Fetched with each reload; nil between items.
+    private(set) var currentItem: MediaItem?
     private(set) var rules: [RuleEngine.Rule] = []
     private(set) var categories: [TagCategory] = []
     private(set) var isLoading = false
     private(set) var loadError: String?
 
-    /// Tags staged for the DISPLAYED video. Values stay editable in here
-    /// right up to commit.
-    private(set) var basket: [PendingTag] = []
-
-    /// What this pass over the queue has written so far.
-    private(set) var tagsCommittedThisPass = 0
+    /// What this pass has done so far — a pass being the life of this
+    /// window over whatever the player walked through.
+    private(set) var tagsAppliedThisPass = 0
     private(set) var videosVisitedThisPass = 1
 
     var searchText = ""
     var selectedCandidateID: AnalysisCandidate.ID?
 
     /// The rail's Reader I/O page replaces the candidate table while on
-    /// — a sibling view of the same video, following the queue walk.
+    /// — a sibling view of the same video.
     var showingReaderIO = false
 
     /// Left-rail filters — the comp's EVIDENCE SOURCES and STATUS blocks.
@@ -77,28 +42,83 @@ final class TagAnalysisModel {
     var statusFilter: StatusFilter = .undecided
 
     enum StatusFilter: String, CaseIterable {
-        case undecided, inBasket, ignored, everything
+        case undecided, applied, ignored, everything
 
         var label: String {
             switch self {
             case .undecided: "Undecided"
-            case .inBasket: "In basket"
+            case .applied: "Applied"
             case .ignored: "Ignored"
             case .everything: "Everything"
             }
         }
     }
 
+    /// The item the reload in flight (or the last one) was for — the
+    /// guard that drops results for an item the player has left.
+    private var loadedItemID: UUID?
 
-    init(library: LibraryDatabase, libraryID: UUID, queue: [UUID], startAt: Int = 0) {
-        self.library = library
-        self.libraryID = libraryID
-        self.queue = queue
-        self.index = queue.indices.contains(startAt) ? startAt : 0
+    init(session: TagAnalysisSession) {
+        self.session = session
+        session.companionDidOpen()
+        observeSession()
+        if session.itemID != nil { reload() }
     }
 
-    var currentItemID: UUID? {
-        queue.indices.contains(index) ? queue[index] : nil
+    // MARK: - Following the player
+
+    var currentItemID: UUID? { session.itemID }
+    var playerIsOpen: Bool { session.playerIsOpen }
+
+    /// "3 of 41", or nil for a single item.
+    var positionText: String? {
+        guard let position = session.position else { return nil }
+        return "\(position.index + 1) of \(position.count)"
+    }
+
+    /// One observation at a time, re-armed after each change lands.
+    /// `onChange` fires before the new value is visible, so the work is
+    /// hopped to the next main-actor turn.
+    private func observeSession() {
+        withObservationTracking {
+            _ = session.itemID
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.itemChanged()
+                self.observeSession()
+            }
+        }
+    }
+
+    /// The player moved on: stamp the departed video, count the visit,
+    /// drop everything that pointed at its strings, and reload.
+    private func itemChanged() {
+        guard session.itemID != loadedItemID else { return }
+        if loadedItemID != nil {
+            markAnalyzed(loadedItemID)
+            videosVisitedThisPass += 1
+        }
+        selectedCandidateID = nil
+        searchText = ""
+        analysis = .empty
+        currentItem = nil
+        reload()
+    }
+
+    /// Stamp a video as analyzed, at the current analyzer version.
+    /// Moving past without applying anything still counts — seeing the
+    /// evidence and judging nothing tag-worthy IS an analysis.
+    private func markAnalyzed(_ id: UUID?) {
+        guard let id else { return }
+        try? library.markAnalyzed(id)
+    }
+
+    /// The window is going away: the companion's half of the session
+    /// clears and the shown video is stamped.
+    func close() {
+        markAnalyzed(loadedItemID)
+        session.companionDidClose()
     }
 
     // MARK: - Derived
@@ -118,8 +138,6 @@ final class TagAnalysisModel {
 
     var allRows: [TableRow] {
         let findingsByText = Dictionary(grouping: analysis.existing, by: \.foundIn)
-        // Suggested first — the rows a click can finish are worth the
-        // top of the table.
         return (analysis.suggested + analysis.unmapped).map {
             TableRow(candidate: $0, findings: findingsByText[$0.value] ?? [])
         }
@@ -149,14 +167,11 @@ final class TagAnalysisModel {
         return allRows.count(where: { self.status(of: $0) == status })
     }
 
+    /// Applied means a found tag is already on the video — the reload
+    /// after an apply is what moves a row here.
     func status(of row: TableRow) -> StatusFilter {
         if row.candidate.suppressedByRule != nil { return .ignored }
-        let mappedCategoryID = row.candidate.category.flatMap { self.category(named: $0)?.id }
-        if isStaged(value: row.candidate.value, categoryID: mappedCategoryID)
-            || row.findings.contains(where: { isStaged(tagID: $0.tag.id) })
-        {
-            return .inBasket
-        }
+        if !row.findings.isEmpty, row.findings.allSatisfy(\.alreadyApplied) { return .applied }
         return .undecided
     }
 
@@ -173,231 +188,49 @@ final class TagAnalysisModel {
             || (row.candidate.key?.localizedCaseInsensitiveContains(query) ?? false)
     }
 
-    /// How many places in THIS video the string was found. Library-wide
-    /// reach used to show here and was removed on review: "it should
-    /// only have the information pulled from the single video."
+    /// How many places in THIS video the string was found.
     func occurrenceCount(for candidate: AnalysisCandidate) -> Int {
         candidate.origins.count
-    }
-
-    /// Already staged, so a row can say "in the basket" instead of
-    /// offering itself twice.
-    func isStaged(value: String, categoryID: UUID?) -> Bool {
-        basket.contains {
-            $0.value.caseInsensitiveCompare(value) == .orderedSame
-                && (categoryID == nil || $0.categoryID == categoryID)
-        }
-    }
-
-    func isStaged(tagID: UUID) -> Bool {
-        basket.contains { $0.existingTagID == tagID }
     }
 
     func category(named name: String) -> TagCategory? {
         categories.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
-    // MARK: - Walking the queue
-
-    var canGoPrevious: Bool { index > 0 }
-    var canGoNext: Bool { index + 1 < queue.count }
-
-    func goNext() { step(1) }
-    func goPrevious() { step(-1) }
-
-    /// Clamped at the ends, like the player. **Advancing commits the
-    /// basket first** — that is the contract: finish a video, move on,
-    /// its tags are saved — then the working state clears, because all
-    /// of it points at strings the next video may not contain.
-    private func step(_ delta: Int) {
-        jump(to: index + delta)
-    }
-
-    /// The queue strip's click, and what the arrows are made of — same
-    /// commit-then-clear contract whichever way you arrive at a video.
-    func jump(to next: Int) {
-        guard queue.indices.contains(next), next != index else { return }
-        commitBasket()
-        markCurrentAnalyzed()
-        index = next
-        videosVisitedThisPass += 1
-        selectedCandidateID = nil
-        searchText = ""
-        analysis = .empty
-        reload()
-    }
-
-    /// Stamp the departed video as analyzed, at the current analyzer
-    /// version. Advancing past without staging anything still counts —
-    /// seeing the evidence and judging nothing tag-worthy IS an
-    /// analysis. The Analyzed status filters in the sidebar read this.
-    func markCurrentAnalyzed() {
-        guard let id = currentItemID else { return }
-        try? library.markAnalyzed(id)
-    }
-
-    // MARK: - The preview transport
-
-    /// Point the preview at the current video — only when the video
-    /// actually changed. A reload that changed tags or rules must not
-    /// interrupt playback in flight.
-    func reloadPreview() {
-        guard currentItemID != previewItemID else { return }
-        previewItemID = currentItemID
-        previewPlayer.pause()
-        previewPlaying = false
-        previewSeconds = 0
-        previewDuration = 0
-        previewSeekTarget = nil
-        previewBuffering = false
-        if let previewEndObserver {
-            NotificationCenter.default.removeObserver(previewEndObserver)
-            self.previewEndObserver = nil
-        }
-        guard let item = currentItem,
-              let url = (try? library.resolvedFileURL(for: item)) ?? nil
-        else {
-            previewPlayer.replaceCurrentItem(with: nil)
-            return
-        }
-        let playerItem = AVPlayerItem(url: url)
-        previewPlayer.replaceCurrentItem(with: playerItem)
-        previewDuration = item.durationSeconds ?? 0
-        installPreviewObservers(for: playerItem)
-    }
-
-    private func installPreviewObservers(for playerItem: AVPlayerItem) {
-        if previewTimeObserver == nil {
-            // One periodic observer for the player's lifetime — it
-            // follows item replacement on its own.
-            previewTimeObserver = previewPlayer.addPeriodicTimeObserver(
-                forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
-            ) { [weak self] time in
-                Task { @MainActor in
-                    guard let self, self.previewSeekTarget == nil else { return }
-                    self.previewSeconds = time.seconds
-                }
-            }
-        }
-        previewEndObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification,
-            object: playerItem, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.previewPlaying = false }
-        }
-    }
-
-    func previewTogglePlay() {
-        previewPlaying ? previewPlayer.pause() : previewPlayer.play()
-        previewPlaying.toggle()
-    }
-
-    /// The mini scrubber's click — a fraction of the duration.
-    func previewSeek(toFraction fraction: Double) {
-        guard previewDuration > 0 else { return }
-        previewSeek(to: fraction.clamped01 * previewDuration)
-    }
-
-    /// The player window's digit table, verbatim — numpad seeks, 5
-    /// pauses, 0 to the start, − to near the end. The triage flags in
-    /// the map (favorite and friends) deliberately do NOT fire here:
-    /// this window's decisions are tags, and a stray numpad press must
-    /// not silently flag a video.
-    func handlePreviewKey(character: Character, shift: Bool, numpad: Bool) -> Bool {
-        guard let action = PlayerKeyMap.action(
-            character: character, shift: shift, numpad: numpad,
-            settings: AppSettingsStore.shared.current.skip)
-        else { return false }
-        switch action {
-        case .seek(let seconds):
-            previewSeek(by: seconds)
-        case .playPause:
-            previewTogglePlay()
-        case .seekToStart:
-            previewPlayer.seek(to: .zero)
-        case .seekToNearEnd:
-            let duration = previewPlayer.currentItem?.duration.seconds ?? 0
-            if duration.isFinite, duration > 5 {
-                previewSeek(to: duration - 5)
-            }
-        case .toggleFavorite, .toggleNeedsReview, .toggleMarkedForDeletion,
-             .togglePlaybackIssue:
-            return false
-        }
-        return true
-    }
-
-    func previewSeek(by seconds: Double) {
-        // From the shown playhead — the pending target when one is in
-        // flight — never from the player's lagging clock.
-        previewSeek(to: previewSeconds + seconds)
-    }
-
-    private func previewSeek(to seconds: Double) {
-        let clamped = previewDuration > 0
-            ? min(max(0, seconds), previewDuration) : max(0, seconds)
-        // Intent first: the playhead jumps, the stacking base moves, and
-        // the picture catches up — four quick skips mean four skips.
-        previewSeconds = clamped
-        previewSeekTarget = clamped
-        previewBuffering = true
-        previewPlayer.seek(
-            to: CMTime(seconds: clamped, preferredTimescale: 600),
-            toleranceBefore: .zero, toleranceAfter: .zero
-        ) { [weak self] finished in
-            Task { @MainActor in
-                guard let self, finished, self.previewSeekTarget == clamped else { return }
-                self.previewSeekTarget = nil
-                self.previewBuffering = false
-            }
-        }
-    }
-
     // MARK: - Loading
 
+    /// Everything the analysis needs, then the analysis itself off the
+    /// main actor. Results for an item the player has since left are
+    /// dropped, not shown.
     func reload() {
         guard let itemID = currentItemID else {
             analysis = .empty
+            session.companionDidReload(.empty)
             return
         }
+        loadedItemID = itemID
         isLoading = true
+        session.companionWillReload()
         let library = library
         Task {
             do {
                 let rules = try library.analysisRules()
-                let vocabulary = try library.vocabulary()
-                let categories = vocabulary.map(\.category)
-                let aliasRows: [TagAlias] = try await library.writer.read { db in
-                    try TagAlias.fetchAll(db)
-                }
-                let aliases = Dictionary(grouping: aliasRows, by: \.tagID)
-                    .mapValues { $0.map(\.alias) }
-                // The pipeline reads disk (sidecars) and walks the parser
-                // — off the main actor, so a slow folder never freezes
-                // the arrows.
+                let categories = try library.vocabulary().map(\.category)
                 let analysis = try await Task.detached(priority: .userInitiated) {
                     try library.analyzeItem(itemID, rules: rules)
                 }.value
-                // The queue may have advanced while this ran; results for
-                // a video no longer displayed are dropped, not shown.
                 guard itemID == self.currentItemID else { return }
-                self.rules = rules
-                self.categories = categories
-                self.analysis = analysis
-                self.appliedTags = (try? library.tags(of: itemID)) ?? []
-                self.tagSearchIndex = TagSearchEntry.index(
-                    vocabulary: vocabulary.map { ($0.category, $0.tags) }, aliases: aliases)
-                // The row BEFORE the preview: `reloadPreview` resolves the
-                // file from `currentItem`, and pointing it at the video
-                // first left the first video's preview empty and every
-                // later one a video behind — numpad 5 played nothing.
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)
                 }
-                self.reloadPreview()
+                self.rules = rules
+                self.categories = categories
+                self.analysis = analysis
+                self.session.companionDidReload(analysis)
                 self.loadError = nil
             } catch {
                 self.loadError = "\(error)"
+                self.session.companionDidReload(.empty)
             }
             self.isLoading = false
         }
@@ -412,7 +245,30 @@ final class TagAnalysisModel {
         selectedCandidateID = id
     }
 
-    // MARK: - Decide actions beyond the basket
+    // MARK: - Applying
+
+    /// Apply an existing tag to the shown video, now, through the
+    /// player's hook so its panel refreshes on the same call. The reload
+    /// that follows moves the row to Applied.
+    func applyNow(_ tag: Tag) {
+        session.apply(tag)
+        tagsAppliedThisPass += 1
+        reload()
+    }
+
+    /// Create (or find by name) then apply — the decide pane's Assign.
+    func applyNew(value: String, categoryID: UUID) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let tag = try library.ensureTag(named: trimmed, inCategory: categoryID)
+            applyNow(tag)
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    // MARK: - Decide actions that write rules or vocabulary
 
     /// The comp's "Ignore this key": never offer it again, reversible.
     /// Implemented as an authored ignore RULE — candidates become rules —
@@ -432,8 +288,7 @@ final class TagAnalysisModel {
     }
 
     /// The comp's "Hide the prefix": a pathRootStartsWith + hidePrefix
-    /// rule, so the never-useful leading token stops appearing — an
-    /// ordinary rule row, one editor, one storage, one backup path.
+    /// rule, so the never-useful leading token stops appearing.
     func hidePrefixRule(root: String) {
         let trimmed = root.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
@@ -449,77 +304,11 @@ final class TagAnalysisModel {
     }
 
     /// The comp's "Add as an alias": folds this spelling into an existing
-    /// tag. Vocabulary, not tagging — it writes immediately rather than
-    /// through the basket, because an alias belongs to the library, not
-    /// to this video.
+    /// tag. Vocabulary, not tagging — it writes immediately, because an
+    /// alias belongs to the library, not to this video.
     func addAlias(_ value: String, toTag tagID: UUID) {
         do {
             try library.addAlias(value.trimmingCharacters(in: .whitespacesAndNewlines), toTag: tagID)
-            reload()
-        } catch {
-            loadError = "\(error)"
-        }
-    }
-
-    // MARK: - The basket
-
-    /// Stage a candidate — value already edited by the caller if the
-    /// operator trimmed it by hand.
-    func stage(value: String, categoryID: UUID, existingTagID: UUID? = nil) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard !isStaged(value: trimmed, categoryID: categoryID) else { return }
-        basket.append(
-            PendingTag(value: trimmed, categoryID: categoryID, existingTagID: existingTagID))
-    }
-
-    func stage(_ finding: ExistingTagFinding) {
-        guard !isStaged(tagID: finding.tag.id) else { return }
-        basket.append(PendingTag(
-            value: finding.tag.name, categoryID: finding.tag.tagCategoryID,
-            existingTagID: finding.tag.id))
-    }
-
-    func unstage(_ id: PendingTag.ID) {
-        basket.removeAll { $0.id == id }
-    }
-
-    func updateStaged(_ id: PendingTag.ID, value: String) {
-        guard let at = basket.firstIndex(where: { $0.id == id }) else { return }
-        basket[at].value = value
-        // An edited value is no longer the existing tag it came from —
-        // committing it must create/match by NAME, not silently apply a
-        // tag whose name is now different from what the row shows.
-        basket[at].existingTagID = nil
-    }
-
-    func discardBasket() {
-        basket = []
-    }
-
-    /// Write the basket for the displayed video. Called by advance, by
-    /// Save, and by the window closing — the three ends of "I am done
-    /// with this one".
-    /// The rail's Universal field: apply NOW, not into the basket — the
-    /// field is the player's gesture brought here, and its Enter means
-    /// the same thing. Counted with the pass like a commit, and the
-    /// reload moves the tag up into Applied and out of the candidates.
-    func applyNow(_ tag: Tag) {
-        guard let itemID = currentItemID else { return }
-        do {
-            try library.assignTag(tag.id, to: itemID)
-            tagsCommittedThisPass += 1
-            reload()
-        } catch {
-            loadError = "\(error)"
-        }
-    }
-
-    func commitBasket() {
-        guard let itemID = currentItemID, !basket.isEmpty else { return }
-        do {
-            tagsCommittedThisPass += try library.commitPendingTags(basket, to: itemID)
-            basket = []
             reload()
         } catch {
             loadError = "\(error)"

@@ -42,12 +42,16 @@ struct AuxWindowRequest: Codable, Hashable {
     /// surface — the operations window is the only one that opens
     /// against a set of items.
     var itemIDs: [UUID] = []
-    /// Tag Analysis only: where in `itemIDs` to start the walk.
-    /// Optional so window state saved before this field decodes.
+    /// Unused since Tag Analysis followed a player session; kept so
+    /// saved window state decodes.
     var startIndex: Int? = nil
     /// A display title beating the kind's own — "Tag: Mike Jones" on a
     /// player window. Optional so saved window state decodes.
     var title: String? = nil
+    /// Tag Analysis only: the player session the companion follows.
+    /// Optional so saved window state decodes; a missing or unknown id
+    /// renders the companion's closed state.
+    var sessionID: UUID? = nil
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -128,8 +132,7 @@ struct AuxiliaryWindowView: View {
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()
             case .tagAnalysis:
-                TagAnalysisView(
-                    queueIDs: request.itemIDs, startIndex: request.startIndex ?? 0)
+                TagAnalysisView(sessionID: request.sessionID)
             case .player:
                 // Only reachable when the request carried no items.
                 ContentUnavailableView(
