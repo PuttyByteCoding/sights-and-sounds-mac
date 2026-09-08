@@ -115,10 +115,32 @@ extension KeyMapStyle {
         KeyMapRow(
             label: "Triage keep / issue / delete",
             web: "R  W  D", mac: "bound letters + advance"),
+        KeyMapRow(label: "Seek to start / near end", web: "0 · 8 · numpad −", mac: "0 · 8 · numpad −"),
+        KeyMapRow(
+            label: "Flag favorite / review / issue / delete",
+            web: "F  R  W  D", mac: "F  R  W  D"),
+        KeyMapRow(label: "Mute / loop", web: "M · L", mac: "M · L"),
         KeyMapRow(label: "Toggle tag panel", web: "T", mac: "T"),
+        KeyMapRow(label: "Toggle checkbox tag 1…9", web: "⌥1 … ⌥9", mac: "⌥1 … ⌥9"),
+        KeyMapRow(label: "Bound tag keys", web: "letters · F1 … F9", mac: "letters · F1 … F9"),
+        KeyMapRow(label: "Pick / play a segment row", web: "↑ ↓ · Enter", mac: "↑ ↓ · Enter"),
         KeyMapRow(label: "Move focus zone", web: "Tab · ⇧Tab", mac: "Tab · ⇧Tab"),
         KeyMapRow(label: "Release to video", web: "Esc", mac: "Esc"),
+        KeyMapRow(label: "Keyboard map", web: "?", mac: "?"),
     ]
+
+    /// The rows the sheet's search field leaves showing: a blank query
+    /// is the whole table; otherwise a row matches on its label or on
+    /// the keys of EITHER map, case-insensitively — you may know the
+    /// key and want the name, or the reverse, and the map you are not
+    /// using is still worth finding.
+    public static func comparison(matching query: String) -> [KeyMapRow] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return comparison }
+        return comparison.filter { row in
+            [row.label, row.web, row.mac].contains { $0.localizedCaseInsensitiveContains(needle) }
+        }
+    }
 }
 
 /// The playback keyboard map, Phase 3 scope. Editing keys (tags, bookmarks,

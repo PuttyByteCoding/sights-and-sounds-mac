@@ -1686,6 +1686,10 @@ private struct KeyMapSheet: View {
     @Environment(PlayerModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var choice = AppSettingsStore.shared.current.keyMap
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
+
+    private var rows: [KeyMapRow] { KeyMapStyle.comparison(matching: query) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1700,6 +1704,37 @@ private struct KeyMapSheet: View {
             }
             .padding(16)
 
+            // Search takes the keyboard on open: the sheet is the cheat
+            // sheet, and "what does [ do" is a typed question.
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(Theme.ui(9))
+                    .foregroundStyle(Theme.Text.disabled)
+                TextField("Search by name or key", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(11.5))
+                    .foregroundStyle(Theme.Text.secondary)
+                    .focused($searchFocused)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(Theme.ui(10))
+                            .foregroundStyle(Theme.Text.disabled)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Theme.Surface.well)
+                    .stroke(Theme.Border.standard, lineWidth: 1))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+
             HStack(spacing: 0) {
                 Text("").frame(maxWidth: .infinity, alignment: .leading)
                 header("Web map", style: .web)
@@ -1709,7 +1744,14 @@ private struct KeyMapSheet: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(KeyMapStyle.comparison) { row in
+                    if rows.isEmpty {
+                        Text("No rows match \u{201C}\(query)\u{201D}.")
+                            .font(Theme.ui(12))
+                            .foregroundStyle(Theme.Text.disabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 14)
+                    }
+                    ForEach(rows) { row in
                         HStack(spacing: 0) {
                             Text(row.label)
                                 .font(Theme.ui(12.5))
@@ -1742,8 +1784,9 @@ private struct KeyMapSheet: View {
             }
             .padding(16)
         }
-        .frame(width: 560, height: 480)
+        .frame(width: 560, height: 560)
         .background(Theme.Surface.dialog)
+        .onAppear { searchFocused = true }
     }
 
     private func header(_ label: String, style: KeyMapStyle) -> some View {
