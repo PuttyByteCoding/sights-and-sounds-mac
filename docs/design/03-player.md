@@ -106,8 +106,8 @@ Window content splits into a left column and a 352 pt right rail; a 30 pt footer
 
 Left column, top to bottom: file-name strip on `#17130E` (the name as selectable mono
 text, up to two lines; right-click copies it in the grid tile's two forms) · video stage on
-`#0A0806` (fitted, anchored; a marked-for-deletion item plays on through a grey scrim with
-the tile's trash can centred over it) ·
+`#0A0806` (fitted, anchored; a marked-for-deletion or playback-issue item plays on through a
+grey scrim with the tile's mark centred over it, trash can or wrench) ·
 transport block on `#17130E` — 44 pt scrubber with the segment lanes, then one control row
 (transport buttons, mono time, mark in/out, loop/mute) · on-screen-text drawer, 112 pt,
 collapsed by default · queue drawer, 146 pt.
