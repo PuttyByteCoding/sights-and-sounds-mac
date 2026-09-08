@@ -323,9 +323,17 @@ final class TagAnalysisModel {
         case .toggleFavorite, .toggleNeedsReview, .toggleMarkedForDeletion,
              .togglePlaybackIssue:
             return false
+        case .focusUniversalField:
+            // The rail owns the field's focus; a bumped request is what
+            // it watches for.
+            universalFocusRequests += 1
         }
         return true
     }
+
+    /// Numpad 8 asks for the Universal field; the rail answers. A count,
+    /// not a flag, so two presses in a row both land.
+    private(set) var universalFocusRequests = 0
 
     func previewSeek(by seconds: Double) {
         // From the shown playhead — the pending target when one is in

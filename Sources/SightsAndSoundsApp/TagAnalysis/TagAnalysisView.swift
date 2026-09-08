@@ -240,6 +240,9 @@ private struct RailView: View {
             .padding(12)
         }
         .background(Theme.Surface.sidebar)
+        .onChange(of: model.universalFocusRequests) { _, _ in
+            fieldFocus = Self.universalFocusID
+        }
     }
 
     // MARK: Preview
