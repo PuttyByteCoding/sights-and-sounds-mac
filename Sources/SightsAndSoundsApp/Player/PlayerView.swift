@@ -1612,7 +1612,7 @@ private struct ClipAuthoringBar: View {
 /// A resize handle also collapses what it borders on double-click — the
 /// divider convention every splittable macOS window has, and the reason
 /// nobody drags a panel all the way shut by hand.
-private struct VerticalResizeHandle: View {
+struct VerticalResizeHandle: View {
     let onDrag: (CGFloat) -> Void
     let onEnd: () -> Void
     var onDoubleClick: (() -> Void)?

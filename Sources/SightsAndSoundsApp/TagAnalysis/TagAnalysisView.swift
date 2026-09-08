@@ -29,6 +29,9 @@ struct TagAnalysisView: View {
     /// rewritten at drag rate.
     @State private var railWidth = AppSettingsStore.shared.current.tagAnalysisRailWidth
     @State private var railPersist: Task<Void, Never>?
+    /// The table's fixed column widths, dragged at the header and kept
+    /// between launches; the Value column takes the rest.
+    @State private var columns = TagAnalysisColumns()
 
     enum Mode: String, Hashable { case candidates, rules, schemas }
 
@@ -62,7 +65,7 @@ struct TagAnalysisView: View {
                                 ReaderIOView(model: model)
                                     .frame(minWidth: 620)
                             } else {
-                                CandidateTable(model: model)
+                                CandidateTable(model: model, columns: columns)
                                     .frame(minWidth: 460)
                                 DecidePane(model: model, onMakeRule: makeRule)
                                     .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
@@ -410,6 +413,7 @@ private struct RailView: View {
 
 private struct CandidateTable: View {
     let model: TagAnalysisModel
+    let columns: TagAnalysisColumns
 
     var body: some View {
         VStack(spacing: 0) {
@@ -450,7 +454,7 @@ private struct CandidateTable: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(model.visibleRows) { row in
-                            CandidateTableRow(model: model, row: row)
+                            CandidateTableRow(model: model, row: row, columns: columns)
                         }
                     }
                 }
@@ -460,14 +464,16 @@ private struct CandidateTable: View {
         .background(Theme.Surface.content)
     }
 
+    /// Each fixed column's header carries a drag handle at its trailing
+    /// edge; the width it sets is the one the rows read.
     private var columnHeader: some View {
         HStack(spacing: 10) {
             Text("Value").modifier(Theme.sectionLabel())
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text("Key").modifier(Theme.sectionLabel()).frame(width: 110, alignment: .leading)
-            Text("Readers").modifier(Theme.sectionLabel()).frame(width: 96, alignment: .leading)
-            Text("Seen").modifier(Theme.sectionLabel()).frame(width: 48, alignment: .trailing)
-            Text("Suggestion").modifier(Theme.sectionLabel()).frame(width: 190, alignment: .leading)
+            resizable(\.key, "Key", alignment: .leading)
+            resizable(\.readers, "Readers", alignment: .leading)
+            resizable(\.seen, "Seen", alignment: .trailing)
+            resizable(\.suggestion, "Suggestion", alignment: .leading)
             Text("").frame(width: 22)
         }
         .padding(.horizontal, 14)
@@ -476,6 +482,22 @@ private struct CandidateTable: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
+    }
+
+    private func resizable(
+        _ column: WritableKeyPath<TagAnalysisColumnWidths, Double>, _ title: String,
+        alignment: Alignment
+    ) -> some View {
+        Text(title).modifier(Theme.sectionLabel())
+            .frame(width: CGFloat(columns.widths[keyPath: column]), alignment: alignment)
+            .overlay(alignment: .trailing) {
+                VerticalResizeHandle(
+                    onDrag: { columns.drag(column, by: $0) },
+                    onEnd: { columns.endDrag() })
+                    .frame(height: 18)
+                    .offset(x: 5)
+                    .help("Drag to resize this column")
+            }
     }
 
     private var emptyState: some View {
@@ -497,6 +519,7 @@ private struct CandidateTable: View {
 private struct CandidateTableRow: View {
     let model: TagAnalysisModel
     let row: TagAnalysisModel.TableRow
+    let columns: TagAnalysisColumns
 
     private var candidate: AnalysisCandidate { row.candidate }
     private var isSelected: Bool { candidate.id == model.selectedCandidateID }
@@ -527,18 +550,21 @@ private struct CandidateTableRow: View {
                     .font(Theme.mono(10.5))
                     .foregroundStyle(Theme.Text.quaternary)
                     .lineLimit(1)
-                    .frame(width: 110, alignment: .leading)
+                    .frame(width: CGFloat(columns.widths.key), alignment: .leading)
+                    .clipped()
 
                 ReaderChips(origins: candidate.origins)
-                    .frame(width: 96, alignment: .leading)
+                    .frame(width: CGFloat(columns.widths.readers), alignment: .leading)
+                    .clipped()
 
                 Text("\(model.occurrenceCount(for: candidate))")
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.Text.secondary)
-                    .frame(width: 48, alignment: .trailing)
+                    .frame(width: CGFloat(columns.widths.seen), alignment: .trailing)
 
                 suggestionChip
-                    .frame(width: 190, alignment: .leading)
+                    .frame(width: CGFloat(columns.widths.suggestion), alignment: .leading)
+                    .clipped()
 
                 quickAccept
                     .frame(width: 22)
@@ -1056,5 +1082,30 @@ private struct ReaderChips: View {
         let base = LibraryDatabase.defaultAnalysisReaders()
             .first { $0.id == readerID }?.displayName ?? readerID
         return files.isEmpty ? base : "\(base) — \(files.joined(separator: ", "))"
+    }
+}
+
+// MARK: - Column widths
+
+/// The table's fixed column widths as live state: a header drag moves
+/// them at drag rate, and settings.json is written once the drag ends.
+/// One window's drag is every window's width, as with the rail.
+@Observable @MainActor
+final class TagAnalysisColumns {
+    var widths = AppSettingsStore.shared.current.tagAnalysisColumns
+    private var dragBase: [PartialKeyPath<TagAnalysisColumnWidths>: Double] = [:]
+
+    /// Translation is measured from the drag's start (global space), so
+    /// the width is base plus translation, never a running sum.
+    func drag(_ column: WritableKeyPath<TagAnalysisColumnWidths, Double>, by translation: CGFloat) {
+        let base = dragBase[column] ?? widths[keyPath: column]
+        dragBase[column] = base
+        widths[keyPath: column] = TagAnalysisColumnWidths.clamped((base + Double(translation)).rounded())
+    }
+
+    func endDrag() {
+        dragBase = [:]
+        let widths = widths
+        AppSettingsStore.shared.update { $0.tagAnalysisColumns = widths }
     }
 }
