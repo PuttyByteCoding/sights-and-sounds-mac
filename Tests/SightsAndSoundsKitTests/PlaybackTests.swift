@@ -49,6 +49,13 @@ import Testing
         #expect(action("-", numpad: true) == .seekToNearEnd)
     }
 
+    /// Numpad 2 reaches the On-screen Text field; the top-row 2 stays
+    /// unbound.
+    @Test func numpadTwoFocusesTheOnScreenTextField() {
+        #expect(action("2", numpad: true) == .focusOnScreenTextField)
+        #expect(action("2") == nil)
+    }
+
     @Test func numpadExtrasAndSpace() {
         #expect(action("-", numpad: true) == .seekToNearEnd)
         #expect(action("-") == nil)  // top-row minus does nothing

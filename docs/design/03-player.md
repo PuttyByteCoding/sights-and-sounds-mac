@@ -151,6 +151,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | Key map sheet title | `Keyboard map` |
 | Tag field, empty, ↓ | a category field: its whole list, unapplied, name order, capped like autocomplete. Universal: only what Tag Analysis found, marked `analysis`, or `No Tags from Tag Analysis` |
 | Numpad 8 | focus the Universal tag field, opening the tag panel if it is closed; top-row 8 and numpad − keep the near-end seek |
+| Numpad 2 | focus the On-screen Text field, opening the tag panel if it is closed; top-row 2 stays unbound |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
 | Key map footnote | `Rows that differ are highlighted. Everything else is identical in both maps.` |
 | Focus footer, video | `<open> <close> segment · <triage> triage · numpad seek · Tab moves focus` |
