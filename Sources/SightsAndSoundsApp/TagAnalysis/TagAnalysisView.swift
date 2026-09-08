@@ -209,6 +209,7 @@ private struct RailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 preview
                 appliedBlock
+                candidateBlock
                 sources
                 readerIO
                 status
@@ -332,6 +333,89 @@ private struct RailView: View {
                 }
             }
         }
+    }
+
+    // MARK: Candidate tags
+
+    /// Known tags the evidence names that the video does not yet wear —
+    /// one per tag, category-grouped like the block above, so the two
+    /// read as "has" and "could have". A click stages the tag into the
+    /// basket (this window's one way of accepting anything); a second
+    /// click takes it back out. Commit moves it up into Applied on the
+    /// same reload the window already does.
+    private var candidateGroups: [(category: TagCategory, findings: [ExistingTagFinding])] {
+        var seen = Set<UUID>()
+        var byCategory: [UUID: [ExistingTagFinding]] = [:]
+        for finding in model.analysis.existing where !finding.alreadyApplied {
+            guard seen.insert(finding.tag.id).inserted else { continue }
+            byCategory[finding.tag.tagCategoryID, default: []].append(finding)
+        }
+        return model.categories.compactMap { category in
+            guard let findings = byCategory[category.id] else { return nil }
+            return (category, findings.sorted {
+                $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending
+            })
+        }
+    }
+
+    @ViewBuilder
+    private var candidateBlock: some View {
+        let groups = candidateGroups
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Candidate tags").modifier(Theme.sectionLabel())
+                Spacer()
+                Text("\(groups.reduce(0) { $0 + $1.findings.count })")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(groups.isEmpty ? Theme.Text.zeroCount : Theme.Text.quaternary)
+            }
+            if groups.isEmpty {
+                Text("No known tag appears in this video's evidence.")
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Text.quaternary)
+            } else {
+                ForEach(groups, id: \.category.id) { entry in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(entry.category.name)
+                            .font(Theme.ui(10, .semibold))
+                            .foregroundStyle(Theme.Text.tertiary)
+                        FlowRow(spacing: 4) {
+                            ForEach(entry.findings) { finding in
+                                candidatePill(
+                                    finding, hue: Theme.categoryHue(entry.category.colorIndex))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func candidatePill(_ finding: ExistingTagFinding, hue: Color) -> some View {
+        let staged = model.isStaged(tagID: finding.tag.id)
+        return Button {
+            if let pending = model.basket.first(where: { $0.existingTagID == finding.tag.id }) {
+                model.unstage(pending.id)
+            } else {
+                model.stage(finding)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                if staged {
+                    Image(systemName: "checkmark").font(Theme.ui(9, .bold))
+                }
+                Text(finding.tag.name).font(Theme.ui(10.5))
+            }
+            .foregroundStyle(staged ? Theme.Text.onAmber : hue)
+            .padding(.vertical, 2)
+            .padding(.horizontal, 7)
+            .background(Capsule().fill(staged ? Theme.Accent.amber : hue.opacity(0.13)))
+            .overlay(Capsule().stroke(staged ? Theme.Accent.amber : hue.opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(staged
+            ? "In the basket — click to take it out"
+            : "Found in “\(finding.foundIn)” — click to stage it")
     }
 
     // MARK: Filters
