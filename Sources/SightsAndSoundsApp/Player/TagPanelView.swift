@@ -40,20 +40,31 @@ struct TagPanelView: View {
     /// can WALK it: each field advances to the next search category, and
     /// a per-field Bool could not know who is next.
     @FocusState private var focusedCategory: UUID?
-    /// Where a dragged category would land — the amber line under the
-    /// pointer. Nil when nothing is in flight.
-    @State private var dropTargetID: UUID?
-    @State private var dropAtEnd = false
-    /// The Universal field's place among the categories — mirrored from
-    /// settings so a drag re-renders immediately and survives relaunch.
-    @State private var universalPosition
-        = AppSettingsStore.shared.current.universalTagFieldPosition
-    /// The Tag Analysis Results field's place — same rule, own setting.
-    @State private var resultsPosition
-        = AppSettingsStore.shared.current.analysisResultsFieldPosition
-    /// The On-screen Text field's place — same rule, own setting.
-    @State private var onScreenPosition
-        = AppSettingsStore.shared.current.onScreenTextFieldPosition
+    /// Where a dragged row would land — the amber line under the
+    /// pointer. Nil when nothing is in flight; `.end` is the space under
+    /// the list.
+    @State private var dropTarget: DropTarget?
+
+    fileprivate enum DropTarget: Equatable {
+        case before(PanelRow)
+        case end
+    }
+
+    private var vocabularyByID: [UUID: CategoryTags] {
+        Dictionary(uniqueKeysWithValues: model.panelVocabulary.map { ($0.id, $0) })
+    }
+
+    /// The row whose field takes the keyboard when an item loads: the
+    /// first row that has a field to type in.
+    private var firstTypableRow: PanelRow? {
+        model.panelRows.first { row in
+            switch row {
+            case .universal, .results, .onScreen: return true
+            case .category(let id):
+                return vocabularyByID[id]?.category.displayStyle == .search
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -78,88 +89,23 @@ struct TagPanelView: View {
                             .foregroundStyle(Theme.Text.tertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if clampedUniversalPosition == 0 {
-                        universalBlock
-                    }
-                    if clampedResultsPosition == 0 {
-                        resultsBlock
-                    }
-                    if clampedOnScreenPosition == 0 {
-                        onScreenBlock
-                    }
-                    ForEach(Array(model.panelVocabulary.enumerated()), id: \.element.id) { index, entry in
-                        if let label = entry.category.sectionLabel {
-                            if label.isEmpty {
-                                Divider().overlay(Theme.Border.standard)
-                            } else {
-                                Text(label).modifier(Theme.sectionLabel())
-                            }
-                        }
-                        Group {
-                            switch entry.category.displayStyle {
-                            case .checkboxes, .radio:
-                                CheckboxCategoryView(
-                                    entry: entry,
-                                    isAltTarget: entry.id == model.checkboxCategory?.id,
-                                    single: entry.category.displayStyle == .radio)
-                            case .search:
-                                PillCategoryView(
-                                    entry: entry,
-                                    // Focus is the FIRST visible category, not
-                                    // a flag a category carries — which is one
-                                    // setting and one whole class of conflict
-                                    // fewer.
-                                    // The Universal field outranks the
-                                    // first category when it is ordered
-                                    // first.
-                                    takesFocus: entry.id == model.focusCategoryID
-                                        && clampedUniversalPosition != 0,
-                                    focus: $focusedCategory,
-                                    onAdvance: { forward in advance(from: entry.id, forward: forward) })
-                            }
-                        }
-                        .landingLine(when: dropTargetID == entry.category.id)
-                        // Dropping a dragged heading on a category slots
-                        // it in BEFORE that category.
-                        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
-                            dropTargetID = nil
-                            guard let id = dropped.first?.id else { return false }
-                            if !setPseudoFieldPosition(id, to: index) {
-                                model.moveCategory(id, before: entry.category.id)
-                            }
-                            return true
-                        } isTargeted: { inside in
-                            dropTargetID = inside ? entry.category.id : (
-                                dropTargetID == entry.category.id ? nil : dropTargetID)
-                        }
-                        // The Universal field renders AFTER the category
-                        // it is positioned behind.
-                        if clampedUniversalPosition == index + 1 {
-                            universalBlock
-                        }
-                        if clampedResultsPosition == index + 1 {
-                            resultsBlock
-                        }
-                        if clampedOnScreenPosition == index + 1 {
-                            onScreenBlock
-                        }
+                    // A drop zone ABOVE the first row: "make it first" has
+                    // to be reachable even when the first row is busy.
+                    Rectangle()
+                        .fill(.clear)
+                        .frame(height: 10)
+                        .contentShape(Rectangle())
+                        .dropTarget(model.panelRows.first.map { .before($0) } ?? .end, on: self)
+                    ForEach(model.panelRows, id: \.self) { row in
+                        rowView(row)
+                            .dropTarget(.before(row), on: self)
                     }
                     // …and the space under the list is "make it last".
                     Rectangle()
                         .fill(.clear)
                         .frame(height: 40)
                         .contentShape(Rectangle())
-                        .landingLine(when: dropAtEnd)
-                        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
-                            dropAtEnd = false
-                            guard let id = dropped.first?.id else { return false }
-                            if !setPseudoFieldPosition(id, to: model.panelVocabulary.count) {
-                                model.moveCategory(id, before: nil)
-                            }
-                            return true
-                        } isTargeted: { inside in
-                            dropAtEnd = inside
-                        }
+                        .dropTarget(.end, on: self)
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 14)
@@ -184,99 +130,89 @@ struct TagPanelView: View {
         model.itemTags.reduce(0) { $0 + $1.tags.count }
     }
 
-    /// Clamped so a category deletion cannot strand the field past the
-    /// end of the list.
-    private var clampedUniversalPosition: Int {
-        min(max(0, universalPosition), model.panelVocabulary.count)
-    }
+    // MARK: Rows
 
-    private func setUniversalPosition(_ position: Int) {
-        universalPosition = position
-        AppSettingsStore.shared.update { $0.universalTagFieldPosition = position }
-    }
-
-    private var clampedResultsPosition: Int {
-        min(max(0, resultsPosition), model.panelVocabulary.count)
-    }
-
-    private func setResultsPosition(_ position: Int) {
-        resultsPosition = position
-        AppSettingsStore.shared.update { $0.analysisResultsFieldPosition = position }
-    }
-
-    private var clampedOnScreenPosition: Int {
-        min(max(0, onScreenPosition), model.panelVocabulary.count)
-    }
-
-    private func setOnScreenPosition(_ position: Int) {
-        onScreenPosition = position
-        AppSettingsStore.shared.update { $0.onScreenTextFieldPosition = position }
-    }
-
-    /// A dragged heading's id, if it is one of the pseudo-fields.
-    private func setPseudoFieldPosition(_ id: UUID, to position: Int) -> Bool {
-        if id == PlayerModel.universalFieldFocusID { setUniversalPosition(position); return true }
-        if id == PlayerModel.analysisResultsFieldFocusID { setResultsPosition(position); return true }
-        if id == PlayerModel.onScreenTextFieldFocusID { setOnScreenPosition(position); return true }
-        return false
-    }
-
-    /// The Universal search, as a reorderable row like any category:
-    /// labeled heading, far-right ≡ grip, and the same landing line.
     @ViewBuilder
-    private var universalBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Theme.Accent.amber)
-                    .frame(width: 6, height: 6)
-                Text("Universal")
-                    .font(Theme.ui(12, .semibold))
-                    .foregroundStyle(Theme.Text.primary)
-                Spacer(minLength: 6)
-                Text("≡")
-                    .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
-                    .help("Drag to reorder — the Universal field sits among the categories")
-                    .draggable(PanelRowDrag(id: PlayerModel.universalFieldFocusID)) {
-                        DragPreview(name: "Universal")
-                    }
+    private func rowView(_ row: PanelRow) -> some View {
+        switch row {
+        case .category(let id):
+            if let entry = vocabularyByID[id] {
+                categoryRow(entry, takesFocus: firstTypableRow == row)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            GlobalTagField(
-                takesFocus: clampedUniversalPosition == 0,
-                focus: $focusedCategory)
-        }
-        .landingLine(when: dropTargetID == PlayerModel.universalFieldFocusID)
-        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
-            dropTargetID = nil
-            guard let id = dropped.first?.id, id != PlayerModel.universalFieldFocusID
-            else { return false }
-            // The other pseudo-field dropped here takes this slot; a
-            // category dropped here takes it and pushes the field down —
-            // insert before the category the field currently precedes.
-            if setPseudoFieldPosition(id, to: clampedUniversalPosition) { return true }
-            let following = clampedUniversalPosition < model.panelVocabulary.count
-                ? model.panelVocabulary[clampedUniversalPosition].category.id : nil
-            model.moveCategory(id, before: following)
-            return true
-        } isTargeted: { inside in
-            dropTargetID = inside
-                ? PlayerModel.universalFieldFocusID
-                : (dropTargetID == PlayerModel.universalFieldFocusID ? nil : dropTargetID)
+        case .universal:
+            pseudoRow("Universal", row: row) {
+                GlobalTagField(takesFocus: firstTypableRow == row, focus: $focusedCategory)
+            }
+        case .results:
+            pseudoRow("Tag Analysis Results", row: row) {
+                AnalysisResultsField(
+                    session: model.analysisSession,
+                    appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
+                    categories: model.panelVocabulary.map(\.category),
+                    focus: $focusedCategory,
+                    focusID: PlayerModel.analysisResultsFieldFocusID,
+                    itemID: model.item?.id,
+                    onApply: { model.applyTag($0.id) })
+            }
+        case .onScreen:
+            pseudoRow("On-screen Text", row: row) {
+                OnScreenTextField(
+                    fileURL: model.fileURL,
+                    isAudio: model.isAudio,
+                    currentSeconds: model.currentSeconds,
+                    index: model.tagSearchIndex,
+                    categories: model.panelVocabulary.map(\.category),
+                    library: model.library,
+                    libraryID: model.libraryID,
+                    focus: $focusedCategory,
+                    focusID: PlayerModel.onScreenTextFieldFocusID,
+                    itemID: model.item?.id,
+                    onApply: { model.applyTag($0.id) },
+                    onCreated: { tag in
+                        model.refreshTagging()
+                        model.applyTag(tag.id)
+                    })
+            }
         }
     }
 
-    /// The Tag Analysis Results row, reorderable like the Universal one:
-    /// heading, ≡ grip, the same landing line, the field underneath.
     @ViewBuilder
-    private var resultsBlock: some View {
+    private func categoryRow(_ entry: CategoryTags, takesFocus: Bool) -> some View {
+        // A section label above a category: "" draws a plain divider,
+        // text draws a labeled header (old browse-panel semantics).
+        if let label = entry.category.sectionLabel {
+            if label.isEmpty {
+                Divider().overlay(Theme.Border.standard)
+            } else {
+                Text(label).modifier(Theme.sectionLabel())
+            }
+        }
+        switch entry.category.displayStyle {
+        case .checkboxes, .radio:
+            CheckboxCategoryView(
+                entry: entry,
+                isAltTarget: entry.id == model.checkboxCategory?.id,
+                single: entry.category.displayStyle == .radio)
+        case .search:
+            PillCategoryView(
+                entry: entry,
+                takesFocus: takesFocus,
+                focus: $focusedCategory,
+                onAdvance: { forward in advance(from: entry.id, forward: forward) })
+        }
+    }
+
+    /// A field that lives among the categories, as a reorderable row like
+    /// any of them: labeled heading, far-right ≡ grip, the field under it.
+    private func pseudoRow<Field: View>(
+        _ title: String, row: PanelRow, @ViewBuilder field: () -> Field
+    ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Theme.Accent.amber)
                     .frame(width: 6, height: 6)
-                Text("Tag Analysis Results")
+                Text(title)
                     .font(Theme.ui(12, .semibold))
                     .foregroundStyle(Theme.Text.primary)
                 Spacer(minLength: 6)
@@ -284,91 +220,37 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the field sits among the categories")
-                    .draggable(PanelRowDrag(id: PlayerModel.analysisResultsFieldFocusID)) {
-                        DragPreview(name: "Tag Analysis Results")
+                    .draggable(PanelRowDrag(id: row.focusID)) {
+                        DragPreview(name: title)
                     }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            AnalysisResultsField(
-                session: model.analysisSession,
-                appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
-                categories: model.panelVocabulary.map(\.category),
-                focus: $focusedCategory,
-                focusID: PlayerModel.analysisResultsFieldFocusID,
-                itemID: model.item?.id,
-                onApply: { model.applyTag($0.id) })
-        }
-        .landingLine(when: dropTargetID == PlayerModel.analysisResultsFieldFocusID)
-        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
-            dropTargetID = nil
-            guard let id = dropped.first?.id, id != PlayerModel.analysisResultsFieldFocusID
-            else { return false }
-            if setPseudoFieldPosition(id, to: clampedResultsPosition) { return true }
-            let following = clampedResultsPosition < model.panelVocabulary.count
-                ? model.panelVocabulary[clampedResultsPosition].category.id : nil
-            model.moveCategory(id, before: following)
-            return true
-        } isTargeted: { inside in
-            dropTargetID = inside
-                ? PlayerModel.analysisResultsFieldFocusID
-                : (dropTargetID == PlayerModel.analysisResultsFieldFocusID ? nil : dropTargetID)
+            field()
         }
     }
 
-    /// The On-screen Text row, reorderable like the other two.
-    @ViewBuilder
-    private var onScreenBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Theme.Accent.amber)
-                    .frame(width: 6, height: 6)
-                Text("On-screen Text")
-                    .font(Theme.ui(12, .semibold))
-                    .foregroundStyle(Theme.Text.primary)
-                Spacer(minLength: 6)
-                Text("≡")
-                    .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
-                    .help("Drag to reorder — the field sits among the categories")
-                    .draggable(PanelRowDrag(id: PlayerModel.onScreenTextFieldFocusID)) {
-                        DragPreview(name: "On-screen Text")
-                    }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            OnScreenTextField(
-                fileURL: model.fileURL,
-                isAudio: model.isAudio,
-                currentSeconds: model.currentSeconds,
-                index: model.tagSearchIndex,
-                categories: model.panelVocabulary.map(\.category),
-                library: model.library,
-                libraryID: model.libraryID,
-                focus: $focusedCategory,
-                focusID: PlayerModel.onScreenTextFieldFocusID,
-                itemID: model.item?.id,
-                onApply: { model.applyTag($0.id) },
-                onCreated: { tag in
-                    model.refreshTagging()
-                    model.applyTag(tag.id)
-                })
-        }
-        .landingLine(when: dropTargetID == PlayerModel.onScreenTextFieldFocusID)
-        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
-            dropTargetID = nil
-            guard let id = dropped.first?.id, id != PlayerModel.onScreenTextFieldFocusID
-            else { return false }
-            if setPseudoFieldPosition(id, to: clampedOnScreenPosition) { return true }
-            let following = clampedOnScreenPosition < model.panelVocabulary.count
-                ? model.panelVocabulary[clampedOnScreenPosition].category.id : nil
-            model.moveCategory(id, before: following)
-            return true
-        } isTargeted: { inside in
-            dropTargetID = inside
-                ? PlayerModel.onScreenTextFieldFocusID
-                : (dropTargetID == PlayerModel.onScreenTextFieldFocusID ? nil : dropTargetID)
+    // MARK: Drops
+
+    /// Every row and both end zones are one kind of target: "put the
+    /// dragged row before this one" (or last). No translation between
+    /// coordinate systems, so what you drop on is where it goes.
+    fileprivate func drop(_ dragged: PanelRowDrag, at target: DropTarget) {
+        let row = PanelRow(focusID: dragged.id)
+        switch target {
+        case .before(let before): model.movePanelRow(row, before: before)
+        case .end: model.movePanelRow(row, before: nil)
         }
     }
+
+    fileprivate func targeted(_ target: DropTarget, _ inside: Bool) {
+        if inside {
+            dropTarget = target
+        } else if dropTarget == target {
+            dropTarget = nil
+        }
+    }
+
+    fileprivate func isTargeted(_ target: DropTarget) -> Bool { dropTarget == target }
 
     /// The Tab order lives on the model (search categories only, in
     /// panel order, wrapping) so the player's key handler and this panel
@@ -378,6 +260,24 @@ struct TagPanelView: View {
         model.tagFieldCategoryID = id
         model.advanceTagField(reverse: !forward)
         focusedCategory = model.tagFieldCategoryID
+    }
+}
+
+extension View {
+    /// A drop target for one landing spot in the panel: the landing line
+    /// as an overlay (no layout change under the pointer), the typed
+    /// payload, and the panel's one drop rule.
+    fileprivate func dropTarget(_ target: TagPanelView.DropTarget, on panel: TagPanelView) -> some View {
+        self
+            .landingLine(when: panel.isTargeted(target))
+            .dropDestination(for: PanelRowDrag.self) { dropped, _ in
+                panel.targeted(target, false)
+                guard let dragged = dropped.first else { return false }
+                panel.drop(dragged, at: target)
+                return true
+            } isTargeted: { inside in
+                panel.targeted(target, inside)
+            }
     }
 }
 

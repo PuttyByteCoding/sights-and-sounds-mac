@@ -570,16 +570,48 @@ final class PlayerModel {
     /// for the per-category fields that call it by this name.
     static func searchFold(_ text: String) -> String { TagSearchEntry.fold(text) }
 
+    /// The panel's rows in order — every category and the three fields —
+    /// reconciled against the vocabulary on each refresh. One list, so a
+    /// drop means exactly "before that row" and the Tab walk agrees.
+    private(set) var panelRows: [PanelRow] = []
+
+    private func refreshPanelRows() {
+        let settings = AppSettingsStore.shared.current
+        panelRows = TagPanelOrder.rows(
+            vocabulary: panelVocabulary.map(\.category.id),
+            stored: settings.tagPanelRowOrder,
+            seed: (
+                universal: settings.universalTagFieldPosition,
+                results: settings.analysisResultsFieldPosition,
+                onScreen: settings.onScreenTextFieldPosition))
+    }
+
+    /// The panel's drag: move a row before another (nil = to the end).
+    /// The list is written to settings, and the categories' order in
+    /// the library follows it, so the Categories window and every other
+    /// window agree.
+    func movePanelRow(_ row: PanelRow, before target: PanelRow?) {
+        let rows = TagPanelOrder.moved(panelRows, row, before: target)
+        guard rows != panelRows else { return }
+        AppSettingsStore.shared.update { $0.tagPanelRowOrder = rows.map(\.key) }
+        do {
+            try library.setCategoryOrder(rows.compactMap(\.categoryID))
+            refreshTagging()
+            recountQueue()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
     @discardableResult
     func advanceTagField(reverse: Bool) -> Bool {
-        let settings = AppSettingsStore.shared.current
-        let fields = Self.tagFieldOrder(
-            searchCategoryIDs: panelVocabulary
-                .filter { $0.category.displayStyle == .search }
-                .map(\.id),
-            universalPosition: settings.universalTagFieldPosition,
-            resultsPosition: settings.analysisResultsFieldPosition,
-            onScreenPosition: settings.onScreenTextFieldPosition)
+        // The walk is the panel's order, minus the checkbox categories
+        // (they have no field to type in).
+        let typable = Set(panelVocabulary.filter { $0.category.displayStyle == .search }.map(\.id))
+        let fields = panelRows.compactMap { row -> UUID? in
+            if let id = row.categoryID { return typable.contains(id) ? id : nil }
+            return row.focusID
+        }
         guard !fields.isEmpty else { return false }
         guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
         else {
@@ -596,19 +628,7 @@ final class PlayerModel {
     /// FULL vocabulary so no category's order is left behind, and every
     /// other window follows through the ordinary refresh broadcast.
     func moveCategory(_ id: UUID, before targetID: UUID?) {
-        var ids = panelVocabulary.map(\.category.id)
-        guard let from = ids.firstIndex(of: id) else { return }
-        ids.remove(at: from)
-        let to = targetID.flatMap { ids.firstIndex(of: $0) } ?? ids.count
-        guard ids.indices.contains(to) || to == ids.count else { return }
-        ids.insert(id, at: to)
-        do {
-            try library.setCategoryOrder(ids)
-            refreshTagging()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
-        }
+        movePanelRow(.category(id), before: targetID.map { .category($0) })
     }
 
     func refreshTagging() {
@@ -616,6 +636,7 @@ final class PlayerModel {
         do {
             itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
             panelVocabulary = try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) }
+            refreshPanelRows()
             // An alias IS a name, so typing "SBD" must offer "Soundboard"
             // — the browse sidebar has always matched them and the
             // tagging field, where you are actually typing, did not.
