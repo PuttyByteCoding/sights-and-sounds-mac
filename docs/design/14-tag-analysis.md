@@ -76,7 +76,8 @@ This is a build, not a redesign. The pieces:
 
 Window `1520` wide. Mode tabs **Candidates · Rules** with a mono headline.
 
-**Candidates.** Left rail (draggable, 212–470 pt): the preview, the player's Universal
+**Candidates.** Left rail (draggable, 210–900 pt, the width kept between launches — the
+preview fills it, so dragging the rail is how the video is sized): the preview, the player's Universal
 find-or-create field (Enter applies to this video now, not into the basket), Applied tags,
 then Candidate
 tags — every known tag the evidence names that the video does not yet wear, one pill per

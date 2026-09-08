@@ -54,6 +54,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// Where the fitted video sits inside the player area.
     public var videoAnchor: VideoAnchor
 
+    /// The Tag Analysis window's left rail, points. The preview fills
+    /// the rail's width, so dragging the rail IS sizing the video —
+    /// kept between launches like the player's rail.
+    public var tagAnalysisRailWidth: Double
+
     public var ocrSampleIntervalSeconds: Double
     public var ocrBudgetSecondsPerRun: Double
 
@@ -92,6 +97,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         tagSuggestionLimit: Int = 15,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
+        tagAnalysisRailWidth: Double = 240,
         ocrSampleIntervalSeconds: Double = 5,
         ocrBudgetSecondsPerRun: Double = 600,
         ocr: OcrSettings = OcrSettings(),
@@ -113,6 +119,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.tagSuggestionLimit = tagSuggestionLimit
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
+        self.tagAnalysisRailWidth = tagAnalysisRailWidth
         self.ocrSampleIntervalSeconds = ocrSampleIntervalSeconds
         self.ocrBudgetSecondsPerRun = ocrBudgetSecondsPerRun
         self.ocr = ocr
@@ -153,6 +160,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)
             ?? defaults.videoAnchor
+        // Clamped to what the window can honour — the rail's floor and
+        // the cap that keeps the table on screen.
+        tagAnalysisRailWidth = min(900, max(210, try container.decodeIfPresent(
+            Double.self, forKey: .tagAnalysisRailWidth) ?? defaults.tagAnalysisRailWidth))
         ocrSampleIntervalSeconds = try container.decodeIfPresent(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
         ocrBudgetSecondsPerRun = try container.decodeIfPresent(

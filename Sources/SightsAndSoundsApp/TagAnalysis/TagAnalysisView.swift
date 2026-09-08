@@ -22,6 +22,12 @@ struct TagAnalysisView: View {
     @State private var schemas: SchemasTabModel?
     @State private var mode: Mode = .candidates
     @FocusState private var focused: Bool
+    /// The rail opens at its saved width; a drag records the new one and
+    /// persists it once the drag settles, so settings.json is not
+    /// rewritten at drag rate. The preview fills the rail, so this is
+    /// how the video is sized.
+    @State private var railWidth = AppSettingsStore.shared.current.tagAnalysisRailWidth
+    @State private var railPersist: Task<Void, Never>?
 
     enum Mode: String, Hashable { case candidates, rules, schemas }
 
@@ -31,7 +37,17 @@ struct TagAnalysisView: View {
             if let model, let rules {
                 HSplitView {
                     RailView(model: model)
-                        .frame(minWidth: 210, idealWidth: 240, maxWidth: 320)
+                        .frame(minWidth: 210, idealWidth: railWidth, maxWidth: 900)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
+                            guard width > 0, Double(width) != railWidth else { return }
+                            railWidth = Double(width)
+                            railPersist?.cancel()
+                            railPersist = Task {
+                                try? await Task.sleep(for: .milliseconds(400))
+                                guard !Task.isCancelled else { return }
+                                AppSettingsStore.shared.update { $0.tagAnalysisRailWidth = width }
+                            }
+                        }
                     switch mode {
                     case .candidates:
                         if model.showingReaderIO {
