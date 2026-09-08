@@ -333,6 +333,10 @@ private struct PillCategoryView: View {
     /// category's) instead of autocomplete. Typing anything returns to
     /// the ordinary suggestions.
     @State private var showingHistory = false
+    /// Empty query + ↓ lists the whole category — every tag not yet on
+    /// the item, name order — so the field answers "what is there to
+    /// pick?" without a letter typed. Typing narrows it as usual.
+    @State private var browsingAll = false
     /// The tag whose editor is open, from a right-click on any tag this
     /// category draws — applied pill or suggestion alike.
     @State private var editing: Tag?
@@ -370,14 +374,23 @@ private struct PillCategoryView: View {
         // History mode: the session's recent applies from THIS category,
         // newest first, walkable and pickable exactly like autocomplete.
         if query.isEmpty {
-            guard showingHistory else { return [] }
             let appliedIDs = Set(applied.map(\.id))
-            return model.recentlyAppliedTagIDs.compactMap { id in
-                guard !appliedIDs.contains(id),
-                      let tag = entry.tags.first(where: { $0.id == id })
-                else { return nil }
-                return Suggestion(tag: tag, matchedAlias: nil)
+            if showingHistory {
+                return model.recentlyAppliedTagIDs.compactMap { id in
+                    guard !appliedIDs.contains(id),
+                          let tag = entry.tags.first(where: { $0.id == id })
+                    else { return nil }
+                    return Suggestion(tag: tag, matchedAlias: nil)
+                }
             }
+            // Browse mode: the category's tags, capped like autocomplete
+            // so a thousand-tag category stays a list, not a wall.
+            guard browsingAll else { return [] }
+            return entry.tags
+                .filter { !appliedIDs.contains($0.id) }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
+                .map { Suggestion(tag: $0, matchedAlias: nil) }
         }
         let appliedIDs = Set(applied.map(\.id))
         // Space-separated terms, folded once, matched against the
@@ -455,6 +468,12 @@ private struct PillCategoryView: View {
             highlighted = suggestions.isEmpty ? nil : 0
             return .handled
         }
+        // ↓ on an empty field opens the whole category the same way.
+        if query.isEmpty, !showingHistory, !browsingAll, delta == 1 {
+            browsingAll = true
+            highlighted = suggestions.isEmpty ? nil : 0
+            return .handled
+        }
         // History climbs UPWARD from the box: ↑ moves to older (higher
         // index, drawn higher), ↓ back toward the field.
         let delta = historyActive ? -delta : delta
@@ -526,6 +545,7 @@ private struct PillCategoryView: View {
         draft = ""
         highlighted = nil
         showingHistory = false
+        browsingAll = false
     }
 
     var body: some View {
@@ -594,6 +614,7 @@ private struct PillCategoryView: View {
                         // typing leaves history mode.
                         highlighted = nil
                         showingHistory = false
+                        browsingAll = false
                     }
                     .onChange(of: focus.wrappedValue) { _, now in
                         if now == entry.id { model.zone = .tags }
@@ -633,6 +654,7 @@ private struct PillCategoryView: View {
             // A new video is a fresh judgment — an open history overlay
             // from the last one must not hang over its field.
             showingHistory = false
+            browsingAll = false
             highlighted = nil
         }
         .sheet(item: $editing, onDismiss: restoreFieldFocus) { tag in
