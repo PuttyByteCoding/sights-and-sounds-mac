@@ -379,3 +379,23 @@ import Testing
         #expect(decoded.tagAnalysisColumns.readers == 140)
     }
 }
+
+/// The tag panel's row order — categories and the three pseudo-fields
+/// in one list, by key. Empty means "not yet chosen"; the panel seeds
+/// it from the older per-field positions.
+@Suite struct TagPanelRowOrderTests {
+    @Test func theDefaultIsEmptyAndAnOldFileLoads() throws {
+        #expect(AppSettings().tagPanelRowOrder.isEmpty)
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(decoded.tagPanelRowOrder.isEmpty)
+    }
+
+    @Test func theOrderRoundTrips() throws {
+        var settings = AppSettings()
+        settings.tagPanelRowOrder = ["universal", "abc", "results"]
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.tagPanelRowOrder == ["universal", "abc", "results"])
+    }
+}
