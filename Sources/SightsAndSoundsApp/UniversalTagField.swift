@@ -74,6 +74,9 @@ struct UniversalTagField: View {
     var itemID: UUID?
     var takesFocus = false
     var onFocus: () -> Void = {}
+    /// The list opened or closed — history, analysis, or a typed query.
+    /// The player uses it to let Esc close the list instead of leaving.
+    var onListChange: (Bool) -> Void = { _ in }
     let onApply: (Tag) -> Void
     let onCreated: (Tag) -> Void
 
@@ -128,6 +131,15 @@ struct UniversalTagField: View {
     }
 
     private var historyActive: Bool { showingHistory && query.isEmpty }
+    private var listOpen: Bool { showingHistory || browsingAll || !query.isEmpty }
+
+    /// Esc: back to an empty, focused field — whichever list was up.
+    private func closeList() {
+        draft = ""
+        showingHistory = false
+        browsingAll = false
+        highlightedID = nil
+    }
 
     private var hits: [Hit] {
         // Empty query + ↑: the session's recent applies, every category.
@@ -224,6 +236,11 @@ struct UniversalTagField: View {
                     }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.escape) {
+                        guard listOpen else { return .ignored }
+                        closeList()
+                        return .handled
+                    }
                     // Return beside the arrows, not only as the field's
                     // submit: after an arrow the AppKit field editor can be
                     // out of editing, and the first Return then only woke
@@ -264,6 +281,7 @@ struct UniversalTagField: View {
         .task(id: itemID) {
             if takesFocus { focus.wrappedValue = focusID }
         }
+        .onChange(of: listOpen) { _, open in onListChange(open) }
         .onChange(of: itemID) { _, _ in
             showingHistory = false
             browsingAll = false

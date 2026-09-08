@@ -510,6 +510,12 @@ final class PlayerModel {
 
     // MARK: - Tagging
 
+    /// A tag field has a list open (history, analysis, a typed query).
+    /// Esc then belongs to the field — it closes the list and leaves the
+    /// field empty and focused — rather than to the player's zone
+    /// unwinding. The fields keep it current.
+    var tagFieldListOpen = false
+
     /// Which tag category's Add field holds the keyboard — mirrored from
     /// the panel's FocusState so the PLAYER's key handler can walk it.
     /// The handler is where Tab actually arrives: the field's own

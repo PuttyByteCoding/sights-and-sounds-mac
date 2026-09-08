@@ -21,6 +21,7 @@ struct OnScreenTextField: View {
     var focus: FocusState<UUID?>.Binding
     let focusID: UUID
     var itemID: UUID?
+    var onListChange: (Bool) -> Void = { _ in }
     let onApply: (Tag) -> Void
     let onCreated: (Tag) -> Void
 
@@ -187,6 +188,7 @@ struct OnScreenTextField: View {
             }
         }
         .onChange(of: itemID) { _, _ in clear() }
+        .onChange(of: listOpen) { _, open in onListChange(open) }
         .sheet(item: Binding(
             get: { creating.map { Seed(text: $0) } },
             set: { creating = $0?.text }
