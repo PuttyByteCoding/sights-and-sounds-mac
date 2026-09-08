@@ -271,3 +271,36 @@ import Testing
         #expect(decoded.tagSuggestionLimit == 25)
     }
 }
+
+/// The Tag Analysis rail's width — dragged wider to make the preview
+/// bigger, and kept between launches like the player's rail.
+@Suite struct TagAnalysisRailWidthTests {
+    @Test func theDefaultIsTheRailsIdealWidth() {
+        #expect(AppSettings().tagAnalysisRailWidth == 240)
+    }
+
+    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(decoded.tagAnalysisRailWidth == 240)
+    }
+
+    /// Clamped to what the window can honour: narrower than the rail's
+    /// floor would hide it, wider than the cap would push the table out.
+    @Test func aHandEditedValueIsClamped() throws {
+        let low = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagAnalysisRailWidth": 10}"#.utf8))
+        let high = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagAnalysisRailWidth": 5000}"#.utf8))
+        #expect(low.tagAnalysisRailWidth == 210)
+        #expect(high.tagAnalysisRailWidth == 900)
+    }
+
+    @Test func theWidthRoundTrips() throws {
+        var settings = AppSettings()
+        settings.tagAnalysisRailWidth = 480
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.tagAnalysisRailWidth == 480)
+    }
+}
