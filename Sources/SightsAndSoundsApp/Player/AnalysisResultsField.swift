@@ -17,7 +17,9 @@ struct AnalysisResultsField: View {
     let onApply: (Tag) -> Void
 
     @State private var draft = ""
-    @State private var highlighted: Int?
+    /// The arrowed-to row, by tag, so a list that reshapes under Enter
+    /// still applies the row that was lit.
+    @State private var highlightedID: UUID?
     @State private var browsing = false
 
     struct Candidate: Identifiable, Equatable {
@@ -79,16 +81,21 @@ struct AnalysisResultsField: View {
             categories: categories, query: "").count
     }
 
-    private var exactMatchIndex: Int? {
+    private var exactMatch: Candidate? {
         let folded = TagSearchEntry.fold(query)
-        return rows.firstIndex { TagSearchEntry.fold($0.tag.name) == folded }
+        return rows.first { TagSearchEntry.fold($0.tag.name) == folded }
     }
 
-    /// Enter acts on the arrowed-to row, else the exact match, else the
-    /// first hit of a typed query. Nothing typed and nothing arrowed is
-    /// nothing to apply.
-    private var activeIndex: Int? {
-        highlighted ?? exactMatchIndex ?? (query.isEmpty || rows.isEmpty ? nil : 0)
+    /// Enter acts on the arrowed-to row if it is still listed, else the
+    /// exact match, else the first hit of a typed query. Nothing typed
+    /// and nothing arrowed is nothing to apply.
+    private var activeRow: Candidate? {
+        highlightedID.flatMap { id in rows.first { $0.id == id } }
+            ?? exactMatch
+            ?? (query.isEmpty ? nil : rows.first)
+    }
+    private var highlightedIndex: Int? {
+        highlightedID.flatMap { id in rows.firstIndex { $0.id == id } }
     }
 
     var body: some View {
@@ -104,7 +111,7 @@ struct AnalysisResultsField: View {
                     .focused(focus, equals: focusID)
                     .onSubmit(commit)
                     .onChange(of: draft) { _, _ in
-                        highlighted = nil
+                        highlightedID = nil
                         browsing = false
                     }
                     .onKeyPress(.upArrow) { move(-1) }
@@ -146,7 +153,7 @@ struct AnalysisResultsField: View {
         }
         .onChange(of: itemID) { _, _ in
             draft = ""
-            highlighted = nil
+            highlightedID = nil
             browsing = false
         }
     }
@@ -155,23 +162,17 @@ struct AnalysisResultsField: View {
         guard available else { return .ignored }
         if query.isEmpty, !browsing, delta == 1 {
             browsing = true
-            highlighted = rows.isEmpty ? nil : 0
+            highlightedID = rows.first?.id
             return .handled
         }
-        guard !rows.isEmpty else { return .ignored }
-        switch (highlighted, delta) {
-        case (nil, 1): highlighted = 0
-        case (nil, -1): highlighted = rows.count - 1
-        case (let current?, _):
-            let next = current + delta
-            highlighted = rows.indices.contains(next) ? next : nil
-        default: break
-        }
+        guard !rows.isEmpty else { return .handled }
+        let current = highlightedIndex ?? (delta > 0 ? -1 : rows.count)
+        highlightedID = rows[min(max(0, current + delta), rows.count - 1)].id
         return .handled
     }
 
     private func rowView(_ index: Int, _ row: Candidate) -> some View {
-        let active = index == activeIndex
+        let active = row.id == activeRow?.id
         let hue = categories.first { $0.id == row.categoryID }
             .map { Theme.categoryHue($0.colorIndex) } ?? Theme.Text.tertiary
         return Button {
@@ -198,14 +199,14 @@ struct AnalysisResultsField: View {
     }
 
     private func commit() {
-        guard let index = activeIndex, rows.indices.contains(index) else { return }
-        apply(rows[index].tag)
+        guard let row = activeRow else { return }
+        apply(row.tag)
     }
 
     private func apply(_ tag: Tag) {
         onApply(tag)
         draft = ""
-        highlighted = nil
+        highlightedID = nil
         // Stay in browse mode: the list drops the applied tag and the
         // next Enter takes the next one — that is the whole workflow.
         browsing = true

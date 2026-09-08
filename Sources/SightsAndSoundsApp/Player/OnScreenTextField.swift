@@ -25,7 +25,9 @@ struct OnScreenTextField: View {
     let onCreated: (Tag) -> Void
 
     @State private var draft = ""
-    @State private var highlighted: Int?
+    /// The arrowed-to line, by its text, so a list that reshapes under
+    /// Enter still picks the line that was lit.
+    @State private var highlightedLine: String?
     /// nil until a read has been asked for; the read's lines after.
     @State private var lines: [String]?
     @State private var reading = false
@@ -63,13 +65,18 @@ struct OnScreenTextField: View {
     private var rows: [String] { Self.rows(lines: lines ?? [], query: query) }
     private var listOpen: Bool { lines != nil || reading || readError != nil }
 
-    private var exactMatchIndex: Int? {
+    private var exactMatch: String? {
         let folded = TagSearchEntry.fold(query)
-        return rows.firstIndex { TagSearchEntry.fold($0) == folded }
+        return rows.first { TagSearchEntry.fold($0) == folded }
     }
 
-    private var activeIndex: Int? {
-        highlighted ?? exactMatchIndex ?? (query.isEmpty || rows.isEmpty ? nil : 0)
+    private var activeLine: String? {
+        highlightedLine.flatMap { line in rows.first { $0 == line } }
+            ?? exactMatch
+            ?? (query.isEmpty ? nil : rows.first)
+    }
+    private var highlightedIndex: Int? {
+        highlightedLine.flatMap { line in rows.firstIndex { $0 == line } }
     }
 
     var body: some View {
@@ -84,7 +91,7 @@ struct OnScreenTextField: View {
                     .disabled(!available)
                     .focused(focus, equals: focusID)
                     .onSubmit(commit)
-                    .onChange(of: draft) { _, _ in highlighted = nil }
+                    .onChange(of: draft) { _, _ in highlightedLine = nil }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
                     .onKeyPress(.escape) {
@@ -152,7 +159,7 @@ struct OnScreenTextField: View {
 
     private func clear() {
         draft = ""
-        highlighted = nil
+        highlightedLine = nil
         lines = nil
         readError = nil
         reading = false
@@ -164,15 +171,9 @@ struct OnScreenTextField: View {
             read()
             return .handled
         }
-        guard !rows.isEmpty else { return .ignored }
-        switch (highlighted, delta) {
-        case (nil, 1): highlighted = 0
-        case (nil, -1): highlighted = rows.count - 1
-        case (let current?, _):
-            let next = current + delta
-            highlighted = rows.indices.contains(next) ? next : nil
-        default: break
-        }
+        guard !rows.isEmpty else { return .handled }
+        let current = highlightedIndex ?? (delta > 0 ? -1 : rows.count)
+        highlightedLine = rows[min(max(0, current + delta), rows.count - 1)]
         return .handled
     }
 
@@ -183,7 +184,7 @@ struct OnScreenTextField: View {
         guard let fileURL else { return }
         reading = true
         readError = nil
-        highlighted = nil
+        highlightedLine = nil
         let seconds = currentSeconds
         let settings = AppSettingsStore.shared.current.ocr
         Task {
@@ -197,12 +198,12 @@ struct OnScreenTextField: View {
             }.value
             lines = text.map { $0.components(separatedBy: "\n") } ?? []
             reading = false
-            highlighted = rows.isEmpty ? nil : 0
+            highlightedLine = rows.first
         }
     }
 
     private func rowView(_ index: Int, _ line: String) -> some View {
-        let active = index == activeIndex
+        let active = line == activeLine
         let known = Self.resolve(line, in: self.index)
         return Button {
             pick(line)
@@ -228,8 +229,8 @@ struct OnScreenTextField: View {
     }
 
     private func commit() {
-        guard let index = activeIndex, rows.indices.contains(index) else { return }
-        pick(rows[index])
+        guard let line = activeLine else { return }
+        pick(line)
     }
 
     private func pick(_ line: String) {
@@ -237,7 +238,7 @@ struct OnScreenTextField: View {
             onApply(tag)
             // The list stays: the next line may be a tag too.
             draft = ""
-            highlighted = nil
+            highlightedLine = nil
         } else {
             creating = line
         }
