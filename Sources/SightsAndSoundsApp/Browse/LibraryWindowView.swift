@@ -154,7 +154,7 @@ struct BrowseView: View {
                     } label: {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
-                    .help("Order the listing — the play queue follows it")
+                    .help("Order the listing — a player opened from it takes this order")
                 }
                 ToolbarItem {
                     Button("View Options", systemImage: "slider.horizontal.3") {

@@ -87,19 +87,21 @@ struct PlayerView: View {
         .task {
             guard model == nil else { return }
             do {
-                model = PlayerModel(
+                let made = PlayerModel(
                     request: request,
                     library: try app.library(for: request.libraryID),
                     appDatabase: app.appDatabase)
+                // Refresh in the library window takes the grid's current
+                // filter and order, so the queue catches up with what the
+                // grid shows; elsewhere the stored definition re-runs.
+                made.currentListing = { [weak browse] in
+                    browse.map { .listing(filter: $0.filter, kinds: $0.kinds, ordering: $0.ordering) }
+                }
+                model = made
                 focused = true
             } catch {
                 openError = "\(error)"
             }
-        }
-        // The queue follows the browse listing. Keyed on the ids so a
-        // refresh returning the same items does nothing.
-        .onChange(of: browse.visibleItems.map(\.id)) { _, ids in
-            model?.updatePlaylist(ids)
         }
         // A browse entry point asked for Tag Analysis: the player is up
         // now, so the companion can follow it.
@@ -136,6 +138,12 @@ struct PlayerView: View {
             return false
         }
         let style = model.keyMap
+
+        // ⌘R re-runs the queue's definition.
+        if press.modifiers.contains(.command), press.characters.lowercased() == "r" {
+            model.refreshQueue()
+            return true
+        }
 
         // Esc unwinds EXACTLY ONE layer, in this order: an open mark, the
         // focus zone, then the player. Never two — clearing a selection
@@ -428,7 +436,7 @@ private struct PlayerContent: View {
     /// The smallest queue that shows a whole cell: minimum thumbnail
     /// (24) + the metadata reserve for the enabled values + chrome.
     private var queueMinHeight: CGFloat {
-        QueueCell.metadataHeight(for: GridDisplaySettings.shared.grid) + 42
+        QueueCell.metadataHeight(for: GridDisplaySettings.shared.grid) + 42 + QueuePanel.headerHeight
     }
 
     private func dragQueue(_ translation: CGFloat) {
@@ -1658,10 +1666,60 @@ private struct QueuePanel: View {
     @Environment(PlayerModel.self) private var model
     let height: CGFloat
 
+    /// The header: the queue's name, its count, and Refresh.
+    static let headerHeight: CGFloat = 22
+
     var body: some View {
         let grid = GridDisplaySettings.shared.grid
         let metadataHeight = QueueCell.metadataHeight(for: grid)
-        let thumbHeight = max(24, height - 18 - metadataHeight)
+        let thumbHeight = max(24, height - 18 - metadataHeight - Self.headerHeight)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(model.queue.title)
+                    .font(Theme.ui(10.5, .semibold))
+                    .foregroundStyle(Theme.Text.secondary)
+                    .lineLimit(1)
+                Text("\(model.queueItems.count)")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(
+                        model.queueItems.isEmpty ? Theme.Text.zeroCount : Theme.Text.quaternary)
+                Spacer(minLength: 6)
+                if model.isRefreshingQueue {
+                    ProgressView().controlSize(.mini)
+                }
+                Button {
+                    model.refreshQueue()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(Theme.ui(11))
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isRefreshingQueue)
+                .help("Refresh — re-run this queue's definition (⌘R)")
+            }
+            .padding(.horizontal, 8)
+            .frame(height: Self.headerHeight)
+            if model.queueItems.isEmpty, !model.isRefreshingQueue {
+                Text("Nothing matches — Refresh again later.")
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Text.disabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .frame(height: thumbHeight + metadataHeight + 18)
+            } else {
+                strip(proxyHeight: thumbHeight, metadataHeight: metadataHeight, grid: grid)
+            }
+        }
+        // Natural content height — never taller than its cells, never
+        // clipping them.
+        .frame(height: thumbHeight + metadataHeight + 18 + Self.headerHeight)
+        .background(Theme.Surface.toolbar)
+        .zoneRing(.queue)
+    }
+
+    private func strip(proxyHeight thumbHeight: CGFloat, metadataHeight: CGFloat, grid: GridSettings) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: true) {
                 LazyHStack(alignment: .top, spacing: 8) {
@@ -1700,11 +1758,7 @@ private struct QueuePanel: View {
                 }
             }
         }
-        // Natural content height — never taller than its cells, never
-        // clipping them.
         .frame(height: thumbHeight + metadataHeight + 18)
-        .background(Theme.Surface.toolbar)
-        .zoneRing(.queue)
     }
 }
 
