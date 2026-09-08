@@ -66,7 +66,11 @@ struct TagAnalysisView: View {
                                     .frame(minWidth: 620)
                             } else {
                                 CandidateTable(model: model, columns: columns)
-                                    .frame(minWidth: 460)
+                                    // The table's floor follows its columns: the
+                                    // fixed four at their dragged widths plus a
+                                    // floor for Value, so the rail can never be
+                                    // dragged wide enough to hide the first column.
+                                    .frame(minWidth: columns.minimumTableWidth)
                                 DecidePane(model: model, onMakeRule: makeRule)
                                     .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
                             }
@@ -469,7 +473,7 @@ private struct CandidateTable: View {
     private var columnHeader: some View {
         HStack(spacing: 10) {
             Text("Value").modifier(Theme.sectionLabel())
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: TagAnalysisColumns.valueFloor, maxWidth: .infinity, alignment: .leading)
             resizable(\.key, "Key", alignment: .leading)
             resizable(\.readers, "Readers", alignment: .leading)
             resizable(\.seen, "Seen", alignment: .trailing)
@@ -544,7 +548,7 @@ private struct CandidateTableRow: View {
                             foreground: Theme.Status.orange)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: TagAnalysisColumns.valueFloor, maxWidth: .infinity, alignment: .leading)
 
                 Text(candidate.key ?? "—")
                     .font(Theme.mono(10.5))
@@ -1093,6 +1097,17 @@ private struct ReaderChips: View {
 @Observable @MainActor
 final class TagAnalysisColumns {
     var widths = AppSettingsStore.shared.current.tagAnalysisColumns
+
+    /// The least the Value column may be — it is the row's reason to
+    /// exist, and the flexible column is the one a squeeze takes from.
+    static let valueFloor: CGFloat = 160
+
+    /// The table's floor: padding, the four fixed columns as dragged,
+    /// the accept button, the five gaps, and Value's floor.
+    var minimumTableWidth: CGFloat {
+        28 + 5 * 10 + 22 + Self.valueFloor
+            + CGFloat(widths.key + widths.readers + widths.seen + widths.suggestion)
+    }
     private var dragBase: [PartialKeyPath<TagAnalysisColumnWidths>: Double] = [:]
 
     /// Translation is measured from the drag's start (global space), so
