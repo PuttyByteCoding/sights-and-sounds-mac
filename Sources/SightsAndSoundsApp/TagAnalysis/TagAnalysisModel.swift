@@ -49,6 +49,9 @@ final class TagAnalysisModel {
     /// What the displayed video already wears — the baseline every
     /// decision is made against, so it sits in view instead of in memory.
     private(set) var appliedTags: [(category: TagCategory, tags: [Tag])] = []
+    /// The pre-folded rows the rail's Universal field searches — the
+    /// player's index, built the same way from the same vocabulary.
+    private(set) var tagSearchIndex: [TagSearchEntry] = []
     private(set) var rules: [RuleEngine.Rule] = []
     private(set) var categories: [TagCategory] = []
     private(set) var isLoading = false
@@ -362,7 +365,13 @@ final class TagAnalysisModel {
         Task {
             do {
                 let rules = try library.analysisRules()
-                let categories = try library.vocabulary().map(\.category)
+                let vocabulary = try library.vocabulary()
+                let categories = vocabulary.map(\.category)
+                let aliasRows: [TagAlias] = try await library.writer.read { db in
+                    try TagAlias.fetchAll(db)
+                }
+                let aliases = Dictionary(grouping: aliasRows, by: \.tagID)
+                    .mapValues { $0.map(\.alias) }
                 // The pipeline reads disk (sidecars) and walks the parser
                 // — off the main actor, so a slow folder never freezes
                 // the arrows.
@@ -376,6 +385,8 @@ final class TagAnalysisModel {
                 self.categories = categories
                 self.analysis = analysis
                 self.appliedTags = (try? library.tags(of: itemID)) ?? []
+                self.tagSearchIndex = TagSearchEntry.index(
+                    vocabulary: vocabulary.map { ($0.category, $0.tags) }, aliases: aliases)
                 self.reloadPreview()
                 self.currentItem = try await library.writer.read {
                     try MediaItem.fetchOne($0, key: itemID)
@@ -485,6 +496,21 @@ final class TagAnalysisModel {
     /// Write the basket for the displayed video. Called by advance, by
     /// Save, and by the window closing — the three ends of "I am done
     /// with this one".
+    /// The rail's Universal field: apply NOW, not into the basket — the
+    /// field is the player's gesture brought here, and its Enter means
+    /// the same thing. Counted with the pass like a commit, and the
+    /// reload moves the tag up into Applied and out of the candidates.
+    func applyNow(_ tag: Tag) {
+        guard let itemID = currentItemID else { return }
+        do {
+            try library.assignTag(tag.id, to: itemID)
+            tagsCommittedThisPass += 1
+            reload()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
     func commitBasket() {
         guard let itemID = currentItemID, !basket.isEmpty else { return }
         do {

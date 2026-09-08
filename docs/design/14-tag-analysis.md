@@ -76,7 +76,9 @@ This is a build, not a redesign. The pieces:
 
 Window `1520` wide. Mode tabs **Candidates · Rules** with a mono headline.
 
-**Candidates.** Left rail (draggable, 212–470 pt): the preview, Applied tags, then Candidate
+**Candidates.** Left rail (draggable, 212–470 pt): the preview, the player's Universal
+find-or-create field (Enter applies to this video now, not into the basket), Applied tags,
+then Candidate
 tags — every known tag the evidence names that the video does not yet wear, one pill per
 tag under its category; a click stages it into the basket, a second click takes it out —
 then source filter (all / metadata / on-screen /
