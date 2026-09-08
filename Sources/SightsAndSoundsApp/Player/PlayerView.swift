@@ -341,6 +341,10 @@ private struct PlayerContent: View {
     private static let handleThickness: CGFloat = 5  // 1 pt line + 2×2 padding
     @State private var contentSize: CGSize = .zero
     @State private var chromeHeight: CGFloat = 0  // transport block
+    /// The file-name strip above the video. Measured, not assumed:
+    /// a long name wraps to a second line and the video floor must
+    /// still be honoured underneath it.
+    @State private var nameStripHeight: CGFloat = 0
 
     /// The right side is ONE rail now, so there is one width to resolve
     /// against the video floor rather than two panels scaling jointly.
@@ -353,7 +357,7 @@ private struct PlayerContent: View {
     }
 
     private var verticalCeiling: CGFloat {
-        max(0, contentSize.height - Self.videoFloor - chromeHeight)
+        max(0, contentSize.height - Self.videoFloor - chromeHeight - nameStripHeight)
     }
 
     /// Drawers share what is left under the video floor; whichever one is
@@ -474,6 +478,10 @@ private struct PlayerContent: View {
 
     private var leftColumn: some View {
         VStack(spacing: 0) {
+            FileNameStrip()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+                    nameStripHeight = $0
+                }
             videoStage
                 .frame(maxHeight: stageHeightCap)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) {
@@ -691,6 +699,50 @@ private struct ZoneRing: ViewModifier {
 extension View {
     fileprivate func zoneRing(_ zone: PlayerZone) -> some View {
         modifier(ZoneRing(zone: zone))
+    }
+}
+
+// MARK: - File name
+
+/// The file name as REAL text above the video. The window title carries
+/// the same name, but a title cannot be selected, and its copy menu
+/// hides behind a hover chevron nobody finds — the grid tile taught
+/// right-click, so right-click works here too. Click and drag selects a
+/// span for ⌘C; the context menu copies the whole name in the tile's
+/// two forms. Absent (zero height) until the item has loaded, so the
+/// vertical budget never reserves space for a name that is not there.
+private struct FileNameStrip: View {
+    @Environment(PlayerModel.self) private var model
+
+    var body: some View {
+        if let name = model.item?.fileName {
+            HStack(spacing: 0) {
+                Text(name)
+                    .font(Theme.mono(11.5))
+                    .foregroundStyle(Theme.Text.secondary)
+                    // Two lines, not a middle-truncated one: a selection
+                    // over an ellipsis would copy characters that were
+                    // never on screen.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.Surface.toolbar)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            }
+            .contextMenu {
+                Button("Copy File Name", systemImage: "doc.on.doc") {
+                    Clipboard.copy(name)
+                }
+                Button("Copy File Name (Letters and Numbers)", systemImage: "doc.on.doc") {
+                    Clipboard.copy(name.lettersAndNumbersOnly)
+                }
+            }
+        }
     }
 }
 
