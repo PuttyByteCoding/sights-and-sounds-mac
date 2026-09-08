@@ -69,6 +69,16 @@ struct AnalysisResultsField: View {
             categories: categories, query: query)
     }
 
+    /// How many the analysis found for this item that are not yet on it
+    /// — the whole list, whatever is typed. Shown at the field's edge so
+    /// the answer to "anything here?" needs no keystroke.
+    private var foundCount: Int {
+        guard let session, available else { return 0 }
+        return Self.candidates(
+            analysis: session.analysis, appliedIDs: appliedIDs,
+            categories: categories, query: "").count
+    }
+
     private var exactMatchIndex: Int? {
         let folded = TagSearchEntry.fold(query)
         return rows.firstIndex { TagSearchEntry.fold($0.tag.name) == folded }
@@ -102,6 +112,13 @@ struct AnalysisResultsField: View {
                 if session?.isAnalyzing == true {
                     ProgressView().controlSize(.mini)
                         .help("Tag Analysis is scanning this video")
+                } else if available {
+                    Text("\(foundCount)")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(foundCount == 0 ? Theme.Text.zeroCount : Theme.Accent.amber)
+                        .help(foundCount == 1
+                            ? "1 tag found for this video, not yet applied"
+                            : "\(foundCount) tags found for this video, not yet applied")
                 }
             }
             .padding(.vertical, 5)
