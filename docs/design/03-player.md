@@ -130,8 +130,9 @@ Results** (`analysisResultsFieldPosition`): ↓ lists the tags the companion fou
 video that it does not yet wear, typing narrows, Enter applies through the player. Dimmed —
 `Open Tag Analysis to see results` — while no companion is open; a spinner while it scans.
 **On-screen Text** (`onScreenTextFieldPosition`): ↓ reads the frame at the playhead with
-Vision and lists its lines; Enter applies the tag a line names, or opens New Tag seeded with
-it. `No video frame to read` for audio.
+Vision, runs the Tag Analysis existing-tag pass over the text, and lists the tags it names
+first, then the raw lines; Enter on a tag applies it, Enter on a line opens New Tag seeded with
+it to clean up and create. `No video frame to read` for audio.
 
 Floors, all existing and all kept: video 150×150, tag panel 220, text panel 240, queue = one
 whole cell (`QueueCell.metadataHeight` + 42). The rail's floor is now the tag floor; the two

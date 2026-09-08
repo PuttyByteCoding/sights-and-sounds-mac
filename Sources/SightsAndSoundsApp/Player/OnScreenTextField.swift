@@ -3,18 +3,18 @@ import SwiftUI
 import SightsAndSoundsKit
 
 /// The tag panel's row for the text on screen RIGHT NOW: ↓ reads the
-/// frame at the playhead through the same Vision recognizer the OCR
-/// sweep uses, lists the lines, and Enter turns the picked line into a
-/// tag — an existing tag whose name or alias folds equal applies at
-/// once; anything else opens the New Tag sheet seeded with the line.
-/// Nothing is stored: this is a look, not a sweep. Kept separate from
-/// the Tag Analysis Results field on purpose while their combination
-/// is decided.
+/// frame at the playhead through the Kit's recognizer, runs the Tag
+/// Analysis existing-tag pass over what it read, and lists two things —
+/// the tags the text names, then the raw lines. Enter on a tag applies
+/// it; Enter on a line opens the New Tag sheet seeded with it, to clean
+/// up and create. Nothing is stored: this is a look, not a sweep.
 struct OnScreenTextField: View {
     let fileURL: URL?
     let isAudio: Bool
     let currentSeconds: Double
-    let index: [TagSearchEntry]
+    /// Tags already on the item — a found tag that is on already is not
+    /// offered again.
+    let appliedIDs: Set<UUID>
     let categories: [TagCategory]
     let library: LibraryDatabase
     let libraryID: UUID
@@ -25,58 +25,105 @@ struct OnScreenTextField: View {
     let onCreated: (Tag) -> Void
 
     @State private var draft = ""
-    /// The arrowed-to line, by its text, so a list that reshapes under
-    /// Enter still picks the line that was lit.
-    @State private var highlightedLine: String?
-    /// nil until a read has been asked for; the read's lines after.
-    @State private var lines: [String]?
+    /// The arrowed-to row, by what it is, so a list that reshapes under
+    /// Enter still acts on the row that was lit.
+    @State private var highlighted: Row?
+    /// nil until a read has been asked for.
+    @State private var read: Read?
     @State private var reading = false
     @State private var readError: String?
     @State private var creating: String?
 
-    /// Trimmed, empty dropped, duplicates (case-insensitively) dropped
-    /// keeping the first, reading order kept, narrowed so every
-    /// space-separated term hits. Pure, so it is tested.
-    static func rows(lines: [String], query: String) -> [String] {
-        let terms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
-        var seen = Set<String>()
-        return lines
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
-            .filter { line in
-                let folded = TagSearchEntry.fold(line)
-                return terms.allSatisfy { folded.contains($0) }
-            }
+    struct Read: Equatable {
+        var findings: [ExistingTagFinding]
+        var lines: [String]
     }
 
-    /// The tag a line IS, through the one fold: a name or an alias that
-    /// folds equal. Nil means Enter creates.
-    static func resolve(_ line: String, in index: [TagSearchEntry]) -> Tag? {
-        let folded = TagSearchEntry.fold(line.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard !folded.isEmpty else { return nil }
-        return index.first {
-            $0.foldedName == folded || $0.foldedAliases.contains { $0.folded == folded }
-        }?.tag
+    /// One row of the list: a tag the text names, or a line of the text.
+    enum Row: Hashable {
+        case tag(Tag, categoryName: String)
+        case line(String)
+
+        var label: String {
+            switch self {
+            case .tag(let tag, _): tag.name
+            case .line(let line): line
+            }
+        }
+
+        var isTag: Bool {
+            if case .tag = self { return true }
+            return false
+        }
+
+        // Identity is the tag, or the line's text.
+        static func == (lhs: Row, rhs: Row) -> Bool {
+            switch (lhs, rhs) {
+            case (.tag(let a, _), .tag(let b, _)): a.id == b.id
+            case (.line(let a), .line(let b)): a == b
+            default: false
+            }
+        }
+
+        func hash(into hasher: inout Hasher) {
+            switch self {
+            case .tag(let tag, _):
+                hasher.combine(0)
+                hasher.combine(tag.id)
+            case .line(let line):
+                hasher.combine(1)
+                hasher.combine(line)
+            }
+        }
+    }
+
+    /// The list: found tags first (minus the applied), then the lines —
+    /// trimmed, empty dropped, duplicates (case-insensitively) dropped
+    /// keeping the first, reading order kept — both narrowed so every
+    /// space-separated term hits. Pure, so it is tested.
+    static func rows(
+        findings: [ExistingTagFinding], lines: [String], query: String,
+        appliedIDs: Set<UUID> = []
+    ) -> [Row] {
+        let terms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
+        func matches(_ text: String) -> Bool {
+            let folded = TagSearchEntry.fold(text)
+            return terms.allSatisfy { folded.contains($0) }
+        }
+        var seenTags = Set<UUID>()
+        let tags: [Row] = findings.compactMap { finding in
+            guard !appliedIDs.contains(finding.tag.id),
+                  seenTags.insert(finding.tag.id).inserted,
+                  matches(finding.tag.name) || matches(finding.matchedText)
+            else { return nil }
+            return .tag(finding.tag, categoryName: finding.categoryName)
+        }
+        var seenLines = Set<String>()
+        let text: [Row] = lines
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seenLines.insert($0.lowercased()).inserted && matches($0) }
+            .map { .line($0) }
+        return tags + text
     }
 
     private var available: Bool { !isAudio && fileURL != nil }
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
     private var focused: Bool { focus.wrappedValue == focusID }
-    private var rows: [String] { Self.rows(lines: lines ?? [], query: query) }
-    private var listOpen: Bool { lines != nil || reading || readError != nil }
-
-    private var exactMatch: String? {
-        let folded = TagSearchEntry.fold(query)
-        return rows.first { TagSearchEntry.fold($0) == folded }
+    private var rows: [Row] {
+        guard let read else { return [] }
+        return Self.rows(
+            findings: read.findings, lines: read.lines, query: query, appliedIDs: appliedIDs)
     }
+    private var listOpen: Bool { read != nil || reading || readError != nil }
 
-    private var activeLine: String? {
-        highlightedLine.flatMap { line in rows.first { $0 == line } }
-            ?? exactMatch
+    /// What Enter acts on: the arrowed-to row if it is still listed,
+    /// else the first row of a typed query.
+    private var activeRow: Row? {
+        highlighted.flatMap { row in rows.contains(row) ? row : nil }
             ?? (query.isEmpty ? nil : rows.first)
     }
     private var highlightedIndex: Int? {
-        highlightedLine.flatMap { line in rows.firstIndex { $0 == line } }
+        highlighted.flatMap { row in rows.firstIndex(of: row) }
     }
 
     var body: some View {
@@ -91,11 +138,11 @@ struct OnScreenTextField: View {
                     .disabled(!available)
                     .focused(focus, equals: focusID)
                     .onSubmit(commit)
-                    .onChange(of: draft) { _, _ in highlightedLine = nil }
+                    .onChange(of: draft) { _, _ in highlighted = nil }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
                     .onKeyPress(.return) {
-                        guard activeLine != nil else { return .ignored }
+                        guard activeRow != nil else { return .ignored }
                         commit()
                         return .handled
                     }
@@ -127,8 +174,14 @@ struct OnScreenTextField: View {
                 } else if rows.isEmpty {
                     note("No text on this frame.")
                 } else {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { index, line in
-                        rowView(index, line)
+                    let tags = rows.filter(\.isTag), lines = rows.filter { !$0.isTag }
+                    if !tags.isEmpty {
+                        sectionLabel("Tags in the text")
+                        ForEach(tags, id: \.self) { rowView($0) }
+                    }
+                    if !lines.isEmpty {
+                        sectionLabel("Text on screen — Enter makes a tag")
+                        ForEach(lines, id: \.self) { rowView($0) }
                     }
                 }
             }
@@ -162,72 +215,93 @@ struct OnScreenTextField: View {
             .padding(.horizontal, 8)
     }
 
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(Theme.ui(9.5, .semibold))
+            .foregroundStyle(Theme.Text.quaternary)
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
+    }
+
     private func clear() {
         draft = ""
-        highlightedLine = nil
-        lines = nil
+        highlighted = nil
+        read = nil
         readError = nil
         reading = false
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {
         guard available else { return .ignored }
-        if lines == nil, !reading, delta == 1 {
-            read()
+        if read == nil, !reading, delta == 1 {
+            readFrame()
             return .handled
         }
         guard !rows.isEmpty else { return .handled }
         let current = highlightedIndex ?? (delta > 0 ? -1 : rows.count)
-        highlightedLine = rows[min(max(0, current + delta), rows.count - 1)]
+        highlighted = rows[min(max(0, current + delta), rows.count - 1)]
         return .handled
     }
 
-    /// The frame at the playhead, read off the main actor. A tight seek:
-    /// the timestamp IS the content, and a frame a second off is a frame
-    /// the text is not on.
-    private func read() {
+    /// The frame at the playhead, read off the main actor, then the
+    /// existing-tag pass over the lines it held.
+    private func readFrame() {
         guard let fileURL else { return }
         reading = true
         readError = nil
-        highlightedLine = nil
+        highlighted = nil
         let seconds = currentSeconds
         let settings = AppSettingsStore.shared.current.ocr
+        let library = library
         Task {
-            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<[String], Error> in
+            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<Read, Error> in
                 do {
-                    return .success(try await OcrJob.readLines(
-                        fileURL: fileURL, atSeconds: seconds, settings: settings))
+                    let lines = try await OcrJob.readLines(
+                        fileURL: fileURL, atSeconds: seconds, settings: settings)
+                    let findings = try library.existingTags(inLines: lines)
+                    return .success(Read(findings: findings, lines: lines))
                 } catch {
                     return .failure(error)
                 }
             }.value
             switch outcome {
             case .success(let found):
-                lines = found
-                highlightedLine = rows.first
+                read = found
+                highlighted = rows.first
             case .failure(let error):
-                lines = []
+                read = Read(findings: [], lines: [])
                 readError = "Could not read the frame: \(error)"
             }
             reading = false
         }
     }
 
-    private func rowView(_ index: Int, _ line: String) -> some View {
-        let active = line == activeLine
-        let known = Self.resolve(line, in: self.index)
+    private func rowView(_ row: Row) -> some View {
+        let active = row == activeRow
         return Button {
-            pick(line)
+            pick(row)
         } label: {
             HStack(spacing: 6) {
-                Text(line)
+                if case .tag(_, let categoryName) = row {
+                    Circle()
+                        .fill(categories.first { $0.name == categoryName }
+                            .map { Theme.categoryHue($0.colorIndex) } ?? Theme.Text.tertiary)
+                        .frame(width: 6, height: 6)
+                }
+                Text(row.label)
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.primary)
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                Text(known.map { _ in "apply" } ?? "new tag")
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(known == nil ? Theme.Accent.amber : Theme.Text.tertiary)
+                if case .tag(_, let categoryName) = row {
+                    Text(categoryName)
+                        .font(Theme.ui(10))
+                        .foregroundStyle(Theme.Text.tertiary)
+                } else {
+                    Text("new tag")
+                        .font(Theme.mono(9.5))
+                        .foregroundStyle(Theme.Accent.amber)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -240,17 +314,18 @@ struct OnScreenTextField: View {
     }
 
     private func commit() {
-        guard let line = activeLine else { return }
-        pick(line)
+        guard let row = activeRow else { return }
+        pick(row)
     }
 
-    private func pick(_ line: String) {
-        if let tag = Self.resolve(line, in: index) {
+    private func pick(_ row: Row) {
+        switch row {
+        case .tag(let tag, _):
             onApply(tag)
-            // The list stays: the next line may be a tag too.
+            // The list stays: the next tag may be wanted too.
             draft = ""
-            highlightedLine = nil
-        } else {
+            highlighted = nil
+        case .line(let line):
             creating = line
         }
     }
