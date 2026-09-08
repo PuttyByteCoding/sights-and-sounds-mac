@@ -2,21 +2,26 @@ import SwiftUI
 import UniformTypeIdentifiers
 import SightsAndSoundsKit
 
-/// What a dragged panel row carries: the row's id under the app's own
-/// content type. Not a plain string — every row holds a text field,
-/// and AppKit fields accept dropped text natively, so a string payload
-/// released over a field was pasted into it instead of reaching the
-/// row's drop handler.
-struct PanelRowDrag: Codable, Transferable {
+/// What a dragged panel row carries: the row's id, as plain binary
+/// data. Not a plain string — every row holds a text field, and AppKit
+/// fields accept dropped text natively, so a string payload released
+/// over a field was pasted into it instead of reaching the row's drop
+/// handler. And not an app-declared content type either: one declared
+/// at runtime is not one the drop targets can match, so no row ever
+/// lit as a target. `public.data` is a system type that text fields do
+/// not claim and every target recognises.
+struct PanelRowDrag: Transferable, Equatable {
     let id: UUID
 
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .sasPanelRow)
+        DataRepresentation(contentType: .data) { payload in
+            Data(payload.id.uuidString.utf8)
+        } importing: { data in
+            guard let id = String(data: data, encoding: .utf8).flatMap(UUID.init(uuidString:))
+            else { throw CocoaError(.coderInvalidValue) }
+            return PanelRowDrag(id: id)
+        }
     }
-}
-
-extension UTType {
-    static let sasPanelRow = UTType(exportedAs: "com.puttybyte.sightsandsounds.panel-row")
 }
 
 /// The tag editing panel, top of the player's right rail — the tagging
@@ -233,7 +238,9 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the Universal field sits among the categories")
-                    .draggable(PanelRowDrag(id: PlayerModel.universalFieldFocusID))
+                    .draggable(PanelRowDrag(id: PlayerModel.universalFieldFocusID)) {
+                        DragPreview(name: "Universal")
+                    }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             GlobalTagField(
@@ -277,7 +284,9 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the field sits among the categories")
-                    .draggable(PanelRowDrag(id: PlayerModel.analysisResultsFieldFocusID))
+                    .draggable(PanelRowDrag(id: PlayerModel.analysisResultsFieldFocusID)) {
+                        DragPreview(name: "Tag Analysis Results")
+                    }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             AnalysisResultsField(
@@ -322,7 +331,9 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the field sits among the categories")
-                    .draggable(PanelRowDrag(id: PlayerModel.onScreenTextFieldFocusID))
+                    .draggable(PanelRowDrag(id: PlayerModel.onScreenTextFieldFocusID)) {
+                        DragPreview(name: "On-screen Text")
+                    }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             OnScreenTextField(
@@ -393,7 +404,9 @@ private struct CategoryHeading: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder categories")
-                    .draggable(PanelRowDrag(id: category.id))
+                    .draggable(PanelRowDrag(id: category.id)) {
+                        DragPreview(name: category.name)
+                    }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -848,6 +861,7 @@ private struct LandingLine: ViewModifier {
                     .frame(height: 2.5)
                     .offset(y: -8)
                     .allowsHitTesting(false)
+                    .zIndex(1)
             }
         }
     }
@@ -856,6 +870,25 @@ private struct LandingLine: ViewModifier {
 extension View {
     fileprivate func landingLine(when shown: Bool) -> some View {
         modifier(LandingLine(shown: shown))
+    }
+}
+
+/// The image under the pointer while a row is dragged: the row's name
+/// on a plate, so it reads as the row and not as a stray glyph.
+private struct DragPreview: View {
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("≡").font(Theme.ui(12)).foregroundStyle(Theme.Text.disabled)
+            Text(name).font(Theme.ui(12, .semibold)).foregroundStyle(Theme.Text.primary)
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Theme.Surface.raised)
+                .stroke(Theme.Accent.amber, lineWidth: 1))
     }
 }
 
