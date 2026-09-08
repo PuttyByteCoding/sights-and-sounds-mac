@@ -131,6 +131,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | No segments | `No songs or clips yet. Press <open key> to open a segment, <close key> to close it.` |
 | Segment counts | `<n> songs · <n> clips` |
 | Key map sheet title | `Keyboard map` |
+| Numpad 8 | focus the Universal tag field, opening the tag panel if it is closed; top-row 8 and numpad − keep the near-end seek |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
 | Key map footnote | `Rows that differ are highlighted. Everything else is identical in both maps.` |
 | Focus footer, video | `<open> <close> segment · <triage> triage · numpad seek · Tab moves focus` |
