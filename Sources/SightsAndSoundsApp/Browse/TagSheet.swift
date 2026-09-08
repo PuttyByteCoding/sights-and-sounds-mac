@@ -38,6 +38,9 @@ struct TagSheet: View {
     @State private var aliases: [String] = []
     @State private var newAlias = ""
     @State private var errorText: String?
+    /// Edit only: how many field values a move would drop, so the sheet
+    /// can say so before Save rather than after.
+    @State private var fieldValueCount: Int
     /// Create only: the Enter that opened the sheet is still down, so it
     /// commits — until the first key or click, after which the buttons
     /// take over. Editing has no such in-flight Enter, so it uses the
@@ -62,6 +65,7 @@ struct TagSheet: View {
             _hidden = State(initialValue: false)
             _favorite = State(initialValue: false)
             _enterArmed = State(initialValue: true)
+            _fieldValueCount = State(initialValue: 0)
         case .edit(let tag):
             _categoryID = State(initialValue: tag.tagCategoryID)
             _name = State(initialValue: tag.name)
@@ -69,6 +73,8 @@ struct TagSheet: View {
             _hidden = State(initialValue: tag.hiddenByDefault)
             _favorite = State(initialValue: tag.isFavorite)
             _enterArmed = State(initialValue: false)
+            _fieldValueCount = State(
+                initialValue: (try? library.fieldValues(ofTag: tag.id).count) ?? 0)
         }
     }
 
@@ -97,13 +103,15 @@ struct TagSheet: View {
                     }
                 }
                 .labelsHidden()
-                // A tag can be created into any category; moving an
-                // existing one between categories is a merge question,
-                // not a rename, and the kit has no such write.
-                .disabled(!isCreating)
                 .help(isCreating
                     ? "The category this tag is created in"
-                    : "A tag cannot change category — merge it from the Categories window instead")
+                    : "Move the tag to another category — its taggings and aliases come along; the name takes the new category's format")
+            }
+            if let tag = editingTag, categoryID != tag.tagCategoryID, fieldValueCount > 0 {
+                Text("Moving drops this tag's \(fieldValueCount) field value\(fieldValueCount == 1 ? "" : "s") — they belong to \(categories.first { $0.id == tag.tagCategoryID }?.name ?? "its category")'s fields.")
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Status.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             LabeledRow("Name") {
@@ -319,6 +327,11 @@ struct TagSheet: View {
         do {
             let tag: Tag
             if let existing = editingTag {
+                // The move first: the rename then normalizes against the
+                // category the tag is IN.
+                if categoryID != existing.tagCategoryID {
+                    try library.moveTag(existing.id, toCategory: categoryID)
+                }
                 if trimmedName != existing.name {
                     try library.renameTag(existing.id, to: trimmedName)
                 }
