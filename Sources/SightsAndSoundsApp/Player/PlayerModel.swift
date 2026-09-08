@@ -453,6 +453,31 @@ final class PlayerModel {
     static let universalFieldFocusID = UUID(
         uuidString: "11111111-1111-1111-1111-111111111111")!
 
+    /// The Tag Analysis Results field's slot in the focus walk — the
+    /// second fixed sentinel beside the category IDs.
+    static let analysisResultsFieldFocusID = UUID(
+        uuidString: "22222222-2222-2222-2222-222222222222")!
+
+    /// The panel's Tab order: the search categories in panel order with
+    /// the two pseudo-fields inserted at their positions. Positions are
+    /// indexes into the category list; past the end means last; both at
+    /// one index render — and walk — Universal first.
+    static func tagFieldOrder(
+        searchCategoryIDs: [UUID], universalPosition: Int, resultsPosition: Int
+    ) -> [UUID] {
+        var fields = searchCategoryIDs
+        let universal = min(max(0, universalPosition), fields.count)
+        let results = min(max(0, resultsPosition), fields.count)
+        if results >= universal {
+            fields.insert(analysisResultsFieldFocusID, at: results)
+            fields.insert(universalFieldFocusID, at: universal)
+        } else {
+            fields.insert(universalFieldFocusID, at: universal)
+            fields.insert(analysisResultsFieldFocusID, at: results)
+        }
+        return fields
+    }
+
     /// The pre-folded search rows — see `TagSearchEntry`. Rebuilt with
     /// the vocabulary in `refreshTagging`.
     private(set) var tagSearchIndex: [TagSearchEntry] = []
@@ -464,14 +489,13 @@ final class PlayerModel {
 
     @discardableResult
     func advanceTagField(reverse: Bool) -> Bool {
-        var fields = panelVocabulary
-            .filter { $0.category.displayStyle == .search }
-            .map(\.id)
-        // The Universal field is part of the walk, at its ordered place.
-        let position = min(
-            max(0, AppSettingsStore.shared.current.universalTagFieldPosition),
-            fields.count)
-        fields.insert(Self.universalFieldFocusID, at: position)
+        let settings = AppSettingsStore.shared.current
+        let fields = Self.tagFieldOrder(
+            searchCategoryIDs: panelVocabulary
+                .filter { $0.category.displayStyle == .search }
+                .map(\.id),
+            universalPosition: settings.universalTagFieldPosition,
+            resultsPosition: settings.analysisResultsFieldPosition)
         guard !fields.isEmpty else { return false }
         guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
         else {
