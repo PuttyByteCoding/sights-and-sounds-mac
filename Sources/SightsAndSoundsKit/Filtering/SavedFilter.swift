@@ -65,6 +65,20 @@ extension LibraryDatabase {
         }
     }
 
+    /// Update the definition in place — "make this saved filter mean
+    /// what is on screen". The row keeps its name and identity, so the
+    /// sidebar and anything holding the id stay put. An unknown id
+    /// changes nothing.
+    public func updateSavedFilter(_ id: UUID, to filter: MediaFilter) throws {
+        let json = String(
+            data: try JSONEncoder().encode(filter), encoding: .utf8) ?? "{}"
+        try writer.write { db in
+            guard var existing = try SavedFilter.fetchOne(db, key: id) else { return }
+            existing.filterJSON = json
+            try existing.update(db)
+        }
+    }
+
     /// Rename in place. A name already worn by a DIFFERENT filter is
     /// refused rather than merged — renaming is about the label, and
     /// silently overwriting another filter under it would destroy one.
