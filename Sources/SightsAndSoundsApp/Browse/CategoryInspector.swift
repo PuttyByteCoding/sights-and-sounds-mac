@@ -200,6 +200,11 @@ struct TagInspector: View {
     let onChange: () -> Void
 
     @State private var name: String = ""
+    @State private var notes: String = ""
+    /// Notes are written as typed; the window is told once, when this
+    /// tag is left, so the list it re-reads carries them without
+    /// re-querying the whole vocabulary per keystroke.
+    @State private var notesChanged = false
     @State private var newAlias = ""
     @State private var values: [UUID: String] = [:]
     @State private var convertTarget: UUID?
@@ -261,6 +266,33 @@ struct TagInspector: View {
                     .toggleStyle(.checkbox)
                 }
                 .foregroundStyle(Theme.Text.secondary)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack {
+                        Text("Notes").modifier(Theme.sectionLabel())
+                        Text("anything worth remembering about this tag")
+                            .font(Theme.ui(10))
+                            .foregroundStyle(Theme.Text.disabled)
+                    }
+                    TextField("", text: $notes, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(Theme.ui(12))
+                        .lineLimit(3...6)
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                                .fill(Theme.Surface.well)
+                                .stroke(Theme.Border.standard, lineWidth: 1))
+                        .onChange(of: notes) { _, text in
+                            guard text != tag.notes || notesChanged else { return }
+                            do {
+                                try library.setTagNotes(tag.id, text)
+                                notesChanged = true
+                                errorText = nil
+                            } catch { errorText = "\(error)" }
+                        }
+                }
 
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
@@ -393,7 +425,13 @@ struct TagInspector: View {
         }
         .onAppear {
             name = tag.name
+            notes = tag.notes
             values = (try? library.fieldValues(ofTag: tag.id)) ?? [:]
+        }
+        // Leaving the tag (another selected, or the window closing) is
+        // when the list needs to know the notes moved.
+        .onDisappear {
+            if notesChanged { onChange() }
         }
     }
 }
