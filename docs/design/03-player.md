@@ -117,6 +117,9 @@ snapshot in place; the queue is a snapshot the player owns, re-run only by Refre
 A left **rail** panel (on by default in Tag Pivot and other aux players, off in the library window)
 lists only the tags on the queue's items with their counts; clicking narrows the strip and the
 arrows without touching the snapshot.
+A History queue (Recently Watched) is the one live queue: every load anywhere stamps the
+history at once, and the History player's queue re-runs when another player loads something —
+never on its own plays — and on Refresh.
 
 Right rail: tags (flex 1.35) over segments (flex 1), divided by a 1 pt rule, each with a
 10 px section label and a Tab badge that lights amber when the zone holds focus.
