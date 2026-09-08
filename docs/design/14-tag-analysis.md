@@ -76,7 +76,10 @@ This is a build, not a redesign. The pieces:
 
 Window `1520` wide. Mode tabs **Candidates · Rules** with a mono headline.
 
-**Candidates.** Left rail (draggable, 212–470 pt): source filter (all / metadata / on-screen /
+**Candidates.** Left rail (draggable, 212–470 pt): the preview, Applied tags, then Candidate
+tags — every known tag the evidence names that the video does not yet wear, one pill per
+tag under its category; a click stages it into the basket, a second click takes it out —
+then source filter (all / metadata / on-screen /
 file), status filter, search, then candidate rows — source chip, the string, mono item count,
 suggestion chip, and a ✓ when a rule already covers it. Selecting one fills the centre: the
 string large, where it came from, the suggested decision with a category picker beside it, and
