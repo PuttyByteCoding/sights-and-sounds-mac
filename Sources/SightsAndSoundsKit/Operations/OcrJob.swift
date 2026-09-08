@@ -165,8 +165,8 @@ public struct OcrJob: Job {
         public var description: String { reason }
     }
 
-    /// One frame at a moment, on demand — the player's On-screen Text
-    /// field. The lines Vision finds, in reading order; an empty list
+    /// One frame at a moment, on demand — the Universal field's ⇧↓
+    /// screen read. The lines Vision finds, in reading order; an empty list
     /// means the frame held no text; a thrown error means the frame
     /// could not be produced, which is a different fact and is said.
     /// The generator is configured as the evidence stills are: the

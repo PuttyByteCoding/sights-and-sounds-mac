@@ -11,25 +11,26 @@ import Testing
 
     @Test func anEmptyStoredOrderSeedsFromTheOldPositions() {
         let rows = TagPanelOrder.rows(
-            vocabulary: [a, b], stored: [], seed: (universal: 0, results: 1, onScreen: 2))
-        #expect(rows == [.universal, .category(a), .results, .category(b), .onScreen])
+            vocabulary: [a, b], stored: [], seed: (universal: 0, results: 1))
+        #expect(rows == [.universal, .category(a), .results, .category(b)])
     }
 
     @Test func aStoredOrderIsKeptAndReconciled() {
-        let stored = [PanelRow.category(b).key, PanelRow.onScreen.key, PanelRow.category(a).key,
+        let stored = [PanelRow.category(b).key, "onScreen", PanelRow.category(a).key,
                       PanelRow.universal.key, PanelRow.results.key]
-        // c is new (appended), a stored id that no longer exists is dropped.
+        // c is new (appended); a stored id that no longer exists, and the
+        // retired on-screen row's key, are dropped.
         let rows = TagPanelOrder.rows(
             vocabulary: [a, c, b], stored: stored + [UUID().uuidString],
-            seed: (universal: 0, results: 1, onScreen: 2))
-        #expect(rows == [.category(b), .onScreen, .category(a), .universal, .results, .category(c)])
+            seed: (universal: 0, results: 1))
+        #expect(rows == [.category(b), .category(a), .universal, .results, .category(c)])
     }
 
     @Test func aStoredOrderMissingAPseudoRowGetsItAppended() {
         let rows = TagPanelOrder.rows(
             vocabulary: [a], stored: [PanelRow.category(a).key, PanelRow.universal.key],
-            seed: (universal: 0, results: 0, onScreen: 0))
-        #expect(rows == [.category(a), .universal, .results, .onScreen])
+            seed: (universal: 0, results: 0))
+        #expect(rows == [.category(a), .universal, .results])
     }
 
     @Test func movingBeforeAfterToTheEndAndOntoItself() {
@@ -44,7 +45,7 @@ import Testing
     }
 
     @Test func rowKeysAndFocusIDsRoundTrip() {
-        for row in [PanelRow.universal, .results, .onScreen, .category(a)] {
+        for row in [PanelRow.universal, .results, .category(a)] {
             #expect(PanelRow(key: row.key) == row)
             #expect(PanelRow(focusID: row.focusID) == row)
         }

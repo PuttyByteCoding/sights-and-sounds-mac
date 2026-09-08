@@ -389,8 +389,8 @@ extension LibraryDatabase {
 
     // MARK: - The existing-tag pass
 
-    /// The existing tags named inside free text — the On-screen Text
-    /// field's pass over what Vision just read, through the same
+    /// The existing tags named inside free text — the Universal field's
+    /// screen-read pass over what Vision just read, through the same
     /// word-run match the per-item analysis uses, over the whole
     /// vocabulary and its aliases. One finding per tag, carrying the
     /// first line it was found in.

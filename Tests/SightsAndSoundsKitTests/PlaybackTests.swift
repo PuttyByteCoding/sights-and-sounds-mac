@@ -49,6 +49,13 @@ import Testing
         #expect(action("-", numpad: true) == .seekToNearEnd)
     }
 
+    /// Numpad 2 reads the on-screen text into the Universal field; the
+    /// top-row 2 stays unbound.
+    @Test func numpadTwoReadsTheOnScreenText() {
+        #expect(action("2", numpad: true) == .readOnScreenText)
+        #expect(action("2") == nil)
+    }
+
     @Test func numpadExtrasAndSpace() {
         #expect(action("-", numpad: true) == .seekToNearEnd)
         #expect(action("-") == nil)  // top-row minus does nothing

@@ -30,4 +30,33 @@ import Testing
         #expect(UniversalTagField.merged(analysis: analysis, rest: rest, limit: 3).map(\.tag.name) == ["A", "B", "C"])
         #expect(UniversalTagField.merged(analysis: analysis, rest: rest, limit: 1).map(\.tag.name) == ["A"])
     }
+
+    private func finding(_ name: String, in line: String) -> ExistingTagFinding {
+        ExistingTagFinding(
+            tag: SightsAndSoundsKit.Tag(tagCategoryID: UUID(), name: name),
+            categoryName: "Band", matchedText: name, foundIn: line, alreadyApplied: false)
+    }
+
+    @Test func aScreenReadListsTagsThenTrimmedDedupedLines() {
+        let rows = UniversalTagField.screenRows(
+            findings: [finding("Phish", in: "phish")],
+            lines: ["  Phish  ", "Live at", "phish", "", "Live at", "Red Rocks"], query: "")
+        #expect(rows.tags.map(\.tag.name) == ["Phish"])
+        #expect(rows.lines == ["Phish", "Live at", "Red Rocks"])
+    }
+
+    @Test func termsNarrowBothHalvesOfAScreenRead() {
+        let rows = UniversalTagField.screenRows(
+            findings: [finding("Phish", in: "x"), finding("Red Rocks", in: "y")],
+            lines: ["Phish", "Live at Red Rocks", "AUD source"], query: "red rock")
+        #expect(rows.tags.map(\.tag.name) == ["Red Rocks"])
+        #expect(rows.lines == ["Live at Red Rocks"])
+    }
+
+    @Test func aTagAppliedAlreadyIsLeftOutOfAScreenRead() {
+        let phish = finding("Phish", in: "x")
+        let rows = UniversalTagField.screenRows(
+            findings: [phish], lines: [], query: "", appliedIDs: [phish.tag.id])
+        #expect(rows.tags.isEmpty)
+    }
 }

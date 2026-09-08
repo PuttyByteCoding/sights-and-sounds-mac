@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import SightsAndSoundsKit
 
-/// Existing tags named inside free text — the On-screen Text field's
-/// pass over what Vision read, through the same word-run match the
+/// Existing tags named inside free text — the Universal field's screen
+/// read's pass over what Vision read, through the same word-run match the
 /// per-item analysis uses.
 @Suite struct TextTagFindingTests {
     @Test func tagsAndAliasesInsideLinesAreFoundOncePerTag() async throws {

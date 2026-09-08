@@ -82,13 +82,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// category list, 0 = first, past the end = last. Both pseudo-fields
     /// at one index render Universal first.
     public var analysisResultsFieldPosition: Int
-    /// Where the tag panel's On-screen Text field sits among the
-    /// categories — the same rule as the other two pseudo-fields.
-    public var onScreenTextFieldPosition: Int
-
     /// The tag panel's row order — every category and the three pseudo-
     /// fields in one list, by key (a category's id, or `universal`,
-    /// `results`, `onScreen`). Empty means not yet chosen: the panel
+    /// `results`). Empty means not yet chosen: the panel
     /// seeds it from the three positions above, which remain only for
     /// that. One list is what lets a drop mean exactly "before that row".
     public var tagPanelRowOrder: [String]
@@ -124,7 +120,6 @@ public struct AppSettings: Codable, Sendable, Equatable {
         uiScale: Double = 1.0,
         universalTagFieldPosition: Int = 0,
         analysisResultsFieldPosition: Int = 1,
-        onScreenTextFieldPosition: Int = 2,
         tagPanelRowOrder: [String] = []
     ) {
         self.backupDirectory = backupDirectory
@@ -150,7 +145,6 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.uiScale = uiScale
         self.universalTagFieldPosition = universalTagFieldPosition
         self.analysisResultsFieldPosition = analysisResultsFieldPosition
-        self.onScreenTextFieldPosition = onScreenTextFieldPosition
         self.tagPanelRowOrder = tagPanelRowOrder
     }
 
@@ -206,9 +200,6 @@ public struct AppSettings: Codable, Sendable, Equatable {
         analysisResultsFieldPosition = max(0, try container.decodeIfPresent(
             Int.self, forKey: .analysisResultsFieldPosition)
             ?? defaults.analysisResultsFieldPosition)
-        onScreenTextFieldPosition = max(0, try container.decodeIfPresent(
-            Int.self, forKey: .onScreenTextFieldPosition)
-            ?? defaults.onScreenTextFieldPosition)
         tagPanelRowOrder = try container.decodeIfPresent(
             [String].self, forKey: .tagPanelRowOrder) ?? defaults.tagPanelRowOrder
     }

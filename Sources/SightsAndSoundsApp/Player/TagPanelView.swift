@@ -59,7 +59,7 @@ struct TagPanelView: View {
     private var firstTypableRow: PanelRow? {
         model.panelRows.first { row in
             switch row {
-            case .universal, .results, .onScreen: return true
+            case .universal, .results: return true
             case .category(let id):
                 return vocabularyByID[id]?.category.displayStyle == .search
             }
@@ -154,26 +154,6 @@ struct TagPanelView: View {
                     itemID: model.item?.id,
                     onListChange: { model.tagFieldListOpen = $0 },
                     onApply: { model.applyTag($0.id) })
-            }
-        case .onScreen:
-            pseudoRow("On-screen Text", row: row) {
-                OnScreenTextField(
-                    fileURL: model.fileURL,
-                    isAudio: model.isAudio,
-                    currentSeconds: model.currentSeconds,
-                    appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
-                    categories: model.panelVocabulary.map(\.category),
-                    library: model.library,
-                    libraryID: model.libraryID,
-                    focus: $focusedCategory,
-                    focusID: PlayerModel.onScreenTextFieldFocusID,
-                    itemID: model.item?.id,
-                    onListChange: { model.tagFieldListOpen = $0 },
-                    onApply: { model.applyTag($0.id) },
-                    onCreated: { tag in
-                        model.refreshTagging()
-                        model.applyTag(tag.id)
-                    })
             }
         }
     }
@@ -844,6 +824,12 @@ private struct GlobalTagField: View {
                         .map(\.tag.id)
                     : nil
             } ?? [],
+            // ⇧↓ reads the frame at the playhead: the playing file, never
+            // audio, never an offline file.
+            screenFrame: model.isAudio ? nil : model.fileURL.map {
+                ScreenFrame(fileURL: $0, seconds: model.currentSeconds)
+            },
+            screenReadRequests: model.screenReadRequests,
             categories: model.panelVocabulary.map(\.category),
             library: model.library,
             libraryID: model.libraryID,
