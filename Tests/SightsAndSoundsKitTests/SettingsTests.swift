@@ -304,3 +304,23 @@ import Testing
         #expect(decoded.tagAnalysisRailWidth == 480)
     }
 }
+
+/// The Tag Analysis Results field's place among the tag panel's
+/// categories — the Universal field's rule, one slot later by default.
+@Suite struct AnalysisResultsFieldPositionTests {
+    @Test func theDefaultSitsAfterTheUniversalField() {
+        #expect(AppSettings().analysisResultsFieldPosition == 1)
+    }
+
+    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(decoded.analysisResultsFieldPosition == 1)
+    }
+
+    @Test func aNegativeValueIsClampedToFirst() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"analysisResultsFieldPosition": -3}"#.utf8))
+        #expect(decoded.analysisResultsFieldPosition == 0)
+    }
+}
