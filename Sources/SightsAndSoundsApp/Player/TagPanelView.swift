@@ -1,5 +1,23 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import SightsAndSoundsKit
+
+/// What a dragged panel row carries: the row's id under the app's own
+/// content type. Not a plain string — every row holds a text field,
+/// and AppKit fields accept dropped text natively, so a string payload
+/// released over a field was pasted into it instead of reaching the
+/// row's drop handler.
+struct PanelRowDrag: Codable, Transferable {
+    let id: UUID
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .sasPanelRow)
+    }
+}
+
+extension UTType {
+    static let sasPanelRow = UTType(exportedAs: "com.puttybyte.sightsandsounds.panel-row")
+}
 
 /// The tag editing panel, top of the player's right rail — the tagging
 /// surface, kept out of the player's own responsibilities.
@@ -72,9 +90,6 @@ struct TagPanelView: View {
                                 Text(label).modifier(Theme.sectionLabel())
                             }
                         }
-                        if dropTargetID == entry.category.id {
-                            DropInsertionLine()
-                        }
                         Group {
                             switch entry.category.displayStyle {
                             case .checkboxes, .radio:
@@ -98,12 +113,12 @@ struct TagPanelView: View {
                                     onAdvance: { forward in advance(from: entry.id, forward: forward) })
                             }
                         }
+                        .landingLine(when: dropTargetID == entry.category.id)
                         // Dropping a dragged heading on a category slots
                         // it in BEFORE that category.
-                        .dropDestination(for: String.self) { dropped, _ in
+                        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
                             dropTargetID = nil
-                            guard let id = dropped.first.flatMap(UUID.init(uuidString:))
-                            else { return false }
+                            guard let id = dropped.first?.id else { return false }
                             if !setPseudoFieldPosition(id, to: index) {
                                 model.moveCategory(id, before: entry.category.id)
                             }
@@ -125,17 +140,14 @@ struct TagPanelView: View {
                         }
                     }
                     // …and the space under the list is "make it last".
-                    if dropAtEnd {
-                        DropInsertionLine()
-                    }
                     Rectangle()
                         .fill(.clear)
                         .frame(height: 40)
                         .contentShape(Rectangle())
-                        .dropDestination(for: String.self) { dropped, _ in
+                        .landingLine(when: dropAtEnd)
+                        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
                             dropAtEnd = false
-                            guard let id = dropped.first.flatMap(UUID.init(uuidString:))
-                            else { return false }
+                            guard let id = dropped.first?.id else { return false }
                             if !setPseudoFieldPosition(id, to: model.panelVocabulary.count) {
                                 model.moveCategory(id, before: nil)
                             }
@@ -208,9 +220,6 @@ struct TagPanelView: View {
     /// labeled heading, far-right ≡ grip, and the same landing line.
     @ViewBuilder
     private var universalBlock: some View {
-        if dropTargetID == PlayerModel.universalFieldFocusID {
-            DropInsertionLine()
-        }
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2)
@@ -224,17 +233,17 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the Universal field sits among the categories")
-                    .draggable(PlayerModel.universalFieldFocusID.uuidString)
+                    .draggable(PanelRowDrag(id: PlayerModel.universalFieldFocusID))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             GlobalTagField(
                 takesFocus: clampedUniversalPosition == 0,
                 focus: $focusedCategory)
         }
-        .dropDestination(for: String.self) { dropped, _ in
+        .landingLine(when: dropTargetID == PlayerModel.universalFieldFocusID)
+        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
             dropTargetID = nil
-            guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
-                  id != PlayerModel.universalFieldFocusID
+            guard let id = dropped.first?.id, id != PlayerModel.universalFieldFocusID
             else { return false }
             // The other pseudo-field dropped here takes this slot; a
             // category dropped here takes it and pushes the field down —
@@ -255,9 +264,6 @@ struct TagPanelView: View {
     /// heading, ≡ grip, the same landing line, the field underneath.
     @ViewBuilder
     private var resultsBlock: some View {
-        if dropTargetID == PlayerModel.analysisResultsFieldFocusID {
-            DropInsertionLine()
-        }
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2)
@@ -271,7 +277,7 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the field sits among the categories")
-                    .draggable(PlayerModel.analysisResultsFieldFocusID.uuidString)
+                    .draggable(PanelRowDrag(id: PlayerModel.analysisResultsFieldFocusID))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             AnalysisResultsField(
@@ -283,10 +289,10 @@ struct TagPanelView: View {
                 itemID: model.item?.id,
                 onApply: { model.applyTag($0.id) })
         }
-        .dropDestination(for: String.self) { dropped, _ in
+        .landingLine(when: dropTargetID == PlayerModel.analysisResultsFieldFocusID)
+        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
             dropTargetID = nil
-            guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
-                  id != PlayerModel.analysisResultsFieldFocusID
+            guard let id = dropped.first?.id, id != PlayerModel.analysisResultsFieldFocusID
             else { return false }
             if setPseudoFieldPosition(id, to: clampedResultsPosition) { return true }
             let following = clampedResultsPosition < model.panelVocabulary.count
@@ -303,9 +309,6 @@ struct TagPanelView: View {
     /// The On-screen Text row, reorderable like the other two.
     @ViewBuilder
     private var onScreenBlock: some View {
-        if dropTargetID == PlayerModel.onScreenTextFieldFocusID {
-            DropInsertionLine()
-        }
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2)
@@ -319,7 +322,7 @@ struct TagPanelView: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder — the field sits among the categories")
-                    .draggable(PlayerModel.onScreenTextFieldFocusID.uuidString)
+                    .draggable(PanelRowDrag(id: PlayerModel.onScreenTextFieldFocusID))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             OnScreenTextField(
@@ -339,10 +342,10 @@ struct TagPanelView: View {
                     model.applyTag(tag.id)
                 })
         }
-        .dropDestination(for: String.self) { dropped, _ in
+        .landingLine(when: dropTargetID == PlayerModel.onScreenTextFieldFocusID)
+        .dropDestination(for: PanelRowDrag.self) { dropped, _ in
             dropTargetID = nil
-            guard let id = dropped.first.flatMap(UUID.init(uuidString:)),
-                  id != PlayerModel.onScreenTextFieldFocusID
+            guard let id = dropped.first?.id, id != PlayerModel.onScreenTextFieldFocusID
             else { return false }
             if setPseudoFieldPosition(id, to: clampedOnScreenPosition) { return true }
             let following = clampedOnScreenPosition < model.panelVocabulary.count
@@ -390,7 +393,7 @@ private struct CategoryHeading: View {
                     .font(Theme.ui(12))
                     .foregroundStyle(Theme.Text.disabled)
                     .help("Drag to reorder categories")
-                    .draggable(category.id.uuidString)
+                    .draggable(PanelRowDrag(id: category.id))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -827,14 +830,32 @@ private struct PillCategoryView: View {
     }
 }
 
-/// The landing line: where a dragged category goes when released —
-/// drawn ABOVE the hovered block, because dropping inserts before it.
-private struct DropInsertionLine: View {
-    var body: some View {
-        Capsule()
-            .fill(Theme.Accent.amber)
-            .frame(height: 2.5)
-            .padding(.vertical, 3)
+/// The landing line: where a dragged row goes when released — drawn
+/// ABOVE the hovered block, because dropping inserts before it. An
+/// OVERLAY, deliberately: inserting a view into the stack moved the
+/// hovered block under a stationary pointer, which un-targeted it,
+/// which removed the line, which moved it back — a stutter that also
+/// dropped the target from under the release. The overlay adds no
+/// height; it sits in the gap above the block.
+private struct LandingLine: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if shown {
+                Capsule()
+                    .fill(Theme.Accent.amber)
+                    .frame(height: 2.5)
+                    .offset(y: -8)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+extension View {
+    fileprivate func landingLine(when shown: Bool) -> some View {
+        modifier(LandingLine(shown: shown))
     }
 }
 
