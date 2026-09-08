@@ -81,8 +81,8 @@ struct UniversalTagField: View {
     @State private var highlighted: Int?
     @State private var creating = false
     @State private var showingHistory = false
-    /// Empty query + ↓ lists every tag not on the item, in vocabulary
-    /// order (category by category), capped like autocomplete.
+    /// Empty query + ↓ lists what Tag Analysis found for the item, or
+    /// says that nothing was.
     @State private var browsingAll = false
 
     private var focused: Bool { focus.wrappedValue == focusID }
@@ -139,14 +139,10 @@ struct UniversalTagField: View {
                         matchedAlias: nil)
                 }
             }
+            // ↓ lists what Tag Analysis found, and only that: the
+            // vocabulary is for typing into. Nothing found says so.
             guard browsingAll else { return [] }
-            let limit = AppSettingsStore.shared.current.tagSuggestionLimit
-            let rest = index
-                .lazy
-                .filter { !appliedIDs.contains($0.tag.id) }
-                .map { self.hit($0) }
-                .prefix(limit)
-            return Self.merged(analysis: analysisHits, rest: Array(rest), limit: limit)
+            return Array(analysisHits.prefix(AppSettingsStore.shared.current.tagSuggestionLimit))
         }
         // Folded terms against the pre-folded index, lazily, cut at the
         // limit — never a full pass once enough hits exist.
@@ -233,6 +229,12 @@ struct UniversalTagField: View {
                         lineWidth: 1))
 
             if !historyActive {
+                if browsingAll, query.isEmpty, hits.isEmpty {
+                    Text("No Tags from Tag Analysis")
+                        .font(Theme.ui(11))
+                        .foregroundStyle(Theme.Text.disabled)
+                        .padding(.horizontal, 8)
+                }
                 ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
                     hitRow(index, hit)
                 }
@@ -265,28 +267,28 @@ struct UniversalTagField: View {
         }
     }
 
+    /// On an empty field, the FIRST arrow picks a list — ↑ the history,
+    /// ↓ the analysis — and every arrow after that walks that list and
+    /// only that list, clamped at its ends. Leaving is Esc or typing;
+    /// stepping off the top of one list must never open the other.
     private func move(_ delta: Int) -> KeyPress.Result {
-        if query.isEmpty, !showingHistory, delta == -1, !recentTagIDs.isEmpty {
-            showingHistory = true
+        if query.isEmpty, !showingHistory, !browsingAll {
+            if delta == -1, !recentTagIDs.isEmpty {
+                showingHistory = true
+            } else if delta == 1 {
+                browsingAll = true
+            } else {
+                return .ignored
+            }
             highlighted = hits.isEmpty ? nil : 0
             return .handled
         }
-        // ↓ on an empty field opens the whole list the same way.
-        if query.isEmpty, !showingHistory, !browsingAll, delta == 1 {
-            browsingAll = true
-            highlighted = hits.isEmpty ? nil : 0
-            return .handled
-        }
+        guard !hits.isEmpty else { return .handled }
+        // History climbs UPWARD from the box: ↑ moves to older (higher
+        // index, drawn higher), ↓ back toward the field.
         let delta = historyActive ? -delta : delta
-        guard !hits.isEmpty else { return .ignored }
-        switch (highlighted, delta) {
-        case (nil, 1): highlighted = 0
-        case (nil, -1): highlighted = hits.count - 1
-        case (let current?, _):
-            let next = current + delta
-            highlighted = hits.indices.contains(next) ? next : nil
-        default: break
-        }
+        let current = highlighted ?? (delta > 0 ? -1 : hits.count)
+        highlighted = min(max(0, current + delta), hits.count - 1)
         return .handled
     }
 

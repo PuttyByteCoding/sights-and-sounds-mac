@@ -623,31 +623,26 @@ private struct PillCategoryView: View {
     /// Walk the suggestions. Coming off either end clears the selection
     /// rather than wrapping, because "nothing selected" is a real state
     /// here — it is the one where Enter creates.
+    /// On an empty field, the FIRST arrow picks a list — ↑ the history,
+    /// ↓ the whole category — and every arrow after that walks that list
+    /// and only that list, clamped at its ends. Leaving is Esc or typing;
+    /// stepping off the top of one list must never open the other.
     private func move(_ delta: Int) -> KeyPress.Result {
-        // ↑ on an empty field opens the history — see, then choose.
-        if query.isEmpty, !showingHistory, delta == -1 {
-            showingHistory = true
+        if query.isEmpty, !showingHistory, !browsingAll {
+            if delta == -1 {
+                showingHistory = true
+            } else {
+                browsingAll = true
+            }
             highlighted = suggestions.isEmpty ? nil : 0
             return .handled
         }
-        // ↓ on an empty field opens the whole category the same way.
-        if query.isEmpty, !showingHistory, !browsingAll, delta == 1 {
-            browsingAll = true
-            highlighted = suggestions.isEmpty ? nil : 0
-            return .handled
-        }
+        guard !suggestions.isEmpty else { return .handled }
         // History climbs UPWARD from the box: ↑ moves to older (higher
         // index, drawn higher), ↓ back toward the field.
         let delta = historyActive ? -delta : delta
-        guard !suggestions.isEmpty else { return .ignored }
-        switch (highlighted, delta) {
-        case (nil, 1): highlighted = 0
-        case (nil, -1): highlighted = suggestions.count - 1
-        case (let current?, _):
-            let next = current + delta
-            highlighted = suggestions.indices.contains(next) ? next : nil
-        default: break
-        }
+        let current = highlighted ?? (delta > 0 ? -1 : suggestions.count)
+        highlighted = min(max(0, current + delta), suggestions.count - 1)
         return .handled
     }
 
