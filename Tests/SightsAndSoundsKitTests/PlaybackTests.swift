@@ -40,6 +40,15 @@ import Testing
         #expect(action("(", shift: true) == .seek(seconds: 9))
     }
 
+    /// Numpad 8 reaches the Universal tag field from anywhere in the
+    /// player; the top-row 8 and numpad − keep the near-end seek, so no
+    /// seek is lost.
+    @Test func numpadEightFocusesTheUniversalField() {
+        #expect(action("8", numpad: true) == .focusUniversalField)
+        #expect(action("8") == .seekToNearEnd)
+        #expect(action("-", numpad: true) == .seekToNearEnd)
+    }
+
     @Test func numpadExtrasAndSpace() {
         #expect(action("-", numpad: true) == .seekToNearEnd)
         #expect(action("-") == nil)  // top-row minus does nothing

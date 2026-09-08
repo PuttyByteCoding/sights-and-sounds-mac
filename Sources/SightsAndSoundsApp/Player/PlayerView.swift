@@ -607,16 +607,18 @@ private struct PlayerContent: View {
                                 .allowsHitTesting(false)
                             }
                         }
-                        // Marked for deletion: the video keeps playing —
-                        // a last look before Purge is the point — but
-                        // through a grey scrim with the trash can over
-                        // it, the same mark the tile wears. Toggling D
-                        // reloads the item, so the scrim follows at once.
+                        // Marked for deletion, or a playback issue: the
+                        // video keeps playing (a last look, or a retry,
+                        // is the point) but through a grey scrim with
+                        // the same mark the tile wears — trash can or
+                        // wrench. Toggling D or W reloads the item, so
+                        // the scrim follows at once.
                         .overlay {
-                            if model.item?.markedForDeletion == true {
+                            if let item = model.item,
+                               let symbol = ItemStatusMark.symbol(for: item) {
                                 ZStack {
                                     Color(white: 0.35, opacity: 0.65)
-                                    DeletionMark()
+                                    ItemStatusMark(symbol: symbol)
                                 }
                                 .allowsHitTesting(false)
                             }

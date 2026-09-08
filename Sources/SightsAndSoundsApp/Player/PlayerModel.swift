@@ -410,7 +410,17 @@ final class PlayerModel {
         case .toggleNeedsReview: toggle(.needsReview)
         case .toggleMarkedForDeletion: toggle(.markedForDeletion)
         case .togglePlaybackIssue: toggle(.playbackIssue)
+        case .focusUniversalField: focusUniversalField()
         }
+    }
+
+    /// Numpad 8: open the tag panel if it is closed, point the zone at
+    /// it, and hand the keyboard to the Universal field. The panel's
+    /// focus mirrors `tagFieldCategoryID`, so setting it IS focusing.
+    func focusUniversalField() {
+        if !panels.tags { togglePanel(.tags) }
+        zone = .tags
+        tagFieldCategoryID = Self.universalFieldFocusID
     }
 
     private func toggle(_ flag: PlayerToggleFlag) {
