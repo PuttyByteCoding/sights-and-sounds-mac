@@ -86,6 +86,21 @@ public struct ItemAnalysis: Equatable, Sendable {
     public let truncated: Bool
     public let provenance: [ProvenanceStep]
 
+    public init(
+        suggested: [AnalysisCandidate], existing: [ExistingTagFinding],
+        unmapped: [AnalysisCandidate], md5s: [String], matchedSchemas: [String],
+        readerReports: [ReaderReport], truncated: Bool, provenance: [ProvenanceStep]
+    ) {
+        self.suggested = suggested
+        self.existing = existing
+        self.unmapped = unmapped
+        self.md5s = md5s
+        self.matchedSchemas = matchedSchemas
+        self.readerReports = readerReports
+        self.truncated = truncated
+        self.provenance = provenance
+    }
+
     public static let empty = ItemAnalysis(
         suggested: [], existing: [], unmapped: [], md5s: [], matchedSchemas: [],
         readerReports: [], truncated: false, provenance: [])

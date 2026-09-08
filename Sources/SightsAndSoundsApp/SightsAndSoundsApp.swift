@@ -130,6 +130,27 @@ final class AppModel {
         }
     }
 
+    // MARK: - Tag Analysis sessions
+
+    /// One per player that has opened a companion. Keyed by id because
+    /// the companion's window request carries the id, not the object.
+    private(set) var analysisSessions: [UUID: TagAnalysisSession] = [:]
+
+    func registerAnalysisSession(_ session: TagAnalysisSession) {
+        analysisSessions[session.id] = session
+    }
+
+    func analysisSession(for id: UUID) -> TagAnalysisSession? {
+        analysisSessions[id]
+    }
+
+    /// Drop a session both sides have closed. Called by whichever side
+    /// closes last; harmless when the other is still up.
+    func releaseAnalysisSessionIfFinished(_ id: UUID) {
+        guard let session = analysisSessions[id], session.isFinished else { return }
+        analysisSessions[id] = nil
+    }
+
     init() {
         do {
             let dir = try FileManager.default.url(
