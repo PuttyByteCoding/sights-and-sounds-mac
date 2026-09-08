@@ -59,6 +59,8 @@ action fails. So:
   and dim with a mark centred over it — a trash can for the delete list, a wrench for an item
   that will not play (`ItemStatusMark`, shared with the player's stage; deletion wins when
   both are set). The tile should say so before the ⌫ or ⚠ badge is even enabled.
+- A player opened from the grid takes the listing as a snapshot; the grid stays live and the
+  player's Refresh catches its queue up to the grid's current filter and order.
 - A banner above the grid stating exactly what still works: *"N of these M items live on
   <Source> — tags, fields and thumbnails are local and current. Only playback and file
   operations are unavailable."*

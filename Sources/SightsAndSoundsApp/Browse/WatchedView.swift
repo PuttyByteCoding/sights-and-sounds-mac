@@ -189,7 +189,8 @@ struct WatchedView: View {
     private func play(_ item: MediaItem) {
         guard model.isOnline(item) else { return }
         model.playerRequest = PlayerRequest(
-            libraryID: model.libraryID, itemID: item.id, playlist: rows.map(\.id))
+            libraryID: model.libraryID, itemID: item.id,
+            definition: .history, playlist: rows.map(\.id))
     }
 
     private func reveal(_ item: MediaItem) {

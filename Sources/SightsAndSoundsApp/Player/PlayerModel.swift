@@ -19,10 +19,14 @@ final class SessionAudio {
 final class PlayerModel {
     let library: LibraryDatabase
     let libraryID: UUID
-    /// The filtered listing the item was opened from; ←/→ walk it. It
-    /// FOLLOWS the browse filter — see `updatePlaylist` — rather than
-    /// being the snapshot the player opened with.
-    private(set) var playlist: [UUID]
+    /// This player's queue: a snapshot with a definition. Nothing outside
+    /// the player replaces it; Refresh re-runs the definition.
+    let queue: PlayQueue
+    /// The queue's ids — what ←/→ walk.
+    var playlist: [UUID] { queue.ids }
+    /// The queue's rows — the strip's data.
+    var queueItems: [MediaItem] { queue.items }
+    private(set) var isRefreshingQueue = false
 
     /// The companion's handshake, created the first time Tag Analysis
     /// is opened from this player and kept for the player's life. The
@@ -157,64 +161,59 @@ final class PlayerModel {
     init(request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?) {
         self.library = library
         self.libraryID = request.libraryID
-        self.playlist = request.playlist
+        self.queue = PlayQueue(definition: request.definition, items: [])
         _ = appDatabase  // legacy pref migrates into settings.json at launch
         skipSettings = AppSettingsStore.shared.current.skip
         load(itemID: request.itemID)
-        loadQueueItems()
+        loadSnapshot(request.playlist)
     }
 
     // MARK: - Play queue
 
-    /// The playlist's rows, in playlist order — the queue strip's data.
-    /// Re-fetched whenever the browse filter reshapes the listing, off
-    /// the main actor.
-    private(set) var queueItems: [MediaItem] = []
-
-    /// The browse listing changed under us. The playlist follows it, but
-    /// **playback does not stop**: an item that no longer matches keeps
-    /// playing to its end and simply is not in the queue any more. A
-    /// filter click killing what you are three minutes into would be a
-    /// worse surprise than a queue that no longer contains it.
-    func updatePlaylist(_ ids: [UUID]) {
-        guard ids != playlist else { return }
-        let droppedCurrent = item.map { !ids.contains($0.id) } ?? false
-        playlist = ids
-        loadQueueItems()
-        publishToSession()
-        // The playing item no longer matches, so it stops and the new
-        // queue starts from its first item.
-        //
-        // This reverses the earlier rule of letting it play on. Playing
-        // something the filter has just excluded means the queue on
-        // screen and the video in it disagree, and every ← or → after
-        // that starts from a position that is not in the list — the
-        // orphan-index bookkeeping that needed is gone with it.
-        //
-        // Nothing to switch to means nothing to interrupt: an empty
-        // result leaves the current item playing rather than stopping
-        // playback dead on a filter that matched nothing.
-        if droppedCurrent, let first = ids.first {
-            load(itemID: first)
+    /// The opening snapshot's rows, in the given order, off the main
+    /// actor — the request carries ids so the player starts at once.
+    private func loadSnapshot(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        let library = library
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let rows: [MediaItem] = (try? await library.writer.read { db -> [MediaItem] in
+                try MediaItem.fetchAll(db, keys: ids)
+            }) ?? []
+            let position = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+            let ordered = rows.sorted { (position[$0.id] ?? 0) < (position[$1.id] ?? 0) }
+            await MainActor.run { [weak self] in
+                self?.queue.apply(ordered)
+                self?.publishToSession()
+            }
         }
     }
 
-    private func loadQueueItems() {
-        guard !playlist.isEmpty else {
-            queueItems = []
-            return
+    /// The listing definition Refresh should use when this queue is a
+    /// listing — installed by the view that knows the grid, so the
+    /// library window's queue catches up with what the grid shows.
+    var currentListing: () -> QueueDefinition? = { nil }
+
+    /// Re-run the queue's definition. The shown item keeps playing
+    /// whether or not it is still in the result — a Refresh is not a
+    /// stop — and ←/→ then start from the ends of what is left.
+    func refreshQueue() {
+        guard !isRefreshingQueue else { return }
+        if case .listing = queue.definition, let listing = currentListing() {
+            queue.replaceDefinition(listing)
         }
-        let library = library, playlist = playlist
+        isRefreshingQueue = true
+        let library = library, definition = queue.definition
         Task.detached(priority: .userInitiated) { [weak self] in
-            // Explicit return type — the async `read` overload's
-            // inference is ambiguous to the CI toolchain (Xcode 16).
-            let rows: [MediaItem] = (try? await library.writer.read { db -> [MediaItem] in
-                try MediaItem.fetchAll(db, keys: playlist)
-            }) ?? []
-            let position = Dictionary(
-                uniqueKeysWithValues: playlist.enumerated().map { ($1, $0) })
-            let ordered = rows.sorted { (position[$0.id] ?? 0) < (position[$1.id] ?? 0) }
-            await MainActor.run { [weak self] in self?.queueItems = ordered }
+            let result = Result { try PlayQueue.run(definition, library: library) }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let rows): self.queue.apply(rows)
+                case .failure(let error): self.loadError = "Refresh failed: \(error)"
+                }
+                self.isRefreshingQueue = false
+                self.publishToSession()
+            }
         }
     }
 
@@ -875,13 +874,15 @@ final class PlayerModel {
     func goPrevious() { step(-1) }
 
     private func step(_ delta: Int) {
-        // The playing item is always in the playlist now — a filter that
-        // drops it loads the new first item instead — so there is no
-        // orphaned position to walk from.
-        guard let item, let index = playlist.firstIndex(of: item.id) else { return }
-        let next = index + delta
-        guard playlist.indices.contains(next) else { return }
-        load(itemID: playlist[next])
+        guard let item else { return }
+        if let index = playlist.firstIndex(of: item.id) {
+            let next = index + delta
+            guard playlist.indices.contains(next) else { return }
+            load(itemID: playlist[next])
+        } else if let edge = delta > 0 ? playlist.first : playlist.last {
+            // A refresh dropped the shown item: walk in from the end.
+            load(itemID: edge)
+        }
     }
 
     // MARK: - Progress

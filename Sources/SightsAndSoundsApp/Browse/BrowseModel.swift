@@ -74,7 +74,9 @@ final class BrowseModel {
         else { return }
         pendingAnalysisOpen = true
         playerRequest = PlayerRequest(
-            libraryID: libraryID, itemID: first.id, playlist: visibleItems.map(\.id))
+            libraryID: libraryID, itemID: first.id,
+            definition: .listing(filter: filter, kinds: kinds, ordering: ordering),
+            playlist: visibleItems.map(\.id))
     }
 
     private(set) var items: [MediaItem] = []
@@ -718,7 +720,7 @@ final class BrowseModel {
             return
         }
         playerRequest = PlayerRequest(
-            libraryID: libraryID, itemID: first.id, playlist: items.map(\.id))
+            libraryID: libraryID, itemID: first.id, playlist: items.map(\.id), name: "Selection")
         clearSelection()
     }
 

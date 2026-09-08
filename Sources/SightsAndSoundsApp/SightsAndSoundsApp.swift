@@ -497,13 +497,30 @@ struct ViewMenuCommands: View {
     }
 }
 
-/// Identifies one item to play, plus the filtered listing it came from
-/// so the player's arrows can walk it. Setting one on a BrowseModel
-/// swaps that library window over to the embedded player.
-struct PlayerRequest: Codable, Hashable {
+/// Identifies one item to play and the queue it plays inside: the
+/// definition (so Refresh can run it again) and the ids the definition
+/// produced at the moment of opening (so the player starts at once).
+/// Setting one on a BrowseModel swaps that library window over to the
+/// embedded player.
+struct PlayerRequest: Hashable {
     var libraryID: UUID
     var itemID: UUID
-    var playlist: [UUID] = []
+    var definition: QueueDefinition
+    var playlist: [UUID]
+
+    init(libraryID: UUID, itemID: UUID, definition: QueueDefinition, playlist: [UUID]) {
+        self.libraryID = libraryID
+        self.itemID = itemID
+        self.definition = definition
+        self.playlist = playlist
+    }
+
+    /// A fixed set with a name — the compare pane, a selection.
+    init(libraryID: UUID, itemID: UUID, playlist: [UUID], name: String) {
+        self.init(
+            libraryID: libraryID, itemID: itemID,
+            definition: .explicit(ids: playlist, name: name), playlist: playlist)
+    }
 }
 
 /// Builds a complete demo library — vocabulary, items, and tiny synthesized
