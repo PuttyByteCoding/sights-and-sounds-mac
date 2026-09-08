@@ -94,6 +94,11 @@ struct OnScreenTextField: View {
                     .onChange(of: draft) { _, _ in highlightedLine = nil }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.return) {
+                        guard activeLine != nil else { return .ignored }
+                        commit()
+                        return .handled
+                    }
                     .onKeyPress(.escape) {
                         guard listOpen else { return .ignored }
                         clear()

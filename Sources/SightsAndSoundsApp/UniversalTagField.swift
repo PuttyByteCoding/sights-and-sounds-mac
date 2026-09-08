@@ -224,6 +224,16 @@ struct UniversalTagField: View {
                     }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onKeyPress(.downArrow) { move(1) }
+                    // Return beside the arrows, not only as the field's
+                    // submit: after an arrow the AppKit field editor can be
+                    // out of editing, and the first Return then only woke
+                    // it — Enter had to be pressed twice. Nothing to act on
+                    // falls through to the submit path (create).
+                    .onKeyPress(.return) {
+                        guard activeHit != nil else { return .ignored }
+                        commit()
+                        return .handled
+                    }
                 if willCreate {
                     Text("(New Tag)")
                         .font(Theme.mono(9.5))
