@@ -477,7 +477,7 @@ struct NewLibraryView: View {
 }
 
 /// One category, with the plan's real fields rather than a poorer set.
-/// This is the same vocabulary Categories & Fields edits later.
+/// This is the same vocabulary Tag Manager edits later.
 private struct CategoryPlanCard: View {
     @Binding var category: PlannedCategory
     let onMoveUp: () -> Void

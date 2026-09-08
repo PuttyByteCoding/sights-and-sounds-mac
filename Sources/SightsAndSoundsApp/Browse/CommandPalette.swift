@@ -356,7 +356,7 @@ struct CommandPalette: View {
 
     private var goTo: [PaletteCommand] {
         [
-            PaletteCommand(group: .goTo, title: "Categories & Fields", symbol: "tag.square") {
+            PaletteCommand(group: .goTo, title: "Tag Manager", symbol: "tag.square") {
                 aux(.categories)
             },
             PaletteCommand(group: .goTo, title: "Import", symbol: "square.and.arrow.down") {

@@ -425,7 +425,7 @@ struct ViewMenuCommands: View {
     var body: some View {
         Divider()
         Group {
-            aux("Categories & Fields", .categories, key: "1")
+            aux("Tag Manager", .categories, key: "1")
             aux("Import", .importMedia, key: "2")
             aux("Review", .review, key: "3")
             aux("Organise", .organise, key: "4")

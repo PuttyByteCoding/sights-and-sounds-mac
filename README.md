@@ -239,7 +239,7 @@ follow. Full context, locked decisions and the 11-phase plan live in
     and a clip one record — and on-screen text moves to a bottom drawer
     whose lines tag the playing item only. Triage is a mode, and the only
     place a flag key advances.
-  - Spec 04, Categories & Fields: three panes — categories in their order,
+  - Spec 04, Tag Manager (formerly Categories & Fields): three panes — categories in their order,
     a tag table with use counts and sortable headers, and an always-present
     inspector. `Similar only` clusters the spellings of one name; merging
     keeps the discarded ones as aliases; write-back becomes a picker over

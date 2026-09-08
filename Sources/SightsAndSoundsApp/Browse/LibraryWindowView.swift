@@ -176,7 +176,7 @@ struct BrowseView: View {
                     .help("Add source folders and scan them for new files")
                 }
                 ToolbarItem {
-                    Button("Categories", systemImage: "tag.square") {
+                    Button("Tag Manager", systemImage: "tag.square") {
                         openAux(.categories)
                     }
                     .help("Author this library's vocabulary — categories, tags, aliases and fields")

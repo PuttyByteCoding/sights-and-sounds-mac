@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SightsAndSoundsKit
 
-/// The operations the Categories & Fields window needs and the library
+/// The operations the Tag Manager window needs and the library
 /// did not have: merging, use counts, alias-aware creation, bulk order,
 /// field definitions — plus the display style that replaced a boolean.
 @Suite struct VocabularyEditingTests {

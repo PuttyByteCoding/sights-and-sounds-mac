@@ -240,7 +240,7 @@ struct RulesTabView: View {
                     .font(Theme.ui(Theme.TypeScale.secondary))
                     .foregroundStyle(Theme.Status.greenBright)
                 if !applied.unknownCategories.isEmpty {
-                    Text("No category named \(applied.unknownCategories.joined(separator: ", ")) — create it in Categories & Fields, then apply again.")
+                    Text("No category named \(applied.unknownCategories.joined(separator: ", ")) — create it in Tag Manager, then apply again.")
                         .font(Theme.ui(Theme.TypeScale.secondary))
                         .foregroundStyle(Theme.Status.warnText)
                 }

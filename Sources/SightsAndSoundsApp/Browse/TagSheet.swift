@@ -217,7 +217,7 @@ struct TagSheet: View {
                         value: AuxWindowRequest(libraryID: libraryID, kind: .categories))
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                .help("Categories & Fields — the bulk editor")
+                .help("Tag Manager — the bulk editor")
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(SecondaryButtonStyle())
