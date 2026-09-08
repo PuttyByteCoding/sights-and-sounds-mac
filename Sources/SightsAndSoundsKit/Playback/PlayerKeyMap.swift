@@ -39,9 +39,9 @@ public enum PlayerAction: Equatable, Sendable {
     /// Numpad 8: the keyboard goes to the Universal tag field, wherever
     /// it was. The top-row 8 keeps its seek.
     case focusUniversalField
-    /// Numpad 2: the keyboard goes to the On-screen Text field. The
-    /// top-row 2 stays unbound.
-    case focusOnScreenTextField
+    /// Numpad 2: the Universal field, and the text on the current frame
+    /// read into it — ⇧↓ from anywhere. The top-row 2 stays unbound.
+    case readOnScreenText
 }
 
 /// Which of the two keyboard maps is in force.
@@ -123,7 +123,7 @@ extension KeyMapStyle {
             web: "R  W  D", mac: "bound letters + advance"),
         KeyMapRow(label: "Seek to start / near end", web: "0 · 8 · numpad −", mac: "0 · 8 · numpad −"),
         KeyMapRow(label: "Focus the Universal tag field", web: "numpad 8", mac: "numpad 8"),
-        KeyMapRow(label: "Focus the On-screen Text field", web: "numpad 2", mac: "numpad 2"),
+        KeyMapRow(label: "Read the on-screen text into it", web: "numpad 2 · ⇧↓ in the field", mac: "numpad 2 · ⇧↓ in the field"),
         KeyMapRow(
             label: "Flag favorite / review / issue / delete",
             web: "F  R  W  D", mac: "F  R  W  D"),
@@ -156,7 +156,7 @@ extension KeyMapStyle {
 ///
 ///   1/4/7 seek back · 3/6/9 seek forward (short/medium/long, per settings)
 ///   5 or Space: play/pause · 0: start · 8 or numpad −: near end
-///   numpad 8: focus the Universal tag field · numpad 2: focus On-screen Text
+///   numpad 8: focus the Universal tag field · numpad 2: read the on-screen text into it
 ///   F favorite · R needs-review · D marked-for-deletion · W playback-issue
 ///
 /// The same digit table answers for the numpad, Shift+digit (shifted glyphs
@@ -236,7 +236,7 @@ public enum PlayerKeyMap {
         // field is the thing you reach for most while watching, and the
         // near-end seek it displaces is still on the top-row 8 and −.
         if numpad, ch == "8" { return .focusUniversalField }
-        if numpad, ch == "2" { return .focusOnScreenTextField }
+        if numpad, ch == "2" { return .readOnScreenText }
 
         // Shift+top-row glyphs map back to their digits.
         let digit: Character? = switch ch {

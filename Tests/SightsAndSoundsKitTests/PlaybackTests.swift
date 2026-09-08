@@ -49,10 +49,10 @@ import Testing
         #expect(action("-", numpad: true) == .seekToNearEnd)
     }
 
-    /// Numpad 2 reaches the On-screen Text field; the top-row 2 stays
-    /// unbound.
-    @Test func numpadTwoFocusesTheOnScreenTextField() {
-        #expect(action("2", numpad: true) == .focusOnScreenTextField)
+    /// Numpad 2 reads the on-screen text into the Universal field; the
+    /// top-row 2 stays unbound.
+    @Test func numpadTwoReadsTheOnScreenText() {
+        #expect(action("2", numpad: true) == .readOnScreenText)
         #expect(action("2") == nil)
     }
 

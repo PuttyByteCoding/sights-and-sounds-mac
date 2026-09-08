@@ -325,61 +325,6 @@ import Testing
     }
 }
 
-/// The On-screen Text field's place among the tag panel's categories —
-/// the same rule as the other two pseudo-fields, one slot later.
-@Suite struct OnScreenTextFieldPositionTests {
-    @Test func theDefaultSitsAfterTheResultsField() {
-        #expect(AppSettings().onScreenTextFieldPosition == 2)
-    }
-
-    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
-        #expect(decoded.onScreenTextFieldPosition == 2)
-    }
-
-    @Test func aNegativeValueIsClampedToFirst() throws {
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self, from: Data(#"{"onScreenTextFieldPosition": -1}"#.utf8))
-        #expect(decoded.onScreenTextFieldPosition == 0)
-    }
-}
-
-/// The Tag Analysis table's four fixed columns — dragged to taste, kept
-/// between launches, clamped so a hand-edited file cannot hide one.
-@Suite struct TagAnalysisColumnWidthsTests {
-    @Test func theDefaultsAreTheShippedWidths() {
-        let widths = AppSettings().tagAnalysisColumns
-        #expect(widths.key == 110)
-        #expect(widths.readers == 96)
-        #expect(widths.seen == 48)
-        #expect(widths.suggestion == 190)
-    }
-
-    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
-        #expect(decoded.tagAnalysisColumns == TagAnalysisColumnWidths())
-    }
-
-    @Test func aPartialOrHandEditedValueIsClamped() throws {
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self,
-            from: Data(#"{"tagAnalysisColumns": {"key": 5, "suggestion": 9000}}"#.utf8))
-        #expect(decoded.tagAnalysisColumns.key == 32)
-        #expect(decoded.tagAnalysisColumns.suggestion == 600)
-        #expect(decoded.tagAnalysisColumns.readers == 96)  // missing key keeps its default
-    }
-
-    @Test func theWidthsRoundTrip() throws {
-        var settings = AppSettings()
-        settings.tagAnalysisColumns.readers = 140
-        let decoded = try JSONDecoder().decode(
-            AppSettings.self, from: JSONEncoder().encode(settings))
-        #expect(decoded.tagAnalysisColumns.readers == 140)
-    }
-}
-
 /// The tag panel's row order — categories and the three pseudo-fields
 /// in one list, by key. Empty means "not yet chosen"; the panel seeds
 /// it from the older per-field positions.

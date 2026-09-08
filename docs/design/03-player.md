@@ -125,14 +125,15 @@ Right rail: tags (flex 1.35) over segments (flex 1), divided by a 1 pt rule, eac
 10 px section label and a Tab badge that lights amber when the zone holds focus.
 
 The tag panel's rows are the categories plus two pseudo-fields, each draggable to any slot:
-**Universal** (find or create in any category, `universalTagFieldPosition`) and **Tag Analysis
-Results** (`analysisResultsFieldPosition`): ↓ lists the tags the companion found for this
-video that it does not yet wear, typing narrows, Enter applies through the player. Dimmed —
-`Open Tag Analysis to see results` — while no companion is open; a spinner while it scans.
-**On-screen Text** (`onScreenTextFieldPosition`): ↓ reads the frame at the playhead with
-Vision, runs the Tag Analysis existing-tag pass over the text, and lists the tags it names
-first, then the raw lines; Enter on a tag applies it, Enter on a line opens New Tag seeded with
-it to clean up and create. `No video frame to read` for audio.
+**Universal** (find or create in any category) and **Tag Analysis Results** (↓ lists the tags
+the companion found for this video that it does not yet wear, typing narrows, Enter applies
+through the player; dimmed — `Open Tag Analysis to see results` — while no companion is open;
+a spinner while it scans). In the Universal field, ↑ on an empty box is the session's history,
+↓ is what Tag Analysis found, and ⇧↓ (or numpad 2 from anywhere) reads the frame at the
+playhead with Vision, runs the existing-tag pass over it, and lists the tags the text names
+first and the raw lines under them — Enter on a tag applies it, Enter on a line opens New Tag
+seeded with it to clean up and create. Esc closes whichever list is up and leaves the field
+empty and focused.
 
 Floors, all existing and all kept: video 150×150, tag panel 220, text panel 240, queue = one
 whole cell (`QueueCell.metadataHeight` + 42). The rail's floor is now the tag floor; the two
@@ -152,7 +153,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | Key map sheet title | `Keyboard map` |
 | Tag field, empty, ↓ | a category field: its whole list, unapplied, name order, capped like autocomplete. Universal: only what Tag Analysis found, marked `analysis`, or `No Tags from Tag Analysis` |
 | Numpad 8 | focus the Universal tag field, opening the tag panel if it is closed; top-row 8 and numpad − keep the near-end seek |
-| Numpad 2 | focus the On-screen Text field, opening the tag panel if it is closed; top-row 2 stays unbound |
+| Numpad 2 | the Universal field, and the on-screen text read into it (⇧↓ in the field does the same); top-row 2 stays unbound |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
 | Key map footnote | `Rows that differ are highlighted. Everything else is identical in both maps.` |
 | Focus footer, video | `<open> <close> segment · <triage> triage · numpad seek · Tab moves focus` |

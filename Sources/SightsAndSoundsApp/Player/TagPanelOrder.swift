@@ -1,6 +1,6 @@
 import Foundation
 
-/// One row of the player's tag panel: a category, or one of the three
+/// One row of the player's tag panel: a category, or one of the two
 /// fields that live among them. The panel's order is a list of these,
 /// so a drop can mean exactly "before that row" — the earlier scheme of
 /// per-field numbers meaning "before category N" could not say where a
@@ -11,7 +11,6 @@ enum PanelRow: Hashable, Sendable {
     case category(UUID)
     case universal
     case results
-    case onScreen
 
     /// The stored form.
     var key: String {
@@ -19,7 +18,6 @@ enum PanelRow: Hashable, Sendable {
         case .category(let id): id.uuidString
         case .universal: "universal"
         case .results: "results"
-        case .onScreen: "onScreen"
         }
     }
 
@@ -27,7 +25,6 @@ enum PanelRow: Hashable, Sendable {
         switch key {
         case "universal": self = .universal
         case "results": self = .results
-        case "onScreen": self = .onScreen
         default:
             guard let id = UUID(uuidString: key) else { return nil }
             self = .category(id)
@@ -41,7 +38,6 @@ enum PanelRow: Hashable, Sendable {
         case .category(let id): id
         case .universal: PlayerModel.universalFieldFocusID
         case .results: PlayerModel.analysisResultsFieldFocusID
-        case .onScreen: PlayerModel.onScreenTextFieldFocusID
         }
     }
 
@@ -49,7 +45,6 @@ enum PanelRow: Hashable, Sendable {
         switch focusID {
         case PlayerModel.universalFieldFocusID: self = .universal
         case PlayerModel.analysisResultsFieldFocusID: self = .results
-        case PlayerModel.onScreenTextFieldFocusID: self = .onScreen
         default: self = .category(focusID)
         }
     }
@@ -62,7 +57,7 @@ enum PanelRow: Hashable, Sendable {
 
 @MainActor
 enum TagPanelOrder {
-    static let pseudoRows: [PanelRow] = [.universal, .results, .onScreen]
+    static let pseudoRows: [PanelRow] = [.universal, .results]
 
     /// The panel's rows: the stored order reconciled against the
     /// vocabulary (unknown keys dropped, new categories appended in
@@ -71,7 +66,7 @@ enum TagPanelOrder {
     /// older settings held.
     static func rows(
         vocabulary: [UUID], stored: [String],
-        seed: (universal: Int, results: Int, onScreen: Int)
+        seed: (universal: Int, results: Int)
     ) -> [PanelRow] {
         let known = Set(vocabulary)
         var rows = stored.compactMap(PanelRow.init(key:)).filter {
@@ -80,7 +75,7 @@ enum TagPanelOrder {
         if rows.isEmpty {
             rows = PlayerModel.tagFieldOrder(
                 searchCategoryIDs: vocabulary, universalPosition: seed.universal,
-                resultsPosition: seed.results, onScreenPosition: seed.onScreen
+                resultsPosition: seed.results
             ).map(PanelRow.init(focusID:))
         }
         var seen = Set(rows)

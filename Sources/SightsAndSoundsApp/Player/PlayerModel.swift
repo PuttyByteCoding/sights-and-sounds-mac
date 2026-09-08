@@ -473,16 +473,18 @@ final class PlayerModel {
         case .toggleMarkedForDeletion: toggle(.markedForDeletion)
         case .togglePlaybackIssue: toggle(.playbackIssue)
         case .focusUniversalField: focusUniversalField()
-        case .focusOnScreenTextField: focusOnScreenTextField()
+        case .readOnScreenText: readOnScreenText()
         }
     }
 
-    /// Numpad 2: the On-screen Text field, the same way — panel open,
-    /// zone on it, keyboard in the field.
-    func focusOnScreenTextField() {
-        if !panels.tags { togglePanel(.tags) }
-        zone = .tags
-        tagFieldCategoryID = Self.onScreenTextFieldFocusID
+    /// Numpad 2: the Universal field, and a read of the frame at the
+    /// playhead into it — ⇧↓ without the reach. A count, not a flag, so
+    /// two presses in a row both read.
+    private(set) var screenReadRequests = 0
+
+    func readOnScreenText() {
+        focusUniversalField()
+        screenReadRequests += 1
     }
 
     /// Numpad 8: open the tag panel if it is closed, point the zone at
@@ -545,27 +547,22 @@ final class PlayerModel {
     static let analysisResultsFieldFocusID = UUID(
         uuidString: "22222222-2222-2222-2222-222222222222")!
 
-    /// The On-screen Text field's slot in the focus walk.
-    static let onScreenTextFieldFocusID = UUID(
-        uuidString: "33333333-3333-3333-3333-333333333333")!
-
     /// The panel's Tab order: the search categories in panel order with
     /// the pseudo-fields inserted at their positions. Positions are
     /// indexes into the category list; past the end means last. Fields
-    /// sorted by position (ties in declared order: Universal, Results,
-    /// On-screen) and inserted in that order, each shifted by how many
-    /// went in before it — so every field lands where its position says
-    /// relative to the categories, whatever the others chose.
+    /// sorted by position (ties in declared order: Universal, Results)
+    /// and inserted in that order, each shifted by how many went in
+    /// before it — so every field lands where its position says
+    /// relative to the categories, whatever the other chose. Kept as
+    /// the seed for the panel's row order on first run.
     static func tagFieldOrder(
-        searchCategoryIDs: [UUID], universalPosition: Int, resultsPosition: Int,
-        onScreenPosition: Int
+        searchCategoryIDs: [UUID], universalPosition: Int, resultsPosition: Int
     ) -> [UUID] {
         var fields = searchCategoryIDs
         let count = fields.count
         let pseudo: [(id: UUID, position: Int)] = [
             (universalFieldFocusID, min(max(0, universalPosition), count)),
             (analysisResultsFieldFocusID, min(max(0, resultsPosition), count)),
-            (onScreenTextFieldFocusID, min(max(0, onScreenPosition), count)),
         ]
         let ordered = pseudo.enumerated().sorted {
             ($0.element.position, $0.offset) < ($1.element.position, $1.offset)
@@ -597,8 +594,7 @@ final class PlayerModel {
             stored: settings.tagPanelRowOrder,
             seed: (
                 universal: settings.universalTagFieldPosition,
-                results: settings.analysisResultsFieldPosition,
-                onScreen: settings.onScreenTextFieldPosition))
+                results: settings.analysisResultsFieldPosition))
     }
 
     /// The panel's drag: move a row before another (nil = to the end).
