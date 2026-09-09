@@ -229,12 +229,14 @@ struct UniversalTagField: View {
         // Empty query + ↑: the session's recent applies, every category.
         if query.isEmpty {
             if showingHistory {
-                return recentTagIDs.compactMap { id in
+                // Capped after the applied are dropped, so the list is
+                // that many OFFERABLE tags, not that many minus the worn.
+                return Array(recentTagIDs.lazy.compactMap { id -> Hit? in
                     guard !appliedIDs.contains(id),
                           let row = index.first(where: { $0.tag.id == id })
                     else { return nil }
                     return hit(row)
-                }
+                }.prefix(AppSettingsStore.shared.current.tagHistoryLimit))
             }
             // ↓ lists what Tag Analysis found, and only that: the
             // vocabulary is for typing into. Nothing found says so.

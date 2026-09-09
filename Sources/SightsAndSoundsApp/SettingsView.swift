@@ -126,6 +126,7 @@ private struct PathSettingRow: View {
 private struct GeneralSettingsPane: View {
     @State private var defaultOrdering = AppSettingsStore.shared.current.defaultOrdering
     @State private var suggestionLimit = AppSettingsStore.shared.current.tagSuggestionLimit
+    @State private var historyLimit = AppSettingsStore.shared.current.tagHistoryLimit
 
     var body: some View {
         Form {
@@ -134,6 +135,9 @@ private struct GeneralSettingsPane: View {
                 Stepper(
                     "Tag suggestions shown: \(suggestionLimit)",
                     value: $suggestionLimit, in: 3...50)
+                Stepper(
+                    "Recent tags on ↑: \(historyLimit)",
+                    value: $historyLimit, in: 1...30)
                 Text("How many matches the tagging field offers while you type. Arrow up and down to pick one; Enter with nothing picked creates a new tag.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -173,6 +177,9 @@ private struct GeneralSettingsPane: View {
         }
         .onChange(of: suggestionLimit) {
             AppSettingsStore.shared.update { $0.tagSuggestionLimit = suggestionLimit }
+        }
+        .onChange(of: historyLimit) {
+            AppSettingsStore.shared.update { $0.tagHistoryLimit = historyLimit }
         }
     }
 }

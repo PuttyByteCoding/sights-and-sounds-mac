@@ -42,6 +42,12 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// baked into the view.
     public var tagSuggestionLimit: Int
 
+    /// How many of the session's recent applies ↑ on an empty tag field
+    /// lists. A working set is short — the last handful, not the whole
+    /// session — so this is small by default and separate from the
+    /// suggestion limit.
+    public var tagHistoryLimit: Int
+
     /// The order a library window opens with. `.random` deals a fresh
     /// shuffle each time a window opens, which is what makes it useful
     /// for surfacing things you have not seen.
@@ -110,6 +116,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         grid: GridSettings = GridSettings(),
         defaultOrdering: DefaultOrdering = .path,
         tagSuggestionLimit: Int = 15,
+        tagHistoryLimit: Int = 5,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         tagAnalysisRailWidth: Double = 240,
@@ -135,6 +142,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.grid = grid
         self.defaultOrdering = defaultOrdering
         self.tagSuggestionLimit = tagSuggestionLimit
+        self.tagHistoryLimit = tagHistoryLimit
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.tagAnalysisRailWidth = tagAnalysisRailWidth
@@ -177,6 +185,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         // 5000 should not make the field useless or unscrollable.
         tagSuggestionLimit = min(50, max(3, try container.decodeIfPresent(
             Int.self, forKey: .tagSuggestionLimit) ?? defaults.tagSuggestionLimit))
+        tagHistoryLimit = min(30, max(1, try container.decodeIfPresent(
+            Int.self, forKey: .tagHistoryLimit) ?? defaults.tagHistoryLimit))
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)
