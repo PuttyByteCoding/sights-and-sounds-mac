@@ -128,7 +128,8 @@ The tag panel's rows are the categories plus two pseudo-fields, each draggable t
 **Universal** (find or create in any category) and **Tag Analysis Results** (↓ lists the tags
 the companion found for this video that it does not yet wear, typing narrows, Enter applies
 through the player; dimmed — `Open Tag Analysis to see results` — while no companion is open;
-a spinner while it scans). In the Universal field, ↑ on an empty box is the session's history,
+a spinner while it scans). In the Universal field, ↑ on an empty box is the session's history (the
+last few applies, how many is Settings › General › "Recent tags on ↑", default 5),
 ↓ is what Tag Analysis found, and ⇧↓ (or numpad 2 from anywhere) reads the frame at the
 playhead with Vision, runs the existing-tag pass over it, and lists the tags the text names
 first and the raw lines under them — Enter on a tag applies it, Enter on a line opens New Tag

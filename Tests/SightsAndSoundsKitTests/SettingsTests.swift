@@ -272,6 +272,39 @@ import Testing
     }
 }
 
+/// The ↑-history limit, and its clamp.
+@Suite struct TagHistoryLimitTests {
+
+    @Test func defaultsToFive() {
+        #expect(AppSettings().tagHistoryLimit == 5)
+    }
+
+    @Test func aSettingsFileWrittenBeforeThisSettingStillLoads() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagSuggestionLimit": 15}"#.utf8))
+        #expect(decoded.tagHistoryLimit == 5)
+    }
+
+    /// Zero would make ↑ a dead key; more than the model keeps is empty
+    /// promise.
+    @Test func aHandEditedValueIsClamped() throws {
+        let low = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagHistoryLimit": 0}"#.utf8))
+        let high = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"tagHistoryLimit": 500}"#.utf8))
+        #expect(low.tagHistoryLimit == 1)
+        #expect(high.tagHistoryLimit == 30)
+    }
+
+    @Test func aSaneValueRoundTrips() throws {
+        var settings = AppSettings()
+        settings.tagHistoryLimit = 12
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.tagHistoryLimit == 12)
+    }
+}
+
 /// The Tag Analysis rail's width — dragged wider to make the preview
 /// bigger, and kept between launches like the player's rail.
 @Suite struct TagAnalysisRailWidthTests {

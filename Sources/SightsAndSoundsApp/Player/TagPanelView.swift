@@ -423,12 +423,14 @@ private struct PillCategoryView: View {
         if query.isEmpty {
             let appliedIDs = Set(applied.map(\.id))
             if showingHistory {
-                return model.recentlyAppliedTagIDs.compactMap { id in
+                // Capped after the filter: that many of THIS category's
+                // offerable tags, however many other applies sit between.
+                return Array(model.recentlyAppliedTagIDs.lazy.compactMap { id -> Suggestion? in
                     guard !appliedIDs.contains(id),
                           let tag = entry.tags.first(where: { $0.id == id })
                     else { return nil }
                     return Suggestion(tag: tag, matchedAlias: nil)
-                }
+                }.prefix(AppSettingsStore.shared.current.tagHistoryLimit))
             }
             // Browse mode: the category's tags, capped like autocomplete
             // so a thousand-tag category stays a list, not a wall.
