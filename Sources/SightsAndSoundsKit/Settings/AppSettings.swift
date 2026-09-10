@@ -48,6 +48,12 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// suggestion limit.
     public var tagHistoryLimit: Int
 
+    /// Whether the top-row digits stamp their bound tags — inside a tag
+    /// field too — or type. On is the speed run; off is for the tag whose
+    /// name is a year. Flipped from the player, so it is a setting rather
+    /// than a per-window flag: the mode you left is the mode you find.
+    public var digitKeysStampTags: Bool
+
     /// The order a library window opens with. `.random` deals a fresh
     /// shuffle each time a window opens, which is what makes it useful
     /// for surfacing things you have not seen.
@@ -117,6 +123,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         defaultOrdering: DefaultOrdering = .path,
         tagSuggestionLimit: Int = 15,
         tagHistoryLimit: Int = 5,
+        digitKeysStampTags: Bool = true,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         tagAnalysisRailWidth: Double = 240,
@@ -143,6 +150,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.defaultOrdering = defaultOrdering
         self.tagSuggestionLimit = tagSuggestionLimit
         self.tagHistoryLimit = tagHistoryLimit
+        self.digitKeysStampTags = digitKeysStampTags
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.tagAnalysisRailWidth = tagAnalysisRailWidth
@@ -187,6 +195,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             Int.self, forKey: .tagSuggestionLimit) ?? defaults.tagSuggestionLimit))
         tagHistoryLimit = min(30, max(1, try container.decodeIfPresent(
             Int.self, forKey: .tagHistoryLimit) ?? defaults.tagHistoryLimit))
+        digitKeysStampTags = try container.decodeIfPresent(
+            Bool.self, forKey: .digitKeysStampTags) ?? defaults.digitKeysStampTags
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)

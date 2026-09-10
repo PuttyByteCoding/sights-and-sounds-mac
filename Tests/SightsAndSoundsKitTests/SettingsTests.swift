@@ -272,6 +272,24 @@ import Testing
     }
 }
 
+/// The digit keys' mode: stamping by default, and an older file loads.
+@Suite struct DigitKeysModeTests {
+    @Test func stampsByDefaultAndAnOlderFileStillLoads() throws {
+        #expect(AppSettings().digitKeysStampTags)
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(decoded.digitKeysStampTags)
+    }
+
+    @Test func offRoundTrips() throws {
+        var settings = AppSettings()
+        settings.digitKeysStampTags = false
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(!decoded.digitKeysStampTags)
+    }
+}
+
 /// The ↑-history limit, and its clamp.
 @Suite struct TagHistoryLimitTests {
 

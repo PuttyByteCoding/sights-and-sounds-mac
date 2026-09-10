@@ -22,10 +22,14 @@ public struct TagKeyBinding: Codable, Equatable, Sendable, FetchableRecord, Pers
     }
 
     /// Keys offered for binding — everything the player's fixed map leaves
-    /// free. Same set the old app offered: F-keys minus reserved ones, and
-    /// letters the player doesn't claim now or in the phases ahead
-    /// (f/r/d/w today; t/i/u/k/g are spoken for by later features).
+    /// free. The top-row digits lead: a straight row is no numpad, so
+    /// they never made sense as seeks, and they are the speed run — a
+    /// category's values on 1…8, stamped from inside the tag field. Then
+    /// the F-keys minus reserved ones, and letters the player doesn't
+    /// claim now or in the phases ahead (f/r/d/w today; t/i/u/k/g are
+    /// spoken for by later features).
     public static let bindableKeys: [String] = [
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
         "F1", "F2", "F3", "F4", "F6", "F7", "F8", "F9",
         "a", "b", "c", "e", "h", "j", "l", "m",
         "n", "o", "p", "q", "s", "v", "x", "y", "z",

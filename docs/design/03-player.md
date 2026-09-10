@@ -157,13 +157,14 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | Numpad 2 | the Universal field, and the on-screen text read into it (⇧↓ in the field does the same); top-row 2 stays unbound |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
 | Key map footnote | `Rows that differ are highlighted. Everything else is identical in both maps.` |
-| Focus footer, video | `<open> <close> segment · <triage> triage · numpad seek · Tab moves focus` |
-| Focus footer, panels | `Esc releases to video · numpad seek still works · Tab moves focus` |
+| Focus footer, video | `<open> <close> segment · <triage> triage · numpad seek · Tab moves focus`, then ` · 1–9 stamp tags` or ` · 1–9 type` while any digit is bound |
+| Focus footer, panels | `Esc releases to video · numpad seek still works · Tab moves focus`, with the same digit suffix |
+| Digit keys | The top-row digits 1…9, 0 are tag keys, never seeks (a straight row is no numpad; the numpad keeps every seek). A bound digit stamps its tag from anywhere in the player, inside a tag field included, while Settings › Player › "Top-row digits stamp their bound tags" is on; off, digits type. The tag panel's header shows `1–9 stamp tags` / `1–9 type` whenever a digit is bound. ⌥digit toggles the checkbox category's Nth tag in either mode. Each binding's own `advance` flag decides whether the stamp moves to the next item. |
 | OCR drawer subtitle | `Vision OCR · click a line to seek` |
 | OCR → tag sheet | `Creates the tag in the chosen category and applies it to this item only. The category's formatting rule normalizes the name.` |
 | OCR → alias sheet | `The line becomes an alternative name for the tag you pick, so future searches and imports resolve it.` |
 | OCR, plural action | `Find across the library →` |
-| Bindings blurb | `A bound key toggles its tag on the playing item. Only keys the fixed map leaves free are offered.` |
+| Bindings blurb | `A bound key toggles its tag on the playing item. Digits stamp from inside a tag field too. Only keys the fixed map leaves free are offered.` |
 | Empty vocabulary | `No tag categories in this library yet — create them from the browse toolbar's Categories button.` *(existing)* |
 | OCR empty | `No scanned text for this item yet.` / `Scan queued — reopen this panel when it finishes.` *(existing)* |
 | Hide-block help | `Hide blocks: { opens at the playhead, } closes. They skip during playback; export an edited copy from the browse grid.` *(existing)* |

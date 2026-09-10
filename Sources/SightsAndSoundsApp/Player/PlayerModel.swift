@@ -89,6 +89,32 @@ final class PlayerModel {
     /// Settings applies without reopening the player.
     var keyMap: KeyMapStyle { AppSettingsStore.shared.current.keyMap }
 
+    /// The top-row digits' mode: stamping their bound tags, or typing.
+    /// Read from settings so every player agrees and the mode survives
+    /// a relaunch; `settingsTick` makes the read observable.
+    var digitsStampTags: Bool {
+        _ = settingsTick
+        return AppSettingsStore.shared.current.digitKeysStampTags
+    }
+    private var settingsTick = 0
+
+    func toggleDigitStamping() {
+        AppSettingsStore.shared.update { $0.digitKeysStampTags.toggle() }
+        settingsTick += 1
+    }
+
+    /// Whether any digit is bound — the mode is worth showing only then.
+    var hasDigitBindings: Bool {
+        boundKeys.keys.contains { $0.count == 1 && $0.first!.isNumber }
+    }
+
+    /// A top-row digit, wherever it was pressed: its bound tag when the
+    /// mode stamps, else nothing — the caller lets it type.
+    func handleDigitKey(_ character: Character) -> Bool {
+        guard character.isNumber, digitsStampTags else { return false }
+        return handleBoundKey(String(character))
+    }
+
     // MARK: - Focus
 
     /// Where the keyboard is pointed. The whole single-key map depends on

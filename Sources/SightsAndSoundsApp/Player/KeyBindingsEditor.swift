@@ -19,7 +19,7 @@ struct KeyBindingsEditor: View {
 
             let bindings = model.boundKeys.values.sorted { $0.key < $1.key }
             if bindings.isEmpty {
-                Text("No bindings yet. A bound key toggles its tag on the playing item.")
+                Text("No bindings yet. A bound key toggles its tag on the playing item. Digits stamp from inside a tag field too.")
                     .foregroundStyle(.secondary)
             } else {
                 List(bindings, id: \.key) { binding in
