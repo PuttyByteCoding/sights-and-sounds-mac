@@ -74,11 +74,10 @@ struct TileCard: View {
     let grid: GridSettings
     var thumbnail: NSImage?
     var isSelected = false
-    /// Right-clicking a tag pill asks the caller to edit that tag. The
-    /// player's queue strip passes nothing and its pills stay inert —
-    /// the tile does not know what an editor is.
-    var onEditTag: ((UUID) -> Void)?
-    var onPreviewTag: ((UUID) -> Void)?
+    /// The right-click menu for a tag pill, built by the caller for the
+    /// pill's tag id. The player's queue strip passes nothing and its
+    /// pills stay inert — the tile does not know what an editor is.
+    var tagMenu: ((UUID) -> AnyView)?
     /// The queue strip sizes its own thumbnail; the browse grid lets the
     /// column width decide.
     var thumbnailHeight: CGFloat?
@@ -272,8 +271,7 @@ struct TileCard: View {
                 // The innermost context menu wins, so right-clicking the
                 // pill edits the TAG while right-clicking the tile around
                 // it still gets the item's own menu.
-                .modifier(TagPillMenu(
-                    tagID: badge.tagID, onEdit: onEditTag, onPreview: onPreviewTag))
+                .modifier(TagPillMenu(tagID: badge.tagID, menu: tagMenu))
         } else if outside {
             text.modifier(WidthRule(width: entry.width(in: slot)))
         } else {
@@ -457,17 +455,11 @@ extension TileAlignment {
 /// right-click finds.
 private struct TagPillMenu: ViewModifier {
     let tagID: UUID?
-    let onEdit: ((UUID) -> Void)?
-    var onPreview: ((UUID) -> Void)?
+    let menu: ((UUID) -> AnyView)?
 
     func body(content: Content) -> some View {
-        if let tagID, let onEdit {
-            content.contextMenu {
-                Button("Edit Tag…") { onEdit(tagID) }
-                if let onPreview {
-                    Button("Show Items with This Tag") { onPreview(tagID) }
-                }
-            }
+        if let tagID, let menu {
+            content.contextMenu { menu(tagID) }
         } else {
             content
         }

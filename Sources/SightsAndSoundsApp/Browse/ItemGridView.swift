@@ -139,12 +139,10 @@ private struct EmptyGridState: View {
 
 private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     let item: MediaItem
     @State private var thumbnail: NSImage?
-    /// The tag whose editor is open, from a right-click on one of this
-    /// tile's pills.
-    @State private var editingTag: Tag?
+    /// The tag action a right-click on one of this tile's pills picked.
+    @State private var pending: TagAction?
 
     var body: some View {
         TileCard(
@@ -154,20 +152,19 @@ private struct ItemCell: View {
             grid: GridDisplaySettings.shared.grid,
             thumbnail: thumbnail,
             isSelected: model.selection.contains(item.id),
-            // A tag pill on a tile IS a tag: right-clicking one edits it,
-            // while right-clicking the tile around it still gets the
-            // item's own menu.
-            onEditTag: { id in
-                editingTag = model.vocabulary
-                    .flatMap(\.tags)
-                    .first { $0.id == id }
-            },
-            onPreviewTag: { id in
+            // A tag pill on a tile IS a tag: right-clicking one gets the
+            // tag's menu, while right-clicking the tile around it still
+            // gets the item's own.
+            tagMenu: { id in
                 guard let tag = model.vocabulary.flatMap(\.tags).first(where: { $0.id == id })
-                else { return }
-                openTagPlayerWindow(
-                    tag: tag, library: model.library,
-                    libraryID: model.libraryID, openWindow: openWindow)
+                else { return AnyView(EmptyView()) }
+                return AnyView(TagActionButtons(
+                    tag: tag, library: model.library, libraryID: model.libraryID,
+                    pending: $pending,
+                    removal: TagRemoval(label: TagRemoval.label(for: item.kind)) {
+                        try? model.library.removeTag(tag.id, from: item.id)
+                        model.refreshAll()
+                    }))
             })
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { play() }
@@ -179,14 +176,10 @@ private struct ItemCell: View {
                     range: flags.contains(.shift))
             }
             .contextMenu { menu }
-            .sheet(item: $editingTag) { tag in
-                TagSheet(
-                    mode: .edit(tag),
-                    library: model.library,
-                    libraryID: model.libraryID,
-                    categories: model.vocabulary.map(\.category),
-                    onSaved: { _ in model.refreshAll() })
-            }
+            .tagActions(
+                $pending, library: model.library, libraryID: model.libraryID,
+                categories: model.vocabulary.map(\.category),
+                onChange: { model.refreshAll() })
             .task(id: item.id) {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id,

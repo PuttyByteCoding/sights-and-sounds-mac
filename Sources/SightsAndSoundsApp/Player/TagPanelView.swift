@@ -297,13 +297,12 @@ private struct CategoryHeading: View {
 
 private struct CheckboxCategoryView: View {
     @Environment(PlayerModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     let entry: CategoryTags
     let isAltTarget: Bool
     /// A radio category shows the same list; picking replaces rather
     /// than adds, which `assignTag` already enforces for single-select.
     var single = false
-    @State private var editing: Tag?
+    @State private var pending: TagAction?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -339,23 +338,19 @@ private struct CheckboxCategoryView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    Button("Edit Tag…") { editing = tag }
-                    Button("Show Items with This Tag") {
-                        openTagPlayerWindow(
-                            tag: tag, library: model.library,
-                            libraryID: model.libraryID, openWindow: openWindow)
-                    }
+                    TagActionButtons(
+                        tag: tag, library: model.library, libraryID: model.libraryID,
+                        pending: $pending,
+                        removal: on ? TagRemoval(
+                            label: TagRemoval.label(for: model.item?.kind ?? .video)
+                        ) { model.toggleTag(tag.id) } : nil)
                 }
             }
         }
-        .sheet(item: $editing) { tag in
-            TagSheet(
-                mode: .edit(tag),
-                library: model.library,
-                libraryID: model.libraryID,
-                categories: model.panelVocabulary.map(\.category)
-            ) { _ in model.refreshTagging() }
-        }
+        .tagActions(
+            $pending, library: model.library, libraryID: model.libraryID,
+            categories: model.panelVocabulary.map(\.category),
+            onChange: { model.refreshTagging() })
     }
 
     private var hue: Color { Theme.categoryHue(entry.category.colorIndex) }
@@ -363,7 +358,6 @@ private struct CheckboxCategoryView: View {
 
 private struct PillCategoryView: View {
     @Environment(PlayerModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     let entry: CategoryTags
     var takesFocus = false
     var focus: FocusState<UUID?>.Binding
@@ -385,7 +379,9 @@ private struct PillCategoryView: View {
     @State private var browsingAll = false
     /// The tag whose editor is open, from a right-click on any tag this
     /// category draws — applied pill or suggestion alike.
-    @State private var editing: Tag?
+    /// The tag action a right-click picked — one sheet for every pill
+    /// and suggestion row of this category.
+    @State private var pending: TagAction?
     private var fieldFocused: Bool { focus.wrappedValue == entry.id }
 
     /// The sheet takes the keyboard; closing it must hand the keyboard
@@ -570,12 +566,9 @@ private struct PillCategoryView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    Button("Edit Tag…") { editing = suggestion.tag }
-                    Button("Show Items with This Tag") {
-                        openTagPlayerWindow(
-                            tag: suggestion.tag, library: model.library,
-                            libraryID: model.libraryID, openWindow: openWindow)
-                    }
+                    TagActionButtons(
+                        tag: suggestion.tag, library: model.library,
+                        libraryID: model.libraryID, pending: $pending)
                 }
     }
     /// Enter: apply what is selected, or create when nothing is. A
@@ -627,12 +620,12 @@ private struct PillCategoryView: View {
                             Capsule().stroke(hue.opacity(0.35), lineWidth: 1)
                         }
                         .contextMenu {
-                            Button("Edit Tag…") { editing = tag }
-                            Button("Show Items with This Tag") {
-                        openTagPlayerWindow(
-                            tag: tag, library: model.library,
-                            libraryID: model.libraryID, openWindow: openWindow)
-                    }
+                            TagActionButtons(
+                                tag: tag, library: model.library, libraryID: model.libraryID,
+                                pending: $pending,
+                                removal: TagRemoval(
+                                    label: TagRemoval.label(for: model.item?.kind ?? .video)
+                                ) { model.toggleTag(tag.id) })
                         }
                     }
                 }
@@ -721,14 +714,11 @@ private struct PillCategoryView: View {
             browsingAll = false
             highlightedID = nil
         }
-        .sheet(item: $editing, onDismiss: restoreFieldFocus) { tag in
-            TagSheet(
-                mode: .edit(tag),
-                library: model.library,
-                libraryID: model.libraryID,
-                categories: model.panelVocabulary.map(\.category)
-            ) { _ in model.refreshTagging() }
-        }
+        .tagActions(
+            $pending, library: model.library, libraryID: model.libraryID,
+            categories: model.panelVocabulary.map(\.category),
+            onChange: { model.refreshTagging() },
+            onDismiss: restoreFieldFocus)
         .sheet(isPresented: $creating, onDismiss: restoreFieldFocus) {
             TagSheet(
                 mode: .create(categoryID: entry.category.id, name: query),

@@ -13,7 +13,6 @@ import SightsAndSoundsKit
 /// single-select enforcement, cascades).
 struct CategoryManagerView: View {
     @Environment(BrowseModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
 
     /// What the centre and the inspector are showing. Item fields are a
     /// peer of the categories, not a mode: the schema says a field
@@ -44,6 +43,9 @@ struct CategoryManagerView: View {
     @State private var showPaste = false
     /// The tag sheet, over a tag being edited or a category to create in.
     @State private var editingTag: Tag?
+    /// The table's right-click actions — one sheet or confirmation for
+    /// the whole table.
+    @State private var pending: TagAction?
     @State private var creatingIn: TagCategory?
     @State private var inspectorTab: InspectorTab = .category
 
@@ -267,15 +269,16 @@ struct CategoryManagerView: View {
                             try? model.library.setTagHidden(tag.id, !tag.hiddenByDefault)
                             reloadTags()
                         },
-                        onDelete: { tag in
-                            try? model.library.deleteTag(tag.id)
-                            reloadTags()
-                        },
-                        onShowItems: { tag in
-                            openTagPlayerWindow(
-                                tag: tag, library: model.library,
-                                libraryID: model.libraryID, openWindow: openWindow)
-                        })
+                        pending: $pending,
+                        library: model.library,
+                        libraryID: model.libraryID)
+                        .tagActions(
+                            $pending, library: model.library, libraryID: model.libraryID,
+                            categories: categories,
+                            onChange: {
+                                reloadTags()
+                                model.refreshAll()
+                            })
                     if mergeMode {
                         MergeBar(
                             picks: mergePicks,

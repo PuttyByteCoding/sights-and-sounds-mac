@@ -122,7 +122,7 @@ gutter), **Clean** (duration only).
 | Element | String |
 |---|---|
 | Filter slots legend | `Required — item must carry it` · `Optional — any one of these` · `Excluded — item must not carry it` |
-| Legend footnote | `Click cycles through the slots. Right-click a tag to edit it.` |
+| Legend footnote | `Click cycles through the slots. Right-click a tag for its menu.` |
 | Missing row | `Missing — no <Category> tag` |
 | Offline banner | `N of these M items live on <Sources> — tags, fields and thumbnails are local and current. Only playback and file operations are unavailable.` |
 | Offline banner, hidden | `N items on <Sources> are hidden. Their tags, fields and thumbnails are local and still current.` |
