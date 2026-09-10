@@ -117,6 +117,13 @@ struct TagAnalysisView: View {
         .onChange(of: model?.currentItemID) { _, _ in
             if let model { sweepCurrentIfNeeded(model) }
         }
+        // The companion is attached to its player: when the player goes,
+        // it goes. The closed-state view below remains for a window that
+        // never found its player — restored state, or one that was
+        // released before this opened — since nothing will close that.
+        .onChange(of: model?.playerIsOpen) { _, open in
+            if open == false { dismiss() }
+        }
         .onDisappear {
             model?.close()
             if let sessionID { app.releaseAnalysisSessionIfFinished(sessionID) }
