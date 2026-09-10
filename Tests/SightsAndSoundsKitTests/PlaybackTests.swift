@@ -27,6 +27,24 @@ import Testing
         #expect(TagKeyBinding.bindableKeys.prefix(10).elementsEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]))
     }
 
+    /// The right-hand cluster stands in for the keypad, laid out like it.
+    @Test func laptopNumpadMirrorsTheKeypadLayout() {
+        let rows: [(String, String)] = [("uio", "789"), ("jkl", "456"), ("m,.", "123")]
+        for (keys, digits) in rows {
+            for (key, digit) in zip(keys, digits) {
+                #expect(PlayerKeyMap.laptopNumpadKey(for: key) == digit)
+                #expect(PlayerKeyMap.laptopNumpadKey(for: Character(key.uppercased())) == digit)
+            }
+        }
+        #expect(PlayerKeyMap.laptopNumpadKey(for: ";") == "0")
+        #expect(PlayerKeyMap.laptopNumpadKey(for: "'") == "-")
+        #expect(PlayerKeyMap.laptopNumpadKey(for: "h") == nil)
+        // Through the map: K plays, I reaches the Universal field, ' seeks near the end.
+        #expect(action(PlayerKeyMap.laptopNumpadKey(for: "k")!, numpad: true) == .playPause)
+        #expect(action(PlayerKeyMap.laptopNumpadKey(for: "i")!, numpad: true) == .focusUniversalField)
+        #expect(action(PlayerKeyMap.laptopNumpadKey(for: "'")!, numpad: true) == .seekToNearEnd)
+    }
+
     @Test func digitSeekTable() {
         // 1/4/7 back, 3/6/9 forward, per settings.
         #expect(action("1", numpad: true) == .seek(seconds: -1))

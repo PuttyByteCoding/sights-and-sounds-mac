@@ -54,6 +54,12 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// than a per-window flag: the mode you left is the mode you find.
     public var digitKeysStampTags: Bool
 
+    /// The laptop numpad layer: U I O · J K L · M , . stand in for the
+    /// keypad's 7 8 9 · 4 5 6 · 1 2 3, ; for 0 and ' for −, inside a tag
+    /// field too. Off by default — those keys are letters on a desk with
+    /// a keypad — and flipped from the player with ⌃⌃.
+    public var laptopNumpad: Bool
+
     /// The order a library window opens with. `.random` deals a fresh
     /// shuffle each time a window opens, which is what makes it useful
     /// for surfacing things you have not seen.
@@ -124,6 +130,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         tagSuggestionLimit: Int = 15,
         tagHistoryLimit: Int = 5,
         digitKeysStampTags: Bool = true,
+        laptopNumpad: Bool = false,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         tagAnalysisRailWidth: Double = 240,
@@ -151,6 +158,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.tagSuggestionLimit = tagSuggestionLimit
         self.tagHistoryLimit = tagHistoryLimit
         self.digitKeysStampTags = digitKeysStampTags
+        self.laptopNumpad = laptopNumpad
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.tagAnalysisRailWidth = tagAnalysisRailWidth
@@ -197,6 +205,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             Int.self, forKey: .tagHistoryLimit) ?? defaults.tagHistoryLimit))
         digitKeysStampTags = try container.decodeIfPresent(
             Bool.self, forKey: .digitKeysStampTags) ?? defaults.digitKeysStampTags
+        laptopNumpad = try container.decodeIfPresent(
+            Bool.self, forKey: .laptopNumpad) ?? defaults.laptopNumpad
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)

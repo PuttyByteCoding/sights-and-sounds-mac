@@ -71,7 +71,10 @@ struct PlayerView: View {
         // hands there. The footer and the tag panel show the result.
         .background {
             if let model {
-                ModifierTapMonitor(taps: [.shift: { model.toggleDigitStamping() }])
+                ModifierTapMonitor(taps: [
+                    .shift: { model.toggleDigitStamping() },
+                    .control: { model.toggleLaptopNumpad() },
+                ])
                     .frame(width: 0, height: 0)
             }
         }
@@ -240,9 +243,12 @@ struct PlayerView: View {
                        ?? character.wholeNumberValue.flatMap({ (1...9).contains($0) ? $0 : nil }) {
                     return model.toggleCheckboxTag(at: digit)
                 }
-                if press.modifiers.isDisjoint(with: [.shift, .command, .control, .option]),
-                   model.handleDigitKey(character) {
-                    return true
+                if press.modifiers.isDisjoint(with: [.shift, .command, .control, .option]) {
+                    if model.handleDigitKey(character) { return true }
+                    // The laptop numpad is a layer: while it is on, its
+                    // keys are the keypad even mid-word — that is what
+                    // ⌃⌃ is for — and while it is off they type.
+                    if model.handleLaptopNumpadKey(character) { return true }
                 }
             }
             if press.modifiers.contains(.shift),
@@ -335,13 +341,18 @@ struct PlayerView: View {
             let index = Int(fMatch.value - 0xF704) + 1
             if model.handleBoundKey("F\(index)") { return true }
         }
-        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
-           character.isLetter, model.handleBoundKey(String(character)) {
-            return true
-        }
         // Top-row digits: tag keys, on the same mode as inside a field.
         if press.modifiers.isDisjoint(with: [.shift, .command, .control, .numericPad]),
            model.handleDigitKey(character) {
+            return true
+        }
+        // The laptop numpad layer, ahead of the letters it borrows.
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control, .option, .numericPad]),
+           model.handleLaptopNumpadKey(character) {
+            return true
+        }
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
+           character.isLetter, model.handleBoundKey(String(character)) {
             return true
         }
 
@@ -1141,10 +1152,14 @@ private struct FocusFooter: View {
         let base = model.zone == .video
             ? "\(labels.segmentOpen) \(labels.segmentClose) segment · \(labels.triage) triage · numpad seek · Tab moves focus"
             : "Esc releases to video · numpad seek still works · Tab moves focus"
-        // The digits' mode, whenever a digit is bound: the one thing
-        // about the keyboard that changes under you.
-        guard model.hasDigitBindings else { return base }
-        return base + (model.digitsStampTags ? " · 1–9 stamp tags" : " · 1–9 type")
+        // The modes that change the keyboard under you: the digits',
+        // whenever a digit is bound, and the laptop numpad while it is on.
+        var hint = base
+        if model.hasDigitBindings {
+            hint += model.digitsStampTags ? " · 1–9 stamp tags" : " · 1–9 type"
+        }
+        if model.laptopNumpad { hint += " · laptop numpad on (⌃⌃ off)" }
+        return hint
     }
 }
 
