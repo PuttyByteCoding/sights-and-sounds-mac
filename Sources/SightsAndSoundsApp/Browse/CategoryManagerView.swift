@@ -13,6 +13,7 @@ import SightsAndSoundsKit
 /// single-select enforcement, cascades).
 struct CategoryManagerView: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     /// What the centre and the inspector are showing. Item fields are a
     /// peer of the categories, not a mode: the schema says a field
@@ -269,6 +270,11 @@ struct CategoryManagerView: View {
                         onDelete: { tag in
                             try? model.library.deleteTag(tag.id)
                             reloadTags()
+                        },
+                        onShowItems: { tag in
+                            openTagPlayerWindow(
+                                tag: tag, library: model.library,
+                                libraryID: model.libraryID, openWindow: openWindow)
                         })
                     if mergeMode {
                         MergeBar(
