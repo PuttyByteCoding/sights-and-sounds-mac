@@ -343,7 +343,8 @@ private struct CheckboxCategoryView: View {
                         pending: $pending,
                         removal: on ? TagRemoval(
                             label: TagRemoval.label(for: model.item?.kind ?? .video)
-                        ) { model.toggleTag(tag.id) } : nil)
+                        ) { model.toggleTag(tag.id) } : nil,
+                        itemID: on ? model.item?.id : nil)
                 }
             }
         }
@@ -625,7 +626,8 @@ private struct PillCategoryView: View {
                                 pending: $pending,
                                 removal: TagRemoval(
                                     label: TagRemoval.label(for: model.item?.kind ?? .video)
-                                ) { model.toggleTag(tag.id) })
+                                ) { model.toggleTag(tag.id) },
+                                itemID: model.item?.id)
                         }
                     }
                 }

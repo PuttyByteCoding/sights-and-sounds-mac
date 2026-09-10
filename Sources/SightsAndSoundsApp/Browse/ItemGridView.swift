@@ -164,7 +164,8 @@ private struct ItemCell: View {
                     removal: TagRemoval(label: TagRemoval.label(for: item.kind)) {
                         try? model.library.removeTag(tag.id, from: item.id)
                         model.refreshAll()
-                    }))
+                    },
+                    itemID: item.id))
             })
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { play() }
