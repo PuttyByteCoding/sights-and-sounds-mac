@@ -118,6 +118,10 @@ extension KeyMapStyle {
             label: "Stamp a bound tag, in a tag field too",
             web: "1 … 9 · 0", mac: "1 … 9 · 0"),
         KeyMapRow(label: "Digits stamp / digits type", web: "⇧⇧", mac: "⇧⇧"),
+        KeyMapRow(
+            label: "Laptop numpad (a layer): 7 8 9 · 4 5 6 · 1 2 3 · 0 · −",
+            web: "U I O · J K L · M , . · ; · '", mac: "U I O · J K L · M , . · ; · '"),
+        KeyMapRow(label: "Laptop numpad on / off", web: "⌃⌃", mac: "⌃⌃"),
         KeyMapRow(label: "Previous / next item", web: "⇧← ⇧→", mac: "← → · ⇧← ⇧→"),
         KeyMapRow(label: "Open / close a segment", web: "[  ]", mac: "⌃{  ⌃}"),
         KeyMapRow(label: "Close as a clip", web: "C", mac: "C"),
@@ -167,6 +171,29 @@ extension KeyMapStyle {
 /// tag keys — a straight row is no numpad — and the caller routes them
 /// to the bindings, inside a tag field included.
 public enum PlayerKeyMap {
+    /// The laptop's numpad: the right-hand cluster laid out like the
+    /// keypad it stands in for — U I O over J K L over M , . for 7 8 9,
+    /// 4 5 6, 1 2 3, with ; as 0 and ' as −. A layer, on when the
+    /// setting says so, because J, L, M and O are otherwise bindable
+    /// letters and M and L are mute and loop. Returns the numpad digit
+    /// (or −) the key stands for, or nil when it stands for nothing.
+    public static func laptopNumpadKey(for character: Character) -> Character? {
+        switch Character(character.lowercased()) {
+        case "u": "7"
+        case "i": "8"
+        case "o": "9"
+        case "j": "4"
+        case "k": "5"
+        case "l": "6"
+        case "m": "1"
+        case ",": "2"
+        case ".": "3"
+        case ";": "0"
+        case "'": "-"
+        default: nil
+        }
+    }
+
 
     // MARK: - The four rows the maps disagree on
 

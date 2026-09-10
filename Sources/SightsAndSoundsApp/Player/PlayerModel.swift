@@ -103,6 +103,25 @@ final class PlayerModel {
         settingsTick += 1
     }
 
+    /// The laptop numpad layer: the right-hand cluster as the keypad.
+    var laptopNumpad: Bool {
+        _ = settingsTick
+        return AppSettingsStore.shared.current.laptopNumpad
+    }
+
+    func toggleLaptopNumpad() {
+        AppSettingsStore.shared.update { $0.laptopNumpad.toggle() }
+        settingsTick += 1
+    }
+
+    /// A key on the laptop numpad layer, wherever it was pressed: the
+    /// keypad action it stands for while the layer is on, else nothing —
+    /// the caller lets the letter be a letter.
+    func handleLaptopNumpadKey(_ character: Character) -> Bool {
+        guard laptopNumpad, let key = PlayerKeyMap.laptopNumpadKey(for: character) else { return false }
+        return handle(character: key, shift: false, numpad: true)
+    }
+
     /// Whether any digit is bound — the mode is worth showing only then.
     var hasDigitBindings: Bool {
         boundKeys.keys.contains { $0.count == 1 && $0.first!.isNumber }

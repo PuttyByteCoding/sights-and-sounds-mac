@@ -233,6 +233,7 @@ private struct PlaybackSettingsPane: View {
     @State private var infoBar = AppSettingsStore.shared.current.infoBar
     @State private var keyMap = AppSettingsStore.shared.current.keyMap
     @State private var digitsStamp = AppSettingsStore.shared.current.digitKeysStampTags
+    @State private var laptopNumpad = AppSettingsStore.shared.current.laptopNumpad
     @State private var videoAnchor = AppSettingsStore.shared.current.videoAnchor
 
     var body: some View {
@@ -268,6 +269,10 @@ private struct PlaybackSettingsPane: View {
                 }
                 .pickerStyle(.inline)
                 Text("The two maps differ on four rows. Press ? in the player to compare them side by side; every hint in the window follows this choice.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Laptop numpad: U I O · J K L · M , . as the keypad", isOn: $laptopNumpad)
+                Text("For a keyboard without a keypad. The right-hand cluster becomes 7 8 9 · 4 5 6 · 1 2 3, ; is 0 and ' is −, inside a tag field too. Tap Control twice in the player to flip it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Top-row digits stamp their bound tags", isOn: $digitsStamp)
@@ -313,6 +318,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: digitsStamp) {
             AppSettingsStore.shared.update { $0.digitKeysStampTags = digitsStamp }
+        }
+        .onChange(of: laptopNumpad) {
+            AppSettingsStore.shared.update { $0.laptopNumpad = laptopNumpad }
         }
         .onChange(of: infoBar) {
             AppSettingsStore.shared.update { $0.infoBar = infoBar }

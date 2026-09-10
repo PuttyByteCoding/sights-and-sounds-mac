@@ -288,6 +288,17 @@ import Testing
             AppSettings.self, from: JSONEncoder().encode(settings))
         #expect(!decoded.digitKeysStampTags)
     }
+
+    /// The laptop numpad is off by default — its keys are letters on a
+    /// desk — and on round-trips.
+    @Test func theLaptopNumpadIsOffByDefaultAndOnRoundTrips() throws {
+        #expect(!AppSettings().laptopNumpad)
+        var settings = AppSettings()
+        settings.laptopNumpad = true
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.laptopNumpad)
+    }
 }
 
 /// The ↑-history limit, and its clamp.
