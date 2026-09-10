@@ -114,7 +114,10 @@ entry with its own count.
 All / Similar only segmented control, and Merge tags · Paste List… · **+ Tag**. Below it a
 sticky 31 pt header row on `#141109` over the scrolling table. Columns
 `1fr / 150 / 66 / 40 / 34` — name, aliases, uses, favourite, menu — with a 30 pt checkbox
-column prepended in merge mode. Both header and rows carry the same grid string and
+column prepended in merge mode. The row menu, on the ellipsis and on right-click anywhere in
+the row: **Show Items with This Tag** (a player window whose queue is every item wearing it,
+the same command as the sidebar's) · Edit Tag… · favourite · Hide by default / Unhide ·
+Delete. Both header and rows carry the same grid string and
 `scrollbar-gutter: stable`; a header outside the scroller with rows inside it is how these
 columns come apart. Merge mode adds a raised bar at the foot: instruction, picked count,
 target picker, new-name field, Merge.
