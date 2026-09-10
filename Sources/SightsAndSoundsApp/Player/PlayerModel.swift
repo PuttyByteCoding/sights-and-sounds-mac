@@ -329,6 +329,13 @@ final class PlayerModel {
         item = loaded
         fileURL = url
         durationSeconds = loaded.durationSeconds ?? 0
+        // The playhead answers for THIS item from now on. It used to keep
+        // the last item's position until the new file's first time tick
+        // — seconds, on a big file over the network — and a "skip the
+        // intro" pressed in that gap seeked from where the LAST video
+        // was, which is how the next one came up well into its running
+        // time. A clip's seek below moves it to the in-point.
+        currentSeconds = 0
 
         // A load is a watch, even a brief one: the history stamps now,
         // and every History queue over this library hears about it —
