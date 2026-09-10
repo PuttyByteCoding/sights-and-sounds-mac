@@ -74,6 +74,17 @@ struct TagPanelView: View {
                 Text(appliedCount == 0 ? "" : "\(appliedCount) applied")
                     .font(Theme.mono(9.5))
                     .foregroundStyle(Theme.Text.disabled)
+                // The digits' mode, beside the fields it governs: a
+                // digit typed here stamps a tag or spells a name, and
+                // which one must be readable before the key goes down.
+                if model.hasDigitBindings {
+                    Text(model.digitsStampTags ? "1–9 stamp tags" : "1–9 type")
+                        .font(Theme.mono(9.5))
+                        .foregroundStyle(model.digitsStampTags ? Theme.Accent.amber : Theme.Text.disabled)
+                        .help(model.digitsStampTags
+                            ? "Top-row digits apply their bound tags, inside a tag field too"
+                            : "Top-row digits type")
+                }
                 ZoneBadge(zone: .tags)
             }
             .padding(.horizontal, 12)

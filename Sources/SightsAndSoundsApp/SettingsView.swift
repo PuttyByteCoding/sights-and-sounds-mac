@@ -232,6 +232,7 @@ private struct PlaybackSettingsPane: View {
     @State private var loopVideos = AppSettingsStore.shared.current.loopVideos
     @State private var infoBar = AppSettingsStore.shared.current.infoBar
     @State private var keyMap = AppSettingsStore.shared.current.keyMap
+    @State private var digitsStamp = AppSettingsStore.shared.current.digitKeysStampTags
     @State private var videoAnchor = AppSettingsStore.shared.current.videoAnchor
 
     var body: some View {
@@ -269,6 +270,10 @@ private struct PlaybackSettingsPane: View {
                 Text("The two maps differ on four rows. Press ? in the player to compare them side by side; every hint in the window follows this choice.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("Top-row digits stamp their bound tags", isOn: $digitsStamp)
+                Text("On, a digit applies the tag bound to it — inside a tag field too. Off, digits type, for a tag whose name is a year. Bind digits from the player's bindings editor.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("Player chrome") {
                 Toggle("Position (\u{201C}x of y\u{201D}) in the footer", isOn: $infoBar.showsPosition)
@@ -282,7 +287,7 @@ private struct PlaybackSettingsPane: View {
                 row("Keys 4 / 6 — medium", back: $skip.key4Seconds, forward: $skip.key6Seconds)
                 row("Keys 7 / 9 — long", back: $skip.key7Seconds, forward: $skip.key9Seconds)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("1/4/7 seek back · 3/6/9 forward (top row, shifted, or numpad)")
+                    Text("Numpad 1/4/7 seek back · 3/6/9 forward. The top-row digits are tag keys.")
                     Text("Applies to the next item you play.")
                 }
                 .font(.caption)
@@ -305,6 +310,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: keyMap) {
             AppSettingsStore.shared.update { $0.keyMap = keyMap }
+        }
+        .onChange(of: digitsStamp) {
+            AppSettingsStore.shared.update { $0.digitKeysStampTags = digitsStamp }
         }
         .onChange(of: infoBar) {
             AppSettingsStore.shared.update { $0.infoBar = infoBar }

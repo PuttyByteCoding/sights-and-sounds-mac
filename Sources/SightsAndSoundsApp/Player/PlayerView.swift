@@ -221,6 +221,21 @@ struct PlayerView: View {
                character.isNumber || character == "-" {
                 return model.handle(character: character, shift: false, numpad: true)
             }
+            // The top-row digits are the speed run, and the speed run
+            // happens IN the tag field: a bare digit stamps its bound tag
+            // while the mode says so, and types when it does not. ⌥digit
+            // toggles the checkbox category's Nth tag whatever the mode.
+            if let character = press.characters.first {
+                if press.modifiers.contains(.option),
+                   let digit = Self.optionDigitGlyphs[character]
+                       ?? character.wholeNumberValue.flatMap({ (1...9).contains($0) ? $0 : nil }) {
+                    return model.toggleCheckboxTag(at: digit)
+                }
+                if press.modifiers.isDisjoint(with: [.shift, .command, .control, .option]),
+                   model.handleDigitKey(character) {
+                    return true
+                }
+            }
             if press.modifiers.contains(.shift),
                press.key == .leftArrow || press.key == .rightArrow {
                 press.key == .leftArrow ? model.goPrevious() : model.goNext()
@@ -313,6 +328,11 @@ struct PlayerView: View {
         }
         if press.modifiers.isDisjoint(with: [.shift, .command, .control]),
            character.isLetter, model.handleBoundKey(String(character)) {
+            return true
+        }
+        // Top-row digits: tag keys, on the same mode as inside a field.
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control, .numericPad]),
+           model.handleDigitKey(character) {
             return true
         }
 
@@ -1109,9 +1129,13 @@ private struct FocusFooter: View {
 
     private var hint: String {
         let labels = model.keyMap.labels
-        return model.zone == .video
+        let base = model.zone == .video
             ? "\(labels.segmentOpen) \(labels.segmentClose) segment · \(labels.triage) triage · numpad seek · Tab moves focus"
             : "Esc releases to video · numpad seek still works · Tab moves focus"
+        // The digits' mode, whenever a digit is bound: the one thing
+        // about the keyboard that changes under you.
+        guard model.hasDigitBindings else { return base }
+        return base + (model.digitsStampTags ? " · 1–9 stamp tags" : " · 1–9 type")
     }
 }
 

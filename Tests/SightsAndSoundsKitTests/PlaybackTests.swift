@@ -16,36 +16,35 @@ import Testing
         PlayerKeyMap.action(character: ch, shift: shift, numpad: numpad, settings: settings)
     }
 
-    @Test func digitSeekTable() {
-        // 1/4/7 back, 3/6/9 forward, per settings.
-        #expect(action("1") == .seek(seconds: -1))
-        #expect(action("3") == .seek(seconds: 3))
-        #expect(action("4") == .seek(seconds: -4))
-        #expect(action("6") == .seek(seconds: 6))
-        #expect(action("7") == .seek(seconds: -7))
-        #expect(action("9") == .seek(seconds: 9))
-        #expect(action("5") == .playPause)
-        #expect(action("0") == .seekToStart)
-        #expect(action("8") == .seekToNearEnd)
-        #expect(action("2") == nil)
+    /// The top-row digits are tag keys now: the map answers only for
+    /// the numpad, and a plain digit is nobody's seek.
+    @Test func topRowDigitsAreNotTransport() {
+        for ch in "1234567890" {
+            #expect(action(ch) == nil)
+            #expect(action(ch, shift: true) == nil)
+        }
+        #expect(action("!", shift: true) == nil)
+        #expect(TagKeyBinding.bindableKeys.prefix(10).elementsEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]))
     }
 
-    @Test func shiftedGlyphsMapToTheirDigits() {
-        // Layouts where Shift+digit types a glyph still seek.
-        #expect(action("!", shift: true) == .seek(seconds: -1))
-        #expect(action("#", shift: true) == .seek(seconds: 3))
-        #expect(action("$", shift: true) == .seek(seconds: -4))
-        #expect(action("^", shift: true) == .seek(seconds: 6))
-        #expect(action("&", shift: true) == .seek(seconds: -7))
-        #expect(action("(", shift: true) == .seek(seconds: 9))
+    @Test func digitSeekTable() {
+        // 1/4/7 back, 3/6/9 forward, per settings.
+        #expect(action("1", numpad: true) == .seek(seconds: -1))
+        #expect(action("3", numpad: true) == .seek(seconds: 3))
+        #expect(action("4", numpad: true) == .seek(seconds: -4))
+        #expect(action("6", numpad: true) == .seek(seconds: 6))
+        #expect(action("7", numpad: true) == .seek(seconds: -7))
+        #expect(action("9", numpad: true) == .seek(seconds: 9))
+        #expect(action("5", numpad: true) == .playPause)
+        #expect(action("0", numpad: true) == .seekToStart)
     }
 
     /// Numpad 8 reaches the Universal tag field from anywhere in the
-    /// player; the top-row 8 and numpad − keep the near-end seek, so no
+    /// player; numpad − keeps the near-end seek, so no
     /// seek is lost.
     @Test func numpadEightFocusesTheUniversalField() {
         #expect(action("8", numpad: true) == .focusUniversalField)
-        #expect(action("8") == .seekToNearEnd)
+        #expect(action("8") == nil)
         #expect(action("-", numpad: true) == .seekToNearEnd)
     }
 

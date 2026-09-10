@@ -114,6 +114,9 @@ extension KeyMapStyle {
         KeyMapRow(
             label: "Seek ∓4m / ∓30s / ∓2s",
             web: "numpad 7 9 · 4 6 · 1 3", mac: "numpad 7 9 · 4 6 · 1 3"),
+        KeyMapRow(
+            label: "Stamp a bound tag, in a tag field too",
+            web: "1 … 9 · 0", mac: "1 … 9 · 0"),
         KeyMapRow(label: "Previous / next item", web: "⇧← ⇧→", mac: "← → · ⇧← ⇧→"),
         KeyMapRow(label: "Open / close a segment", web: "[  ]", mac: "⌃{  ⌃}"),
         KeyMapRow(label: "Close as a clip", web: "C", mac: "C"),
@@ -121,7 +124,7 @@ extension KeyMapStyle {
         KeyMapRow(
             label: "Triage keep / issue / delete",
             web: "R  W  D", mac: "bound letters + advance"),
-        KeyMapRow(label: "Seek to start / near end", web: "0 · 8 · numpad −", mac: "0 · 8 · numpad −"),
+        KeyMapRow(label: "Seek to start / near end", web: "numpad 0 · numpad −", mac: "numpad 0 · numpad −"),
         KeyMapRow(label: "Focus the Universal tag field", web: "numpad 8", mac: "numpad 8"),
         KeyMapRow(label: "Read the on-screen text into it", web: "numpad 2 · ⇧↓ in the field", mac: "numpad 2 · ⇧↓ in the field"),
         KeyMapRow(
@@ -130,7 +133,7 @@ extension KeyMapStyle {
         KeyMapRow(label: "Mute / loop", web: "M · L", mac: "M · L"),
         KeyMapRow(label: "Toggle tag panel", web: "T", mac: "T"),
         KeyMapRow(label: "Toggle checkbox tag 1…9", web: "⌥1 … ⌥9", mac: "⌥1 … ⌥9"),
-        KeyMapRow(label: "Bound tag keys", web: "letters · F1 … F9", mac: "letters · F1 … F9"),
+        KeyMapRow(label: "Bound tag keys", web: "1 … 0 · letters · F1 … F9", mac: "1 … 0 · letters · F1 … F9"),
         KeyMapRow(label: "Pick / play a segment row", web: "↑ ↓ · Enter", mac: "↑ ↓ · Enter"),
         KeyMapRow(label: "Move focus zone", web: "Tab · ⇧Tab", mac: "Tab · ⇧Tab"),
         KeyMapRow(label: "Release to video", web: "Esc", mac: "Esc"),
@@ -154,14 +157,14 @@ extension KeyMapStyle {
 /// The playback keyboard map, Phase 3 scope. Editing keys (tags, bookmarks,
 /// blocks, clips, zoom) arrive with their features in Phases 4/7.
 ///
-///   1/4/7 seek back · 3/6/9 seek forward (short/medium/long, per settings)
-///   5 or Space: play/pause · 0: start · 8 or numpad −: near end
+///   numpad 1/4/7 seek back · 3/6/9 seek forward (short/medium/long, per settings)
+///   numpad 5 or Space: play/pause · numpad 0: start · numpad −: near end
 ///   numpad 8: focus the Universal tag field · numpad 2: read the on-screen text into it
 ///   F favorite · R needs-review · D marked-for-deletion · W playback-issue
 ///
-/// The same digit table answers for the numpad, Shift+digit (shifted glyphs
-/// included, for layouts where Shift+4 types "$"), and plain digits — the
-/// caller applies its own typing-target guard before consulting the map.
+/// The digit table answers for the NUMPAD only. The top-row digits are
+/// tag keys — a straight row is no numpad — and the caller routes them
+/// to the bindings, inside a tag field included.
 public enum PlayerKeyMap {
 
     // MARK: - The four rows the maps disagree on
@@ -234,23 +237,11 @@ public enum PlayerKeyMap {
         if numpad, ch == "-" { return .seekToNearEnd }
         // The one numpad key that is not a transport key: the Universal
         // field is the thing you reach for most while watching, and the
-        // near-end seek it displaces is still on the top-row 8 and −.
+        // near-end seek it displaces is still on numpad −.
         if numpad, ch == "8" { return .focusUniversalField }
         if numpad, ch == "2" { return .readOnScreenText }
-
-        // Shift+top-row glyphs map back to their digits.
-        let digit: Character? = switch ch {
-        case "!": "1"
-        case "#": "3"
-        case "$": "4"
-        case "^": "6"
-        case "&": "7"
-        case "(": "9"
-        default: ch.isNumber ? ch : nil
-        }
-
-        if let digit {
-            switch digit {
+        if numpad, ch.isNumber {
+            switch ch {
             case "1": return .seek(seconds: -settings.key1Seconds)
             case "3": return .seek(seconds: settings.key3Seconds)
             case "4": return .seek(seconds: -settings.key4Seconds)

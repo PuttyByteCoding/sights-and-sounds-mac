@@ -140,9 +140,12 @@ import Testing
         #expect(f1?.tagID == f.bandA.id && f1?.advance == false)
     }
 
+    /// The top-row digits left this list when they stopped being seeks:
+    /// they are the speed run now, bound like any letter.
     @Test func fixedPlayerKeysAreNotBindable() throws {
         let f = try FilterFixture()
-        for key in ["f", "r", "d", "w", " ", "5", "F5", "F10", "t", "u", "k", "g", "i"] {
+        try f.library.setKeyBinding("5", tagID: f.sbd.id)
+        for key in ["f", "r", "d", "w", " ", "F5", "F10", "t", "u", "k", "g", "i"] {
             #expect(throws: (any Error).self) {
                 try f.library.setKeyBinding(key, tagID: f.sbd.id)
             }
