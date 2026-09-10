@@ -11,10 +11,13 @@ enum TagAction: Identifiable {
     case edit(Tag)
     case delete(Tag)
     case alias(Tag)
+    /// Swap the tag for another — on the one item it was right-clicked
+    /// on, or, from a row that is not on an item, on every item wearing it.
+    case replace(Tag, itemID: UUID?)
 
     var tag: Tag {
         switch self {
-        case .edit(let tag), .delete(let tag), .alias(let tag): tag
+        case .edit(let tag), .delete(let tag), .alias(let tag), .replace(let tag, _): tag
         }
     }
 
@@ -23,6 +26,7 @@ enum TagAction: Identifiable {
         case .edit(let tag): "edit-\(tag.id)"
         case .delete(let tag): "delete-\(tag.id)"
         case .alias(let tag): "alias-\(tag.id)"
+        case .replace(let tag, let itemID): "replace-\(tag.id)-\(itemID?.uuidString ?? "all")"
         }
     }
 }
@@ -48,6 +52,9 @@ struct TagActionButtons: View {
     let libraryID: UUID
     @Binding var pending: TagAction?
     var removal: TagRemoval?
+    /// The item the tag is drawn on, when it is drawn on one: Replace
+    /// then swaps on that item alone rather than across the library.
+    var itemID: UUID?
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -56,9 +63,12 @@ struct TagActionButtons: View {
             openTagPlayerWindow(
                 tag: tag, library: library, libraryID: libraryID, openWindow: openWindow)
         }
+        Divider()
         if let removal {
-            Divider()
             Button(removal.label, action: removal.action)
+        }
+        Button(itemID == nil ? "Replace with Another Tag Everywhere…" : "Replace with Another Tag…") {
+            pending = .replace(tag, itemID: itemID)
         }
         Divider()
         Button("Add as Alias to Another Tag…") { pending = .alias(tag) }
@@ -103,6 +113,16 @@ private struct TagActionHost: ViewModifier {
             set: { if $0 == nil, case .alias = pending { pending = nil } })
     }
 
+    private var replacing: Binding<TagReplacement?> {
+        Binding(
+            get: {
+                if case .replace(let tag, let itemID) = pending {
+                    TagReplacement(tag: tag, itemID: itemID)
+                } else { nil }
+            },
+            set: { if $0 == nil, case .replace = pending { pending = nil } })
+    }
+
     private var confirmingDelete: Binding<Bool> {
         Binding(
             get: { if case .delete = pending { true } else { false } },
@@ -122,7 +142,35 @@ private struct TagActionHost: ViewModifier {
                 ) { _ in onChange() }
             }
             .sheet(item: aliasing, onDismiss: onDismiss) { tag in
-                AliasTargetSheet(tag: tag, library: library, onChange: onChange)
+                TagPickerSheet(
+                    tag: tag, library: library, scope: .category,
+                    title: "Add \u{201C}\(tag.name)\u{201D} as an Alias",
+                    blurb: { uses, categoryName in
+                        "Its \(uses) item\(uses == 1 ? "" : "s") move to the tag you pick, and \u{201C}\(tag.name)\u{201D} stays as a way to find it. Only tags in \(categoryName) can take it."
+                    },
+                    confirm: "Add Alias",
+                    onPick: { target in try library.convertTagToAlias(tag.id, of: target.id) },
+                    onChange: onChange)
+            }
+            .sheet(item: replacing, onDismiss: onDismiss) { replacement in
+                let tag = replacement.tag
+                TagPickerSheet(
+                    tag: tag, library: library, scope: .library,
+                    title: "Replace \u{201C}\(tag.name)\u{201D}",
+                    blurb: { uses, _ in
+                        replacement.itemID == nil
+                            ? "Every item wearing it — \(uses) — gets the tag you pick instead. \u{201C}\(tag.name)\u{201D} stays in the vocabulary, empty."
+                            : "On this item only: the tag you pick goes on, \u{201C}\(tag.name)\u{201D} comes off. Any category."
+                    },
+                    confirm: "Replace",
+                    onPick: { target in
+                        if let itemID = replacement.itemID {
+                            try library.replaceTag(tag.id, with: target.id, on: itemID)
+                        } else {
+                            try library.replaceTagEverywhere(tag.id, with: target.id)
+                        }
+                    },
+                    onChange: onChange)
             }
             // The copy is the Tag Manager's: the count it is about to
             // drop, and the alternative that keeps them.
@@ -150,43 +198,69 @@ enum TagActionCopy {
     }
 }
 
-/// Pick the tag this one becomes an alias of: its items move to the
-/// pick, its name stays as a way to find it, and it is gone as a tag.
-/// Same category only — that is the merge's rule, and the list says so.
-struct AliasTargetSheet: View {
+/// A replace in flight: the tag, and the one item it is on — nil means
+/// every item wearing it.
+struct TagReplacement: Identifiable {
+    let tag: Tag
+    let itemID: UUID?
+    var id: String { "\(tag.id)-\(itemID?.uuidString ?? "all")" }
+}
+
+/// One pickable tag, with the category name the library-wide list shows
+/// beside it.
+struct TagPick: Identifiable, Equatable {
+    let tag: Tag
+    let categoryName: String
+    var id: UUID { tag.id }
+}
+
+/// Pick another tag for one of the tag's operations — the alias
+/// conversion (same category only, the merge's rule) or the replace
+/// (any category). A filter field, a list, Enter on the pick.
+struct TagPickerSheet: View {
+    enum Scope { case category, library }
+
     let tag: Tag
     let library: LibraryDatabase
+    let scope: Scope
+    let title: String
+    /// The line under the title, given the tag's use count and its
+    /// category's name.
+    let blurb: (Int, String) -> String
+    let confirm: String
+    let onPick: (Tag) throws -> Void
     let onChange: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var targetID: UUID?
-    @State private var siblings: [Tag] = []
+    @State private var picks: [TagPick] = []
     @State private var categoryName = ""
     @State private var uses = 0
     @State private var errorText: String?
     @FocusState private var queryFocused: Bool
 
-    /// The pickable tags: the category's others, narrowed by the query
-    /// (folded, every term), in name order. Pure, so it is tested.
-    static func candidates(_ siblings: [Tag], excluding tagID: UUID, query: String) -> [Tag] {
+    /// The pickable tags: everything offered but the tag itself, narrowed
+    /// by the query (folded, every term, against the name and the
+    /// category name), in name order. Pure, so it is tested.
+    static func candidates(_ picks: [TagPick], excluding tagID: UUID, query: String) -> [TagPick] {
         let terms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
-        return siblings
-            .filter { $0.id != tagID }
-            .filter { tag in
-                let folded = TagSearchEntry.fold(tag.name)
+        return picks
+            .filter { $0.tag.id != tagID }
+            .filter { pick in
+                let folded = TagSearchEntry.fold(pick.tag.name + " " + pick.categoryName)
                 return terms.allSatisfy { folded.contains($0) }
             }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            .sorted { $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending }
     }
 
-    private var shown: [Tag] { Self.candidates(siblings, excluding: tag.id, query: query) }
+    private var shown: [TagPick] { Self.candidates(picks, excluding: tag.id, query: query) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            Text("Add \u{201C}\(tag.name)\u{201D} as an Alias")
+            Text(title)
                 .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
                 .foregroundStyle(Theme.Text.primary)
-            Text("Its \(uses) item\(uses == 1 ? "" : "s") move to the tag you pick, and \u{201C}\(tag.name)\u{201D} stays as a way to find it. Only tags in \(categoryName) can take it.")
+            Text(blurb(uses, categoryName))
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -205,7 +279,12 @@ struct AliasTargetSheet: View {
                 .focused($queryFocused)
                 .onSubmit { if targetID != nil { commit() } }
                 .onChange(of: query) { _, _ in
-                    if let targetID, !shown.contains(where: { $0.id == targetID }) {
+                    // The pick follows the list: a narrowed list with
+                    // one row picks it, so type · Enter is the whole
+                    // gesture; a pick the query dropped is dropped.
+                    if shown.count == 1 {
+                        targetID = shown[0].id
+                    } else if let targetID, !shown.contains(where: { $0.id == targetID }) {
                         self.targetID = nil
                     }
                 }
@@ -213,8 +292,10 @@ struct AliasTargetSheet: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     if shown.isEmpty {
-                        Text(siblings.count <= 1
-                            ? "No other tag in \(categoryName) to take it."
+                        Text(picks.count <= 1
+                            ? (scope == .category
+                                ? "No other tag in \(categoryName) to take it."
+                                : "No other tag in the library.")
                             : "No tag matches that.")
                             .font(Theme.ui(11.5))
                             .foregroundStyle(Theme.Text.disabled)
@@ -225,9 +306,17 @@ struct AliasTargetSheet: View {
                         Button {
                             targetID = candidate.id
                         } label: {
-                            Text(candidate.name)
-                                .font(Theme.ui(12))
-                                .foregroundStyle(Theme.Text.primary)
+                            HStack(spacing: 6) {
+                                Text(candidate.tag.name)
+                                    .font(Theme.ui(12))
+                                    .foregroundStyle(Theme.Text.primary)
+                                Spacer(minLength: 6)
+                                if scope == .library {
+                                    Text(candidate.categoryName)
+                                        .font(Theme.ui(10))
+                                        .foregroundStyle(Theme.Text.tertiary)
+                                }
+                            }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 5)
@@ -258,7 +347,7 @@ struct AliasTargetSheet: View {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(SecondaryButtonStyle())
                     .keyboardShortcut(.cancelAction)
-                Button("Add Alias") { commit() }
+                Button(confirm) { commit() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(targetID == nil)
                     .keyboardShortcut(.defaultAction)
@@ -269,19 +358,19 @@ struct AliasTargetSheet: View {
         .background(Theme.Surface.dialog)
         .onAppear {
             let vocabulary = (try? library.vocabulary()) ?? []
-            if let entry = vocabulary.first(where: { $0.category.id == tag.tagCategoryID }) {
-                siblings = entry.tags
-                categoryName = entry.category.name
-            }
+            categoryName = vocabulary.first { $0.category.id == tag.tagCategoryID }?.category.name ?? ""
+            picks = vocabulary
+                .filter { scope == .library || $0.category.id == tag.tagCategoryID }
+                .flatMap { entry in entry.tags.map { TagPick(tag: $0, categoryName: entry.category.name) } }
             uses = (try? library.tagUsageCounts(inCategory: tag.tagCategoryID))?[tag.id] ?? 0
             queryFocused = true
         }
     }
 
     private func commit() {
-        guard let targetID else { return }
+        guard let targetID, let target = picks.first(where: { $0.id == targetID }) else { return }
         do {
-            try library.convertTagToAlias(tag.id, of: targetID)
+            try onPick(target.tag)
             errorText = nil
             onChange()
             dismiss()

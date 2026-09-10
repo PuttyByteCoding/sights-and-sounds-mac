@@ -367,6 +367,33 @@ extension LibraryDatabase {
         }
     }
 
+    /// Swap one tag for another on one item: the replacement goes on
+    /// (through assignTag, so a single-select category still holds one),
+    /// the tag comes off. Both tags remain — this is a correction on an
+    /// item, not a change to the vocabulary.
+    public func replaceTag(_ tagID: UUID, with replacementID: UUID, on itemID: UUID) throws {
+        guard tagID != replacementID else { return }
+        try assignTag(replacementID, to: itemID)
+        try removeTag(tagID, from: itemID)
+    }
+
+    /// The same swap on every item wearing the tag. Returns how many
+    /// items changed. The tag itself remains, empty — deleting it, or
+    /// folding it in as an alias, is a separate decision.
+    @discardableResult
+    public func replaceTagEverywhere(_ tagID: UUID, with replacementID: UUID) throws -> Int {
+        guard tagID != replacementID else { return 0 }
+        let itemIDs = try writer.read { db in
+            try UUID.fetchAll(
+                db, sql: "SELECT mediaItemID FROM mediaItemTag WHERE tagID = ?",
+                arguments: [tagID])
+        }
+        for itemID in itemIDs {
+            try replaceTag(tagID, with: replacementID, on: itemID)
+        }
+        return itemIDs.count
+    }
+
     /// Convert a tag into an alias of another: the taggings move, the
     /// name is kept as a way to find the survivor. The gentler half of
     /// "delete" — offered above it for exactly that reason.

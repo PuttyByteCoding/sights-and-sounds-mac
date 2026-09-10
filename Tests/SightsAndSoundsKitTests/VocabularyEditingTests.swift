@@ -27,6 +27,45 @@ import Testing
         #expect(try f.library.writer.read { try Tag.fetchOne($0, key: f.bandB.id) } == nil)
     }
 
+    // MARK: - Replacing
+
+    /// Replace on one item: the pick goes on, the tag comes off, the
+    /// tag's other items keep it.
+    @Test func replacingOnOneItemSwapsThatItemOnly() throws {
+        let f = try FilterFixture()
+        try f.library.replaceTag(f.bandA.id, with: f.bandB.id, on: f.show1995.id)
+        let withB = try f.names(MediaFilter(required: [.tag(f.bandB.id)]))
+        let withA = try f.names(MediaFilter(required: [.tag(f.bandA.id)]))
+        #expect(withB.contains("a.mp4"))
+        #expect(withB.contains("c.mp4"))
+        #expect(!withA.contains("a.mp4"))
+        #expect(withA.contains("b.mp4"))
+        // Both tags still exist: this is a swap, not a merge.
+        #expect(try f.library.writer.read { try Tag.fetchOne($0, key: f.bandA.id) } != nil)
+    }
+
+    /// Replace everywhere: every item wearing the tag wears the pick
+    /// instead, the count says how many, and the tag itself remains.
+    @Test func replacingEverywhereMovesEveryItemAndKeepsTheTag() throws {
+        let f = try FilterFixture()
+        let count = try f.library.replaceTagEverywhere(f.bandA.id, with: f.sbd.id)
+        #expect(count == 3)
+        #expect(try f.names(MediaFilter(required: [.tag(f.bandA.id)])).isEmpty)
+        #expect(try f.library.writer.read { try Tag.fetchOne($0, key: f.bandA.id) } != nil)
+        // show1995 already had sbd: one tagging, not two.
+        let rows = try f.library.writer.read { db in
+            try MediaItemTag.filter(sql: "mediaItemID = ? AND tagID = ?", arguments: [f.show1995.id, f.sbd.id]).fetchCount(db)
+        }
+        #expect(rows == 1)
+    }
+
+    @Test func replacingATagWithItselfIsANoOp() throws {
+        let f = try FilterFixture()
+        let count = try f.library.replaceTagEverywhere(f.bandA.id, with: f.bandA.id)
+        #expect(count == 0)
+        #expect(try f.names(MediaFilter(required: [.tag(f.bandA.id)])).count == 2)
+    }
+
     @Test func mergingIntoANewTagFoldsEveryPickIntoIt() throws {
         let f = try FilterFixture()
         let keeper = try f.library.mergeTags(
