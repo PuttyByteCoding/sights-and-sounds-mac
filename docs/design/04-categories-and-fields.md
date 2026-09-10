@@ -54,7 +54,11 @@ first one.
 6. **Delete is the last resort.** Deleting a tag drops its taggings; converting it to an alias
    folds the name into another tag and keeps them. The tag inspector offers **Convert to alias
    of…** above **Delete Tag…**, and the delete confirmation names the count it is about to
-   drop and points at the alternative.
+   drop and points at the alternative. The same pair rides every drawn tag's right-click menu
+   (`TagActionButtons`): **Edit Tag…** · **Show Items with This Tag** · **Remove from This
+   Video** where the tag is on an item · **Add as Alias to Another Tag…** (a picker of the
+   category's other tags; the pick takes the items and the name) · **Delete Tag…** behind the
+   same confirmation. One host per list carries the sheets (`.tagActions`).
 
 7. **The behaviour list follows the model changes in the README.** `displayAsCheckboxes`
    becomes a three-way **Display style** (Search / Checkboxes / Radio) — a single-select
@@ -115,9 +119,9 @@ All / Similar only segmented control, and Merge tags · Paste List… · **+ Tag
 sticky 31 pt header row on `#141109` over the scrolling table. Columns
 `1fr / 150 / 66 / 40 / 34` — name, aliases, uses, favourite, menu — with a 30 pt checkbox
 column prepended in merge mode. The row menu, on the ellipsis and on right-click anywhere in
-the row: **Show Items with This Tag** (a player window whose queue is every item wearing it,
-the same command as the sidebar's) · Edit Tag… · favourite · Hide by default / Unhide ·
-Delete. Both header and rows carry the same grid string and
+the row: favourite · Hide by default / Unhide · then the shared tag menu — **Edit Tag…** ·
+**Show Items with This Tag** · **Add as Alias to Another Tag…** · **Delete Tag…** behind its
+confirmation. Both header and rows carry the same grid string and
 `scrollbar-gutter: stable`; a header outside the scroller with rows inside it is how these
 columns come apart. Merge mode adds a raised bar at the foot: instruction, picked count,
 target picker, new-name field, Merge.

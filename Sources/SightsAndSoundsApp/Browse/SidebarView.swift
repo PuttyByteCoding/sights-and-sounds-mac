@@ -948,15 +948,14 @@ private struct CategoryHeader: View {
     }
 }
 
-/// A tag row. Click cycles the slot; right-click edits the tag. The
+/// A tag row. Click cycles the slot; right-click is the tag's menu. The
 /// reverse step used to own right-click and the editor was an ⌥-click
 /// nobody could discover — trading one for the other gives the editor
 /// the gesture people actually reach for.
 private struct TagFilterRow: View {
     @Environment(BrowseModel.self) private var model
-    @Environment(\.openWindow) private var openWindow
     let tag: Tag
-    @State private var showEditor = false
+    @State private var pending: TagAction?
 
     var body: some View {
         // Filtered count while a filter is on — "if I added this, how
@@ -973,21 +972,14 @@ private struct TagFilterRow: View {
             // backwards, and a context menu is where anyone looks for
             // "edit this" — ⌥-click was a chord you had to be told about.
             .contextMenu {
-                Button("Edit Tag…") { showEditor = true }
-                Button("Show Items with This Tag") {
-                    openTagPlayerWindow(
-                        tag: tag, library: model.library,
-                        libraryID: model.libraryID, openWindow: openWindow)
-                }
+                TagActionButtons(
+                    tag: tag, library: model.library, libraryID: model.libraryID,
+                    pending: $pending)
             }
-            .sheet(isPresented: $showEditor) {
-                TagSheet(
-                    mode: .edit(tag),
-                    library: model.library,
-                    libraryID: model.libraryID,
-                    categories: model.vocabulary.map(\.category),
-                    onSaved: { _ in model.refreshAll() })
-            }
+            .tagActions(
+                $pending, library: model.library, libraryID: model.libraryID,
+                categories: model.vocabulary.map(\.category),
+                onChange: { model.refreshAll() })
     }
 }
 

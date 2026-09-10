@@ -86,12 +86,11 @@ struct TagTable: View {
     let onOpen: (Tag) -> Void
     let onToggleFavorite: (Tag) -> Void
     let onHide: (Tag) -> Void
-    let onDelete: (Tag) -> Void
-    /// A player window over every item wearing the tag — the same
-    /// command the sidebar and the grid offer, so "what does this tag
-    /// actually sit on?" is answered here too, where tags get renamed,
-    /// merged and deleted.
-    let onShowItems: (Tag) -> Void
+    /// The shared tag menu's edit, alias and delete — the host's sheet
+    /// and confirmation answer them.
+    @Binding var pending: TagAction?
+    let library: LibraryDatabase
+    let libraryID: UUID
 
     var body: some View {
         if rows.isEmpty {
@@ -255,17 +254,15 @@ struct TagTable: View {
         .contextMenu { rowMenu(tag) }
     }
 
+    /// The shared tag menu, with the two flags only this table shows.
     @ViewBuilder
     private func rowMenu(_ tag: Tag) -> some View {
-        Button("Show Items with This Tag") { onShowItems(tag) }
-        Button("Edit Tag…") { onOpen(tag) }
-        Divider()
         Button(tag.isFavorite ? "Remove from Favourites" : "Add to Favourites") {
             onToggleFavorite(tag)
         }
         Button(tag.hiddenByDefault ? "Unhide" : "Hide by default") { onHide(tag) }
         Divider()
-        Button("Delete", role: .destructive) { onDelete(tag) }
+        TagActionButtons(tag: tag, library: library, libraryID: libraryID, pending: $pending)
     }
 }
 
