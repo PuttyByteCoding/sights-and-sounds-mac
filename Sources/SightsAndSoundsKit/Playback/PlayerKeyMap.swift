@@ -117,6 +117,7 @@ extension KeyMapStyle {
         KeyMapRow(
             label: "Stamp a bound tag, in a tag field too",
             web: "1 … 9 · 0", mac: "1 … 9 · 0"),
+        KeyMapRow(label: "Digits stamp / digits type", web: "⇧⇧", mac: "⇧⇧"),
         KeyMapRow(label: "Previous / next item", web: "⇧← ⇧→", mac: "← → · ⇧← ⇧→"),
         KeyMapRow(label: "Open / close a segment", web: "[  ]", mac: "⌃{  ⌃}"),
         KeyMapRow(label: "Close as a clip", web: "C", mac: "C"),

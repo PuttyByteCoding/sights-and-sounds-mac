@@ -66,6 +66,15 @@ struct PlayerView: View {
         // clamps (#85), not by a wide hard minimum — a big minimum here
         // would stop the sidebar's drag long before the floor.
         .frame(minWidth: 320, minHeight: 300)
+        // ⇧⇧ flips the digits between stamping and typing — the mode
+        // switch on the keyboard itself, since the speed run has both
+        // hands there. The footer and the tag panel show the result.
+        .background {
+            if let model {
+                ModifierTapMonitor(taps: [.shift: { model.toggleDigitStamping() }])
+                    .frame(width: 0, height: 0)
+            }
+        }
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
