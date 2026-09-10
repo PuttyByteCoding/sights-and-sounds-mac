@@ -101,7 +101,7 @@ struct UniversalTagField: View {
     /// a position would then name a different row from the one lit.
     @State private var highlighted: RowID?
     /// The New Tag sheet's seed: the typed query, or a screen line.
-    @State private var creating: String?
+    @State private var creating: Seed?
     @State private var showingHistory = false
     /// Empty query + ↓: what Tag Analysis found.
     @State private var browsingAll = false
@@ -378,10 +378,7 @@ struct UniversalTagField: View {
         .onChange(of: listOpen) { _, open in onListChange(open) }
         .onChange(of: itemID) { _, _ in closeList() }
         .onChange(of: screenReadRequests) { _, _ in _ = readScreen() }
-        .sheet(item: Binding(
-            get: { creating.map { Seed(text: $0) } },
-            set: { creating = $0?.text }
-        ), onDismiss: {
+        .sheet(item: $creating, onDismiss: {
             // The sheet is a detour — the keyboard comes back here.
             focus.wrappedValue = focusID
         }) { seed in
@@ -396,13 +393,20 @@ struct UniversalTagField: View {
                     draft = ""
                     highlighted = nil
                 }
+                // Every presentation is a NEW sheet. Keyed on the text,
+                // a second sheet for the same line kept the first one's
+                // state — the category picked last time came back as if
+                // chosen — so the identity is per presentation.
+                .id(seed.id)
             }
         }
     }
 
-    private struct Seed: Identifiable {
+    /// One presentation of the New Tag sheet: the seeded text, under an
+    /// identity that is never reused.
+    struct Seed: Identifiable {
+        let id = UUID()
         let text: String
-        var id: String { text }
     }
 
     @ViewBuilder
@@ -542,7 +546,7 @@ struct UniversalTagField: View {
     private func lineRow(_ line: String) -> some View {
         let active = activeRow == .line(line)
         return Button {
-            creating = line
+            creating = Seed(text: line)
         } label: {
             HStack(spacing: 6) {
                 Text(line)
@@ -571,10 +575,10 @@ struct UniversalTagField: View {
         case .tag(let id):
             if let hit = hits.first(where: { $0.id == id }) { apply(hit.tag) }
         case .line(let line):
-            creating = line
+            creating = Seed(text: line)
         case nil:
             guard !query.isEmpty else { return }
-            creating = query
+            creating = Seed(text: query)
         }
     }
 

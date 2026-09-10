@@ -230,14 +230,27 @@ struct TagSheet: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Tag Manager — the bulk editor")
                 Spacer()
+                // Esc is Cancel, as a real key equivalent: a button
+                // shortcut is answered before the key handler below sees
+                // the press, so it has to be the RIGHT button. Create used
+                // to carry the escape character as a stand-in for "no
+                // default action", which made Esc create the tag.
                 Button("Cancel") { dismiss() }
                     .buttonStyle(SecondaryButtonStyle())
-                Button(isCreating ? "Create" : "Save") { commit() }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(trimmedName.isEmpty)
-                    // Only editing gets the ordinary default action;
-                    // creating manages Enter itself, below.
-                    .keyboardShortcut(isCreating ? .init("\u{1B}") : .defaultAction)
+                    .keyboardShortcut(.cancelAction)
+                if isCreating {
+                    // No default action: creating manages Enter itself,
+                    // below, so the Enter that opened the sheet commits
+                    // and any later one does not.
+                    Button("Create") { commit() }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(trimmedName.isEmpty)
+                } else {
+                    Button("Save") { commit() }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(trimmedName.isEmpty)
+                        .keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(18)
