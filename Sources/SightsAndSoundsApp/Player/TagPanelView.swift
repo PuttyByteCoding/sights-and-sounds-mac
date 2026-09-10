@@ -82,8 +82,8 @@ struct TagPanelView: View {
                         .font(Theme.mono(9.5))
                         .foregroundStyle(model.digitsStampTags ? Theme.Accent.amber : Theme.Text.disabled)
                         .help(model.digitsStampTags
-                            ? "Top-row digits apply their bound tags, inside a tag field too"
-                            : "Top-row digits type")
+                            ? "Top-row digits apply their bound tags, inside a tag field too — ⇧⇧ to type"
+                            : "Top-row digits type — ⇧⇧ to stamp")
                 }
                 ZoneBadge(zone: .tags)
             }

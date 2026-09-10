@@ -271,7 +271,7 @@ private struct PlaybackSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Top-row digits stamp their bound tags", isOn: $digitsStamp)
-                Text("On, a digit applies the tag bound to it — inside a tag field too. Off, digits type, for a tag whose name is a year. Bind digits from the player's bindings editor.")
+                Text("On, a digit applies the tag bound to it — inside a tag field too. Off, digits type, for a tag whose name is a year. Tap Shift twice in the player to flip it; bind digits from the player's bindings editor.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
