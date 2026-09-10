@@ -64,7 +64,8 @@ strings exactly — they are the ported vocabulary, not a naming opportunity.
     shared session: the video plays there, tagging happens there, and this window shows the
     evidence and the decisions for whatever that player is showing. Accepting applies at once —
     no basket, no commit step; the player's next/previous just moves on. With the companion
-    closed, no scan runs and the player's Tag Analysis Results field is dimmed. Design:
+    closed, no scan runs and the player's Tag Analysis Results field is dimmed. Closing the
+    player closes its companion. Design:
     `docs/superpowers/specs/2026-09-08-tag-analysis-companion-design.md`.
 
 ## Model changes

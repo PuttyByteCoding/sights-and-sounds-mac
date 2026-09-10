@@ -17,7 +17,9 @@ that applies the tags the analysis found, from the keyboard.
 
 - **Follows the player it was opened from.** One companion per player
   session; opening Tag Analysis from another player re-points it. If the
-  followed player closes, the companion says so and offers Close.
+  followed player closes, the companion closes with it — it is attached,
+  not a peer. A companion that never found its player (restored window
+  state, or a player released before it opened) says so and offers Close.
 - **Analysis runs only while the companion is open.** With it closed, no
   scan runs on load, and the player's results field is dimmed with a hint.
 - **Accepting applies immediately.** No basket, no commit step, in the
@@ -190,8 +192,8 @@ or remove.
    → `PlayerModel.applyTag` → `refreshTagging` → rows recompute; the
    companion reloads so its chips update.
 5. Companion closes → `session.analysis = .empty`, `companionIsOpen =
-   false` → field dims. Player closes → `playerIsOpen = false` →
-   companion shows the closed state.
+   false` → field dims. Player closes → `playerIsOpen = false` → the
+   companion dismisses its own window.
 
 ## Error handling
 
