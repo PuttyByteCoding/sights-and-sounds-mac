@@ -22,6 +22,56 @@ struct TagSearchEntry: Identifiable {
             .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
     }
 
+    /// One ranked match: the entry, and the alias that matched when the
+    /// name did not.
+    struct Match {
+        let entry: TagSearchEntry
+        let alias: String?
+    }
+
+    /// The typed search, RANKED before it is capped. The old lazy cut
+    /// took the first `limit` rows that merely contained the query, in
+    /// index order — and a two-letter tag named exactly what was typed
+    /// sat past the cut behind thirty longer names containing it, so
+    /// it could not be found by typing it. Now every row is scored —
+    /// an exact name, then a name starting with the query, then a word
+    /// in the name starting with it, then anything containing every
+    /// term; an alias scores the same way when the name does not match
+    /// — sorted by score then name, and only then cut. A full pass over
+    /// pre-folded names is microseconds; the cut was never the saving.
+    static func ranked(_ entries: [TagSearchEntry], query: String, limit: Int) -> [Match] {
+        let whole = fold(query.trimmingCharacters(in: .whitespaces))
+        let terms = query.split(separator: " ").map { fold(String($0)) }
+        guard !whole.isEmpty else { return [] }
+        func score(_ folded: String) -> Int? {
+            guard terms.allSatisfy({ folded.contains($0) }) else { return nil }
+            if folded == whole { return 0 }
+            if folded.hasPrefix(whole) { return 1 }
+            if folded.split(separator: " ").contains(where: { $0.hasPrefix(whole) }) { return 2 }
+            return 3
+        }
+        var scored: [(score: Int, match: Match)] = []
+        scored.reserveCapacity(entries.count)
+        for entry in entries {
+            if let byName = score(entry.foldedName) {
+                scored.append((byName, Match(entry: entry, alias: nil)))
+                continue
+            }
+            // The best alias, when the name does not match at all: the
+            // parenthetical exists to explain a row you would not
+            // otherwise expect.
+            var best: (Int, String)?
+            for alias in entry.foldedAliases {
+                if let s = score(alias.folded), best.map({ s < $0.0 }) ?? true { best = (s, alias.alias) }
+            }
+            if let best { scored.append((best.0, Match(entry: entry, alias: best.1))) }
+        }
+        return scored
+            .sorted { ($0.score, $0.match.entry.foldedName) < ($1.score, $1.match.entry.foldedName) }
+            .prefix(limit)
+            .map(\.match)
+    }
+
     /// The index for a vocabulary, aliases keyed by tag id.
     static func index(
         vocabulary: [(category: TagCategory, tags: [Tag])], aliases: [UUID: [String]]
@@ -243,34 +293,21 @@ struct UniversalTagField: View {
             guard browsingAll else { return [] }
             return Array(analysisHits.prefix(limit))
         }
-        // Folded terms against the pre-folded index, lazily, cut at the
-        // limit — never a full pass once enough hits exist.
-        let foldedTerms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
-        func match(_ row: TagSearchEntry, fromAnalysis: Bool) -> Hit? {
-            if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
-                return hit(row, fromAnalysis: fromAnalysis)
-            }
-            guard let alias = row.foldedAliases.first(where: { candidate in
-                foldedTerms.allSatisfy { candidate.folded.contains($0) }
-            })
-            else { return nil }
-            return hit(row, alias: alias.alias, fromAnalysis: fromAnalysis)
-        }
         // The analysis's matches lead — the tags the evidence names are
-        // the likeliest answer to whatever is being typed.
+        // the likeliest answer to whatever is being typed — then the
+        // vocabulary, ranked before it is cut.
         let byID = entriesByID
-        let leading = analysisTagIDs.compactMap { id -> Hit? in
-            guard !appliedIDs.contains(id), let row = byID[id] else { return nil }
-            return match(row, fromAnalysis: true)
+        let analysisRows = analysisTagIDs.compactMap { id -> TagSearchEntry? in
+            guard !appliedIDs.contains(id) else { return nil }
+            return byID[id]
         }
-        let rest = index
-            .lazy
-            .compactMap { row -> Hit? in
-                guard !appliedIDs.contains(row.tag.id) else { return nil }
-                return match(row, fromAnalysis: false)
-            }
-            .prefix(limit)
-        return Self.merged(analysis: leading, rest: Array(rest), limit: limit)
+        let leading = TagSearchEntry.ranked(analysisRows, query: query, limit: limit).map {
+            hit($0.entry, alias: $0.alias, fromAnalysis: true)
+        }
+        let rest = TagSearchEntry.ranked(
+            index.filter { !appliedIDs.contains($0.tag.id) }, query: query, limit: limit
+        ).map { hit($0.entry, alias: $0.alias) }
+        return Self.merged(analysis: leading, rest: rest, limit: limit)
     }
 
     /// Every row in walk order: tags, then screen lines.

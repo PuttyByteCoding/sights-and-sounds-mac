@@ -450,30 +450,16 @@ private struct PillCategoryView: View {
                 .map { Suggestion(tag: $0, matchedAlias: nil) }
         }
         let appliedIDs = Set(applied.map(\.id))
-        // Space-separated terms, folded once, matched against the
-        // model's PRE-FOLDED index — folding live per keystroke across a
-        // large category was the slow half of matching.
-        let foldedTerms = query.split(separator: " ").map { PlayerModel.searchFold(String($0)) }
-        return model.tagSearchIndex
-            .lazy
-            .filter { $0.categoryID == entry.category.id }
-            .compactMap { row -> Suggestion? in
-                guard !appliedIDs.contains(row.tag.id) else { return nil }
-                // The name winning means no alias is shown, even if one
-                // would also have matched: the parenthetical exists to
-                // explain a row you would not otherwise expect.
-                if foldedTerms.allSatisfy({ row.foldedName.contains($0) }) {
-                    return Suggestion(tag: row.tag, matchedAlias: nil)
-                }
-                // An alias IS a name: typing SBD must offer Soundboard.
-                guard let alias = row.foldedAliases.first(where: { candidate in
-                    foldedTerms.allSatisfy { candidate.folded.contains($0) }
-                })
-                else { return nil }
-                return Suggestion(tag: row.tag, matchedAlias: alias.alias)
-            }
-            .prefix(AppSettingsStore.shared.current.tagSuggestionLimit)
-            .map { $0 }
+        // This category's rows of the model's PRE-FOLDED index, ranked
+        // before the cap — an exact name first, however many longer
+        // names contain what was typed. An alias IS a name: typing SBD
+        // must offer Soundboard, with the alias shown to explain it.
+        let rows = model.tagSearchIndex.filter {
+            $0.categoryID == entry.category.id && !appliedIDs.contains($0.tag.id)
+        }
+        return TagSearchEntry.ranked(
+            rows, query: query, limit: AppSettingsStore.shared.current.tagSuggestionLimit
+        ).map { Suggestion(tag: $0.entry.tag, matchedAlias: $0.alias) }
     }
 
     /// Every term must appear somewhere in the text — case-, diacritic-
