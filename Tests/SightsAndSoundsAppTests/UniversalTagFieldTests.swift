@@ -60,3 +60,44 @@ import Testing
         #expect(rows.tags.isEmpty)
     }
 }
+
+/// Typed search ranks before it caps: the tag named exactly what was
+/// typed is never pushed past the limit by the longer names that merely
+/// contain it.
+@Suite @MainActor struct TagSearchRankingTests {
+    private func entry(_ name: String, aliases: [String] = []) -> TagSearchEntry {
+        TagSearchEntry(
+            tag: SightsAndSoundsKit.Tag(tagCategoryID: UUID(), name: name),
+            categoryID: UUID(), categoryName: "Band", colorIndex: 0,
+            foldedName: TagSearchEntry.fold(name),
+            foldedAliases: aliases.map { ($0, TagSearchEntry.fold($0)) })
+    }
+
+    @Test func anExactNameLeadsHoweverManyNamesContainIt() {
+        let crowd = (1...30).map { entry("Seether \($0)") }
+        let index = crowd + [entry("ee")]
+        let ranked = TagSearchEntry.ranked(index, query: "ee", limit: 15)
+        #expect(ranked.first?.entry.tag.name == "ee")
+        #expect(ranked.count == 15)
+    }
+
+    @Test func prefixBeatsContainsAndNamesBreakTies() {
+        let index = [entry("Green Day"), entry("Reed"), entry("Eels"), entry("Beeline")]
+        let names = TagSearchEntry.ranked(index, query: "ee", limit: 10).map(\.entry.tag.name)
+        #expect(names == ["Eels", "Beeline", "Green Day", "Reed"])
+    }
+
+    @Test func anAliasMatchRanksLikeANameMatchAndNamesTheAlias() {
+        let index = [entry("Soundboard", aliases: ["SBD"]), entry("Audience")]
+        let ranked = TagSearchEntry.ranked(index, query: "sbd", limit: 10)
+        #expect(ranked.map(\.entry.tag.name) == ["Soundboard"])
+        #expect(ranked.first?.alias == "SBD")
+    }
+
+    @Test func everyTermMustHitAndTheNameWinsOverAnAlias() {
+        let index = [entry("Tim O'Neil", aliases: ["Tim"]), entry("Tim Reynolds")]
+        let ranked = TagSearchEntry.ranked(index, query: "tim oneil", limit: 10)
+        #expect(ranked.map(\.entry.tag.name) == ["Tim O'Neil"])
+        #expect(ranked.first?.alias == nil)
+    }
+}
