@@ -105,7 +105,9 @@ tokens.
 Window content splits into a left column and a 352 pt right rail; a 30 pt footer spans both.
 
 Left column, top to bottom: file-name strip on `#17130E` (the name as selectable mono
-text, up to two lines; right-click copies it in the grid tile's two forms) · video stage on
+text, up to two lines; a double-click selects the words between the special characters —
+letters, numbers and spaces run together, anything else is a wall, `String.wordRun(at:)`;
+right-click copies it in the grid tile's two forms, or the selection) · video stage on
 `#0A0806` (fitted, anchored; a marked-for-deletion or playback-issue item plays on through a
 grey scrim with the tile's mark centred over it, trash can or wrench) ·
 transport block on `#17130E` — 44 pt scrubber with the segment lanes, then one control row

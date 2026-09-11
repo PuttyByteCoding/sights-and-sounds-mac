@@ -807,24 +807,25 @@ extension View {
 /// the same name, but a title cannot be selected, and its copy menu
 /// hides behind a hover chevron nobody finds — the grid tile taught
 /// right-click, so right-click works here too. Click and drag selects a
-/// span for ⌘C; the context menu copies the whole name in the tile's
-/// two forms. Absent (zero height) until the item has loaded, so the
-/// vertical budget never reserves space for a name that is not there.
+/// span for ⌘C; a double-click selects the words between the special
+/// characters (an AppKit text view, so that rule can be ours); the
+/// context menu copies the whole name in the tile's two forms. Absent
+/// (zero height) until the item has loaded, so the vertical budget
+/// never reserves space for a name that is not there.
 private struct FileNameStrip: View {
     @Environment(PlayerModel.self) private var model
 
     var body: some View {
         if let name = model.item?.fileName {
             HStack(spacing: 0) {
-                Text(name)
-                    .font(Theme.mono(11.5))
-                    .foregroundStyle(Theme.Text.secondary)
-                    // Two lines, not a middle-truncated one: a selection
-                    // over an ellipsis would copy characters that were
-                    // never on screen.
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                // Two lines, not a middle-truncated one: a selection
+                // over an ellipsis would copy characters that were
+                // never on screen.
+                FileNameText(
+                    name: name,
+                    font: Fonts.monoFamily.flatMap { NSFont(name: $0, size: 11.5) }
+                        ?? .monospacedSystemFont(ofSize: 11.5, weight: .regular),
+                    color: NSColor(Theme.Text.secondary))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
@@ -832,14 +833,6 @@ private struct FileNameStrip: View {
             .background(Theme.Surface.toolbar)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Theme.Border.standard).frame(height: 1)
-            }
-            .contextMenu {
-                Button("Copy File Name", systemImage: "doc.on.doc") {
-                    Clipboard.copy(name)
-                }
-                Button("Copy File Name (Letters and Numbers)", systemImage: "doc.on.doc") {
-                    Clipboard.copy(name.lettersAndNumbersOnly)
-                }
             }
         }
     }
