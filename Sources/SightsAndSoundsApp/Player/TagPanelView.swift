@@ -481,21 +481,25 @@ private struct PillCategoryView: View {
             .filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
     }
 
-    /// A tag named exactly what was typed — through the same fold as the
-    /// matching, so "tim oneil" IS "Tim O'Neil" — selected on sight so
-    /// Enter applies it instead of offering to create a near-duplicate.
-    private var exactMatch: Suggestion? {
-        let folded = PillCategoryView.searchFold(query)
-        return suggestions.first {
-            PillCategoryView.searchFold($0.tag.name) == folded
-                || $0.matchedAlias.map { PillCategoryView.searchFold($0) == folded } == true
-        }
-    }
-
     /// What Enter acts on: the arrowed-to row if it is still listed,
     /// else the exact match.
     private var activeSuggestion: Suggestion? {
-        highlightedID.flatMap { id in suggestions.first { $0.id == id } } ?? exactMatch
+        activeSuggestion(in: suggestions)
+    }
+
+    /// The same, over a list already computed — the draw ranks the
+    /// category ONCE and asks this per row, where reading the property
+    /// ranked it again for every row. The exact match goes through the
+    /// same fold as the matching, so "tim oneil" IS "Tim O'Neil" —
+    /// selected on sight so Enter applies it instead of offering to
+    /// create a near-duplicate.
+    private func activeSuggestion(in rows: [Suggestion]) -> Suggestion? {
+        if let highlightedID, let row = rows.first(where: { $0.id == highlightedID }) { return row }
+        let folded = PillCategoryView.searchFold(query)
+        return rows.first {
+            PillCategoryView.searchFold($0.tag.name) == folded
+                || $0.matchedAlias.map { PillCategoryView.searchFold($0) == folded } == true
+        }
     }
     private var highlightedIndex: Int? {
         highlightedID.flatMap { id in suggestions.firstIndex { $0.id == id } }
@@ -503,7 +507,6 @@ private struct PillCategoryView: View {
 
     /// Nothing selected and something typed — Enter will make a new tag,
     /// and the field says so rather than letting you find out.
-    private var willCreate: Bool { !query.isEmpty && activeSuggestion == nil }
 
     private var hue: Color { Theme.categoryHue(entry.category.colorIndex) }
 
@@ -534,8 +537,7 @@ private struct PillCategoryView: View {
     }
 
     @ViewBuilder
-    private func suggestionRow(_ index: Int, _ suggestion: Suggestion) -> some View {
-                let active = suggestion.id == activeSuggestion?.id
+    private func suggestionRow(_ index: Int, _ suggestion: Suggestion, active: Bool) -> some View {
                 Button {
                     apply(suggestion.tag)
                 } label: {
@@ -590,6 +592,10 @@ private struct PillCategoryView: View {
     }
 
     var body: some View {
+        // One ranking per draw: the rows and the active one, read by
+        // every row below instead of recomputed in each.
+        let rows = suggestions
+        let activeID = activeSuggestion(in: rows)?.id
         VStack(alignment: .leading, spacing: 6) {
             CategoryHeading(category: entry.category, draggable: true)
 
@@ -633,8 +639,8 @@ private struct PillCategoryView: View {
             if historyActive {
                 // Reversed so index 0 — the LATEST apply — is the row
                 // directly above the box, older ones climbing upward.
-                ForEach(Array(suggestions.enumerated()).reversed(), id: \.element.id) { index, suggestion in
-                    suggestionRow(index, suggestion)
+                ForEach(Array(rows.enumerated()).reversed(), id: \.element.id) { index, suggestion in
+                    suggestionRow(index, suggestion, active: suggestion.id == activeID)
                 }
             }
             HStack(spacing: 6) {
@@ -679,7 +685,7 @@ private struct PillCategoryView: View {
                         commit()
                         return .handled
                     }
-                if willCreate {
+                if !query.isEmpty, activeID == nil {
                     Text("(New Tag)")
                         .font(Theme.mono(9.5))
                         .foregroundStyle(Theme.Accent.amber)
@@ -697,8 +703,8 @@ private struct PillCategoryView: View {
             // Autocomplete below; history above (rendered before the
             // field, newest last so it sits directly on the box).
             if !historyActive {
-                ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, suggestion in
-                    suggestionRow(index, suggestion)
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, suggestion in
+                    suggestionRow(index, suggestion, active: suggestion.id == activeID)
                 }
             }
         }

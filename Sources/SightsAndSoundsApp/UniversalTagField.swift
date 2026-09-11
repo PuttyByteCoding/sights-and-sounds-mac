@@ -321,6 +321,36 @@ struct UniversalTagField: View {
         hits.map { .tag($0.id) } + screenLines.map { .line($0) }
     }
 
+    /// What one draw needs, computed ONCE. `hits` ranks the whole
+    /// vocabulary; as computed properties read from inside each row —
+    /// "am I the active one?" — the list was ranked once per row, and a
+    /// fifteen-row list over a few thousand tags ranked them fifteen
+    /// times a keystroke, with a dictionary of the index built each
+    /// time. The event handlers still read the properties; they run
+    /// once per key, not once per row.
+    private struct Frame {
+        let hits: [Hit]
+        let lines: [String]
+        let active: RowID?
+    }
+
+    private var frame: Frame {
+        let hits = self.hits
+        let lines = screenLines
+        let rows = hits.map { RowID.tag($0.id) } + lines.map { RowID.line($0) }
+        let active: RowID?
+        if let highlighted, rows.contains(highlighted) {
+            active = highlighted
+        } else {
+            let folded = TagSearchEntry.fold(query)
+            active = hits.first {
+                TagSearchEntry.fold($0.tag.name) == folded
+                    || $0.matchedAlias.map { TagSearchEntry.fold($0) == folded } == true
+            }.map { .tag($0.id) }
+        }
+        return Frame(hits: hits, lines: lines, active: active)
+    }
+
     /// A tag named exactly what was typed — through the same fold as the
     /// matching — selected on sight so Enter applies it instead of
     /// offering to create a near-duplicate.
@@ -341,13 +371,13 @@ struct UniversalTagField: View {
     private var highlightedIndex: Int? {
         highlighted.flatMap { row in rowIDs.firstIndex(of: row) }
     }
-    private var willCreate: Bool { !query.isEmpty && activeRow == nil }
 
     var body: some View {
+        let frame = self.frame
         VStack(alignment: .leading, spacing: 4) {
             if historyActive {
-                ForEach(Array(hits.enumerated()).reversed(), id: \.element.id) { _, hit in
-                    hitRow(hit)
+                ForEach(Array(frame.hits.enumerated()).reversed(), id: \.element.id) { _, hit in
+                    hitRow(hit, active: frame.active == .tag(hit.id))
                 }
             }
             HStack(spacing: 6) {
@@ -389,7 +419,7 @@ struct UniversalTagField: View {
                 if readingScreen {
                     ProgressView().controlSize(.mini)
                         .help("Reading the text on this frame")
-                } else if willCreate {
+                } else if !query.isEmpty, frame.active == nil {
                     Text("(New Tag)")
                         .font(Theme.mono(9.5))
                         .foregroundStyle(Theme.Accent.amber)
@@ -406,12 +436,12 @@ struct UniversalTagField: View {
 
             if !historyActive {
                 if screenActive {
-                    screenList
+                    screenList(frame)
                 } else {
-                    if browsingAll, query.isEmpty, hits.isEmpty {
+                    if browsingAll, query.isEmpty, frame.hits.isEmpty {
                         note("No Tags from Tag Analysis")
                     }
-                    ForEach(hits) { hitRow($0) }
+                    ForEach(frame.hits) { hitRow($0, active: frame.active == .tag($0.id)) }
                 }
             }
         }
@@ -453,21 +483,21 @@ struct UniversalTagField: View {
     }
 
     @ViewBuilder
-    private var screenList: some View {
+    private func screenList(_ frame: Frame) -> some View {
         if readingScreen {
             note("Reading the frame…")
         } else if let screenError {
             note(screenError)
-        } else if hits.isEmpty, screenLines.isEmpty {
+        } else if frame.hits.isEmpty, frame.lines.isEmpty {
             note("No text on this frame.")
         } else {
-            if !hits.isEmpty {
+            if !frame.hits.isEmpty {
                 sectionLabel("Tags in the text")
-                ForEach(hits) { hitRow($0) }
+                ForEach(frame.hits) { hitRow($0, active: frame.active == .tag($0.id)) }
             }
-            if !screenLines.isEmpty {
+            if !frame.lines.isEmpty {
                 sectionLabel("Text on screen — Enter makes a tag")
-                ForEach(screenLines, id: \.self) { lineRow($0) }
+                ForEach(frame.lines, id: \.self) { lineRow($0, active: frame.active == .line($0)) }
             }
         }
     }
@@ -551,9 +581,8 @@ struct UniversalTagField: View {
         return .handled
     }
 
-    private func hitRow(_ hit: Hit) -> some View {
-        let active = activeRow == .tag(hit.id)
-        return Button {
+    private func hitRow(_ hit: Hit, active: Bool) -> some View {
+        Button {
             apply(hit.tag)
         } label: {
             HStack(spacing: 6) {
@@ -586,9 +615,8 @@ struct UniversalTagField: View {
         .buttonStyle(.plain)
     }
 
-    private func lineRow(_ line: String) -> some View {
-        let active = activeRow == .line(line)
-        return Button {
+    private func lineRow(_ line: String, active: Bool) -> some View {
+        Button {
             creating = Seed(text: line)
         } label: {
             HStack(spacing: 6) {
