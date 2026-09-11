@@ -9,7 +9,6 @@ struct KeyBindingsEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedKey = TagKeyBinding.bindableKeys[0]
-    @State private var selectedTagID: UUID?
     @State private var advance = false
     @State private var errorText: String?
     @State private var query = ""
@@ -24,19 +23,12 @@ struct KeyBindingsEditor: View {
         }
     }
 
-    private func pick(_ id: UUID) -> TagPick? { picks.first { $0.id == id } }
-
     /// The matches shown under the field: the picker's own narrowing,
     /// capped so the sheet stays a sheet.
     private var matches: [TagPick] {
         Array(TagPickerSheet.candidates(picks, excluding: UUID(), query: query).prefix(8))
     }
 
-    private func choose(_ row: TagPick) {
-        selectedTagID = row.id
-        query = ""
-        highlighted = nil
-    }
 
     private func move(_ delta: Int) -> KeyPress.Result {
         let rows = matches
@@ -61,10 +53,22 @@ struct KeyBindingsEditor: View {
                             .font(.body.monospaced())
                             .frame(width: 36, alignment: .leading)
                         Text(tagName(binding.tagID))
-                        if binding.advance {
-                            Text("advances").font(.caption).foregroundStyle(.secondary)
-                        }
                         Spacer()
+                        // The flag is edited where it is read: flip it on
+                        // the row, and the binding is rewritten at once.
+                        Toggle("Advances", isOn: Binding(
+                            get: { binding.advance },
+                            set: { flag in
+                                do {
+                                    try model.library.setKeyBinding(
+                                        binding.key, tagID: binding.tagID, advance: flag)
+                                    model.refreshTagging()
+                                    errorText = nil
+                                } catch { errorText = "\(error)" }
+                            }))
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                            .help("Applying the tag also moves to the next item")
                         Button {
                             try? model.library.removeKeyBinding(binding.key)
                             model.refreshTagging()
@@ -87,46 +91,24 @@ struct KeyBindingsEditor: View {
 
                 // The tag is FOUND, not scrolled to: a popup of the whole
                 // vocabulary is unusable past a few hundred tags. Type,
-                // pick from the matches (↑ ↓, Enter), and the pick shows
-                // as a chip until it is bound or cleared.
-                if let picked = selectedTagID.flatMap(pick) {
-                    HStack(spacing: 6) {
-                        Text("\(picked.categoryName) · \(picked.tag.name)")
-                            .font(Theme.ui(12))
-                        Button {
-                            selectedTagID = nil
-                            query = ""
-                            queryFocused = true
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Theme.Text.disabled)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Pick a different tag")
+                // pick from the matches (↑ ↓, Enter, or a click) — and the
+                // pick IS the bind, with the Advance toggle as its flag.
+                // The row appears above; the field clears for the next.
+                TextField("Find a tag to bind to \(selectedKey.count == 1 ? selectedKey.uppercased() : selectedKey)…", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($queryFocused)
+                    .onSubmit {
+                        if let row = highlighted ?? matches.first { bind(row) }
                     }
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 8)
-                    .background(Capsule().fill(Theme.Surface.well))
-                } else {
-                    TextField("Find a tag…", text: $query)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($queryFocused)
-                        .onSubmit {
-                            if let row = highlighted ?? matches.first { choose(row) }
-                        }
-                        .onKeyPress(.downArrow) { move(1) }
-                        .onKeyPress(.upArrow) { move(-1) }
-                        .onChange(of: query) { _, _ in highlighted = nil }
-                }
+                    .onKeyPress(.downArrow) { move(1) }
+                    .onKeyPress(.upArrow) { move(-1) }
+                    .onChange(of: query) { _, _ in highlighted = nil }
 
                 Toggle("Advance", isOn: $advance)
-                    .help("Applying the tag also moves to the next item")
-
-                Button("Bind") { bind() }
-                    .disabled(selectedTagID == nil)
+                    .help("New bindings advance to the next item when their tag is applied")
             }
 
-            if selectedTagID == nil, !query.trimmingCharacters(in: .whitespaces).isEmpty {
+            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     if matches.isEmpty {
                         Text("No tag matches that.")
@@ -137,7 +119,7 @@ struct KeyBindingsEditor: View {
                     ForEach(matches) { row in
                         let active = (highlighted ?? matches.first)?.id == row.id
                         Button {
-                            choose(row)
+                            bind(row)
                         } label: {
                             HStack(spacing: 6) {
                                 Text(row.tag.name).font(Theme.ui(12))
@@ -190,13 +172,19 @@ struct KeyBindingsEditor: View {
         return "(deleted tag)"
     }
 
-    private func bind() {
-        guard let tagID = selectedTagID else { return }
+    /// Bind the picked tag to the selected key and move on: the field
+    /// clears, the key picker steps to the next free key so a run of
+    /// bindings is type · Enter · type · Enter.
+    private func bind(_ row: TagPick) {
         do {
-            try model.library.setKeyBinding(selectedKey, tagID: tagID, advance: advance)
+            try model.library.setKeyBinding(selectedKey, tagID: row.id, advance: advance)
             model.refreshTagging()
             errorText = nil
-            selectedTagID = nil
+            query = ""
+            highlighted = nil
+            if let next = TagKeyBinding.bindableKeys.first(where: { model.boundKeys[$0] == nil && $0 != selectedKey }) {
+                selectedKey = next
+            }
             queryFocused = true
         } catch {
             errorText = "\(error)"
