@@ -166,6 +166,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | OCR, plural action | `Find across the library →` |
 | Laptop numpad | A layer for a keyboard without a keypad, off by default: U I O · J K L · M , . stand in for 7 8 9 · 4 5 6 · 1 2 3, ; for 0 and ' for − (`PlayerKeyMap.laptopNumpadKey`), inside a tag field too — it is a mode, and while it is on those keys are the keypad even mid-word. Two clean taps of Control flip it; the footer reads `laptop numpad on (⌃⌃ off)` while it is. Settings › Player has the switch. Ahead of the letter bindings and of M/L, since it borrows them. |
 | Bindings blurb | `A bound key toggles its tag on the playing item. Digits stamp from inside a tag field too. Only keys the fixed map leaves free are offered.` |
+| Bindings editor, tag | Found, not scrolled to: `Find a tag…` narrows the vocabulary (folded, every term, category name included), ↑ ↓ and Enter pick, and the pick sits as a chip with an ✕ until Bind. `No tag matches that.` when nothing does. |
 | Empty vocabulary | `No tag categories in this library yet — create them from the browse toolbar's Categories button.` *(existing)* |
 | OCR empty | `No scanned text for this item yet.` / `Scan queued — reopen this panel when it finishes.` *(existing)* |
 | Hide-block help | `Hide blocks: { opens at the playhead, } closes. They skip during playback; export an edited copy from the browse grid.` *(existing)* |

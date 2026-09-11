@@ -12,6 +12,39 @@ struct KeyBindingsEditor: View {
     @State private var selectedTagID: UUID?
     @State private var advance = false
     @State private var errorText: String?
+    @State private var query = ""
+    @State private var highlighted: TagPick?
+    @FocusState private var queryFocused: Bool
+
+    /// Every tag as a pick, category name alongside, so the search
+    /// reaches "band phish" and "phish" alike.
+    private var picks: [TagPick] {
+        model.panelVocabulary.flatMap { entry in
+            entry.tags.map { TagPick(tag: $0, categoryName: entry.category.name) }
+        }
+    }
+
+    private func pick(_ id: UUID) -> TagPick? { picks.first { $0.id == id } }
+
+    /// The matches shown under the field: the picker's own narrowing,
+    /// capped so the sheet stays a sheet.
+    private var matches: [TagPick] {
+        Array(TagPickerSheet.candidates(picks, excluding: UUID(), query: query).prefix(8))
+    }
+
+    private func choose(_ row: TagPick) {
+        selectedTagID = row.id
+        query = ""
+        highlighted = nil
+    }
+
+    private func move(_ delta: Int) -> KeyPress.Result {
+        let rows = matches
+        guard !rows.isEmpty else { return .handled }
+        let current = highlighted.flatMap { row in rows.firstIndex { $0.id == row.id } } ?? 0
+        highlighted = rows[min(max(0, current + delta), rows.count - 1)]
+        return .handled
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -52,13 +85,38 @@ struct KeyBindingsEditor: View {
                 }
                 .frame(width: 110)
 
-                Picker("Tag", selection: $selectedTagID) {
-                    Text("Choose…").tag(UUID?.none)
-                    ForEach(model.panelVocabulary) { entry in
-                        ForEach(entry.tags) { tag in
-                            Text("\(entry.category.name) · \(tag.name)").tag(UUID?.some(tag.id))
+                // The tag is FOUND, not scrolled to: a popup of the whole
+                // vocabulary is unusable past a few hundred tags. Type,
+                // pick from the matches (↑ ↓, Enter), and the pick shows
+                // as a chip until it is bound or cleared.
+                if let picked = selectedTagID.flatMap(pick) {
+                    HStack(spacing: 6) {
+                        Text("\(picked.categoryName) · \(picked.tag.name)")
+                            .font(Theme.ui(12))
+                        Button {
+                            selectedTagID = nil
+                            query = ""
+                            queryFocused = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Theme.Text.disabled)
                         }
+                        .buttonStyle(.plain)
+                        .help("Pick a different tag")
                     }
+                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8)
+                    .background(Capsule().fill(Theme.Surface.well))
+                } else {
+                    TextField("Find a tag…", text: $query)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($queryFocused)
+                        .onSubmit {
+                            if let row = highlighted ?? matches.first { choose(row) }
+                        }
+                        .onKeyPress(.downArrow) { move(1) }
+                        .onKeyPress(.upArrow) { move(-1) }
+                        .onChange(of: query) { _, _ in highlighted = nil }
                 }
 
                 Toggle("Advance", isOn: $advance)
@@ -66,6 +124,44 @@ struct KeyBindingsEditor: View {
 
                 Button("Bind") { bind() }
                     .disabled(selectedTagID == nil)
+            }
+
+            if selectedTagID == nil, !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    if matches.isEmpty {
+                        Text("No tag matches that.")
+                            .font(Theme.ui(11.5))
+                            .foregroundStyle(Theme.Text.disabled)
+                            .padding(8)
+                    }
+                    ForEach(matches) { row in
+                        let active = (highlighted ?? matches.first)?.id == row.id
+                        Button {
+                            choose(row)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(row.tag.name).font(Theme.ui(12))
+                                Spacer(minLength: 6)
+                                Text(row.categoryName)
+                                    .font(Theme.ui(10))
+                                    .foregroundStyle(Theme.Text.tertiary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                                    .fill(active ? Theme.Surface.selectedRow : .clear))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(Theme.Surface.well)
+                        .stroke(Theme.Border.standard, lineWidth: 1))
             }
 
             if let errorText {
@@ -101,6 +197,7 @@ struct KeyBindingsEditor: View {
             model.refreshTagging()
             errorText = nil
             selectedTagID = nil
+            queryFocused = true
         } catch {
             errorText = "\(error)"
         }
