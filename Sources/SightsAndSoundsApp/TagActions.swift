@@ -211,7 +211,20 @@ struct TagReplacement: Identifiable {
 struct TagPick: Identifiable, Equatable {
     let tag: Tag
     let categoryName: String
+    /// Folded ONCE, when the pick is made: the fold (case, diacritics,
+    /// punctuation) is the expensive half of matching, and folding a
+    /// few thousand names again on every keystroke is what made the
+    /// bindings editor crawl.
+    let foldedName: String
+    let foldedWithCategory: String
     var id: UUID { tag.id }
+
+    init(tag: Tag, categoryName: String) {
+        self.tag = tag
+        self.categoryName = categoryName
+        foldedName = TagSearchEntry.fold(tag.name)
+        foldedWithCategory = TagSearchEntry.fold(tag.name + " " + categoryName)
+    }
 }
 
 /// Pick another tag for one of the tag's operations — the alias
@@ -254,11 +267,10 @@ struct TagPickerSheet: View {
         }
         return others
             .compactMap { pick -> (Int, TagPick)? in
-                if let byName = TagSearchEntry.score(TagSearchEntry.fold(pick.tag.name), query: query) {
+                if let byName = TagSearchEntry.score(pick.foldedName, query: query) {
                     return (byName, pick)
                 }
-                let withCategory = TagSearchEntry.fold(pick.tag.name + " " + pick.categoryName)
-                return TagSearchEntry.score(withCategory, query: query).map { ($0 + 4, pick) }
+                return TagSearchEntry.score(pick.foldedWithCategory, query: query).map { ($0 + 4, pick) }
             }
             .sorted {
                 $0.0 != $1.0

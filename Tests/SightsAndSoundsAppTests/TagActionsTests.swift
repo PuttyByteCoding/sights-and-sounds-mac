@@ -50,6 +50,14 @@ import Testing
         #expect(shown.map(\.tag.name) == ["Venue Notes", "Alpine"])
     }
 
+    /// The fold is paid once, when the pick is made — the match uses it.
+    @Test func aPickCarriesItsFoldsAndTheMatchUsesThem() {
+        let p = pick("Tim O'Neil", named: "Band")
+        #expect(p.foldedName == TagSearchEntry.fold("Tim O'Neil"))
+        #expect(p.foldedWithCategory == TagSearchEntry.fold("Tim O'Neil Band"))
+        #expect(TagPickerSheet.candidates([p], excluding: UUID(), query: "oneil band").count == 1)
+    }
+
     @Test func theDeleteMessageCountsItemsAndPointsAtTheAlternative() {
         #expect(TagActionCopy.deleteMessage(uses: 1).hasPrefix("Removes the tag from 1 item."))
         #expect(TagActionCopy.deleteMessage(uses: 12).hasPrefix("Removes the tag from 12 items."))

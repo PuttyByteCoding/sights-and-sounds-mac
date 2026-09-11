@@ -16,17 +16,31 @@ struct KeyBindingsEditor: View {
     @FocusState private var queryFocused: Bool
 
     /// Every tag as a pick, category name alongside, so the search
-    /// reaches "band phish" and "phish" alike.
-    private var picks: [TagPick] {
-        model.panelVocabulary.flatMap { entry in
-            entry.tags.map { TagPick(tag: $0, categoryName: entry.category.name) }
-        }
+    /// reaches "band phish" and "phish" alike. Built once on appear —
+    /// the fold lives in the pick — not flattened and re-folded on every
+    /// read.
+    @State private var picks: [TagPick] = []
+    /// The matches shown under the field: the picker's own ranking — an
+    /// exact name first — and every one of them; the list scrolls.
+    /// State, recomputed when the query changes, because as a computed
+    /// property it was read once per ROW while drawing the list (each
+    /// row's highlight asked for the first match), which ranked the
+    /// whole vocabulary a thousand times per keystroke.
+    @State private var matches: [TagPick] = []
+    private var namesByID: [UUID: String] {
+        Dictionary(uniqueKeysWithValues: picks.map { ($0.id, "\($0.categoryName) · \($0.tag.name)") })
     }
 
-    /// The matches shown under the field: the picker's own ranking —
-    /// an exact name first — and every one of them; the list scrolls.
-    private var matches: [TagPick] {
-        TagPickerSheet.candidates(picks, excluding: UUID(), query: query)
+    private func rebuildPicks() {
+        picks = model.panelVocabulary.flatMap { entry in
+            entry.tags.map { TagPick(tag: $0, categoryName: entry.category.name) }
+        }
+        rebuildMatches()
+    }
+
+    private func rebuildMatches() {
+        matches = query.trimmingCharacters(in: .whitespaces).isEmpty
+            ? [] : TagPickerSheet.candidates(picks, excluding: UUID(), query: query)
     }
 
 
@@ -43,6 +57,7 @@ struct KeyBindingsEditor: View {
             Text("Tag Key Bindings").font(.title3)
 
             let bindings = model.boundKeys.values.sorted { $0.key < $1.key }
+            let names = namesByID
             if bindings.isEmpty {
                 Text("No bindings yet. A bound key toggles its tag on the playing item. Digits stamp from inside a tag field too.")
                     .foregroundStyle(.secondary)
@@ -52,7 +67,7 @@ struct KeyBindingsEditor: View {
                         Text(binding.key.count == 1 ? binding.key.uppercased() : binding.key)
                             .font(.body.monospaced())
                             .frame(width: 36, alignment: .leading)
-                        Text(tagName(binding.tagID))
+                        Text(names[binding.tagID] ?? "(deleted tag)")
                         Spacer()
                         // The flag is edited where it is read: flip it on
                         // the row, and the binding is rewritten at once.
@@ -117,8 +132,9 @@ struct KeyBindingsEditor: View {
                             .foregroundStyle(Theme.Text.disabled)
                             .padding(8)
                     }
+                    let first = highlighted ?? matches.first
                     ForEach(matches) { row in
-                        let active = (highlighted ?? matches.first)?.id == row.id
+                        let active = first?.id == row.id
                         Button {
                             bind(row)
                         } label: {
@@ -161,19 +177,12 @@ struct KeyBindingsEditor: View {
         }
         .padding(16)
         .frame(minWidth: 480)
+        .onAppear(perform: rebuildPicks)
+        .onChange(of: query) { _, _ in rebuildMatches() }
     }
 
     private var availableKeys: [String] {
         TagKeyBinding.bindableKeys.filter { model.boundKeys[$0] == nil || $0 == selectedKey }
-    }
-
-    private func tagName(_ id: UUID) -> String {
-        for entry in model.panelVocabulary {
-            if let tag = entry.tags.first(where: { $0.id == id }) {
-                return "\(entry.category.name) · \(tag.name)"
-            }
-        }
-        return "(deleted tag)"
     }
 
     /// Bind the picked tag to the selected key and move on: the field
