@@ -23,10 +23,10 @@ struct KeyBindingsEditor: View {
         }
     }
 
-    /// The matches shown under the field: the picker's own narrowing,
-    /// capped so the sheet stays a sheet.
+    /// The matches shown under the field: the picker's own ranking —
+    /// an exact name first — and every one of them; the list scrolls.
     private var matches: [TagPick] {
-        Array(TagPickerSheet.candidates(picks, excluding: UUID(), query: query).prefix(8))
+        TagPickerSheet.candidates(picks, excluding: UUID(), query: query)
     }
 
 
@@ -109,7 +109,8 @@ struct KeyBindingsEditor: View {
             }
 
             if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
+                ScrollView {
+                  LazyVStack(alignment: .leading, spacing: 0) {
                     if matches.isEmpty {
                         Text("No tag matches that.")
                             .font(Theme.ui(11.5))
@@ -137,9 +138,12 @@ struct KeyBindingsEditor: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .id(row.id)
                     }
+                  }
+                  .padding(4)
                 }
-                .padding(4)
+                .frame(maxHeight: 220)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.control)
                         .fill(Theme.Surface.well)
