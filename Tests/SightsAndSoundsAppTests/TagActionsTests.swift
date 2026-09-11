@@ -34,6 +34,22 @@ import Testing
         #expect(shown.map(\.tag.name) == ["Red Rocks"])
     }
 
+    /// A two-letter tag behind a crowd of longer names containing it:
+    /// first, and the crowd still listed after it — nothing is cut.
+    @Test func anExactNameLeadsAndEveryMatchIsListed() {
+        let crowd = (1...30).map { pick("Seether \($0)") }
+        let shown = TagPickerSheet.candidates(crowd + [pick("ee")], excluding: UUID(), query: "ee")
+        #expect(shown.first?.tag.name == "ee")
+        #expect(shown.count == 31)
+    }
+
+    @Test func aNameMatchOutranksAMatchThroughTheCategoryName() {
+        let byName = pick("Venue Notes", in: band, named: "Band")
+        let byCategory = pick("Alpine", in: venue, named: "Venue")
+        let shown = TagPickerSheet.candidates([byCategory, byName], excluding: UUID(), query: "venue")
+        #expect(shown.map(\.tag.name) == ["Venue Notes", "Alpine"])
+    }
+
     @Test func theDeleteMessageCountsItemsAndPointsAtTheAlternative() {
         #expect(TagActionCopy.deleteMessage(uses: 1).hasPrefix("Removes the tag from 1 item."))
         #expect(TagActionCopy.deleteMessage(uses: 12).hasPrefix("Removes the tag from 12 items."))

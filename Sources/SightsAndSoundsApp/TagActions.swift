@@ -239,18 +239,33 @@ struct TagPickerSheet: View {
     @State private var errorText: String?
     @FocusState private var queryFocused: Bool
 
-    /// The pickable tags: everything offered but the tag itself, narrowed
-    /// by the query (folded, every term, against the name and the
-    /// category name), in name order. Pure, so it is tested.
+    /// The pickable tags: everything offered but the tag itself. An empty
+    /// query lists them all by name. A query RANKS them — the name
+    /// scored by the one rule every tag search uses (exact, then starts
+    /// with, then a word starts with, then contains), and a match only
+    /// through the category name ("venue red") after every name match —
+    /// then names break ties. Never capped: the list scrolls, and a
+    /// two-letter tag behind thirty longer names has to be reachable.
+    /// Pure, so it is tested.
     static func candidates(_ picks: [TagPick], excluding tagID: UUID, query: String) -> [TagPick] {
-        let terms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
-        return picks
-            .filter { $0.tag.id != tagID }
-            .filter { pick in
-                let folded = TagSearchEntry.fold(pick.tag.name + " " + pick.categoryName)
-                return terms.allSatisfy { folded.contains($0) }
+        let others = picks.filter { $0.tag.id != tagID }
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return others.sorted { $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending }
+        }
+        return others
+            .compactMap { pick -> (Int, TagPick)? in
+                if let byName = TagSearchEntry.score(TagSearchEntry.fold(pick.tag.name), query: query) {
+                    return (byName, pick)
+                }
+                let withCategory = TagSearchEntry.fold(pick.tag.name + " " + pick.categoryName)
+                return TagSearchEntry.score(withCategory, query: query).map { ($0 + 4, pick) }
             }
-            .sorted { $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending }
+            .sorted {
+                $0.0 != $1.0
+                    ? $0.0 < $1.0
+                    : $0.1.tag.name.localizedStandardCompare($1.1.tag.name) == .orderedAscending
+            }
+            .map(\.1)
     }
 
     private var shown: [TagPick] { Self.candidates(picks, excluding: tag.id, query: query) }

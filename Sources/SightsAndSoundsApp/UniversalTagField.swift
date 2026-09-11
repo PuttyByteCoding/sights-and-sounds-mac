@@ -39,17 +39,23 @@ struct TagSearchEntry: Identifiable {
     /// term; an alias scores the same way when the name does not match
     /// — sorted by score then name, and only then cut. A full pass over
     /// pre-folded names is microseconds; the cut was never the saving.
-    static func ranked(_ entries: [TagSearchEntry], query: String, limit: Int) -> [Match] {
+    /// The score of one folded text against a query, lower is better:
+    /// 0 an exact match, 1 starts with the query, 2 a word starts with
+    /// it, 3 contains every term; nil when a term is missing. The one
+    /// rule every tag search ranks by.
+    static func score(_ folded: String, query: String) -> Int? {
         let whole = fold(query.trimmingCharacters(in: .whitespaces))
         let terms = query.split(separator: " ").map { fold(String($0)) }
-        guard !whole.isEmpty else { return [] }
-        func score(_ folded: String) -> Int? {
-            guard terms.allSatisfy({ folded.contains($0) }) else { return nil }
-            if folded == whole { return 0 }
-            if folded.hasPrefix(whole) { return 1 }
-            if folded.split(separator: " ").contains(where: { $0.hasPrefix(whole) }) { return 2 }
-            return 3
-        }
+        guard !whole.isEmpty, terms.allSatisfy({ folded.contains($0) }) else { return nil }
+        if folded == whole { return 0 }
+        if folded.hasPrefix(whole) { return 1 }
+        if folded.split(separator: " ").contains(where: { $0.hasPrefix(whole) }) { return 2 }
+        return 3
+    }
+
+    static func ranked(_ entries: [TagSearchEntry], query: String, limit: Int) -> [Match] {
+        guard !fold(query).trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        func score(_ folded: String) -> Int? { Self.score(folded, query: query) }
         var scored: [(score: Int, match: Match)] = []
         scored.reserveCapacity(entries.count)
         for entry in entries {
