@@ -187,6 +187,10 @@ extension LibraryDatabase {
     /// The default reader set, in display order. A future web-page reader
     /// or schema matcher is appended here — one line, no rewrites.
     public static func defaultAnalysisReaders() -> [any AnalysisReader] {
+        // Order matters twice: a string found by two readers keeps the
+        // FIRST reader's rule outcome, and the parse budget runs out on
+        // the later readers. Embedded metadata leads so a keyed ignore
+        // rule wins over the same string loose in the path.
         [
             EmbeddedMetadataReader(),
             PathAnalysisReader(),
@@ -200,16 +204,23 @@ extension LibraryDatabase {
     /// through the recursive hub, the rules over every leaf, then the
     /// existing-tag pass over what survives.
     ///
-    /// One deadline spans the WHOLE item — readers' strings share the
-    /// budget, so a pathological sidecar cannot starve the metadata pass
-    /// of its turn only by being listed first... it can, but the run says
-    /// so via `truncated` instead of hanging.
+    /// Every reader READS first, then one parse budget spans the whole
+    /// item's strings. The budget used to start with the call, so a
+    /// reader that spent seconds probing a big file — embedded metadata
+    /// over a network volume — spent the budget the file name's parse
+    /// was going to use, and the tag at the start of the name went
+    /// unfound with `truncated` set. Reading is not parsing; the clock
+    /// starts when parsing does. A pathological source can still eat the
+    /// budget of the sources after it, and the run says so via
+    /// `truncated` instead of hanging. `deadline` overrides the budget
+    /// when a caller wants one already running (tests).
     public func analyzeItem(
         _ itemID: UUID,
         rules: [RuleEngine.Rule],
         readers: [any AnalysisReader]? = nil,
         fileAccess: any FileAccess = LiveFileAccess(),
-        deadline: ParseDeadline = .seconds(5)
+        deadline: ParseDeadline? = nil,
+        parseBudgetSeconds: Double = 5
     ) throws -> ItemAnalysis {
         guard let item = try writer.read({ try MediaItem.fetchOne($0, key: itemID) }) else {
             return .empty
@@ -239,6 +250,7 @@ extension LibraryDatabase {
         var truncated = false
 
         var readerReports: [ReaderReport] = []
+        var gathered: [(reader: any AnalysisReader, sources: [AnalysisSourceText])] = []
         for reader in readers ?? Self.defaultAnalysisReaders() {
             var readerError: String?
             let sources: [AnalysisSourceText]
@@ -251,6 +263,12 @@ extension LibraryDatabase {
             readerReports.append(ReaderReport(
                 readerID: reader.id, displayName: reader.displayName,
                 sources: sources, error: readerError))
+            gathered.append((reader, sources))
+        }
+
+        // Everything is read; the parse clock starts now.
+        let deadline = deadline ?? .seconds(parseBudgetSeconds)
+        for (reader, sources) in gathered {
             for source in sources {
                 // The reader's key enters the walk at the top, so the
                 // rule fold sees it exactly once — a keyed metadata value
