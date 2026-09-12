@@ -257,9 +257,6 @@ struct TagTable: View {
     /// The shared tag menu, with the two flags only this table shows.
     @ViewBuilder
     private func rowMenu(_ tag: Tag) -> some View {
-        Button(tag.isFavorite ? "Remove from Favourites" : "Add to Favourites") {
-            onToggleFavorite(tag)
-        }
         Button(tag.hiddenByDefault ? "Unhide" : "Hide by default") { onHide(tag) }
         Divider()
         TagActionButtons(tag: tag, library: library, libraryID: libraryID, pending: $pending)

@@ -130,6 +130,14 @@ struct WatchedView: View {
         .contextMenu {
             Button("Play", systemImage: "play") { play(item) }
                 .disabled(!model.isOnline(item))
+            Button(
+                item.isFavorite ? "Remove from Favourites" : "Add to Favourites",
+                systemImage: item.isFavorite ? "star.slash" : "star"
+            ) {
+                _ = try? model.library.toggleFlag(.favorite, itemID: item.id)
+                reload()
+                model.refreshAll()
+            }
             Button("Reveal in Finder") { reveal(item) }
                 .disabled(!model.isOnline(item))
         }

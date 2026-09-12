@@ -14,10 +14,14 @@ enum TagAction: Identifiable {
     /// Swap the tag for another — on the one item it was right-clicked
     /// on, or, from a row that is not on an item, on every item wearing it.
     case replace(Tag, itemID: UUID?)
+    /// Flip the tag's favourite flag. No sheet: the host writes it the
+    /// moment it is set and clears it.
+    case toggleFavorite(Tag)
 
     var tag: Tag {
         switch self {
-        case .edit(let tag), .delete(let tag), .alias(let tag), .replace(let tag, _): tag
+        case .edit(let tag), .delete(let tag), .alias(let tag), .replace(let tag, _),
+             .toggleFavorite(let tag): tag
         }
     }
 
@@ -27,6 +31,7 @@ enum TagAction: Identifiable {
         case .delete(let tag): "delete-\(tag.id)"
         case .alias(let tag): "alias-\(tag.id)"
         case .replace(let tag, let itemID): "replace-\(tag.id)-\(itemID?.uuidString ?? "all")"
+        case .toggleFavorite(let tag): "favorite-\(tag.id)"
         }
     }
 }
@@ -59,6 +64,9 @@ struct TagActionButtons: View {
 
     var body: some View {
         Button("Edit Tag…") { pending = .edit(tag) }
+        Button(tag.isFavorite ? "Remove from Favourites" : "Add to Favourites") {
+            pending = .toggleFavorite(tag)
+        }
         Button("Show Items with This Tag") {
             openTagPlayerWindow(
                 tag: tag, library: library, libraryID: libraryID, openWindow: openWindow)
@@ -135,6 +143,14 @@ private struct TagActionHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // The one action with no sheet: written as soon as it is
+            // asked for, then cleared so the next right-click starts clean.
+            .onChange(of: pending?.id) { _, _ in
+                guard case .toggleFavorite(let tag) = pending else { return }
+                try? library.setTagFavorite(tag.id, !tag.isFavorite)
+                pending = nil
+                onChange()
+            }
             .sheet(item: editing, onDismiss: onDismiss) { tag in
                 TagSheet(
                     mode: .edit(tag), library: library, libraryID: libraryID,

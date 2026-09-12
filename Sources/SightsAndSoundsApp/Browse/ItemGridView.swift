@@ -194,6 +194,13 @@ private struct ItemCell: View {
     @ViewBuilder private var menu: some View {
         Button("Play", systemImage: "play") { play() }
             .disabled(!model.isOnline(item))
+        Button(
+            item.isFavorite ? "Remove from Favourites" : "Add to Favourites",
+            systemImage: item.isFavorite ? "star.slash" : "star"
+        ) {
+            _ = try? model.library.toggleFlag(.favorite, itemID: item.id)
+            model.refreshAll()
+        }
         Divider()
         // File-location actions, not media operations.
         Button("Show in Finder", systemImage: "folder") { revealInFinder() }
