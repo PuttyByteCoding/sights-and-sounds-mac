@@ -164,6 +164,23 @@ import Testing
         }
     }
 
+    /// A rule that hands the value a category — a naming scheme's first
+    /// segment is the band, say — must not hide the existing tag sitting
+    /// in that value: "BenFolds" at the start of the file name is still
+    /// Ben Folds, categorised or not.
+    @Test func aCategorisedValueStillNamesItsExistingTag() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        let item = try await insertItem(library, source, path: "BenFolds-in-seattle.mp4")
+        let rules = [rule(.valueStartsWith(prefix: "Ben"), [.assignCategory(category: "Taper")])]
+
+        let analysis = try library.analyzeItem(item.id, rules: rules)
+        #expect(analysis.suggested.contains { $0.value.hasPrefix("BenFolds") })
+        let finding = try #require(analysis.existing.first)
+        #expect(finding.tag.id == ben.id)
+    }
+
     /// The squash must not loosen the word boundary: a tag inside a
     /// longer run of letters is still not a hit.
     @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {

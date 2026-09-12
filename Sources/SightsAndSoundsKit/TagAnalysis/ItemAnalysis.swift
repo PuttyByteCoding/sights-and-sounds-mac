@@ -356,12 +356,14 @@ extension LibraryDatabase {
                 trail: entry.candidate.trail,
                 origins: entry.origins)
 
-            if candidate.category != nil, candidate.suppressedByRule == nil {
-                suggested.append(candidate)
-                continue
-            }
             // Ignore-ruled strings skip tag matching — that IS the
-            // false-positive reduction — but stay listed below.
+            // false-positive reduction — but stay listed below. Every
+            // other string is searched, a categorised one included: a
+            // rule that hands a naming scheme's first segment to a
+            // category does not change what that segment SAYS, and
+            // "BenFolds" at the start of the name is still Ben Folds.
+            // Categorised values used to skip this pass, which is how an
+            // existing tag went unfound whenever it led the file name.
             if candidate.suppressedByRule == nil {
                 for hit in Self.findTags(in: candidate.value, inventory: inventory) {
                     let finding = ExistingTagFinding(
@@ -373,7 +375,11 @@ extension LibraryDatabase {
                     }
                 }
             }
-            unmapped.append(candidate)
+            if candidate.category != nil, candidate.suppressedByRule == nil {
+                suggested.append(candidate)
+            } else {
+                unmapped.append(candidate)
+            }
         }
 
         return ItemAnalysis(
