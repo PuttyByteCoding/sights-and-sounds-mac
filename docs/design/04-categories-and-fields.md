@@ -55,7 +55,8 @@ first one.
    folds the name into another tag and keeps them. The tag inspector offers **Convert to alias
    of…** above **Delete Tag…**, and the delete confirmation names the count it is about to
    drop and points at the alternative. The same pair rides every drawn tag's right-click menu
-   (`TagActionButtons`): **Edit Tag…** · **Show Items with This Tag** · **Remove from This
+   (`TagActionButtons`): **Edit Tag…** · **Add to / Remove from Favourites** (written at once,
+   no sheet) · **Show Items with This Tag** · **Remove from This
    Video** where the tag is on an item · **Replace with Another Tag…** (on that item; from a
    row that is not on an item, **…Everywhere**, every item wearing it — any category, both
    tags remain) · **Add as Alias to Another Tag…** (a picker of the category's other tags;
@@ -121,7 +122,7 @@ All / Similar only segmented control, and Merge tags · Paste List… · **+ Tag
 sticky 31 pt header row on `#141109` over the scrolling table. Columns
 `1fr / 150 / 66 / 40 / 34` — name, aliases, uses, favourite, menu — with a 30 pt checkbox
 column prepended in merge mode. The row menu, on the ellipsis and on right-click anywhere in
-the row: favourite · Hide by default / Unhide · then the shared tag menu — **Edit Tag…** ·
+the row: Hide by default / Unhide · then the shared tag menu — **Edit Tag…** · favourite ·
 **Show Items with This Tag** · **Replace with Another Tag Everywhere…** · **Add as Alias to
 Another Tag…** · **Delete Tag…** behind its confirmation. Both header and rows carry the same
 grid string and
