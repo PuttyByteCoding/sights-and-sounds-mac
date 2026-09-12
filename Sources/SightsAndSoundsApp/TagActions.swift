@@ -309,7 +309,6 @@ struct TagPickerSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             TextField("Find a tag…", text: $query)
-                .splitsPastedTitleCase($query)
                 .textFieldStyle(.plain)
                 .font(Theme.ui(12.5))
                 .padding(.vertical, 7)

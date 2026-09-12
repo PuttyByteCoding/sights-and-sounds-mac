@@ -20,6 +20,9 @@ struct SightsAndSoundsApp: App {
         // Registered, not set — an explicit user default still wins.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
 
+        // ⌘V anywhere: title case without its spaces gets them back.
+        PasteTitleCaseSplitter.shared.install()
+
         // Run as a REGULAR app even when launched as a bare executable
         // (`swift run`): without a bundle, macOS treats the process as
         // background — windows draw and clicks land, but keyboard focus
