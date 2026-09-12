@@ -189,7 +189,7 @@ struct BrowseView: View {
                         : "Duplicates, the delete list and playback issues")
                 }
                 ToolbarItem {
-                    Button("Recently Watched", systemImage: "clock.arrow.circlepath") {
+                    Button("History", systemImage: "clock.arrow.circlepath") {
                         openAux(.watched)
                     }
                     .help("What you have played, and where you stopped")

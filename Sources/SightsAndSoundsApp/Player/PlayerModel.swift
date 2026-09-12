@@ -413,7 +413,7 @@ final class PlayerModel {
         // Clips start at their in-point; everything else starts at the
         // beginning. The stored resume position is deliberately NOT
         // seeked to — reopening a video always plays from the top. The
-        // position keeps being persisted, because Recently Watched still
+        // position keeps being persisted, because History still
         // says where you stopped; it just no longer drives playback.
         if let start = loaded.clipStartSeconds {
             seek(to: start)

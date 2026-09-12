@@ -452,7 +452,7 @@ struct ViewMenuCommands: View {
             aux("Organise", .organise, key: "4")
             aux("Maintenance", .maintenance, key: "5")
             aux("Tag Analysis", .tagAnalysis, key: "6")
-            aux("Recently Watched", .watched, key: "7")
+            aux("History", .watched, key: "7")
             Button("Library Properties") {
                 guard let focusedLibraryID else { return }
                 openWindow(id: "properties", value: focusedLibraryID)
