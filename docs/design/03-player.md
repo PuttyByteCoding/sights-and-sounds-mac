@@ -116,6 +116,13 @@ collapsed by default · queue drawer, 146 pt — a 22 pt header names the queue,
 holds Refresh and a Sort menu (Name · Path · File Size · Duration · Shuffle) that re-orders the
 snapshot in place; the queue is a snapshot the player owns, re-run only by Refresh (⌘R) — see
 `docs/superpowers/specs/2026-09-08-play-queues-design.md`.
+A **History** panel can join the right rail under Tags and Segments (off by default; the
+panel toggles carry it): what you have watched, newest first, three columns — Item, Watched,
+Stopped — read when the panel opens and when another player loads something, never re-read on
+this player's own loads so the list holds still under the arrows. A click, or ↑ ↓ while the
+History zone has the keys (Tab reaches it), selects the row AND loads that item here — the
+arrows walk what you watched; no wrap, and a first press starts at the end the arrow came
+from (`HistoryNavigation.next`). The playing item reads amber in the list.
 A left **rail** panel (on by default in Tag Pivot and other aux players, off in the library window)
 lists only the tags on the queue's items with their counts; clicking narrows the strip and the
 arrows without touching the snapshot.

@@ -161,9 +161,12 @@ final class PlayerModel {
         panels[panel].toggle()
         // Focus cannot sit in a panel that just closed.
         if !panels[panel], zone.panel == panel { zone = .video }
+        // The history is read when the panel opens: fresh then, and
+        // not reordered under the arrows while it is up.
+        if panel == .history, panels.history { refreshHistory() }
     }
 
-    var showsRail: Bool { panels.tags || panels.segments }
+    var showsRail: Bool { panels.tags || panels.segments || panels.history }
 
     /// The zones actually on screen, in Tab order. A collapsed panel is
     /// not a place focus can go.
@@ -171,8 +174,42 @@ final class PlayerModel {
         var zones: [PlayerZone] = [.video]
         if panels.tags { zones.append(.tags) }
         if panels.segments { zones.append(.segments) }
+        if panels.history { zones.append(.history) }
         if panels.queue, !playlist.isEmpty { zones.append(.queue) }
         return zones
+    }
+
+    // MARK: - History panel
+
+    /// What has been watched, newest first, for the rail's History
+    /// panel. Read when the panel opens and when ANOTHER player loads
+    /// something; this player's own loads stamp the history too, but
+    /// re-reading on them would move the row just walked to onto the
+    /// top and put the next ↓ somewhere else — a walk needs the list
+    /// to hold still.
+    private(set) var historyRows: [MediaItem] = []
+    var historySelectionID: UUID?
+
+    func refreshHistory() {
+        historyRows = (try? library.recentlyWatched(limit: 300)) ?? []
+        if let id = item?.id, historyRows.contains(where: { $0.id == id }) {
+            historySelectionID = id
+        }
+    }
+
+    /// ↑ ↓ in the History zone: the next row is selected AND loaded —
+    /// the arrows walk what you watched, they do not pick and wait.
+    func stepHistorySelection(_ delta: Int) {
+        guard let next = HistoryNavigation.next(
+            after: historySelectionID, in: historyRows.map(\.id), delta: delta)
+        else { return }
+        selectHistoryRow(next)
+    }
+
+    func selectHistoryRow(_ id: UUID) {
+        historySelectionID = id
+        zone = .history
+        if item?.id != id { load(itemID: id) }
     }
 
     // MARK: - Tagging state
@@ -218,19 +255,23 @@ final class PlayerModel {
         // History is the one live queue: another player's load over this
         // library re-runs it. Its own loads are excluded by token, so
         // walking the history never reorders it under you.
-        if case .history = request.definition {
-            loadObserver = NotificationCenter.default.addObserver(
-                forName: .sasPlaybackDidLoad, object: nil, queue: .main
-            ) { [weak self] note in
-                let changed = note.userInfo?["libraryID"] as? UUID
-                let sender = note.userInfo?["sender"] as? UUID
-                Task { @MainActor in
-                    guard let self, changed == self.libraryID, sender != self.playerToken
-                    else { return }
-                    self.refreshQueue()
-                }
+        // The History panel follows the same broadcast, whatever the
+        // queue is.
+        let followsHistoryQueue: Bool
+        if case .history = request.definition { followsHistoryQueue = true } else { followsHistoryQueue = false }
+        loadObserver = NotificationCenter.default.addObserver(
+            forName: .sasPlaybackDidLoad, object: nil, queue: .main
+        ) { [weak self] note in
+            let changed = note.userInfo?["libraryID"] as? UUID
+            let sender = note.userInfo?["sender"] as? UUID
+            Task { @MainActor in
+                guard let self, changed == self.libraryID, sender != self.playerToken
+                else { return }
+                if followsHistoryQueue { self.refreshQueue() }
+                if self.panels.history { self.refreshHistory() }
             }
         }
+        if panels.history { refreshHistory() }
         // Tag edits anywhere reshape the rail's counts. Same library
         // only; the player's own edits recount directly.
         changeObserver = NotificationCenter.default.addObserver(
@@ -1121,13 +1162,14 @@ final class PlayerModel {
 
 /// The four places the keyboard can be pointed, in Tab order.
 enum PlayerZone: String, CaseIterable, Sendable {
-    case video, tags, segments, queue
+    case video, tags, segments, history, queue
 
     var displayName: String {
         switch self {
         case .video: "Video"
         case .tags: "Tags"
         case .segments: "Segments"
+        case .history: "History"
         case .queue: "Queue"
         }
     }
@@ -1139,6 +1181,7 @@ enum PlayerZone: String, CaseIterable, Sendable {
         case .video: nil
         case .tags: .tags
         case .segments: .segments
+        case .history: .history
         case .queue: .queue
         }
     }
@@ -1146,7 +1189,7 @@ enum PlayerZone: String, CaseIterable, Sendable {
 
 /// One of the player's four collapsible panels.
 enum PlayerPanel: String, CaseIterable, Sendable {
-    case tags, segments, queue, text, rail
+    case tags, segments, queue, text, rail, history
 }
 
 extension PlayerPanels {
@@ -1158,6 +1201,7 @@ extension PlayerPanels {
             case .queue: queue
             case .text: text
             case .rail: rail
+            case .history: history
             }
         }
         set {
@@ -1167,6 +1211,7 @@ extension PlayerPanels {
             case .queue: queue = newValue
             case .text: text = newValue
             case .rail: rail = newValue
+            case .history: history = newValue
             }
         }
     }

@@ -197,13 +197,13 @@ struct WatchedView: View {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    private static func relative(_ date: Date) -> String {
+    static func relative(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
-    private static func timecode(_ seconds: Double) -> String {
+    static func timecode(_ seconds: Double) -> String {
         let total = Int(seconds.rounded())
         let (hours, minutes, secs) = (total / 3600, (total % 3600) / 60, total % 60)
         return hours > 0
