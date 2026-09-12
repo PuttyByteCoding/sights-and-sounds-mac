@@ -29,7 +29,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .maintenance: "Maintenance"
             case .importMedia: "Import"
             case .operations: "Operations"
-            case .watched: "Recently Watched"
+            case .watched: "History"
             case .tagAnalysis: "Tag Analysis"
             case .player: "Player"
             }

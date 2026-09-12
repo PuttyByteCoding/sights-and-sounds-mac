@@ -2,13 +2,12 @@ import AppKit
 import SwiftUI
 import SightsAndSoundsKit
 
-/// What you have watched, most recent first.
+/// History: what you have watched, most recent first.
 ///
-/// Deliberately named *Recently Watched* rather than *History*: it reads
-/// the columns the player already maintains, so it is one row per item
-/// carrying the latest date. Watching something three times is a single
-/// row reading 3 — the window says so in its own footer rather than
-/// implying a timeline it cannot produce.
+/// It reads the columns the player already maintains, so it is one row
+/// per item carrying the latest date. Watching something three times is
+/// a single row reading 3 — the window says so in its own footer rather
+/// than implying a timeline it cannot produce.
 struct WatchedView: View {
     @Environment(BrowseModel.self) private var model
 
@@ -40,7 +39,7 @@ struct WatchedView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text("Recently Watched").modifier(Theme.sectionLabel(Theme.Accent.amber))
+            Text("History").modifier(Theme.sectionLabel(Theme.Accent.amber))
             Text("\(total) watched")
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.Text.quaternary)

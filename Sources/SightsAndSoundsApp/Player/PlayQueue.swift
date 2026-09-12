@@ -13,14 +13,14 @@ enum QueueDefinition: Hashable, Sendable {
     case tag(id: UUID, name: String)
     /// What has been watched, most recent first.
     case history
-    /// A fixed set — a selection, a compare pair, a Recently Watched row.
+    /// A fixed set — a selection, a compare pair, a History row.
     case explicit(ids: [UUID], name: String)
 
     var title: String {
         switch self {
         case .listing(let filter, _, _): filter.isEmpty ? "All items" : "Filtered listing"
         case .tag(_, let name): "Tag: \(name)"
-        case .history: "Recently Watched"
+        case .history: "History"
         case .explicit(_, let name): name
         }
     }
