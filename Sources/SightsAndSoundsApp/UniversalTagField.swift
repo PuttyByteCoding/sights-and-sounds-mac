@@ -383,6 +383,7 @@ struct UniversalTagField: View {
             HStack(spacing: 6) {
                 Text("⌕").font(Theme.ui(12)).foregroundStyle(Theme.Text.quaternary)
                 TextField("Find or create a tag in any category…", text: $draft)
+                    .splitsPastedTitleCase($draft)
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12))
                     .focused(focus, equals: focusID)

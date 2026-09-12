@@ -645,6 +645,7 @@ private struct PillCategoryView: View {
             }
             HStack(spacing: 6) {
                 TextField("Add \(entry.category.name)…", text: $draft)
+                    .splitsPastedTitleCase($draft)
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12))
                     .focused(focus, equals: entry.id)

@@ -110,6 +110,7 @@ struct KeyBindingsEditor: View {
                 // pick IS the bind, with the Advance toggle as its flag.
                 // The row appears above; the field clears for the next.
                 TextField("Find a tag to bind to \(selectedKey.count == 1 ? selectedKey.uppercased() : selectedKey)…", text: $query)
+                    .splitsPastedTitleCase($query)
                     .textFieldStyle(.roundedBorder)
                     .focused($queryFocused)
                     .onSubmit {
