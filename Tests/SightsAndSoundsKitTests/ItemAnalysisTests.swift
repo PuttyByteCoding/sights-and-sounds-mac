@@ -181,6 +181,23 @@ import Testing
         #expect(finding.tag.id == ben.id)
     }
 
+    /// A file name written between underscores offers each piece as a
+    /// possible tag, typed the way a person would type it — and a piece
+    /// that names an existing tag is found as that tag as well.
+    @Test func underscorePiecesAreOfferedAsCandidates() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        let item = try await insertItem(library, source, path: "shows/sdg_BenFoldsFive_OnStage_tonight.mp4")
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        let values = analysis.unmapped.map(\.value)
+        for piece in ["sdg", "Ben Folds Five", "On Stage", "tonight"] {
+            #expect(values.contains(piece), "missing \(piece)")
+        }
+        #expect(analysis.existing.contains { $0.tag.id == ben.id })
+    }
+
     /// The squash must not loosen the word boundary: a tag inside a
     /// longer run of letters is still not a hit.
     @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {

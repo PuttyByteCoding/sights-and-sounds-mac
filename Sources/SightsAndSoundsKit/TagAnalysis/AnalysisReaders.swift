@@ -80,7 +80,15 @@ public struct PathAnalysisReader: AnalysisReader {
     public func read(
         item: MediaItem, fileURL: URL?, library: LibraryDatabase
     ) throws -> [AnalysisSourceText] {
+        // The whole path first, then each piece of a file name written
+        // between underscores as a string of its own — the same road
+        // through the rules and the existing-tag pass as any other
+        // string, so a piece can be ignored by a rule, filed by one, or
+        // found to name a tag already.
         [AnalysisSourceText(readerID: id, key: nil, text: item.relativePath)]
+            + FileNameSegments.pieces(of: item.fileName).map {
+                AnalysisSourceText(readerID: id, key: nil, text: $0)
+            }
     }
 }
 
