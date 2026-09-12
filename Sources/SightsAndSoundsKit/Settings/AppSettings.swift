@@ -528,16 +528,19 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
     /// so the player does not write it back; the stored value is only a
     /// decode default.
     public var rail: Bool
+    /// The history panel in the right rail, off by default.
+    public var history: Bool
 
     public init(
         tags: Bool = true, segments: Bool = true, queue: Bool = true, text: Bool = false,
-        rail: Bool = false
+        rail: Bool = false, history: Bool = false
     ) {
         self.tags = tags
         self.segments = segments
         self.queue = queue
         self.text = text
         self.rail = rail
+        self.history = history
     }
 
     public init(from decoder: Decoder) throws {
@@ -548,6 +551,7 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
         queue = try container.decodeIfPresent(Bool.self, forKey: .queue) ?? defaults.queue
         text = try container.decodeIfPresent(Bool.self, forKey: .text) ?? defaults.text
         rail = try container.decodeIfPresent(Bool.self, forKey: .rail) ?? defaults.rail
+        history = try container.decodeIfPresent(Bool.self, forKey: .history) ?? defaults.history
     }
 }
 

@@ -270,6 +270,13 @@ struct PlayerView: View {
                 model.stepSegmentSelection(press.key == .downArrow ? 1 : -1)
                 return true
             }
+            // In the History zone the arrows walk what you watched: the
+            // next row is selected and loaded in one press.
+            if model.zone == .history,
+               press.key == .upArrow || press.key == .downArrow {
+                model.stepHistorySelection(press.key == .downArrow ? 1 : -1)
+                return true
+            }
             guard press.key == .leftArrow || press.key == .rightArrow else { return false }
             let arrow: PlayerKeyMap.Arrow = press.key == .leftArrow ? .left : .right
             guard let step = PlayerKeyMap.playlistStep(arrow: arrow, shift: shift, style: style)
@@ -536,6 +543,7 @@ private struct PlayerContent: View {
                         onDoubleClick: {
                             if model.panels.tags { model.togglePanel(.tags) }
                             if model.panels.segments { model.togglePanel(.segments) }
+                            if model.panels.history { model.togglePanel(.history) }
                         })
                     SegmentsAndTagsRail(width: effectiveRailWidth)
                 }
@@ -1063,6 +1071,7 @@ private struct PanelToggles: View {
             toggle(.segments, "Segments")
             toggle(.queue, "Queue")
             toggle(.text, "Text")
+            toggle(.history, "History")
         }
         .padding(2)
         .background(
@@ -1180,6 +1189,15 @@ private struct SegmentsAndTagsRail: View {
                     .frame(maxHeight: .infinity)
                     .layoutPriority(1)
                     .zoneRing(.segments)
+            }
+            if model.panels.history, model.panels.tags || model.panels.segments {
+                Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            }
+            if model.panels.history {
+                HistoryPanel()
+                    .frame(maxHeight: .infinity)
+                    .layoutPriority(1)
+                    .zoneRing(.history)
             }
         }
         .frame(width: width)
