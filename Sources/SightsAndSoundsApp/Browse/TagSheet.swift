@@ -304,7 +304,9 @@ struct TagSheet: View {
     }
 
     private func pasteAliasList() {
-        addAliases(from: NSPasteboard.general.string(forType: .string) ?? "")
+        // The button reads the pasteboard itself, so the paste rule is
+        // asked here — a list of squashed names arrives as names.
+        addAliases(from: PasteTitleCaseSplitter.split(NSPasteboard.general.string(forType: .string) ?? ""))
     }
 
     private func addAliases(from text: String) {
