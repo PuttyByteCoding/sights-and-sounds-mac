@@ -251,6 +251,30 @@ import Testing
         #expect(analysis.existing.first?.tag.id == ben.id)
     }
 
+    /// The parse budget starts when parsing starts, not when the call
+    /// does: a reader that spends seconds probing a big file must not
+    /// spend the budget the file name's parse was going to use — the tag
+    /// at the start of the name is cheap to find and worth the most.
+    @Test func aSlowReaderDoesNotStarveTheFileNameOfItsParse() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        let item = try await insertItem(library, source, path: "Ben Folds in Concert.mp4")
+
+        struct SlowReader: AnalysisReader {
+            let id = "slow"
+            let displayName = "Slow"
+            func read(item: MediaItem, fileURL: URL?, library: LibraryDatabase) throws -> [AnalysisSourceText] {
+                Thread.sleep(forTimeInterval: 0.3)
+                return [AnalysisSourceText(readerID: id, key: nil, text: "nothing here")]
+            }
+        }
+        let analysis = try library.analyzeItem(
+            item.id, rules: [], readers: [SlowReader(), PathAnalysisReader()], parseBudgetSeconds: 0.1)
+        #expect(!analysis.truncated)
+        #expect(analysis.existing.first?.tag.id == ben.id)
+    }
+
     /// The squash must not loosen the word boundary: a tag inside a
     /// longer run of letters is still not a hit.
     @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {
