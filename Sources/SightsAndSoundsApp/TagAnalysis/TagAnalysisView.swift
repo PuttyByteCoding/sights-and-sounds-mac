@@ -105,8 +105,16 @@ struct TagAnalysisView: View {
             return .ignored
         }
         .task {
-            guard model == nil, let sessionID, let session = app.analysisSession(for: sessionID)
-            else { return }
+            guard model == nil else { return }
+            // A companion whose player is not there — the window came
+            // back with the app at launch, or its session was released
+            // before it opened — has nothing to follow, so it goes. It
+            // is attached to a player, and a relaunch brings back no
+            // player for it to attach to.
+            guard let sessionID, let session = app.analysisSession(for: sessionID) else {
+                dismiss()
+                return
+            }
             let made = TagAnalysisModel(session: session)
             model = made
             rules = RulesTabModel(library: session.library)

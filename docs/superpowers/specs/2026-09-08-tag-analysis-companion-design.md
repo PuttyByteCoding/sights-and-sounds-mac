@@ -18,8 +18,8 @@ that applies the tags the analysis found, from the keyboard.
 - **Follows the player it was opened from.** One companion per player
   session; opening Tag Analysis from another player re-points it. If the
   followed player closes, the companion closes with it — it is attached,
-  not a peer. A companion that never found its player (restored window
-  state, or a player released before it opened) says so and offers Close.
+  not a peer. A companion that never finds its player (restored window
+  state at launch, or a player released before it opened) closes itself.
 - **Analysis runs only while the companion is open.** With it closed, no
   scan runs on load, and the player's results field is dimmed with a hint.
 - **Accepting applies immediately.** No basket, no commit step, in the
@@ -201,7 +201,8 @@ or remove.
 - Apply errors surface in the player's `loadError` banner path, and the
   companion shows the same message in its header.
 - A stale `sessionID` (relaunch, or the player closed before the window
-  opened) renders the closed state, never a crash or an empty analysis.
+  opened) closes the window on appear — never a crash, an empty analysis,
+  or a companion with nothing to follow left standing after a relaunch.
 
 ## Testing
 
