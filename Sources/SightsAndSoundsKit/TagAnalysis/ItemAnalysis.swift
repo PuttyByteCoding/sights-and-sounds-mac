@@ -429,7 +429,10 @@ extension LibraryDatabase {
         try writer.read { db in
             let categories = Dictionary(
                 uniqueKeysWithValues: try TagCategory.fetchAll(db).map { ($0.id, $0.name) })
-            let tags = try Tag.fetchAll(db)
+            // An ignored tag is no needle at all — not by its name and
+            // not by an alias — so nothing in a file name, a sidecar or
+            // the frame can ever offer it.
+            let tags = try Tag.fetchAll(db).filter { !$0.ignoredByAnalysis }
             let byID = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0) })
             var needles: [TagNeedle] = []
             for tag in tags {

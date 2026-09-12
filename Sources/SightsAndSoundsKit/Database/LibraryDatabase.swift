@@ -768,6 +768,14 @@ public final class LibraryDatabase: Sendable {
                 sql: "DELETE FROM fingerprintFailure WHERE message LIKE '%not representable in Swift%'")
         }
 
+        // A tag Tag Analysis must never offer — a flag on the tag, so it
+        // travels with the library like hidden and favourite do.
+        migrator.registerMigration("tagAnalysisIgnore") { db in
+            try db.alter(table: "tag") { t in
+                t.add(column: "ignoredByAnalysis", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         return migrator
     }
 
