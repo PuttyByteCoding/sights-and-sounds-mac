@@ -206,6 +206,51 @@ import Testing
         #expect(again.existing.contains { $0.tag.id == blues.id })
     }
 
+    /// A file name written between underscores offers each piece as a
+    /// possible tag, typed the way a person would type it — and a piece
+    /// that names an existing tag is found as that tag as well.
+    @Test func underscorePiecesAreOfferedAsCandidates() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        let item = try await insertItem(library, source, path: "shows/sdg_BenFoldsFive_OnStage_tonight.mp4")
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        let values = analysis.unmapped.map(\.value)
+        for piece in ["sdg", "Ben Folds Five", "On Stage", "tonight"] {
+            #expect(values.contains(piece), "missing \(piece)")
+        }
+        #expect(analysis.existing.contains { $0.tag.id == ben.id })
+    }
+
+    /// Digits glued to the tag — "BenFolds2019" at the start of a name,
+    /// the date run straight on — are a word break, not part of the
+    /// word: letters and digits are different kinds of thing, and a
+    /// file name that omits the separator between them still means two.
+    @Test func aTagWithDigitsGluedOnIsFound() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        for path in ["BenFolds2019-03-01.mp4", "shows/benfolds2019.mp4", "2019BenFolds.mp4"] {
+            let item = try await insertItem(library, source, path: path)
+            let analysis = try library.analyzeItem(item.id, rules: [])
+            let finding = try #require(analysis.existing.first, "no hit in \(path)")
+            #expect(finding.tag.id == ben.id)
+        }
+    }
+
+    /// A capital inside a run — "BenFoldsLive" — is a word break the
+    /// same way, so the squashed name is found when a word follows it
+    /// too. All-lower-case stays one word: "benfoldsfive" is not a hit.
+    @Test func aCapitalInsideARunIsAWordBreak() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        let item = try await insertItem(library, source, path: "BenFoldsLive.mp4")
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.existing.first?.tag.id == ben.id)
+    }
+
     /// The squash must not loosen the word boundary: a tag inside a
     /// longer run of letters is still not a hit.
     @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {

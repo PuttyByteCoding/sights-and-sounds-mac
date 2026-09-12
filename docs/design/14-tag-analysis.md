@@ -28,6 +28,13 @@ strings exactly — they are the ported vocabulary, not a naming opportunity.
    that touches *other* items happens here. That single rule keeps the same feature from being
    implemented twice in two windows.
 
+2b. **A file name written between underscores is a list.** The path reader offers each piece
+   of the file name between underscores as a string of its own — the extension dropped, title
+   case without its spaces given them back (`FileNameSegments.pieces`), so
+   `sdg_BenFoldsFive_OnStage_tonight.mp4` offers `sdg`, `Ben Folds Five`, `On Stage` and
+   `tonight` as possible new tags — through the same rules and existing-tag pass as any string,
+   so a piece that names an existing tag is found as that tag instead.
+
 2c. **A tag can opt out.** A tag's sheet carries a Tag Analysis switch; ignored, the tag is
    never a finding — not by its name, not by an alias, from any reader — and never in the
    player's results field. Stored on the tag (`ignoredByAnalysis`), so it travels with the

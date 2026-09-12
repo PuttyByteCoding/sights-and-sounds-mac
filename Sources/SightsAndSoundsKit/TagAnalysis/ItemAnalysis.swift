@@ -481,12 +481,38 @@ extension LibraryDatabase {
         return hits
     }
 
-    /// Lowercased runs of letters and digits. Every other character —
-    /// space, dash, underscore, dot, slash, bracket — is a word break.
+    /// Lowercased words. Every character that is not a letter or a digit
+    /// — space, dash, underscore, dot, slash, bracket — is a word break,
+    /// and so is the seam between a letter and a digit and the capital
+    /// that starts a word inside a run: "BenFolds2019" is ben · folds ·
+    /// 2019, "DMBLive" is dmb · live, the way a person reads them. A
+    /// file name that squashes the tag against the date still means
+    /// two things. All-lower-case stays one word — "benfoldsfive" is
+    /// not "Ben Folds" — since nothing in it says where a word ends.
     static func words(of text: String) -> [String] {
-        text.lowercased()
-            .split { !($0.isLetter || $0.isNumber) }
-            .map(String.init)
+        var words: [String] = []
+        var current = ""
+        let chars = Array(text)
+        for (i, c) in chars.enumerated() {
+            guard c.isLetter || c.isNumber else {
+                if !current.isEmpty { words.append(current); current = "" }
+                continue
+            }
+            if let previous = chars.indices.contains(i - 1) ? chars[i - 1] : nil,
+               previous.isLetter || previous.isNumber, !current.isEmpty {
+                let kindChanged = previous.isNumber != c.isNumber
+                let next = i + 1 < chars.count ? chars[i + 1] : nil
+                let capitalStartsAWord = c.isUppercase
+                    && (previous.isLowercase || (previous.isUppercase && (next?.isLowercase ?? false)))
+                if kindChanged || capitalStartsAWord {
+                    words.append(current)
+                    current = ""
+                }
+            }
+            current.append(c)
+        }
+        if !current.isEmpty { words.append(current) }
+        return words.map { $0.lowercased() }
     }
 
     /// True when some run of consecutive words, joined, is exactly

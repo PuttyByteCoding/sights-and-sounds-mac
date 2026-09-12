@@ -119,7 +119,6 @@ struct TagSheet: View {
 
             LabeledRow("Name") {
                 TextField("", text: $name)
-                    .splitsPastedTitleCase($name)
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12.5))
                     .padding(.vertical, 7)
@@ -321,7 +320,9 @@ struct TagSheet: View {
     }
 
     private func pasteAliasList() {
-        addAliases(from: NSPasteboard.general.string(forType: .string) ?? "")
+        // The button reads the pasteboard itself, so the paste rule is
+        // asked here — a list of squashed names arrives as names.
+        addAliases(from: PasteTitleCaseSplitter.split(NSPasteboard.general.string(forType: .string) ?? ""))
     }
 
     private func addAliases(from text: String) {
