@@ -196,6 +196,7 @@ import Testing
             #expect(values.contains(piece), "missing \(piece)")
         }
         #expect(analysis.existing.contains { $0.tag.id == ben.id })
+    }
 
     /// Digits glued to the tag — "BenFolds2019" at the start of a name,
     /// the date run straight on — are a word break, not part of the
