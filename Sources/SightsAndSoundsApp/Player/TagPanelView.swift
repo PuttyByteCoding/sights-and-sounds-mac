@@ -821,6 +821,7 @@ private struct GlobalTagField: View {
                         .map(\.tag.id)
                     : nil
             } ?? [],
+            analysisRunning: model.analysisSession.map { $0.companionIsOpen && $0.isAnalyzing } ?? false,
             // ⇧↓ reads the frame at the playhead: the playing file, never
             // audio, never an offline file.
             screenFrame: model.isAudio ? nil : model.fileURL.map {

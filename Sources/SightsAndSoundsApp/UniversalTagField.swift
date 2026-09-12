@@ -128,6 +128,9 @@ struct UniversalTagField: View {
     /// order — the ↓ list, and ranked first while typing. Empty when no
     /// companion is open.
     var analysisTagIDs: [UUID] = []
+    /// The companion is still scanning: the ↓ list waits for it to
+    /// finish rather than reshaping under the arrows as findings land.
+    var analysisRunning = false
     /// What ⇧↓ reads. nil disables the gesture (audio, offline).
     var screenFrame: ScreenFrame?
     /// A bump asks for a screen read as if ⇧↓ were pressed — numpad 2.
@@ -161,6 +164,12 @@ struct UniversalTagField: View {
     @State private var showingHistory = false
     /// Empty query + ↓: what Tag Analysis found.
     @State private var browsingAll = false
+    /// The ↓ list, taken ONCE — when the scan had finished at the press,
+    /// or the moment it finishes after it — and held until the list
+    /// closes. Findings that land later wait for the next ↓: a list
+    /// that reshapes while it is being walked moves the row under the
+    /// highlight. nil while browsing means the scan is still running.
+    @State private var analysisSnapshot: [UUID]?
     /// Empty query + ⇧↓: what is on screen, once read.
     @State private var screen: ScreenRead?
     @State private var readingScreen = false
@@ -235,14 +244,23 @@ struct UniversalTagField: View {
         Dictionary(uniqueKeysWithValues: index.map { ($0.tag.id, $0) })
     }
 
-    /// The analysis's tags as rows, in its order, minus the applied.
+    /// The ↓ list's tags as rows, in the snapshot's order, minus the
+    /// applied.
     private var analysisHits: [Hit] {
-        guard !analysisTagIDs.isEmpty else { return [] }
+        guard let ids = analysisSnapshot, !ids.isEmpty else { return [] }
         let byID = entriesByID
-        return analysisTagIDs.compactMap { id in
+        return ids.compactMap { id in
             guard !appliedIDs.contains(id), let row = byID[id] else { return nil }
             return hit(row, fromAnalysis: true)
         }
+    }
+
+    private var awaitingAnalysis: Bool { browsingAll && query.isEmpty && analysisSnapshot == nil }
+
+    /// Take the ↓ list now, and put the highlight on its first row.
+    private func settleAnalysisList() {
+        analysisSnapshot = analysisTagIDs
+        highlighted = rowIDs.first
     }
 
     private var historyActive: Bool { showingHistory && query.isEmpty }
@@ -271,6 +289,7 @@ struct UniversalTagField: View {
         draft = ""
         showingHistory = false
         browsingAll = false
+        analysisSnapshot = nil
         screen = nil
         screenError = nil
         readingScreen = false
@@ -438,7 +457,9 @@ struct UniversalTagField: View {
                 if screenActive {
                     screenList(frame)
                 } else {
-                    if browsingAll, query.isEmpty, frame.hits.isEmpty {
+                    if awaitingAnalysis {
+                        note("Waiting for Tag Analysis…")
+                    } else if browsingAll, query.isEmpty, frame.hits.isEmpty {
                         note("No Tags from Tag Analysis")
                     }
                     ForEach(frame.hits) { hitRow($0, active: frame.active == .tag($0.id)) }
@@ -451,6 +472,9 @@ struct UniversalTagField: View {
         .onChange(of: listOpen) { _, open in onListChange(open) }
         .onChange(of: itemID) { _, _ in closeList() }
         .onChange(of: screenReadRequests) { _, _ in _ = readScreen() }
+        .onChange(of: analysisRunning) { _, running in
+            if !running, awaitingAnalysis { settleAnalysisList() }
+        }
         .sheet(item: $creating, onDismiss: {
             // The sheet is a detour — the keyboard comes back here.
             focus.wrappedValue = focusID
@@ -527,6 +551,11 @@ struct UniversalTagField: View {
                 showingHistory = true
             } else if delta == 1 {
                 browsingAll = true
+                // The list is taken once the scan is done — now, or when
+                // it finishes — and the highlight lands on its first row
+                // then, not on whatever had arrived so far.
+                if !analysisRunning { settleAnalysisList() }
+                return .handled
             } else {
                 return .ignored
             }
@@ -659,6 +688,7 @@ struct UniversalTagField: View {
         highlighted = nil
         showingHistory = false
         browsingAll = false
+        analysisSnapshot = nil
         // A screen read stays: the next line may name a tag too.
     }
 }
