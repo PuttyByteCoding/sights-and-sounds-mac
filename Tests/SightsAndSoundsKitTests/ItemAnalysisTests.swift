@@ -181,6 +181,23 @@ import Testing
         #expect(finding.tag.id == ben.id)
     }
 
+    /// A file name written between underscores offers each piece as a
+    /// possible tag, typed the way a person would type it — and a piece
+    /// that names an existing tag is found as that tag as well.
+    @Test func underscorePiecesAreOfferedAsCandidates() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        let item = try await insertItem(library, source, path: "shows/sdg_BenFoldsFive_OnStage_tonight.mp4")
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        let values = analysis.unmapped.map(\.value)
+        for piece in ["sdg", "Ben Folds Five", "On Stage", "tonight"] {
+            #expect(values.contains(piece), "missing \(piece)")
+        }
+        #expect(analysis.existing.contains { $0.tag.id == ben.id })
+    }
+
     /// Digits glued to the tag — "BenFolds2019" at the start of a name,
     /// the date run straight on — are a word break, not part of the
     /// word: letters and digits are different kinds of thing, and a

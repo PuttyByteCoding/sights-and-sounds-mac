@@ -28,6 +28,13 @@ strings exactly — they are the ported vocabulary, not a naming opportunity.
    that touches *other* items happens here. That single rule keeps the same feature from being
    implemented twice in two windows.
 
+2b. **A file name written between underscores is a list.** The path reader offers each piece
+   of the file name between underscores as a string of its own — the extension dropped, title
+   case without its spaces given them back (`FileNameSegments.pieces`), so
+   `sdg_BenFoldsFive_OnStage_tonight.mp4` offers `sdg`, `Ben Folds Five`, `On Stage` and
+   `tonight` as possible new tags — through the same rules and existing-tag pass as any string,
+   so a piece that names an existing tag is found as that tag instead.
+
 3. **A suggestion is a suggestion.** Each candidate carries a proposed decision —
    `assignCategory` to a named category, `alias` of an existing tag, `ignore`, `setKind` — and
    the operator accepts, redirects or rejects it. Bulk actions apply the *suggested* decision
