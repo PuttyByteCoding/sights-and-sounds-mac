@@ -181,6 +181,31 @@ import Testing
         #expect(finding.tag.id == ben.id)
     }
 
+    /// A tag flagged as ignored by Tag Analysis is never a finding —
+    /// not by its name, not by an alias — however plainly the evidence
+    /// spells it. The flag is stored on the tag and survives a read.
+    @Test func anIgnoredTagIsNeverOffered() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let blues = Tag(tagCategoryID: taper.id, name: "Blues Music")
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { db in
+            try blues.insert(db)
+            try ben.insert(db)
+            try TagAlias(tagID: blues.id, alias: "Blues").insert(db)
+        }
+        try library.setTagAnalysisIgnored(blues.id, true)
+        let stored = try #require(try await library.writer.read { try Tag.fetchOne($0, key: blues.id) })
+        #expect(stored.ignoredByAnalysis)
+
+        let item = try await insertItem(library, source, path: "Ben Folds - Blues Music - blues.mp4")
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.existing.map(\.tag.id) == [ben.id])
+
+        try library.setTagAnalysisIgnored(blues.id, false)
+        let again = try library.analyzeItem(item.id, rules: [])
+        #expect(again.existing.contains { $0.tag.id == blues.id })
+    }
+
     /// The squash must not loosen the word boundary: a tag inside a
     /// longer run of letters is still not a hit.
     @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {

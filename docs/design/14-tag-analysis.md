@@ -28,6 +28,12 @@ strings exactly — they are the ported vocabulary, not a naming opportunity.
    that touches *other* items happens here. That single rule keeps the same feature from being
    implemented twice in two windows.
 
+2c. **A tag can opt out.** A tag's sheet carries a Tag Analysis switch; ignored, the tag is
+   never a finding — not by its name, not by an alias, from any reader — and never in the
+   player's results field. Stored on the tag (`ignoredByAnalysis`), so it travels with the
+   library like hidden and favourite. For the tag whose name keeps turning up in text that
+   does not mean it.
+
 3. **A suggestion is a suggestion.** Each candidate carries a proposed decision —
    `assignCategory` to a named category, `alias` of an existing tag, `ignore`, `setKind` — and
    the operator accepts, redirects or rejects it. Bulk actions apply the *suggested* decision

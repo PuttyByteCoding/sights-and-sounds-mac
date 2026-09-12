@@ -15,6 +15,10 @@ public struct Tag: Codable, Equatable, Identifiable, Sendable, FetchableRecord, 
     public var isFavorite: Bool
     public var sortOrder: Int
     public var notes: String
+    /// Tag Analysis never offers this tag: not as a finding in a file
+    /// name or on screen, not in the results field. For the tag whose
+    /// name keeps turning up in text that does not mean it.
+    public var ignoredByAnalysis: Bool
 
     public init(
         id: UUID = UUID(),
@@ -23,7 +27,8 @@ public struct Tag: Codable, Equatable, Identifiable, Sendable, FetchableRecord, 
         hiddenByDefault: Bool = false,
         isFavorite: Bool = false,
         sortOrder: Int = 0,
-        notes: String = ""
+        notes: String = "",
+        ignoredByAnalysis: Bool = false
     ) {
         self.id = id
         self.tagCategoryID = tagCategoryID
@@ -32,6 +37,7 @@ public struct Tag: Codable, Equatable, Identifiable, Sendable, FetchableRecord, 
         self.isFavorite = isFavorite
         self.sortOrder = sortOrder
         self.notes = notes
+        self.ignoredByAnalysis = ignoredByAnalysis
     }
 }
 

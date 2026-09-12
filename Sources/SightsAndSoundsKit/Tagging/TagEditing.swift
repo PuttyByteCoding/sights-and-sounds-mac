@@ -138,6 +138,15 @@ extension LibraryDatabase {
         }
     }
 
+    /// Keep Tag Analysis from ever offering this tag.
+    public func setTagAnalysisIgnored(_ tagID: UUID, _ ignored: Bool) throws {
+        try writer.write { db in
+            try db.execute(
+                sql: "UPDATE tag SET ignoredByAnalysis = ? WHERE id = ?",
+                arguments: [ignored, tagID])
+        }
+    }
+
     public func setTagFavorite(_ tagID: UUID, _ favorite: Bool) throws {
         try writer.write { db in
             try db.execute(

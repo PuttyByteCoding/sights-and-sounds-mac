@@ -34,6 +34,7 @@ struct TagSheet: View {
     @State private var name: String
     @State private var notes: String
     @State private var hidden: Bool
+    @State private var ignoredByAnalysis: Bool
     @State private var favorite: Bool
     @State private var aliases: [String] = []
     @State private var newAlias = ""
@@ -63,6 +64,7 @@ struct TagSheet: View {
             _name = State(initialValue: name)
             _notes = State(initialValue: "")
             _hidden = State(initialValue: false)
+            _ignoredByAnalysis = State(initialValue: false)
             _favorite = State(initialValue: false)
             _enterArmed = State(initialValue: true)
             _fieldValueCount = State(initialValue: 0)
@@ -71,6 +73,7 @@ struct TagSheet: View {
             _name = State(initialValue: tag.name)
             _notes = State(initialValue: tag.notes)
             _hidden = State(initialValue: tag.hiddenByDefault)
+            _ignoredByAnalysis = State(initialValue: tag.ignoredByAnalysis)
             _favorite = State(initialValue: tag.isFavorite)
             _enterArmed = State(initialValue: false)
             _fieldValueCount = State(
@@ -207,6 +210,19 @@ struct TagSheet: View {
                         .toggleStyle(.switch)
                         .labelsHidden()
                     Text("Hide items with this tag unless you filter for it.")
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.Text.tertiary)
+                }
+            }
+
+            LabeledRow("Tag Analysis") {
+                HStack(spacing: 9) {
+                    Toggle("", isOn: $ignoredByAnalysis)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                    Text(ignoredByAnalysis
+                        ? "Ignored: never offered as a finding or in the results field."
+                        : "Offered when its name or an alias turns up in the evidence.")
                         .font(Theme.ui(11.5))
                         .foregroundStyle(Theme.Text.tertiary)
                 }
@@ -352,6 +368,9 @@ struct TagSheet: View {
                 if hidden != existing.hiddenByDefault {
                     try library.setTagHidden(existing.id, hidden)
                 }
+                if ignoredByAnalysis != existing.ignoredByAnalysis {
+                    try library.setTagAnalysisIgnored(existing.id, ignoredByAnalysis)
+                }
                 if favorite != existing.isFavorite {
                     try library.setTagFavorite(existing.id, favorite)
                 }
@@ -363,6 +382,7 @@ struct TagSheet: View {
                 let created = try library.ensureTag(named: trimmedName, inCategory: categoryID)
                 for alias in aliases { try library.addAlias(alias, toTag: created.id) }
                 if hidden { try library.setTagHidden(created.id, true) }
+                if ignoredByAnalysis { try library.setTagAnalysisIgnored(created.id, true) }
                 if favorite { try library.setTagFavorite(created.id, true) }
                 if !notes.isEmpty { try library.setTagNotes(created.id, notes) }
                 tag = created
