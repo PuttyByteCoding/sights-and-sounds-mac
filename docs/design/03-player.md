@@ -161,7 +161,7 @@ Segment rows: mono `SONG`/`CLIP`/`HIDE` chip in the kind's hue (song `#6FBFB0`, 
 | No segments | `No songs or clips yet. Press <open key> to open a segment, <close key> to close it.` |
 | Segment counts | `<n> songs · <n> clips` |
 | Key map sheet title | `Keyboard map` |
-| Tag field, empty, ↓ | a category field: its whole list, unapplied, name order, capped like autocomplete. Universal: only what Tag Analysis found, marked `analysis`, or `No Tags from Tag Analysis` |
+| Tag field, empty, ↓ | a category field: its whole list, unapplied, name order, capped like autocomplete. Universal: only what Tag Analysis found, marked `analysis`, or `No Tags from Tag Analysis`. The list is taken once the companion's scan has finished — `Waiting for Tag Analysis…` until then — with the highlight on its first row, and held as taken until Esc, an apply or a new item: findings that land later wait for the next ↓ |
 | Numpad 8 | focus the Universal tag field, opening the tag panel if it is closed; top-row 8 and numpad − keep the near-end seek |
 | Numpad 2 | the Universal field, and the on-screen text read into it (⇧↓ in the field does the same); top-row 2 stays unbound |
 | Key map sheet blurb | `Two maps disagree on four rows. Pick one — the hints throughout the window follow it.` |
