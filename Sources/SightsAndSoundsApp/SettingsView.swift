@@ -127,10 +127,17 @@ private struct GeneralSettingsPane: View {
     @State private var defaultOrdering = AppSettingsStore.shared.current.defaultOrdering
     @State private var suggestionLimit = AppSettingsStore.shared.current.tagSuggestionLimit
     @State private var historyLimit = AppSettingsStore.shared.current.tagHistoryLimit
+    @State private var pasteSplits = AppSettingsStore.shared.current.pasteSplitsTitleCase
 
     var body: some View {
         Form {
             ScopeHeader(scope: .app)
+            Section("Text") {
+                Toggle("Pasted title case gets its spaces back", isOn: $pasteSplits)
+                Text("⌘V into any text field: \u{201C}ThisExampleHere\u{201D} pastes as \u{201C}This Example Here\u{201D}; \u{201C}DMBLive\u{201D} as \u{201C}DMB Live\u{201D}. Anything that does not look like title case pastes as copied.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Tagging") {
                 Stepper(
                     "Tag suggestions shown: \(suggestionLimit)",
@@ -180,6 +187,9 @@ private struct GeneralSettingsPane: View {
         }
         .onChange(of: historyLimit) {
             AppSettingsStore.shared.update { $0.tagHistoryLimit = historyLimit }
+        }
+        .onChange(of: pasteSplits) {
+            AppSettingsStore.shared.update { $0.pasteSplitsTitleCase = pasteSplits }
         }
     }
 }

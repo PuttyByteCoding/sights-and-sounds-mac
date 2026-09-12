@@ -60,6 +60,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// a keypad — and flipped from the player with ⌃⌃.
     public var laptopNumpad: Bool
 
+    /// ⌘V into any text field: a pasted run that looks like title case
+    /// without its spaces gets them back. On by default; off for the
+    /// person whose pastes are meant literally.
+    public var pasteSplitsTitleCase: Bool
+
     /// The order a library window opens with. `.random` deals a fresh
     /// shuffle each time a window opens, which is what makes it useful
     /// for surfacing things you have not seen.
@@ -131,6 +136,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         tagHistoryLimit: Int = 5,
         digitKeysStampTags: Bool = true,
         laptopNumpad: Bool = false,
+        pasteSplitsTitleCase: Bool = true,
         playerLayout: PlayerLayoutSettings = PlayerLayoutSettings(),
         videoAnchor: VideoAnchor = .topLeft,
         tagAnalysisRailWidth: Double = 240,
@@ -159,6 +165,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.tagHistoryLimit = tagHistoryLimit
         self.digitKeysStampTags = digitKeysStampTags
         self.laptopNumpad = laptopNumpad
+        self.pasteSplitsTitleCase = pasteSplitsTitleCase
         self.playerLayout = playerLayout
         self.videoAnchor = videoAnchor
         self.tagAnalysisRailWidth = tagAnalysisRailWidth
@@ -207,6 +214,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             Bool.self, forKey: .digitKeysStampTags) ?? defaults.digitKeysStampTags
         laptopNumpad = try container.decodeIfPresent(
             Bool.self, forKey: .laptopNumpad) ?? defaults.laptopNumpad
+        pasteSplitsTitleCase = try container.decodeIfPresent(
+            Bool.self, forKey: .pasteSplitsTitleCase) ?? defaults.pasteSplitsTitleCase
         playerLayout = try container.decodeIfPresent(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
         videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)

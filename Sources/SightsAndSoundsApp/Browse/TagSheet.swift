@@ -116,7 +116,6 @@ struct TagSheet: View {
 
             LabeledRow("Name") {
                 TextField("", text: $name)
-                    .splitsPastedTitleCase($name)
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12.5))
                     .padding(.vertical, 7)

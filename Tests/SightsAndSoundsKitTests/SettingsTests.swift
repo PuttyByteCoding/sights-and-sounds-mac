@@ -289,6 +289,20 @@ import Testing
         #expect(!decoded.digitKeysStampTags)
     }
 
+    /// The paste split is on by default, an older file loads with it on,
+    /// and off round-trips.
+    @Test func thePasteSplitIsOnByDefaultAndOffRoundTrips() throws {
+        #expect(AppSettings().pasteSplitsTitleCase)
+        let old = try JSONDecoder().decode(
+            AppSettings.self, from: Data(#"{"loopVideos": false}"#.utf8))
+        #expect(old.pasteSplitsTitleCase)
+        var settings = AppSettings()
+        settings.pasteSplitsTitleCase = false
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(!decoded.pasteSplitsTitleCase)
+    }
+
     /// The laptop numpad is off by default — its keys are letters on a
     /// desk — and on round-trips.
     @Test func theLaptopNumpadIsOffByDefaultAndOnRoundTrips() throws {
