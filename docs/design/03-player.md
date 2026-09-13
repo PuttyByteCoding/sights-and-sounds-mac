@@ -18,8 +18,10 @@ tokens.
 1. **Esc is the whole focus model.** Today focus is reclaimed by a tap gesture plus an
    `onChange` watcher on `showTagPanel`, and Esc means "close the tag panel, else leave the
    player". Make the stack explicit and unwind **exactly one layer** per press (the rule
-   `02` §6 sets for browse): open sheet or popover → pending mark → focus back to the video
-   → leave the player. Tab / ⇧Tab walks **video → tags → segments → queue**, skipping
+   `02` §6 sets for browse): open sheet or popover → pending mark → focus back to the video.
+   The stack ends there. **Esc never leaves the player** — from the video zone with nothing
+   open it does nothing, because a key pressed by reflex must not close the window; the Back
+   button is the way out. Tab / ⇧Tab walks **video → tags → segments → queue**, skipping
    collapsed panels. The focused zone carries a 1 pt amber inset ring and is named in the
    footer, so "where do my keys go" is always answerable without pressing anything.
 

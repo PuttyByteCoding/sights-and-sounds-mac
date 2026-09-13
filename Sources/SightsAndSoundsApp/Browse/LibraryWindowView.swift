@@ -89,8 +89,8 @@ struct BrowseView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 262, max: sidebarMax)
         } detail: {
             // Playback happens in place, in the DETAIL column — the
-            // sidebar stays open and usable beside the player. Back (or
-            // Esc) returns to the grid exactly as it was left.
+            // sidebar stays open and usable beside the player. Back
+            // returns to the grid exactly as it was left.
             if let request = model.playerRequest {
                 PlayerView(request: request) {
                     model.playerRequest = nil

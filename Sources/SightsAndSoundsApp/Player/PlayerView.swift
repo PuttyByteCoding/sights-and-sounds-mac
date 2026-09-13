@@ -7,7 +7,7 @@ import SightsAndSoundsKit
 /// from: custom transport (system controls can't host scrub previews),
 /// the ported keyboard map, waveform timelines for audio, and
 /// resume/watch-state recording. `onClose` hands the window back to the
-/// browse grid (Back button, or Esc from the video zone).
+/// browse grid — the Back button only; Esc never leaves the player.
 ///
 /// The player owns playback and the keys. Tagging, segments, on-screen
 /// text and the queue are separate panels around it — the 4,382-line
@@ -59,7 +59,7 @@ struct PlayerView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button("Back", systemImage: "chevron.left") { onClose() }
-                    .help("Back to the library (Esc)")
+                    .help("Back to the library")
             }
         }
         // Low mins: the video's 150 pt floor is enforced by the panel
@@ -144,11 +144,9 @@ struct PlayerView: View {
     ]
 
     private func handle(_ press: KeyPress) -> Bool {
-        guard let model else {
-            // Esc leaves the player even when the item failed to open.
-            if press.key == .escape { onClose(); return true }
-            return false
-        }
+        // Without a model there is nothing to unwind; Back is the way
+        // out of a failed open, as it is out of a successful one.
+        guard let model else { return false }
         let style = model.keyMap
 
         // ⌘R re-runs the queue's definition.
@@ -164,21 +162,12 @@ struct PlayerView: View {
             return false
         }
 
-        // Esc unwinds EXACTLY ONE layer, in this order: an open mark, the
-        // focus zone, then the player. Never two — clearing a selection
-        // and leaving in one press is how you lose work you could see.
+        // Esc unwinds EXACTLY ONE layer — an open mark, then the focus
+        // zone — and the stack ends at the video. It never closes the
+        // player: that is the Back button's job. Consumed even at the
+        // bottom, so a stray press cannot fall through to the window.
         if press.key == .escape {
-            if model.pendingSegmentStart != nil || model.pendingBlockStart != nil {
-                model.cancelSegmentMark()
-                model.pendingBlockStart = nil
-                return true
-            }
-            if model.zone != .video {
-                model.zone = .video
-                focused = true
-                return true
-            }
-            onClose()
+            if model.unwindOneLayer(), model.zone == .video { focused = true }
             return true
         }
 
