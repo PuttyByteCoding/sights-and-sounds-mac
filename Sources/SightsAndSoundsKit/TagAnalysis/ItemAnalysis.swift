@@ -475,9 +475,17 @@ extension LibraryDatabase {
     /// the naming scheme uses, and the gap is never what identifies the
     /// tag. Both sides are broken into words (runs of letters and
     /// digits), and a hit is a run of consecutive words in the text that,
-    /// joined, spells the joined needle exactly. Word-level, so a needle
-    /// inside a longer word never hits: "Jonestown" is one word and is
-    /// not "Jones"; "benfoldsfive" is not "Ben Folds".
+    /// joined, spells the joined needle exactly. Word-level, so a
+    /// one-word needle inside a longer word never hits: "Jonestown" is
+    /// one word and is not "Jones".
+    ///
+    /// A MULTI-word needle is the exception. "benfolds" does not turn up
+    /// inside a word by accident, so a needle of two or more words also
+    /// hits when its squashed form is a substring of the squashed text —
+    /// "sdgebenfoldsgdfh" and "benfoldsfive" both name Ben Folds, every
+    /// separator and capital gone. The floor is `squashedFloor`
+    /// characters: "Al Bo" squashes to four and could sit inside
+    /// anything, so a short needle still needs its own words.
     ///
     /// Needles under three characters are skipped — a two-letter tag
     /// name matching inside every third sentence is a false-positive
@@ -485,13 +493,17 @@ extension LibraryDatabase {
     static func findTags(in text: String, inventory: [TagNeedle]) -> [TagNeedle] {
         let words = words(of: text)
         guard !words.isEmpty else { return [] }
+        let squashed = words.joined()
         var hits: [TagNeedle] = []
         var seenTags = Set<UUID>()
         for needle in inventory {
             guard !seenTags.contains(needle.tag.id) else { continue }
-            let target = Self.words(of: needle.needle).joined()
+            let needleWords = Self.words(of: needle.needle)
+            let target = needleWords.joined()
             guard target.count >= 3 else { continue }
-            if contains(words, run: target) {
+            let insideAWord = needleWords.count >= 2 && target.count >= squashedFloor
+                && squashed.contains(target)
+            if insideAWord || contains(words, run: target) {
                 hits.append(needle)
                 seenTags.insert(needle.tag.id)
             }
@@ -499,14 +511,19 @@ extension LibraryDatabase {
         return hits
     }
 
+    /// The fewest letters and digits a multi-word needle must squash to
+    /// before it may match inside a longer word.
+    static let squashedFloor = 6
+
     /// Lowercased words. Every character that is not a letter or a digit
     /// — space, dash, underscore, dot, slash, bracket — is a word break,
     /// and so is the seam between a letter and a digit and the capital
     /// that starts a word inside a run: "BenFolds2019" is ben · folds ·
     /// 2019, "DMBLive" is dmb · live, the way a person reads them. A
     /// file name that squashes the tag against the date still means
-    /// two things. All-lower-case stays one word — "benfoldsfive" is
-    /// not "Ben Folds" — since nothing in it says where a word ends.
+    /// two things. All-lower-case stays one word — nothing in it says
+    /// where a word ends — which is why `findTags` lets a multi-word
+    /// needle look inside one.
     static func words(of text: String) -> [String] {
         var words: [String] = []
         var current = ""
