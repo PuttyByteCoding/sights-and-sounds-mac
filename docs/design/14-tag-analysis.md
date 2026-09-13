@@ -41,6 +41,12 @@ strings exactly — they are the ported vocabulary, not a naming opportunity.
    library like hidden and favourite. For the tag whose name keeps turning up in text that
    does not mean it.
 
+2d. **A multi-word tag is found inside a word.** The existing-tag pass matches whole words,
+   so `Jones` is never offered for `jonestown`. A tag of two or more words is specific enough
+   to be the exception: squashed to at least six letters and digits, it is found anywhere in
+   the squashed text — `sdgebenfoldsgdfh` and `benfoldsfive` both name `Ben Folds`. A finding
+   is an offer, so the odd coincidence costs a glance, and the miss it replaces cost a tag.
+
 3. **A suggestion is a suggestion.** Each candidate carries a proposed decision —
    `assignCategory` to a named category, `alias` of an existing tag, `ignore`, `setKind` — and
    the operator accepts, redirects or rejects it. Bulk actions apply the *suggested* decision

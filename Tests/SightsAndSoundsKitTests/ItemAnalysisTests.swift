@@ -275,17 +275,65 @@ import Testing
         #expect(analysis.existing.first?.tag.id == ben.id)
     }
 
-    /// The squash must not loosen the word boundary: a tag inside a
-    /// longer run of letters is still not a hit.
-    @Test func aSquashedTagInsideALongerWordIsNotAHit() async throws {
+    /// A multi-word tag squashed inside a longer lowercase run is a hit:
+    /// "benfolds" does not turn up inside a word by accident, so
+    /// "sdgebenfoldsgdfh" and "benfoldsfive" both name Ben Folds. Every
+    /// separator and every capital is gone, and the name is still there.
+    @Test func aMultiWordTagSquashedInsideALongerWordIsAHit() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { try ben.insert($0) }
+        for path in ["sdgebenfoldsgdfh.mp4", "shows/benfoldsfive-live.mp4", "xBENFOLDSx.mp4"] {
+            let item = try await insertItem(library, source, path: path)
+            let analysis = try library.analyzeItem(item.id, rules: [])
+            let finding = try #require(analysis.existing.first, "no hit in \(path)")
+            #expect(finding.tag.id == ben.id)
+        }
+    }
+
+    /// A single-word tag still needs its own word. "Jones" inside
+    /// "jonestown" is a coincidence, and a one-word needle inside every
+    /// longer word that happens to contain it is the false-positive
+    /// storm the word boundary exists to stop.
+    @Test func aSingleWordTagInsideALongerWordIsNotAHit() async throws {
         let (library, source, taper) = try await makeLibrary()
         try await library.writer.write {
-            try Tag(tagCategoryID: taper.id, name: "Ben Folds").insert($0)
+            try Tag(tagCategoryID: taper.id, name: "Jones").insert($0)
         }
-        let item = try await insertItem(library, source, path: "shows/benfoldsfive-live.mp4")
+        let item = try await insertItem(library, source, path: "shows/jonestown-live.mp4")
 
         let analysis = try library.analyzeItem(item.id, rules: [])
         #expect(analysis.existing.isEmpty)
+    }
+
+    /// The inside-a-word match has a floor: a two-word tag that squashes
+    /// to fewer than six letters and digits is too short to be specific
+    /// inside a run, so it still needs its own words.
+    @Test func aShortMultiWordTagInsideALongerWordIsNotAHit() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let tag = Tag(tagCategoryID: taper.id, name: "Al Bo")
+        try await library.writer.write { try tag.insert($0) }
+        let inside = try await insertItem(library, source, path: "xxalboxx.mp4")
+        #expect(try library.analyzeItem(inside.id, rules: []).existing.isEmpty)
+        // As its own words it is still found, floor or no floor.
+        let alone = try await insertItem(library, source, path: "al-bo-live.mp4")
+        #expect(try library.analyzeItem(alone.id, rules: []).existing.first?.tag.id == tag.id)
+    }
+
+    /// An alias is a name, so a multi-word alias squashed inside a run
+    /// finds its tag the same way.
+    @Test func aMultiWordAliasSquashedInsideALongerWordIsAHit() async throws {
+        let (library, source, taper) = try await makeLibrary()
+        let ben = Tag(tagCategoryID: taper.id, name: "Ben Folds")
+        try await library.writer.write { db in
+            try ben.insert(db)
+            try TagAlias(tagID: ben.id, alias: "Benjamin Folds").insert(db)
+        }
+        let item = try await insertItem(library, source, path: "sdgbenjaminfoldsx.mp4")
+
+        let analysis = try library.analyzeItem(item.id, rules: [])
+        #expect(analysis.existing.first?.tag.id == ben.id)
+        #expect(analysis.existing.first?.matchedText == "Benjamin Folds")
     }
 
     @Test func aliasesFindTheirTagAndCollisionsListEveryCategory() async throws {
