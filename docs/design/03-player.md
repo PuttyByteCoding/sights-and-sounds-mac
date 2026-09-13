@@ -91,6 +91,10 @@ tokens.
    item and advance, and the toolbar shows a running count of what the pass has done. A
    bound tag key with `advance` behaves the same way and needs no mode — the mode exists to
    make the *fixed* flag keys advance without changing what they mean elsewhere.
+   **`⇧⌫` is the one deletion key that needs no mode and no zone:** it toggles the deletion
+   mark from anywhere in the window — either map, any zone, inside a tag field — and
+   advances when it marks. Unmarking stays put, like a bound key, so what you just restored
+   is still in front of you. Inside Triage it counts as one decision of the pass.
 
 ## Model and settings changes
 

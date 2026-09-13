@@ -1018,6 +1018,21 @@ final class PlayerModel {
         return true
     }
 
+    /// ⇧⌫: toggle the deletion mark and move on — from ANYWHERE in the
+    /// window: any zone, either map, inside a tag field, in or out of
+    /// Triage mode. Marking advances; unmarking stays put (the bound-key
+    /// rule), so what you just restored is still in front of you. Inside
+    /// the mode a mark counts as one decision of the pass. Nothing moves
+    /// unless the mark actually landed.
+    func toggleDeletionAndAdvance() {
+        guard let item else { return }
+        let marking = !item.markedForDeletion
+        perform(.toggleMarkedForDeletion)
+        guard marking, self.item?.markedForDeletion == true else { return }
+        if triageMode { triageCount += 1 }
+        goNext()
+    }
+
     // MARK: - Blocks
 
     fileprivate(set) var hideBlocks: [VideoBlock] = []

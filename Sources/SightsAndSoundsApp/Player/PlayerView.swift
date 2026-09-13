@@ -155,6 +155,16 @@ struct PlayerView: View {
             return true
         }
 
+        // ⇧⌫ toggles the deletion mark and moves on, from anywhere: any
+        // zone, either map, a tag field included. Ahead of the text-input
+        // guard on purpose — Shift+Delete means nothing in a field, and
+        // "delete this one" must not depend on where the keyboard was.
+        if press.modifiers.contains(.shift),
+           press.key == .delete || press.key == .deleteForward {
+            model.toggleDeletionAndAdvance()
+            return true
+        }
+
         // A tag field with a list open takes Esc itself: the list closes
         // and the field stays, empty and focused. The next Esc unwinds.
         if press.key == .escape, model.tagFieldListOpen,
@@ -988,7 +998,7 @@ private struct FlagButtons: View {
             flag(.favorite, on: item.isFavorite, "★", "Favorite (F)")
             flag(.needsReview, on: item.needsReview, "⟳", "Needs review (R)")
             flag(.playbackIssue, on: item.playbackIssue, "⚠", "Playback issue (W)")
-            flag(.markedForDeletion, on: item.markedForDeletion, "⌫", "Marked for deletion (D)")
+            flag(.markedForDeletion, on: item.markedForDeletion, "⌫", "Marked for deletion (D · ⇧⌫ marks and moves on)")
         }
     }
 
