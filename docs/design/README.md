@@ -236,7 +236,7 @@ it will ever do.
 Beyond the per-screen notes above, these recur:
 
 - **Esc unwinds one layer**, never two — an open popover before a selection; the player's
-  panels before the window.
+  marks and panels, and never the player window itself.
 - **Tab walks focus zones** in the player (video → tags → segments → queue), shown in a
   status bar. Zone rings are a subtle 1px inset amber, not a hard border.
 - **Drag to reorder** wherever order is meaningful (categories, join parts, repair recipes,

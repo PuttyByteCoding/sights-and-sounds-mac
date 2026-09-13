@@ -570,6 +570,27 @@ final class PlayerModel {
         }
     }
 
+    /// Esc unwinds EXACTLY ONE layer: an open mark (segment or hide
+    /// block), then the focus zone back to the video. Never two —
+    /// clearing a mark and losing your place in one press is how you
+    /// lose work you could see. The stack ENDS at the video: from there
+    /// with nothing open, Esc does nothing at all. Leaving the player is
+    /// the Back button's job, never a key you might press by reflex.
+    /// Returns true when a layer was unwound.
+    @discardableResult
+    func unwindOneLayer() -> Bool {
+        if pendingSegmentStart != nil || pendingBlockStart != nil {
+            cancelSegmentMark()
+            pendingBlockStart = nil
+            return true
+        }
+        if zone != .video {
+            zone = .video
+            return true
+        }
+        return false
+    }
+
     /// Numpad 2: the Universal field, and a read of the frame at the
     /// playhead into it — ⇧↓ without the reach. A count, not a flag, so
     /// two presses in a row both read.
