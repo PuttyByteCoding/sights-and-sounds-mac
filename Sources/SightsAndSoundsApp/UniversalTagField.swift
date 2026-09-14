@@ -131,6 +131,10 @@ struct UniversalTagField: View {
     /// The companion is still scanning: the ↓ list waits for it to
     /// finish rather than reshaping under the arrows as findings land.
     var analysisRunning = false
+    /// A Tag Analysis companion is open for this player at all. Without
+    /// one there is no scan, and the ↓ list must say so rather than
+    /// report that a scan that never ran found nothing.
+    var analysisOpen = false
     /// What ⇧↓ reads. nil disables the gesture (audio, offline).
     var screenFrame: ScreenFrame?
     /// A bump asks for a screen read as if ⇧↓ were pressed — numpad 2.
@@ -196,6 +200,17 @@ struct UniversalTagField: View {
         var fromAnalysis = false
         var fromScreen = false
         var id: UUID { tag.id }
+    }
+
+    /// The ↓ list's note when it has no rows — why it is empty. No
+    /// companion open is "not running" and wins over everything, since
+    /// nothing can be awaited from a companion that is not there; a
+    /// scan in flight is "waiting"; a finished scan with nothing found
+    /// says so. Rows mean no note. Pure, so it is tested.
+    static func analysisListNote(analysisOpen: Bool, awaiting: Bool, hasRows: Bool) -> String? {
+        if !analysisOpen { return "Tag Analysis is not running" }
+        if awaiting { return "Waiting for Tag Analysis…" }
+        return hasRows ? nil : "No Tags from Tag Analysis"
     }
 
     /// Analysis rows first, then the rest with those tags dropped, the
@@ -457,10 +472,11 @@ struct UniversalTagField: View {
                 if screenActive {
                     screenList(frame)
                 } else {
-                    if awaitingAnalysis {
-                        note("Waiting for Tag Analysis…")
-                    } else if browsingAll, query.isEmpty, frame.hits.isEmpty {
-                        note("No Tags from Tag Analysis")
+                    if browsingAll, query.isEmpty,
+                       let text = Self.analysisListNote(
+                           analysisOpen: analysisOpen, awaiting: awaitingAnalysis,
+                           hasRows: !frame.hits.isEmpty) {
+                        note(text)
                     }
                     ForEach(frame.hits) { hitRow($0, active: frame.active == .tag($0.id)) }
                 }

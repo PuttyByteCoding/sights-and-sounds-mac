@@ -31,6 +31,24 @@ import Testing
         #expect(UniversalTagField.merged(analysis: analysis, rest: rest, limit: 1).map(\.tag.name) == ["A"])
     }
 
+    /// The ↓ list's note when it has no rows: it must say WHY. No
+    /// companion open is "not running", a scan in flight is "waiting",
+    /// and a finished scan with nothing found says so. Rows mean no
+    /// note at all.
+    @Test func theEmptyAnalysisListSaysWhyItIsEmpty() {
+        #expect(UniversalTagField.analysisListNote(analysisOpen: false, awaiting: false, hasRows: false)
+            == "Tag Analysis is not running")
+        #expect(UniversalTagField.analysisListNote(analysisOpen: true, awaiting: true, hasRows: false)
+            == "Waiting for Tag Analysis…")
+        #expect(UniversalTagField.analysisListNote(analysisOpen: true, awaiting: false, hasRows: false)
+            == "No Tags from Tag Analysis")
+        #expect(UniversalTagField.analysisListNote(analysisOpen: true, awaiting: false, hasRows: true) == nil)
+        // Not running wins over everything: nothing can be awaited from
+        // a companion that is not there.
+        #expect(UniversalTagField.analysisListNote(analysisOpen: false, awaiting: true, hasRows: false)
+            == "Tag Analysis is not running")
+    }
+
     private func finding(_ name: String, in line: String) -> ExistingTagFinding {
         ExistingTagFinding(
             tag: SightsAndSoundsKit.Tag(tagCategoryID: UUID(), name: name),
