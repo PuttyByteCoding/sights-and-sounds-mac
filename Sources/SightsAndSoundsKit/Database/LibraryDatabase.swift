@@ -776,6 +776,16 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // The search-string recipe (spec 17): which parts of a file name
+        // and which categories' tags make the string, in what order and
+        // with what formatting. Per library, because parts name
+        // categories.
+        migrator.registerMigration("searchRecipe") { db in
+            try db.alter(table: "libraryInfo") { t in
+                t.add(column: "searchRecipe", .text)
+            }
+        }
+
         return migrator
     }
 

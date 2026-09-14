@@ -32,12 +32,17 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
     /// names.
     public var separatorCharacters: String
 
+    /// The search-string recipe, as JSON (spec 17). Per library because
+    /// its parts name categories.
+    public var searchRecipe: String?
+
     public init(
         libraryID: UUID = UUID(), name: String, createdAt: Date = Date(),
         videoExtensionsOverride: [String]? = nil,
         audioExtensionsOverride: [String]? = nil,
         importBoxes: String? = nil,
-        separatorCharacters: String = "-._"
+        separatorCharacters: String = "-._",
+        searchRecipe: String? = nil
     ) {
         self.id = 1
         self.libraryID = libraryID
@@ -47,6 +52,7 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
         self.audioExtensionsOverride = audioExtensionsOverride
         self.importBoxes = importBoxes
         self.separatorCharacters = separatorCharacters
+        self.searchRecipe = searchRecipe
     }
 
     /// The effective import sets for this library.
