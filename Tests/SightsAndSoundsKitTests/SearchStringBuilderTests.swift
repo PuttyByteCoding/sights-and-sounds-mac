@@ -96,6 +96,18 @@ import Testing
         #expect(SearchStringBuilder.bookmarkTerms(recipe: recipe, subject: subject()) == ["Ben Folds Five"])
     }
 
+    /// A file name can carry a newline — "24 - Mystic Eyes⏎.flac" is a
+    /// real one — and a replacement can leave a run of spaces. A value
+    /// is one line with single spaces, wherever the whitespace came from.
+    @Test func whitespaceInsideAValueCollapsesToOneSpace() {
+        let recipe = SearchRecipe(
+            parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false), format: SearchFormat(quoting: .always))],
+            replacements: [SearchReplacement(from: "-", to: " ")])
+        #expect(SearchStringBuilder.string(recipe: recipe, subject: subject("24 - Mystic Eyes\n.flac")) == #""24 Mystic Eyes""#)
+        #expect(SearchStringBuilder.string(recipe: recipe, subject: subject("Mystic\nEyes\t live.mp4")) == #""Mystic Eyes live""#)
+        #expect(SearchStringBuilder.bookmarkTerms(recipe: recipe, subject: subject("Mystic\nEyes.mp4")) == ["Mystic Eyes"])
+    }
+
     @Test func theSubjectComesFromTheLibrary() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Subject")
