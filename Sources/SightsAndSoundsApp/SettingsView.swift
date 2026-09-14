@@ -22,6 +22,8 @@ struct SettingsView: View {
                 .tabItem { Label("Repair", systemImage: "bandage") }
             VocabularySettingsPane()
                 .tabItem { Label("Tag Category Configuration", systemImage: "tag") }
+            SearchSettingsPane()
+                .tabItem { Label("Search String", systemImage: "magnifyingglass") }
             LibraryImportSettingsPane()
                 .tabItem { Label("Library Import", systemImage: "square.and.arrow.down.on.square") }
         }
@@ -57,7 +59,7 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
 /// The scope line at the top of every pane — a setting's reach should be
 /// readable before its controls are. Presentation only; the storage
 /// split (settings.json vs the library file) is long-standing.
-private struct ScopeHeader: View {
+struct ScopeHeader: View {
     enum Scope { case app, library }
     let scope: Scope
 

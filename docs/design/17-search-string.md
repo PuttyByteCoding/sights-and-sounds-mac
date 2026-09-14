@@ -1,0 +1,109 @@
+# 17 — Search String
+
+**Comps:** none — designed in conversation, 2026-09-14.
+**Swift:** net-new `Search/SearchRecipe.swift`, `Search/SearchStringBuilder.swift`,
+`Search/FirefoxBookmarks.swift` (kit); `Search/SearchSettingsPane.swift`,
+`Search/BookmarkSearchView.swift`, `Search/SearchCommands.swift` (app). Touched:
+`Models/LibraryInfo`, `Database/LibraryDatabase` (migration), `Settings/AppSettings`,
+`SettingsView`, `SightsAndSoundsApp` (menu, focused value), `Browse/BrowseModel`,
+`Browse/LibraryWindowView`, `Browse/AuxiliaryWindow`, `Player/PlayerModel`, `Player/PlayerView`.
+
+## What it is for
+
+A video's file name and tags already say what it is. This turns them into one string to
+search with — on the web, and in Firefox's bookmarks, where many of these shows are already
+filed — without retyping. `sdg_BenFoldsFive_OnStage_2019.mp4` wearing Band "Ben Folds Five",
+Year "2019" and Venue "On Stage" becomes:
+
+```
+"Ben Folds Five" 2019 at the venue "on stage"
+```
+
+## Decisions
+
+1. **A recipe is an ordered list of parts, stored per library.** Parts name tag categories,
+   and categories belong to the library, so the recipe lives in the library file as JSON on
+   `libraryInfo` (column `searchRecipe`), the way the import boxes do. One recipe per
+   library. A part is one of three kinds:
+
+   | Kind | Source | Options |
+   |---|---|---|
+   | Literal | fixed text | none — used verbatim |
+   | File name | the item's file name | with or without extension; split at underscores into pieces (`FileNameSegments.pieces`) or kept whole |
+   | Tags | every tag the item wears from one category, or from all categories | joiner between several tags (default a space) |
+
+   File-name and tag parts also carry **case** (as is · lowercase · UPPERCASE · Title Case)
+   and **quoting** (never · multi-word values only · always).
+
+2. **Replacements run first, exclusions second, formatting last.** For every value a part
+   yields: apply the recipe's replacement list (`-` → ` ` is the one this was asked for;
+   any pair works, in list order, every occurrence); drop the value if it equals an
+   exclusion, case-insensitively, whitespace-trimmed; then apply the part's case and quoting.
+   Exclusions match whole values — a whole file-name piece, a whole tag name — never
+   substrings, so "on" on the list cannot eat "Ben Folds". A value that ends up empty
+   contributes nothing. Parts are joined with single spaces; a part with no values leaves no
+   gap.
+
+3. **The bookmark query is the values, not the string.** Literals are prose for a search
+   engine and mean nothing to a bookmark. The bookmark search takes every non-literal value
+   after replacements and exclusions but before quoting, and requires each one, matched
+   case-insensitively, in a bookmark's title, URL, tags, description or keyword.
+
+4. **Firefox is read, never asked.** Firefox has no external way to open its bookmarks
+   manager with a query, so the app reads the profile's `places.sqlite` itself: copy the
+   file and its `-wal` beside it to a temporary folder (Firefox holds the original open),
+   open the copy read-only, query, delete the copy. The profile is an app-wide setting
+   (`firefoxProfilePath`); **Detect** reads `profiles.ini` and takes the install's default
+   profile, else the one marked `Default=1`, else the first. Tags are the bookmark's entries
+   under Firefox's tags root; description is `moz_places.description`, with the legacy
+   `bookmarkProperties/description` annotation as a fallback; keyword is `moz_keywords`;
+   folder path walks `parent` up to the root.
+
+5. **Three commands in a Search menu, so they work from anywhere.** Menu shortcuts beat the
+   player's key handler and a tag field alike.
+
+   | Command | Key | Does |
+   |---|---|---|
+   | Copy Search String | ⌘⇧C | builds the string, copies it, shows it in the player footer |
+   | Search Firefox Bookmarks | ⌘⇧B | opens the bookmarks window for the item |
+   | Search the Web in Firefox | ⌘⇧F | opens Firefox on the web search URL with the string |
+
+   The **subject** is the playing item when the focused window has a player up, otherwise
+   the grid's single selected item. Published as a focused scene value; with none, the
+   commands are disabled.
+
+6. **The web search URL is app-wide.** `webSearchURL` with a `{query}` placeholder, default
+   `https://duckduckgo.com/?q={query}`. Opened in Firefox when it is installed, else in the
+   default browser with a footer note saying so.
+
+7. **The page is a Settings tab.** "Search String", per-library scope header, the library
+   picker the Tag Category Configuration tab uses. Parts as rows — kind, source, formatting —
+   with add, remove and move up/down; below them the exclusions and replacements as small
+   editable tables; a live preview built from a sample item on the right. An app-wide
+   section on the same page holds the Firefox profile (with Detect) and the web search URL.
+
+8. **Missing things say so.** A recipe part naming a category that no longer exists is
+   skipped by the builder and flagged in the page. No Firefox profile, no `places.sqlite`,
+   or an unreadable copy each show a plain message in the bookmarks window instead of an
+   empty list. An empty result names the values it searched for.
+
+## Copy
+
+- Menu: **Search** · **Copy Search String** · **Search Firefox Bookmarks** · **Search the Web in Firefox**
+- Settings tab: **Search String**
+- Page sections: **Parts** · **Exclusions** · **Replacements** · **Preview** · **Firefox**
+- Part kinds: **Text** · **File name** · **Tags**
+- Case: **As is** · **lowercase** · **UPPERCASE** · **Title Case**
+- Quoting: **Never** · **Multi-word only** · **Always**
+- Bookmarks window, empty: **No bookmarks match** `<values>`
+- Bookmarks window, no profile: **No Firefox profile is set. Choose one in Settings › Search String.**
+- Footer after copy: the string itself
+
+## Tests
+
+Kit: the builder against each part kind, each case and quoting option, replacements,
+exclusions (whole-value only), a missing category, and the example above verbatim; the
+bookmark values from the same recipes; the Firefox reader against a synthetic
+`places.sqlite` the test builds with Firefox's tables (bookmarks, tags, a description, a
+keyword, folders); profile detection against a synthetic `profiles.ini`. The menu commands,
+the window and the page are view work `swift test` cannot drive.

@@ -255,6 +255,7 @@ struct BrowseView: View {
         .task { await model.watchThumbnailQueue() }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { windowWidth = $0 }
             .focusedSceneValue(\.browseModel, model)
+            .focusedSceneValue(\.searchSubject, model.searchSubject)
         .defaultToolbarShowsLabels()
         .frame(minWidth: 900, minHeight: 560)
     }

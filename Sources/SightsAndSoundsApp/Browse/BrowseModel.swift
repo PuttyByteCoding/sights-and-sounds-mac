@@ -65,6 +65,34 @@ final class BrowseModel {
     /// to follow; a grid has none.
     var pendingAnalysisOpen = false
 
+    /// The item the embedded player is showing, for the Search menu
+    /// (spec 17): a player up in this window makes its item the subject,
+    /// whatever the grid has selected. Installed by the player.
+    var playingItemID: UUID?
+
+    /// The Search menu's subject: the playing item, else a single
+    /// selection, else nothing — and the menu is disabled.
+    var searchSubject: SearchSubjectRef? {
+        let itemID = playingItemID ?? (selection.count == 1 ? selection.first : nil)
+        return itemID.map { SearchSubjectRef(libraryID: libraryID, itemID: $0) }
+    }
+
+    /// A line the player footer shows for a few seconds — the search
+    /// string just copied, or where a web search went.
+    private(set) var searchNotice: String?
+    private var searchNoticeGeneration = 0
+
+    func showSearchNotice(_ text: String) {
+        searchNotice = text
+        searchNoticeGeneration += 1
+        let generation = searchNoticeGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard let self, self.searchNoticeGeneration == generation else { return }
+            self.searchNotice = nil
+        }
+    }
+
     /// Open the player at `itemID` (or the first visible item) with the
     /// companion pending. Nothing to play means nothing to analyse, and
     /// the caller's control stays inert.

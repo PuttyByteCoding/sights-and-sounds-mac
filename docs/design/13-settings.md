@@ -15,7 +15,8 @@ frame (there is a whole `NSViewRepresentable` forcing the resizable bit AppKit o
 pane says out loud.
 
 Two tabs are added — **Repair** and **Category Order** — and one existing pane loses rows.
-Nothing is restructured.
+Nothing is restructured. (A third, **Search String**, arrived with spec 17: the per-library
+search recipe, and the app-wide Firefox profile and web search URL.)
 
 ## 13a · Repair
 
