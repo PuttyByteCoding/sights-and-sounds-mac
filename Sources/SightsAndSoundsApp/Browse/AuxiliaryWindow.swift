@@ -20,6 +20,8 @@ struct AuxWindowRequest: Codable, Hashable {
         /// distinct request, each with its own model and queue, which is
         /// what makes several players-at-once just work.
         case player
+        /// Firefox bookmarks matching one item's search values (spec 17).
+        case bookmarkSearch
 
         var title: String {
             switch self {
@@ -32,6 +34,7 @@ struct AuxWindowRequest: Codable, Hashable {
             case .watched: "History"
             case .tagAnalysis: "Tag Analysis"
             case .player: "Player"
+            case .bookmarkSearch: "Bookmarks"
             }
         }
     }
@@ -73,6 +76,7 @@ struct AuxiliaryWindowView: View {
             if let model {
                 content(model)
                     .environment(model)
+                    .focusedSceneValue(\.searchSubject, model.searchSubject)
                     .navigationTitle(
                         "\(model.libraryName) — \(request.title ?? request.kind.title)")
             } else if let openError {
@@ -139,6 +143,8 @@ struct AuxiliaryWindowView: View {
             case .watched: WatchedView()
             case .tagAnalysis:
                 TagAnalysisView(sessionID: request.sessionID)
+            case .bookmarkSearch:
+                BookmarkSearchView(itemID: request.itemIDs.first)
             case .player:
                 // Only reachable when the request carried no items.
                 ContentUnavailableView(
