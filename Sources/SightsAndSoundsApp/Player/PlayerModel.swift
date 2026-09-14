@@ -52,6 +52,7 @@ final class PlayerModel {
     /// playlist. Cheap and idempotent — called on every load and every
     /// playlist change.
     private func publishToSession() {
+        itemShown(item?.id)
         guard let analysisSession else { return }
         let position: (index: Int, count: Int)? = {
             guard playlist.count > 1, let item, let index = playlist.firstIndex(of: item.id)
@@ -330,6 +331,10 @@ final class PlayerModel {
     /// listing — installed by the view that knows the grid, so the
     /// library window's queue catches up with what the grid shows.
     var currentListing: () -> QueueDefinition? = { nil }
+
+    /// The shown item, for whoever hosts the player — the browse model
+    /// makes it the Search menu's subject. nil once the player is gone.
+    var itemShown: (UUID?) -> Void = { _ in }
 
     /// Re-run the queue's definition. The shown item keeps playing
     /// whether or not it is still in the result — a Refresh is not a
@@ -1183,6 +1188,7 @@ final class PlayerModel {
     }
 
     func shutdown() {
+        itemShown(nil)
         if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
         changeObserver = nil
         if let loadObserver { NotificationCenter.default.removeObserver(loadObserver) }

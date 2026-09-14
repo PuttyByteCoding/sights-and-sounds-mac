@@ -61,6 +61,14 @@ struct SightsAndSoundsApp: App {
                 ViewMenuCommands()
                     .environment(model)
             }
+            // The search string (spec 17): three commands that act on the
+            // focused window's item — playing, else singly selected —
+            // from anywhere, a tag field included, because a menu
+            // shortcut is read before any view's key handler.
+            CommandMenu("Search") {
+                SearchMenuCommands()
+                    .environment(model)
+            }
         }
 
         // One library per window — several can be open at once, each backed

@@ -21,6 +21,18 @@ import Testing
         #expect(decoded2.audioExtensions == ["flac"])
     }
 
+    /// Spec 17's two app-wide fields: absent keys fall back, present
+    /// keys are read.
+    @Test func searchFieldsDefaultAndDecode() throws {
+        let empty = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        #expect(empty.firefoxProfilePath == nil)
+        #expect(empty.webSearchURL == "https://duckduckgo.com/?q={query}")
+        let set = try JSONDecoder().decode(AppSettings.self, from: Data(
+            #"{"firefoxProfilePath": "/p/x.default", "webSearchURL": "https://example.org/s?q={query}"}"#.utf8))
+        #expect(set.firefoxProfilePath == "/p/x.default")
+        #expect(set.webSearchURL == "https://example.org/s?q={query}")
+    }
+
     @Test func storeRoundTripsThroughDisk() throws {
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-settings-\(UUID().uuidString).json")

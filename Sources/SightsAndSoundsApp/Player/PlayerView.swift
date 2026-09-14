@@ -109,6 +109,7 @@ struct PlayerView: View {
                 made.currentListing = { [weak browse] in
                     browse.map { .listing(filter: $0.filter, kinds: $0.kinds, ordering: $0.ordering) }
                 }
+                made.itemShown = { [weak browse] in browse?.playingItemID = $0 }
                 model = made
                 focused = true
             } catch {
@@ -1105,6 +1106,7 @@ private struct PanelToggles: View {
 /// from the chosen map, so they cannot disagree with it.
 private struct FocusFooter: View {
     @Environment(PlayerModel.self) private var model
+    @Environment(BrowseModel.self) private var browse
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1126,10 +1128,13 @@ private struct FocusFooter: View {
                 .buttonStyle(.plain)
             }
             Rectangle().fill(Theme.Border.standard).frame(width: 1, height: 14)
-            Text(hint)
+            // A search notice — the string just copied — takes the hint's
+            // place for a few seconds, then the hint comes back.
+            Text(browse.searchNotice ?? hint)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(browse.searchNotice == nil ? Theme.Text.disabled : Theme.Text.primary)
                 .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 0)
             if AppSettingsStore.shared.current.infoBar.showsPosition,
                let item = model.item, !model.playlist.isEmpty,

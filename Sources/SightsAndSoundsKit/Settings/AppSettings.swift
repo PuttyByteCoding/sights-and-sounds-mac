@@ -111,6 +111,14 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// seeds it from the three positions above, which remain only for
     /// that. One list is what lets a drop mean exactly "before that row".
     public var tagPanelRowOrder: [String]
+    /// The Firefox profile folder whose bookmarks the Search menu reads
+    /// (spec 17). nil until chosen or detected.
+    public var firefoxProfilePath: String?
+    /// Where "Search the Web" goes: a URL with `{query}` standing for
+    /// the search string.
+    public var webSearchURL: String
+
+    public static let defaultWebSearchURL = "https://duckduckgo.com/?q={query}"
 
     public static let defaultVideoExtensions = [
         "mp4", "m4v", "mov", "mpg", "mpeg", "avi", "mkv", "wmv", "flv", "webm", "ts",
@@ -147,7 +155,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
         uiScale: Double = 1.0,
         universalTagFieldPosition: Int = 0,
         analysisResultsFieldPosition: Int = 1,
-        tagPanelRowOrder: [String] = []
+        tagPanelRowOrder: [String] = [],
+        firefoxProfilePath: String? = nil,
+        webSearchURL: String = AppSettings.defaultWebSearchURL
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -177,6 +187,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.universalTagFieldPosition = universalTagFieldPosition
         self.analysisResultsFieldPosition = analysisResultsFieldPosition
         self.tagPanelRowOrder = tagPanelRowOrder
+        self.firefoxProfilePath = firefoxProfilePath
+        self.webSearchURL = webSearchURL
     }
 
     public init(from decoder: Decoder) throws {
@@ -241,6 +253,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.analysisResultsFieldPosition)
         tagPanelRowOrder = try container.decodeIfPresent(
             [String].self, forKey: .tagPanelRowOrder) ?? defaults.tagPanelRowOrder
+        firefoxProfilePath = try container.decodeIfPresent(String.self, forKey: .firefoxProfilePath)
+        webSearchURL = try container.decodeIfPresent(String.self, forKey: .webSearchURL)
+            ?? defaults.webSearchURL
     }
 }
 
