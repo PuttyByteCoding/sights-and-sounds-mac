@@ -39,7 +39,10 @@ public enum SearchStringBuilder {
             for replacement in recipe.replacements where !replacement.from.isEmpty {
                 value = value.replacingOccurrences(of: replacement.from, with: replacement.to)
             }
-            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            // One line, single spaces, whatever the whitespace was: a
+            // file name can carry a newline, and a replacement can
+            // leave a run of spaces behind.
+            value = value.split(whereSeparator: \.isWhitespace).joined(separator: " ")
             guard !value.isEmpty, !excluded.contains(fold(value)) else { return nil }
             return value
         }
