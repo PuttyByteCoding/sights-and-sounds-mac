@@ -51,6 +51,7 @@ Ordered by dependency, not by size.
 | 14 | `14-tag-analysis.md` | Mac Tag Analysis Window | 4 | `Domain/TagAnalysis` port, `Models/AnalysisRule` |
 | 15 | `15-devices.md` | Mac Devices | 9 | net-new — no Swift view yet |
 | 16 | `16-command-palette.md` | Mac Command Palette | — | net-new |
+| 17 | `17-search-string.md` | none (designed in conversation) | — | net-new `Search/*` in kit and app; `Models/LibraryInfo`, `Settings/AppSettings`, `SettingsView`, `SightsAndSoundsApp` |
 
 All sixteen specs are written. Each carries its decisions, its verbatim copy, and the Swift it
 touches; the model-change table below is the cross-cutting work they assume.
