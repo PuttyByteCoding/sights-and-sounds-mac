@@ -22,10 +22,25 @@ import Testing
                     kind: .fileName(includesExtension: false, splitsPieces: true),
                     format: SearchFormat(letterCase: .lowercase, quoting: .never)),
             ],
-            exclusions: ["sdg"],
-            replacements: [SearchReplacement(from: "-", to: " ")])
+            rules: [
+                SearchRule(kind: .replace(from: "-", to: " ")),
+                SearchRule(kind: .exclude("sdg")),
+            ])
         try library.setSearchRecipe(recipe)
         #expect(try library.searchRecipe() == recipe)
+    }
+
+    /// A recipe stored before the rules were one ordered list carried
+    /// `replacements` and `exclusions` apart, and ran them in that
+    /// order. It decodes to the same rules in the same order.
+    @Test func aStoredRecipeFromBeforeTheRuleListDecodesInItsOldOrder() throws {
+        let json = #"{"exclusions":["sdg"],"parts":[],"replacements":[{"from":"-","id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3D","to":" "}]}"#
+        let recipe = try JSONDecoder().decode(SearchRecipe.self, from: Data(json.utf8))
+        #expect(recipe.rules.map(\.kind) == [.replace(from: "-", to: " "), .exclude("sdg")])
+        // And it re-encodes in the new shape only.
+        let encoded = String(data: try JSONEncoder().encode(recipe), encoding: .utf8) ?? ""
+        #expect(encoded.contains("\"rules\""))
+        #expect(!encoded.contains("\"exclusions\"") && !encoded.contains("\"replacements\""))
     }
 
     /// A stored recipe an older build cannot read is the empty recipe,

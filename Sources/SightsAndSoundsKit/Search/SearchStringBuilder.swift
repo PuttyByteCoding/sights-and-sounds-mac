@@ -23,25 +23,29 @@ public struct SearchSubject: Equatable, Sendable {
 }
 
 /// A recipe and an item in, one string out (spec 17, decision 2). For
-/// every value a part yields: the replacement list first, then the
-/// exclusions — whole values only, case-insensitively — then the part's
-/// case and quoting. Literals are prose for the search engine: used
-/// verbatim, and left out of the bookmark terms.
+/// every value a part yields: the rules, in their order — a replace
+/// changes the value, an exclude drops it when it matches as a whole,
+/// case-insensitively — then the part's case and quoting. Literals are
+/// prose for the search engine: used verbatim, and left out of the
+/// bookmark terms.
 public enum SearchStringBuilder {
-    /// The part's values after replacements and exclusions, before any
-    /// formatting: what the bookmark search matches on.
+    /// The part's values after the rules, before any formatting: what
+    /// the bookmark search matches on.
     public static func values(
         for part: SearchPart, subject: SearchSubject, recipe: SearchRecipe
     ) -> [String] {
-        let excluded = Set(recipe.exclusions.map(fold))
-        return rawValues(for: part, subject: subject).compactMap { raw in
+        rawValues(for: part, subject: subject).compactMap { raw in
             var value = raw
-            for replacement in recipe.replacements where !replacement.from.isEmpty {
-                value = value.replacingOccurrences(of: replacement.from, with: replacement.to)
+            for rule in recipe.rules {
+                switch rule.kind {
+                case .replace(let from, let to):
+                    if !from.isEmpty { value = value.replacingOccurrences(of: from, with: to) }
+                case .exclude(let text):
+                    if fold(value) == fold(text) { return nil }
+                }
             }
             value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty, !excluded.contains(fold(value)) else { return nil }
-            return value
+            return value.isEmpty ? nil : value
         }
     }
 

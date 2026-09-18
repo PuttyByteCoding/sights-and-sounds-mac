@@ -38,17 +38,24 @@ public struct SearchFormat: Codable, Equatable, Sendable {
     }
 }
 
-/// One text substitution, applied to every value before anything else
-/// — "-" to a space is the one this was asked for.
-public struct SearchReplacement: Codable, Equatable, Sendable, Identifiable {
-    public var id: UUID
-    public var from: String
-    public var to: String
+/// One rule, run over every value the parts gathered, in list order —
+/// the order is the operator's, which is the point. Exclude drops a
+/// value equal to the text (whole value, ignoring case — never a
+/// substring, so "on" cannot eat "On Stage"). Replace changes every
+/// occurrence of the text inside a value; an empty right-hand side
+/// removes it. "-" to a space is the one this was asked for.
+public struct SearchRule: Codable, Equatable, Sendable, Identifiable {
+    public enum Kind: Codable, Equatable, Sendable {
+        case exclude(String)
+        case replace(from: String, to: String)
+    }
 
-    public init(id: UUID = UUID(), from: String, to: String) {
+    public var id: UUID
+    public var kind: Kind
+
+    public init(id: UUID = UUID(), kind: Kind) {
         self.id = id
-        self.from = from
-        self.to = to
+        self.kind = kind
     }
 }
 
@@ -82,23 +89,53 @@ public struct SearchPart: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// The recipe: an ordered list of parts, the values that must never
-/// appear, and the substitutions every value goes through first. One
-/// per library, stored as JSON on the library's info row.
-public struct SearchRecipe: Codable, Equatable, Sendable {
+/// The recipe: an ordered list of parts that gather values, then an
+/// ordered list of rules that run over every value. One per library,
+/// stored as JSON on the library's info row.
+public struct SearchRecipe: Equatable, Sendable {
     public var parts: [SearchPart]
-    public var exclusions: [String]
-    public var replacements: [SearchReplacement]
+    public var rules: [SearchRule]
 
-    public init(
-        parts: [SearchPart] = [], exclusions: [String] = [], replacements: [SearchReplacement] = []
-    ) {
+    public init(parts: [SearchPart] = [], rules: [SearchRule] = []) {
         self.parts = parts
-        self.exclusions = exclusions
-        self.replacements = replacements
+        self.rules = rules
     }
 
     public static let empty = SearchRecipe()
+}
+
+extension SearchRecipe: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case parts, rules
+        // Before the rules were one ordered list: replacements, then
+        // exclusions, in that fixed order.
+        case exclusions, replacements
+    }
+
+    private struct LegacyReplacement: Decodable {
+        var id: UUID?
+        var from: String
+        var to: String
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        parts = try container.decodeIfPresent([SearchPart].self, forKey: .parts) ?? []
+        if let rules = try container.decodeIfPresent([SearchRule].self, forKey: .rules) {
+            self.rules = rules
+        } else {
+            let replacements = try container.decodeIfPresent([LegacyReplacement].self, forKey: .replacements) ?? []
+            let exclusions = try container.decodeIfPresent([String].self, forKey: .exclusions) ?? []
+            rules = replacements.map { SearchRule(id: $0.id ?? UUID(), kind: .replace(from: $0.from, to: $0.to)) }
+                + exclusions.map { SearchRule(kind: .exclude($0)) }
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(parts, forKey: .parts)
+        try container.encode(rules, forKey: .rules)
+    }
 }
 
 extension LibraryDatabase {

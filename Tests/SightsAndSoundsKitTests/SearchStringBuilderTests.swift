@@ -48,7 +48,7 @@ import Testing
         #expect(SearchStringBuilder.string(recipe: stem, subject: subject()) == "sdg_BenFoldsFive_OnStage_2019")
         let pieces = SearchRecipe(
             parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true), format: SearchFormat(quoting: .multiWord))],
-            exclusions: ["SDG"])
+            rules: [SearchRule(kind: .exclude("SDG"))])
         #expect(SearchStringBuilder.string(recipe: pieces, subject: subject()) == #""Ben Folds Five" "On Stage" 2019"#)
         // A name with no underscore has no pieces: the stem stands as one value.
         #expect(SearchStringBuilder.string(recipe: pieces, subject: subject("Ben Folds.mp4")) == #""Ben Folds""#)
@@ -71,14 +71,28 @@ import Testing
         #expect(SearchStringBuilder.string(recipe: recipe, subject: subject()) == "Ben Folds Five, 2019, On Stage, Mike Jones")
     }
 
-    @Test func replacementsRunBeforeExclusionsAndExclusionsMatchWholeValuesOnly() {
+    /// The rules run in THEIR order, one value at a time. Replace then
+    /// exclude drops "Ben-Folds-Five" once it reads "Ben Folds Five";
+    /// exclude then replace never sees the spaced form and keeps it.
+    @Test func rulesRunInTheOrderTheyAreListed() {
+        let parts = [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true))]
+        let replace = SearchRule(kind: .replace(from: "-", to: " "))
+        let exclude = SearchRule(kind: .exclude("ben folds five"))
+        let name = "Ben-Folds-Five_OnStage_2019.mp4"
+        #expect(SearchStringBuilder.string(recipe: SearchRecipe(parts: parts, rules: [replace, exclude]), subject: subject(name))
+            == "On Stage 2019")
+        #expect(SearchStringBuilder.string(recipe: SearchRecipe(parts: parts, rules: [exclude, replace]), subject: subject(name))
+            == "Ben Folds Five On Stage 2019")
+    }
+
+    /// An exclusion matches whole values only, ignoring case: "on" on
+    /// the list does not touch "On Stage". A replacement with nothing
+    /// on the right removes the text.
+    @Test func anExclusionIsWholeValueAndAnEmptyReplacementRemovesText() {
         let recipe = SearchRecipe(
             parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true))],
-            exclusions: ["ben folds five", "on"],
-            replacements: [SearchReplacement(from: "-", to: " ")])
-        // "Ben-Folds-Five" becomes "Ben Folds Five" and is then excluded as a whole;
-        // "on" on the list does not touch "On Stage".
-        #expect(SearchStringBuilder.string(recipe: recipe, subject: subject("Ben-Folds-Five_OnStage_2019.mp4")) == "On Stage 2019")
+            rules: [SearchRule(kind: .exclude("on")), SearchRule(kind: .replace(from: "Stage", to: ""))])
+        #expect(SearchStringBuilder.string(recipe: recipe, subject: subject("sdg_OnStage_2019.mp4")) == "sdg On 2019")
     }
 
     @Test func aMissingCategoryIsSkippedAndNamed() {
@@ -91,7 +105,7 @@ import Testing
     @Test func anEmptyValueLeavesNoGap() {
         let recipe = SearchRecipe(
             parts: [tags(band), SearchPart(kind: .literal("")), tags(year)],
-            replacements: [SearchReplacement(from: "2019", to: "")])
+            rules: [SearchRule(kind: .replace(from: "2019", to: ""))])
         #expect(SearchStringBuilder.string(recipe: recipe, subject: subject()) == "Ben Folds Five")
         #expect(SearchStringBuilder.bookmarkTerms(recipe: recipe, subject: subject()) == ["Ben Folds Five"])
     }
