@@ -554,10 +554,12 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
     public var rail: Bool
     /// The history panel in the right rail, off by default.
     public var history: Bool
+    /// The search-string panel in the right rail (spec 17), off by default.
+    public var search: Bool
 
     public init(
         tags: Bool = true, segments: Bool = true, queue: Bool = true, text: Bool = false,
-        rail: Bool = false, history: Bool = false
+        rail: Bool = false, history: Bool = false, search: Bool = false
     ) {
         self.tags = tags
         self.segments = segments
@@ -565,6 +567,7 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
         self.text = text
         self.rail = rail
         self.history = history
+        self.search = search
     }
 
     public init(from decoder: Decoder) throws {
@@ -576,6 +579,7 @@ public struct PlayerPanels: Codable, Equatable, Sendable {
         text = try container.decodeIfPresent(Bool.self, forKey: .text) ?? defaults.text
         rail = try container.decodeIfPresent(Bool.self, forKey: .rail) ?? defaults.rail
         history = try container.decodeIfPresent(Bool.self, forKey: .history) ?? defaults.history
+        search = try container.decodeIfPresent(Bool.self, forKey: .search) ?? defaults.search
     }
 }
 

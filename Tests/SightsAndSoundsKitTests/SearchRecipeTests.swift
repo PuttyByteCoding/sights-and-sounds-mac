@@ -2,55 +2,79 @@ import Foundation
 import Testing
 @testable import SightsAndSoundsKit
 
-/// The search recipe lives in the library file, because its parts name
-/// categories and categories are the library's. A library without one
-/// answers with the empty recipe, never an error.
+/// The search formats live in the library file, because their parts
+/// name categories and categories are the library's. Several named
+/// formats, one of them the default ⌘⇧C uses. A library without any
+/// answers with the empty set, never an error.
 @Suite struct SearchRecipeTests {
-    @Test func aRecipeRoundTripsThroughTheLibrary() throws {
+    private func makeLibrary() throws -> LibraryDatabase {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Recipe")
+        return library
+    }
+
+    @Test func theFormatsRoundTripThroughTheLibrary() throws {
+        let library = try makeLibrary()
+        #expect(try library.searchFormats() == .empty)
         #expect(try library.searchRecipe() == .empty)
 
         let band = UUID()
-        let recipe = SearchRecipe(
+        let web = SearchRecipe(
+            name: "Web",
             parts: [
-                SearchPart(
-                    kind: .tags(categoryID: band, joiner: " "),
-                    format: SearchFormat(letterCase: .asIs, quoting: .multiWord)),
+                SearchPart(kind: .tags(categoryID: band, joiner: " "), format: SearchFormat(letterCase: .asIs, quoting: .multiWord)),
                 SearchPart(kind: .literal("at the venue")),
-                SearchPart(
-                    kind: .fileName(includesExtension: false, splitsPieces: true),
-                    format: SearchFormat(letterCase: .lowercase, quoting: .never)),
             ],
-            rules: [
-                SearchRule(kind: .replace(from: "-", to: " ")),
-                SearchRule(kind: .exclude("sdg")),
-            ])
-        try library.setSearchRecipe(recipe)
-        #expect(try library.searchRecipe() == recipe)
+            rules: [SearchRule(kind: .replace(from: "-", to: " ")), SearchRule(kind: .exclude("sdg"))])
+        let bare = SearchRecipe(name: "Bare", parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))])
+        let formats = SearchFormats(formats: [web, bare], defaultID: bare.id)
+        try library.setSearchFormats(formats)
+        #expect(try library.searchFormats() == formats)
+        // ⌘⇧C's recipe is the default format.
+        #expect(try library.searchRecipe() == bare)
     }
 
-    /// A recipe stored before the rules were one ordered list carried
-    /// `replacements` and `exclusions` apart, and ran them in that
-    /// order. It decodes to the same rules in the same order.
-    @Test func aStoredRecipeFromBeforeTheRuleListDecodesInItsOldOrder() throws {
-        let json = #"{"exclusions":["sdg"],"parts":[],"replacements":[{"from":"-","id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3D","to":" "}]}"#
-        let recipe = try JSONDecoder().decode(SearchRecipe.self, from: Data(json.utf8))
-        #expect(recipe.rules.map(\.kind) == [.replace(from: "-", to: " "), .exclude("sdg")])
-        // And it re-encodes in the new shape only.
-        let encoded = String(data: try JSONEncoder().encode(recipe), encoding: .utf8) ?? ""
-        #expect(encoded.contains("\"rules\""))
-        #expect(!encoded.contains("\"exclusions\"") && !encoded.contains("\"replacements\""))
+    /// No default marked, or a default that no longer exists, means the
+    /// first format — never nothing while there is a format to use.
+    @Test func theDefaultFallsBackToTheFirstFormat() throws {
+        let library = try makeLibrary()
+        let a = SearchRecipe(name: "A", parts: [SearchPart(kind: .literal("a"))])
+        let b = SearchRecipe(name: "B", parts: [SearchPart(kind: .literal("b"))])
+        try library.setSearchFormats(SearchFormats(formats: [a, b], defaultID: nil))
+        #expect(try library.searchRecipe() == a)
+        try library.setSearchFormats(SearchFormats(formats: [a, b], defaultID: UUID()))
+        #expect(try library.searchRecipe() == a)
+        #expect(SearchFormats(formats: [a, b], defaultID: b.id).defaultFormat == b)
     }
 
-    /// A stored recipe an older build cannot read is the empty recipe,
-    /// not a crash: the column is JSON and the shape may grow.
+    /// A library that stored ONE recipe before formats existed — bare
+    /// parts and rules at the top level — reads as one format named
+    /// Default, marked as the default.
+    @Test func aStoredSingleRecipeBecomesTheDefaultFormat() throws {
+        let library = try makeLibrary()
+        try library.writer.write { db in
+            try db.execute(sql: """
+                UPDATE libraryInfo SET searchRecipe = \
+                '{"parts":[{"format":{"letterCase":"asIs","quoting":"never"},"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3D","kind":{"literal":{"_0":"live"}}}],"exclusions":["sdg"],"replacements":[{"from":"-","id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3E","to":" "}]}'
+                """)
+        }
+        let formats = try library.searchFormats()
+        #expect(formats.formats.count == 1)
+        #expect(formats.formats.first?.name == "Default")
+        #expect(formats.defaultID == formats.formats.first?.id)
+        #expect(formats.formats.first?.parts.map(\.kind) == [.literal("live")])
+        #expect(formats.formats.first?.rules.map(\.kind) == [.replace(from: "-", to: " "), .exclude("sdg")])
+        #expect(try library.searchRecipe().parts.map(\.kind) == [.literal("live")])
+    }
+
+    /// A stored recipe an older build cannot read is the empty set, not
+    /// a crash: the column is JSON and the shape may grow.
     @Test func anUnreadableStoredRecipeIsEmpty() throws {
-        let library = try LibraryDatabase.openInMemory()
-        try library.ensureInfo(name: "Recipe")
+        let library = try makeLibrary()
         try library.writer.write { db in
             try db.execute(sql: "UPDATE libraryInfo SET searchRecipe = '{not json'")
         }
+        #expect(try library.searchFormats() == .empty)
         #expect(try library.searchRecipe() == .empty)
     }
 }

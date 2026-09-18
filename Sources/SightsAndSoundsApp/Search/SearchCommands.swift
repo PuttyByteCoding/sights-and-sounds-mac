@@ -95,7 +95,7 @@ struct SearchMenuCommands: View {
         do {
             let recipe = try library.searchRecipe()
             guard !recipe.parts.isEmpty else {
-                return .problem("The search string has no parts yet — set it up in Settings › Search String.")
+                return .problem("The default search format has no parts yet — set one up in Settings › Search String.")
             }
             guard let item = try library.searchSubject(for: subject.itemID) else {
                 return .problem("The item is gone.")
