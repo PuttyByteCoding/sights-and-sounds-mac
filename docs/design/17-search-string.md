@@ -79,8 +79,11 @@ Year "2019" and Venue "On Stage" becomes:
 7. **The page is a Settings tab.** "Search String", per-library scope header, the library
    picker the Tag Category Configuration tab uses. Parts as rows — kind, source, formatting —
    with add, remove and move up/down; below them the exclusions and replacements as small
-   editable tables; a live preview built from a sample item on the right. An app-wide
+   editable tables; a live preview against a **sample file name** — the library's first
+   file to start, then anything typed over it, with the first item's tags. An app-wide
    section on the same page holds the Firefox profile (with Detect) and the web search URL.
+   The page is a draft: the preview follows every edit, and **Apply** writes it (Revert
+   reloads). Nothing takes effect until Apply.
 
 8. **Missing things say so.** A recipe part naming a category that no longer exists is
    skipped by the builder and flagged in the page. No Firefox profile, no `places.sqlite`,
