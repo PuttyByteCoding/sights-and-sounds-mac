@@ -5,14 +5,20 @@ import SightsAndSoundsKit
 /// Settings › Search String (spec 17, decision 7): the library's recipe
 /// as rows — kind, source, formatting — with exclusions, replacements
 /// and a live preview; and, app-wide, the Firefox profile and the web
-/// search URL. Every change saves as it is made.
+/// search URL. The page is a draft: the preview follows every edit,
+/// and Apply is what writes it — to the library and to settings.json.
 struct SearchSettingsPane: View {
     @Environment(AppModel.self) private var model
     @State private var selectedLibraryID: UUID?
     @State private var recipe = SearchRecipe.empty
+    /// What the library holds. Apply moves the draft here.
+    @State private var savedRecipe = SearchRecipe.empty
     @State private var categories: [TagCategory] = []
-    @State private var sample: SearchSubject?
-    @State private var loading = false
+    /// The preview's file name: the library's first item's to start,
+    /// then whatever is typed — a name with the shape in question, not
+    /// whichever file sorts first. The tags stay the first item's.
+    @State private var sampleFileName = ""
+    @State private var sampleTags: [SearchSubjectTag] = []
     @State private var statusText: String?
     @State private var newExclusion = ""
     @State private var firefoxProfile = AppSettingsStore.shared.current.firefoxProfilePath ?? ""
@@ -28,7 +34,7 @@ struct SearchSettingsPane: View {
                         Text(library.name).tag(UUID?.some(library.id))
                     }
                 }
-                Text("One string per video, built from its file name and tags in the order below. ⌘⇧C copies it, ⌘⇧F searches the web with it, ⌘⇧B searches Firefox's bookmarks for its values.")
+                Text("One string per video, built from its file name and tags in the order below. ⌘⇧C copies it, ⌘⇧F searches the web with it, ⌘⇧B searches Firefox's bookmarks for its values. Nothing takes effect until Apply.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -39,15 +45,32 @@ struct SearchSettingsPane: View {
                 previewSection
             }
             firefoxSection
+            applySection
         }
         .formStyle(.grouped)
         .onChange(of: selectedLibraryID) { load() }
-        .onChange(of: recipe) { save() }
-        .onChange(of: firefoxProfile) { _, path in
-            AppSettingsStore.shared.update { $0.firefoxProfilePath = path.isEmpty ? nil : path }
-        }
-        .onChange(of: webSearchURL) { _, url in
-            AppSettingsStore.shared.update { $0.webSearchURL = url }
+    }
+
+    /// Anything on the page that differs from what is stored.
+    private var isDirty: Bool {
+        let settings = AppSettingsStore.shared.current
+        return (selectedLibraryID != nil && recipe != savedRecipe)
+            || firefoxProfile != (settings.firefoxProfilePath ?? "")
+            || webSearchURL != settings.webSearchURL
+    }
+
+    private var applySection: some View {
+        Section {
+            HStack {
+                Button("Apply") { apply() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isDirty)
+                Button("Revert") { load() }
+                    .disabled(!isDirty)
+                if let statusText {
+                    Text(statusText).font(.callout).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -159,15 +182,18 @@ struct SearchSettingsPane: View {
 
     // MARK: Preview
 
+    private var sample: SearchSubject? {
+        let name = sampleFileName.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : SearchSubject(fileName: name, tags: sampleTags)
+    }
+
     private var previewSection: some View {
         Section {
+            LabeledContent("Sample file name") {
+                TextField("A file name to preview against", text: $sampleFileName)
+                    .font(Theme.mono(11))
+            }
             if let sample {
-                LabeledContent("Sample") {
-                    Text(sample.fileName)
-                        .font(Theme.mono(11))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
                 let string = SearchStringBuilder.string(recipe: recipe, subject: sample)
                 LabeledContent("Search string") {
                     Text(string.isEmpty ? "(nothing)" : string)
@@ -184,7 +210,7 @@ struct SearchSettingsPane: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                Text("The preview uses the library's first item; this library has none yet.")
+                Text("Type a sample file name to see the string it would make.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -196,11 +222,10 @@ struct SearchSettingsPane: View {
                     .font(.callout)
                     .foregroundStyle(.orange)
             }
-            if let statusText {
-                Text(statusText).font(.callout).foregroundStyle(.secondary)
-            }
         } header: {
             Text("Preview")
+        } footer: {
+            Text("The sample starts as the library's first file; type any name over it. The tags in the preview are the first item's.")
         }
     }
 
@@ -249,35 +274,57 @@ struct SearchSettingsPane: View {
         firefoxProfile = url.path
     }
 
-    // MARK: Load and save
+    // MARK: Load and apply
 
+    /// Read everything from where it is stored — on a library change,
+    /// and on Revert.
     private func load() {
         statusText = nil
+        let settings = AppSettingsStore.shared.current
+        firefoxProfile = settings.firefoxProfilePath ?? ""
+        webSearchURL = settings.webSearchURL
         guard let id = selectedLibraryID, let library = try? model.library(for: id) else {
             recipe = .empty
+            savedRecipe = .empty
             categories = []
-            sample = nil
+            sampleFileName = ""
+            sampleTags = []
             return
         }
-        loading = true
-        defer { loading = false }
         do {
             recipe = try library.searchRecipe()
+            savedRecipe = recipe
             categories = try library.vocabulary().map(\.category)
             let first = try library.writer.read { try MediaItem.order(sql: "relativePath").fetchOne($0) }
-            sample = try first.flatMap { try library.searchSubject(for: $0.id) }
+            let subject = try first.flatMap { try library.searchSubject(for: $0.id) }
+            sampleFileName = subject?.fileName ?? ""
+            sampleTags = subject?.tags ?? []
         } catch {
             statusText = "Could not read the library: \(error)"
         }
     }
 
-    private func save() {
-        guard !loading, let id = selectedLibraryID, let library = try? model.library(for: id) else { return }
-        do {
-            try library.setSearchRecipe(recipe)
-        } catch {
-            statusText = "Could not save: \(error)"
+    /// Write the draft: the recipe to the library, the Firefox fields
+    /// to settings.json.
+    private func apply() {
+        if let id = selectedLibraryID, let library = try? model.library(for: id), recipe != savedRecipe {
+            do {
+                try library.setSearchRecipe(recipe)
+                savedRecipe = recipe
+            } catch {
+                statusText = "Could not save the recipe: \(error)"
+                return
+            }
         }
+        let profile = firefoxProfile.trimmingCharacters(in: .whitespaces)
+        let url = webSearchURL.trimmingCharacters(in: .whitespaces)
+        AppSettingsStore.shared.update {
+            $0.firefoxProfilePath = profile.isEmpty ? nil : profile
+            $0.webSearchURL = url.isEmpty ? AppSettings.defaultWebSearchURL : url
+        }
+        firefoxProfile = profile
+        webSearchURL = url.isEmpty ? AppSettings.defaultWebSearchURL : url
+        statusText = "Applied."
     }
 }
 
