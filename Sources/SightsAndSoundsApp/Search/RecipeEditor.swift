@@ -63,22 +63,43 @@ struct RecipeParts: View {
 struct RecipeRules: View {
     @Binding var recipe: SearchRecipe
     var compact = false
+    /// The item to preview against. Set, every rule shows beneath it
+    /// the string as it stands once that rule has run — what the rule
+    /// did, in the string's own terms, rather than in the abstract.
+    var preview: SearchSubject?
     @State private var drop: ReorderSpot?
 
     var body: some View {
+        let steps = preview.map { SearchStringBuilder.stringsAfterEachRule(recipe: recipe, subject: $0) } ?? []
         if recipe.rules.isEmpty {
             Text("No rules yet. Add one below.")
                 .font(compact ? Theme.ui(11) : .callout)
                 .foregroundStyle(.secondary)
         }
         ForEach($recipe.rules) { $rule in
-            RuleRow(
-                rule: $rule,
-                isFirst: recipe.rules.first?.id == rule.id,
-                isLast: recipe.rules.last?.id == rule.id,
-                compact: compact,
-                onMove: { delta in move(rule.id, by: delta) },
-                onRemove: { recipe.rules.removeAll { $0.id == rule.id } })
+            VStack(alignment: .leading, spacing: 3) {
+                RuleRow(
+                    rule: $rule,
+                    isFirst: recipe.rules.first?.id == rule.id,
+                    isLast: recipe.rules.last?.id == rule.id,
+                    compact: compact,
+                    onMove: { delta in move(rule.id, by: delta) },
+                    onRemove: { recipe.rules.removeAll { $0.id == rule.id } })
+                if let index = recipe.rules.firstIndex(where: { $0.id == rule.id }), steps.indices.contains(index) {
+                    HStack(alignment: .top, spacing: 4) {
+                        Text("→")
+                            .font(Theme.mono(compact ? 10 : 10.5))
+                            .foregroundStyle(Theme.Text.disabled)
+                        Text(steps[index].isEmpty ? "(nothing)" : steps[index])
+                            .font(Theme.mono(compact ? 10 : 10.5))
+                            .foregroundStyle(steps[index].isEmpty ? Theme.Text.disabled : Theme.Text.tertiary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.leading, compact ? 20 : 22)
+                    .help("The string after this rule and the ones above it")
+                }
+            }
             .reorderTarget(.before(rule.id), current: $drop) { dragged in
                 recipe.rules = recipe.rules.moving(dragged, before: rule.id)
             }

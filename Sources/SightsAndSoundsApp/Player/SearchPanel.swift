@@ -122,7 +122,7 @@ struct SearchPanel: View {
             Text("Parts").font(Theme.ui(9.5, .semibold)).foregroundStyle(Theme.Text.quaternary)
             RecipeParts(recipe: draft, categories: model.panelVocabulary.map(\.category), compact: true)
             Text("Rules").font(Theme.ui(9.5, .semibold)).foregroundStyle(Theme.Text.quaternary).padding(.top, 4)
-            RecipeRules(recipe: draft, compact: true)
+            RecipeRules(recipe: draft, compact: true, preview: model.searchSubject)
 
             // No key equivalents: in the player window Return belongs to
             // the tag fields and Esc to the focus stack, and a Save that
