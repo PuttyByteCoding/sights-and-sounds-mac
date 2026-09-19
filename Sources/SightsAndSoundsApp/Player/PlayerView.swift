@@ -544,6 +544,7 @@ private struct PlayerContent: View {
                             if model.panels.tags { model.togglePanel(.tags) }
                             if model.panels.segments { model.togglePanel(.segments) }
                             if model.panels.history { model.togglePanel(.history) }
+                            if model.panels.search { model.togglePanel(.search) }
                         })
                     SegmentsAndTagsRail(width: effectiveRailWidth)
                 }
@@ -1072,6 +1073,7 @@ private struct PanelToggles: View {
             toggle(.queue, "Queue")
             toggle(.text, "Text")
             toggle(.history, "History")
+            toggle(.search, "Search")
         }
         .padding(2)
         .background(
@@ -1202,6 +1204,14 @@ private struct SegmentsAndTagsRail: View {
                     .frame(maxHeight: .infinity)
                     .layoutPriority(1)
                     .zoneRing(.history)
+            }
+            if model.panels.search, model.panels.tags || model.panels.segments || model.panels.history {
+                Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            }
+            if model.panels.search {
+                SearchPanel()
+                    .frame(maxHeight: .infinity)
+                    .layoutPriority(0.8)
             }
         }
         .frame(width: width)

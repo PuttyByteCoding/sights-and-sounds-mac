@@ -89,24 +89,31 @@ public struct SearchPart: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// The recipe: an ordered list of parts that gather values, then an
-/// ordered list of rules that run over every value. One per library,
-/// stored as JSON on the library's info row.
-public struct SearchRecipe: Equatable, Sendable {
+/// One format: an ordered list of parts that gather values, then an
+/// ordered list of rules that run over every value, under a name. A
+/// library keeps several (`SearchFormats`), stored as JSON on its info
+/// row.
+public struct SearchRecipe: Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var name: String
     public var parts: [SearchPart]
     public var rules: [SearchRule]
 
-    public init(parts: [SearchPart] = [], rules: [SearchRule] = []) {
+    public init(id: UUID = UUID(), name: String = "Default", parts: [SearchPart] = [], rules: [SearchRule] = []) {
+        self.id = id
+        self.name = name
         self.parts = parts
         self.rules = rules
     }
 
-    public static let empty = SearchRecipe()
+    /// No format at all — what a library without any answers with.
+    public static let empty = SearchRecipe(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!, name: "")
 }
 
 extension SearchRecipe: Codable {
     private enum CodingKeys: String, CodingKey {
-        case parts, rules
+        case id, name, parts, rules
         // Before the rules were one ordered list: replacements, then
         // exclusions, in that fixed order.
         case exclusions, replacements
@@ -120,6 +127,8 @@ extension SearchRecipe: Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Default"
         parts = try container.decodeIfPresent([SearchPart].self, forKey: .parts) ?? []
         if let rules = try container.decodeIfPresent([SearchRule].self, forKey: .rules) {
             self.rules = rules
@@ -133,30 +142,81 @@ extension SearchRecipe: Codable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
         try container.encode(parts, forKey: .parts)
         try container.encode(rules, forKey: .rules)
     }
 }
 
+/// Every format a library has, and which one ⌘⇧C uses. The default is
+/// by id; a missing or stale id falls back to the first format, so
+/// there is always one to use while any exists.
+public struct SearchFormats: Equatable, Sendable {
+    public var formats: [SearchRecipe]
+    public var defaultID: UUID?
+
+    public init(formats: [SearchRecipe] = [], defaultID: UUID? = nil) {
+        self.formats = formats
+        self.defaultID = defaultID
+    }
+
+    public static let empty = SearchFormats()
+
+    public var defaultFormat: SearchRecipe? {
+        formats.first { $0.id == defaultID } ?? formats.first
+    }
+}
+
+extension SearchFormats: Codable {
+    private enum CodingKeys: String, CodingKey { case formats, defaultID }
+
+    /// A library that stored ONE recipe before formats existed has its
+    /// parts at the top level: it reads as one format, the default.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.formats) {
+            formats = try container.decode([SearchRecipe].self, forKey: .formats)
+            defaultID = try container.decodeIfPresent(UUID.self, forKey: .defaultID)
+        } else {
+            let single = try SearchRecipe(from: decoder)
+            formats = [single]
+            defaultID = single.id
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(formats, forKey: .formats)
+        try container.encodeIfPresent(defaultID, forKey: .defaultID)
+    }
+}
+
 extension LibraryDatabase {
-    /// The library's recipe; the empty recipe when none is stored or the
-    /// stored one cannot be read — the column is JSON and the shape may
-    /// grow, and a recipe must never stop a library from opening.
-    public func searchRecipe() throws -> SearchRecipe {
+    /// The library's formats; the empty set when none is stored or the
+    /// stored JSON cannot be read — the shape may grow, and a recipe
+    /// must never stop a library from opening.
+    public func searchFormats() throws -> SearchFormats {
         guard let raw = try info()?.searchRecipe, let data = raw.data(using: .utf8) else {
             return .empty
         }
-        return (try? JSONDecoder().decode(SearchRecipe.self, from: data)) ?? .empty
+        return (try? JSONDecoder().decode(SearchFormats.self, from: data)) ?? .empty
     }
 
-    public func setSearchRecipe(_ recipe: SearchRecipe) throws {
+    public func setSearchFormats(_ formats: SearchFormats) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let encoded = String(data: try encoder.encode(recipe), encoding: .utf8)
+        let encoded = String(data: try encoder.encode(formats), encoding: .utf8)
         try writer.write { db in
             guard var info = try LibraryInfo.fetchOne(db) else { return }
             info.searchRecipe = encoded
             try info.update(db)
         }
+    }
+
+    /// The recipe ⌘⇧C and the other commands use: the default format,
+    /// else the first, else nothing.
+    public func searchRecipe() throws -> SearchRecipe {
+        try searchFormats().defaultFormat ?? .empty
     }
 }

@@ -21,10 +21,14 @@ Year "2019" and Venue "On Stage" becomes:
 
 ## Decisions
 
-1. **A recipe is an ordered list of parts, then an ordered list of rules, stored per
-   library.** Parts name tag categories, and categories belong to the library, so the recipe
-   lives in the library file as JSON on `libraryInfo` (column `searchRecipe`), the way the
-   import boxes do. One recipe per library. A part is one of three kinds:
+1. **A format is a named recipe — an ordered list of parts, then an ordered list of rules —
+   and a library keeps several, one of them the default.** Parts name tag categories, and
+   categories belong to the library, so the formats live in the library file as JSON on
+   `libraryInfo` (column `searchRecipe`, holding `SearchFormats`: the list and the default's
+   id), the way the import boxes do. A library that stored one bare recipe before formats
+   existed reads it as one format named Default, the default. The default by id falls back
+   to the first format, so there is always one to use while any exists. A part is one of
+   three kinds:
 
    | Kind | Source | Options |
    |---|---|---|
@@ -64,6 +68,8 @@ Year "2019" and Venue "On Stage" becomes:
 5. **Three commands in a Search menu, so they work from anywhere.** Menu shortcuts beat the
    player's key handler and a tag field alike.
 
+   All three use the **default format**.
+
    | Command | Key | Does |
    |---|---|---|
    | Copy Search String | ⌘⇧C | builds the string, copies it, shows it in the player footer |
@@ -79,13 +85,24 @@ Year "2019" and Venue "On Stage" becomes:
    default browser with a footer note saying so.
 
 7. **The page is a Settings tab.** "Search String", per-library scope header, the library
-   picker the Tag Category Configuration tab uses. Parts as rows — kind, source, formatting —
+   picker the Tag Category Configuration tab uses. A **Formats** section: a picker of the
+   library's formats, the chosen one's name, a "Use for ⌘⇧C, ⌘⇧F and ⌘⇧B" checkbox, Add
+   and Remove. Then, for the chosen format, parts as rows — kind, source, formatting —
    with add, remove and move up/down; below them the rules as rows of the same shape, whose
    order is the order they run; a live preview against a **sample file name** — the library's first
    file to start, then anything typed over it, with the first item's tags. An app-wide
    section on the same page holds the Firefox profile (with Detect) and the web search URL.
    The page is a draft: the preview follows every edit, and **Apply** writes it (Revert
    reloads). Nothing takes effect until Apply.
+
+9. **The player has a Search panel.** A right-rail panel like History, toggled from the
+   toolbar and remembered (`PlayerPanels.search`): every format's string for the shown item,
+   the format's name above each. A click on a string copies it and the footer says so; a
+   string a format cannot make for this item reads "(nothing for this item)" and is inert.
+   Each row carries a **⌘⇧C** marker, lit on the default format; a click on a marker makes
+   that format the default, which is the same fact the Settings checkbox sets. The strings
+   refresh with the tags, so a tag applied in the panel beside it shows at once; the formats
+   are re-read when the panel opens, so an Apply in Settings reaches an open player.
 
 8. **Missing things say so.** A recipe part naming a category that no longer exists is
    skipped by the builder and flagged in the page. No Firefox profile, no `places.sqlite`,
@@ -96,7 +113,8 @@ Year "2019" and Venue "On Stage" becomes:
 
 - Menu: **Search** · **Copy Search String** · **Search Firefox Bookmarks** · **Search the Web in Firefox**
 - Settings tab: **Search String**
-- Page sections: **Parts** · **Rules** · **Preview** · **Firefox**
+- Page sections: **Formats** · **Parts** · **Rules** · **Preview** · **Firefox**
+- Player panel: **Search** · marker **⌘⇧C** · empty **(nothing for this item)** · hint **Click a string to copy it · ⌘⇧C marks the menu's format**
 - Part kinds: **Text** · **File name** · **Tags**
 - Rule kinds: **Exclude** · **Replace**
 - Case: **As is** · **lowercase** · **UPPERCASE** · **Title Case**
@@ -109,7 +127,8 @@ Year "2019" and Venue "On Stage" becomes:
 
 Kit: the builder against each part kind, each case and quoting option, the rules in both
 orders, exclusion as whole-value only, an empty replacement, a missing category, and the
-example above verbatim; the recipe's legacy decode; the
+example above verbatim; the formats' round trip, default fallback and legacy single-recipe
+decode; the
 bookmark values from the same recipes; the Firefox reader against a synthetic
 `places.sqlite` the test builds with Firefox's tables (bookmarks, tags, a description, a
 keyword, folders); profile detection against a synthetic `profiles.ini`. The menu commands,

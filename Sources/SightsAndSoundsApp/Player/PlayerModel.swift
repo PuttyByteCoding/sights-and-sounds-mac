@@ -165,9 +165,38 @@ final class PlayerModel {
         // The history is read when the panel opens: fresh then, and
         // not reordered under the arrows while it is up.
         if panel == .history, panels.history { refreshHistory() }
+        // The formats may have changed in Settings while the panel was
+        // closed: read them fresh when it opens.
+        if panel == .search, panels.search { refreshSearch() }
     }
 
-    var showsRail: Bool { panels.tags || panels.segments || panels.history }
+    var showsRail: Bool { panels.tags || panels.segments || panels.history || panels.search }
+
+    // MARK: - Search panel
+
+    /// Every search format the library has, and the shown item as the
+    /// builder sees it — refreshed with the tags, so the panel's strings
+    /// follow a tag change at once (spec 17, decision 9).
+    private(set) var searchFormats: SearchFormats = .empty
+    private(set) var searchSubject: SearchSubject?
+
+    func refreshSearch() {
+        guard let item else { return }
+        searchFormats = (try? library.searchFormats()) ?? .empty
+        searchSubject = try? library.searchSubject(for: item.id)
+    }
+
+    /// The panel's ⌘⇧C marker: make this format the default.
+    func setDefaultSearchFormat(_ id: UUID) {
+        var formats = searchFormats
+        formats.defaultID = id
+        do {
+            try library.setSearchFormats(formats)
+            searchFormats = formats
+        } catch {
+            loadError = "\(error)"
+        }
+    }
 
     /// The zones actually on screen, in Tab order. A collapsed panel is
     /// not a place focus can go.
@@ -782,6 +811,7 @@ final class PlayerModel {
         } catch {
             loadError = "\(error)"
         }
+        if panels.search { refreshSearch() }
     }
 
     func hasTag(_ tagID: UUID) -> Bool {
@@ -1231,7 +1261,7 @@ enum PlayerZone: String, CaseIterable, Sendable {
 
 /// One of the player's four collapsible panels.
 enum PlayerPanel: String, CaseIterable, Sendable {
-    case tags, segments, queue, text, rail, history
+    case tags, segments, queue, text, rail, history, search
 }
 
 extension PlayerPanels {
@@ -1244,6 +1274,7 @@ extension PlayerPanels {
             case .text: text
             case .rail: rail
             case .history: history
+            case .search: search
             }
         }
         set {
@@ -1254,6 +1285,7 @@ extension PlayerPanels {
             case .text: text = newValue
             case .rail: rail = newValue
             case .history: history = newValue
+            case .search: search = newValue
             }
         }
     }

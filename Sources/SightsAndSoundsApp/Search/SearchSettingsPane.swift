@@ -2,17 +2,18 @@ import AppKit
 import SwiftUI
 import SightsAndSoundsKit
 
-/// Settings › Search String (spec 17, decision 7): the library's recipe
-/// as rows — kind, source, formatting — with exclusions, replacements
-/// and a live preview; and, app-wide, the Firefox profile and the web
-/// search URL. The page is a draft: the preview follows every edit,
-/// and Apply is what writes it — to the library and to settings.json.
+/// Settings › Search String (spec 17, decision 7): the library's search
+/// formats — several, named, one of them the default the menu uses —
+/// each edited as rows of parts and rules with a live preview; and,
+/// app-wide, the Firefox profile and the web search URL. The page is a
+/// draft: the preview follows every edit, and Apply is what writes it.
 struct SearchSettingsPane: View {
     @Environment(AppModel.self) private var model
     @State private var selectedLibraryID: UUID?
-    @State private var recipe = SearchRecipe.empty
+    @State private var formats = SearchFormats.empty
     /// What the library holds. Apply moves the draft here.
-    @State private var savedRecipe = SearchRecipe.empty
+    @State private var savedFormats = SearchFormats.empty
+    @State private var selectedFormatID: UUID?
     @State private var categories: [TagCategory] = []
     /// The preview's file name: the library's first item's to start,
     /// then whatever is typed — a name with the shape in question, not
@@ -33,14 +34,17 @@ struct SearchSettingsPane: View {
                         Text(library.name).tag(UUID?.some(library.id))
                     }
                 }
-                Text("One string per video, built from its file name and tags in the order below. ⌘⇧C copies it, ⌘⇧F searches the web with it, ⌘⇧B searches Firefox's bookmarks for its values. Nothing takes effect until Apply.")
+                Text("One string per video per format, built from its file name and tags in the order below. ⌘⇧C copies the default format's string, ⌘⇧F searches the web with it, ⌘⇧B searches Firefox's bookmarks for its values; the player's Search panel shows every format. Nothing takes effect until Apply.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             if selectedLibraryID != nil {
-                partsSection
-                rulesSection
-                previewSection
+                formatsSection
+                if selectedFormatID != nil {
+                    partsSection
+                    rulesSection
+                    previewSection
+                }
             }
             firefoxSection
             applySection
@@ -52,7 +56,7 @@ struct SearchSettingsPane: View {
     /// Anything on the page that differs from what is stored.
     private var isDirty: Bool {
         let settings = AppSettingsStore.shared.current
-        return (selectedLibraryID != nil && recipe != savedRecipe)
+        return (selectedLibraryID != nil && formats != savedFormats)
             || firefoxProfile != (settings.firefoxProfilePath ?? "")
             || webSearchURL != settings.webSearchURL
     }
@@ -72,6 +76,70 @@ struct SearchSettingsPane: View {
         }
     }
 
+    // MARK: Formats
+
+    /// The format being edited, as a value the sections read and write
+    /// through — a change lands in `formats` at once.
+    private var recipe: SearchRecipe {
+        get { formats.formats.first { $0.id == selectedFormatID } ?? .empty }
+        nonmutating set {
+            guard let index = formats.formats.firstIndex(where: { $0.id == selectedFormatID }) else { return }
+            formats.formats[index] = newValue
+        }
+    }
+
+    private var recipeBinding: Binding<SearchRecipe> {
+        Binding(get: { recipe }, set: { recipe = $0 })
+    }
+
+    private var isDefaultFormat: Binding<Bool> {
+        Binding(
+            get: { formats.defaultFormat?.id == selectedFormatID && selectedFormatID != nil },
+            set: { on in formats.defaultID = on ? selectedFormatID : nil })
+    }
+
+    private var formatsSection: some View {
+        Section {
+            if formats.formats.isEmpty {
+                Text("No formats yet. Add one to start.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Format", selection: $selectedFormatID) {
+                    ForEach(formats.formats) { format in
+                        Text(format.name.isEmpty ? "Untitled" : format.name).tag(UUID?.some(format.id))
+                    }
+                }
+                LabeledContent("Name") {
+                    TextField("Name", text: recipeBinding.name)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                }
+                Toggle("Use for ⌘⇧C, ⌘⇧F and ⌘⇧B", isOn: isDefaultFormat)
+                    .toggleStyle(.checkbox)
+            }
+            HStack {
+                Button("Add Format") {
+                    let added = SearchRecipe(name: formats.formats.isEmpty ? "Default" : "Format \(formats.formats.count + 1)")
+                    formats.formats.append(added)
+                    if formats.defaultID == nil { formats.defaultID = added.id }
+                    selectedFormatID = added.id
+                }
+                Button("Remove Format") {
+                    guard let id = selectedFormatID else { return }
+                    formats.formats.removeAll { $0.id == id }
+                    if formats.defaultID == id { formats.defaultID = formats.formats.first?.id }
+                    selectedFormatID = formats.formats.first?.id
+                }
+                .disabled(selectedFormatID == nil)
+            }
+        } header: {
+            Text("Formats")
+        } footer: {
+            Text("Several formats, one library. The player's Search panel shows every format's string and copies one on a click; the menu commands use the one marked here, which the panel's ⌘⇧C marker can also move.")
+        }
+    }
+
     // MARK: Parts
 
     private var partsSection: some View {
@@ -81,12 +149,12 @@ struct SearchSettingsPane: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            ForEach($recipe.parts) { $part in
+            ForEach(recipeBinding.parts) { $part in
                 PartRow(
                     part: $part, categories: categories,
                     isFirst: recipe.parts.first?.id == part.id,
                     isLast: recipe.parts.last?.id == part.id,
-                    onMove: { delta in move(part.id, by: delta) },
+                    onMove: { delta in movePart(part.id, by: delta) },
                     onRemove: { recipe.parts.removeAll { $0.id == part.id } })
             }
             Menu("Add Part") {
@@ -110,11 +178,13 @@ struct SearchSettingsPane: View {
         }
     }
 
-    private func move(_ id: UUID, by delta: Int) {
-        guard let index = recipe.parts.firstIndex(where: { $0.id == id }) else { return }
+    private func movePart(_ id: UUID, by delta: Int) {
+        var parts = recipe.parts
+        guard let index = parts.firstIndex(where: { $0.id == id }) else { return }
         let target = index + delta
-        guard recipe.parts.indices.contains(target) else { return }
-        recipe.parts.swapAt(index, target)
+        guard parts.indices.contains(target) else { return }
+        parts.swapAt(index, target)
+        recipe.parts = parts
     }
 
     // MARK: Rules
@@ -126,7 +196,7 @@ struct SearchSettingsPane: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            ForEach($recipe.rules) { $rule in
+            ForEach(recipeBinding.rules) { $rule in
                 RuleRow(
                     rule: $rule,
                     isFirst: recipe.rules.first?.id == rule.id,
@@ -147,10 +217,12 @@ struct SearchSettingsPane: View {
     }
 
     private func moveRule(_ id: UUID, by delta: Int) {
-        guard let index = recipe.rules.firstIndex(where: { $0.id == id }) else { return }
+        var rules = recipe.rules
+        guard let index = rules.firstIndex(where: { $0.id == id }) else { return }
         let target = index + delta
-        guard recipe.rules.indices.contains(target) else { return }
-        recipe.rules.swapAt(index, target)
+        guard rules.indices.contains(target) else { return }
+        rules.swapAt(index, target)
+        recipe.rules = rules
     }
 
     // MARK: Preview
@@ -260,16 +332,20 @@ struct SearchSettingsPane: View {
         firefoxProfile = settings.firefoxProfilePath ?? ""
         webSearchURL = settings.webSearchURL
         guard let id = selectedLibraryID, let library = try? model.library(for: id) else {
-            recipe = .empty
-            savedRecipe = .empty
+            formats = .empty
+            savedFormats = .empty
+            selectedFormatID = nil
             categories = []
             sampleFileName = ""
             sampleTags = []
             return
         }
         do {
-            recipe = try library.searchRecipe()
-            savedRecipe = recipe
+            formats = try library.searchFormats()
+            savedFormats = formats
+            if !formats.formats.contains(where: { $0.id == selectedFormatID }) {
+                selectedFormatID = formats.defaultFormat?.id
+            }
             categories = try library.vocabulary().map(\.category)
             let first = try library.writer.read { try MediaItem.order(sql: "relativePath").fetchOne($0) }
             let subject = try first.flatMap { try library.searchSubject(for: $0.id) }
@@ -280,15 +356,15 @@ struct SearchSettingsPane: View {
         }
     }
 
-    /// Write the draft: the recipe to the library, the Firefox fields
+    /// Write the draft: the formats to the library, the Firefox fields
     /// to settings.json.
     private func apply() {
-        if let id = selectedLibraryID, let library = try? model.library(for: id), recipe != savedRecipe {
+        if let id = selectedLibraryID, let library = try? model.library(for: id), formats != savedFormats {
             do {
-                try library.setSearchRecipe(recipe)
-                savedRecipe = recipe
+                try library.setSearchFormats(formats)
+                savedFormats = formats
             } catch {
-                statusText = "Could not save the recipe: \(error)"
+                statusText = "Could not save the formats: \(error)"
                 return
             }
         }
