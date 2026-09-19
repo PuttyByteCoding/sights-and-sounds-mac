@@ -151,7 +151,7 @@ private struct TagActionHost: ViewModifier {
                 pending = nil
                 onChange()
             }
-            .sheet(item: editing, onDismiss: onDismiss) { tag in
+            .movableSheet(item: editing, onDismiss: onDismiss) { tag in
                 TagSheet(
                     mode: .edit(tag), library: library, libraryID: libraryID,
                     categories: categories

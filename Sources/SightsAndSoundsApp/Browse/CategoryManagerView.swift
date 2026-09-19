@@ -74,10 +74,10 @@ struct CategoryManagerView: View {
                 }
             }
         }
-        .sheet(item: $editingTag) { tag in
+        .movableSheet(item: $editingTag) { tag in
             tagSheet(.edit(tag))
         }
-        .sheet(item: $creatingIn) { category in
+        .movableSheet(item: $creatingIn) { category in
             tagSheet(.create(categoryID: category.id, name: ""))
         }
     }

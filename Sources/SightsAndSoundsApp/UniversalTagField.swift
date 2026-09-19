@@ -491,7 +491,7 @@ struct UniversalTagField: View {
         .onChange(of: analysisRunning) { _, running in
             if !running, awaitingAnalysis { settleAnalysisList() }
         }
-        .sheet(item: $creating, onDismiss: {
+        .movableSheet(item: $creating, onDismiss: {
             // The sheet is a detour — the keyboard comes back here.
             focus.wrappedValue = focusID
         }) { seed in
