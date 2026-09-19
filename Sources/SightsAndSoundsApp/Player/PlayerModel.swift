@@ -186,6 +186,25 @@ final class PlayerModel {
         searchSubject = try? library.searchSubject(for: item.id)
     }
 
+    /// The panel's editor: write one format back — in place when it
+    /// exists, appended when it is new (and made the default when there
+    /// was none).
+    func saveSearchFormat(_ recipe: SearchRecipe) {
+        var formats = searchFormats
+        if let index = formats.formats.firstIndex(where: { $0.id == recipe.id }) {
+            formats.formats[index] = recipe
+        } else {
+            formats.formats.append(recipe)
+            if formats.defaultID == nil { formats.defaultID = recipe.id }
+        }
+        do {
+            try library.setSearchFormats(formats)
+            searchFormats = formats
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
     /// The panel's ⌘⇧C marker: make this format the default.
     func setDefaultSearchFormat(_ id: UUID) {
         var formats = searchFormats

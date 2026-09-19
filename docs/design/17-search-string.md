@@ -102,7 +102,13 @@ Year "2019" and Venue "On Stage" becomes:
    the string the shortcut would copy — and the others follow under **Other formats**, each
    with a **Use for ⌘⇧C** button that makes it the default, the same fact the Settings
    checkbox sets. A click on any string copies it and the footer says so; a string a format
-   cannot make for this item reads "(nothing for this item)" and is inert. The strings
+   cannot make for this item reads "(nothing for this item)" and is inert. **The panel is
+   also an editor:** Edit on a row, or + in the header for a new format, replaces the list
+   with the recipe editor — the same parts and rules rows as Settings, in a two-line compact
+   layout — headed by **Would copy**, the string the shown item gives for the draft,
+   rewritten on every keystroke. Save writes the format to the library (a new one appended,
+   and made the default when there was none); Cancel drops the draft. Settings and the panel
+   edit the same stored formats. The strings
    refresh with the tags, so a tag applied in the panel beside it shows at once; the formats
    are re-read when the panel opens, so an Apply in Settings reaches an open player.
 
