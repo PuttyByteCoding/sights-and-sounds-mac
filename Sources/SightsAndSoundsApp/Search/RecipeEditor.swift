@@ -71,6 +71,22 @@ struct RecipeRules: View {
 
     var body: some View {
         let steps = preview.map { SearchStringBuilder.stringsAfterEachRule(recipe: recipe, subject: $0) } ?? []
+        // Where the rules start from — the parts alone — so the line
+        // under each rule has a beginning to be read against.
+        if let preview {
+            let start = SearchStringBuilder.stringBeforeRules(recipe: recipe, subject: preview)
+            HStack(alignment: .top, spacing: 4) {
+                Text("Starting with")
+                    .font(Theme.ui(compact ? 10 : 10.5, .semibold))
+                    .foregroundStyle(Theme.Text.quaternary)
+                Text(start.isEmpty ? "(nothing — the parts give no values)" : start)
+                    .font(Theme.mono(compact ? 10 : 10.5))
+                    .foregroundStyle(start.isEmpty ? Theme.Text.disabled : Theme.Text.tertiary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .help("The string with the parts applied and no rule yet — what the first rule sees")
+        }
         if recipe.rules.isEmpty {
             Text("No rules yet. Add one below.")
                 .font(compact ? Theme.ui(11) : .callout)

@@ -129,6 +129,22 @@ import Testing
         #expect(SearchStringBuilder.stringsAfterEachRule(recipe: SearchRecipe(parts: recipe.parts), subject: subject()).isEmpty)
     }
 
+    /// The string the rules start from: the parts applied and no rule
+    /// yet — what the first rule sees, shown above the rules so the
+    /// per-rule lines have a beginning.
+    @Test func theStringBeforeAnyRuleIsThePartsAlone() {
+        let recipe = SearchRecipe(
+            parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true), format: SearchFormat(quoting: .multiWord))],
+            rules: [SearchRule(kind: .exclude("sdg")), SearchRule(kind: .replace(from: "-", to: " "))])
+        let name = "sdg_Ben-Folds-Five_OnStage_2019.mp4"
+        #expect(SearchStringBuilder.stringBeforeRules(recipe: recipe, subject: subject(name))
+            == #"sdg Ben-Folds-Five "On Stage" 2019"#)
+        // With no rules it is the whole string.
+        let bare = SearchRecipe(parts: recipe.parts)
+        #expect(SearchStringBuilder.stringBeforeRules(recipe: bare, subject: subject(name))
+            == SearchStringBuilder.string(recipe: bare, subject: subject(name)))
+    }
+
     /// Split is a rule like the others, so it can come after a replace
     /// or an exclude: each value breaks at the separator into pieces,
     /// optionally at the capitals inside a run as well, and every rule
