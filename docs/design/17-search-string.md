@@ -21,10 +21,10 @@ Year "2019" and Venue "On Stage" becomes:
 
 ## Decisions
 
-1. **A recipe is an ordered list of parts, stored per library.** Parts name tag categories,
-   and categories belong to the library, so the recipe lives in the library file as JSON on
-   `libraryInfo` (column `searchRecipe`), the way the import boxes do. One recipe per
-   library. A part is one of three kinds:
+1. **A recipe is an ordered list of parts, then an ordered list of rules, stored per
+   library.** Parts name tag categories, and categories belong to the library, so the recipe
+   lives in the library file as JSON on `libraryInfo` (column `searchRecipe`), the way the
+   import boxes do. One recipe per library. A part is one of three kinds:
 
    | Kind | Source | Options |
    |---|---|---|
@@ -35,14 +35,16 @@ Year "2019" and Venue "On Stage" becomes:
    File-name and tag parts also carry **case** (as is · lowercase · UPPERCASE · Title Case)
    and **quoting** (never · multi-word values only · always).
 
-2. **Replacements run first, exclusions second, formatting last.** For every value a part
-   yields: apply the recipe's replacement list (`-` → ` ` is the one this was asked for;
-   any pair works, in list order, every occurrence); drop the value if it equals an
-   exclusion, case-insensitively, whitespace-trimmed; then apply the part's case and quoting.
-   Exclusions match whole values — a whole file-name piece, a whole tag name — never
-   substrings, so "on" on the list cannot eat "Ben Folds". A value that ends up empty
-   contributes nothing. Parts are joined with single spaces; a part with no values leaves no
-   gap.
+2. **The rules run in the operator's order; formatting last.** A rule is **Exclude** (drop a
+   value equal to the text, case-insensitively, whitespace-trimmed — whole values only, a
+   whole file-name piece or a whole tag name, never a substring, so "on" cannot eat "On
+   Stage") or **Replace** (every occurrence of the text inside a value becomes the other
+   text; empty removes it — `-` → ` ` is the one this was asked for). For every value a part
+   yields, the rules run top to bottom, so "replace `-` with a space, then exclude `ben folds
+   five`" drops `Ben-Folds-Five` and the reverse order keeps it. Then the part's case and
+   quoting. A value that ends up empty contributes nothing. Parts are joined with single
+   spaces; a part with no values leaves no gap. A recipe stored before the rules were one
+   list decodes its `replacements` then its `exclusions` into rules, in that order.
 
 3. **The bookmark query is the values, not the string.** Literals are prose for a search
    engine and mean nothing to a bookmark. The bookmark search takes every non-literal value
@@ -78,8 +80,8 @@ Year "2019" and Venue "On Stage" becomes:
 
 7. **The page is a Settings tab.** "Search String", per-library scope header, the library
    picker the Tag Category Configuration tab uses. Parts as rows — kind, source, formatting —
-   with add, remove and move up/down; below them the exclusions and replacements as small
-   editable tables; a live preview against a **sample file name** — the library's first
+   with add, remove and move up/down; below them the rules as rows of the same shape, whose
+   order is the order they run; a live preview against a **sample file name** — the library's first
    file to start, then anything typed over it, with the first item's tags. An app-wide
    section on the same page holds the Firefox profile (with Detect) and the web search URL.
    The page is a draft: the preview follows every edit, and **Apply** writes it (Revert
@@ -94,8 +96,9 @@ Year "2019" and Venue "On Stage" becomes:
 
 - Menu: **Search** · **Copy Search String** · **Search Firefox Bookmarks** · **Search the Web in Firefox**
 - Settings tab: **Search String**
-- Page sections: **Parts** · **Exclusions** · **Replacements** · **Preview** · **Firefox**
+- Page sections: **Parts** · **Rules** · **Preview** · **Firefox**
 - Part kinds: **Text** · **File name** · **Tags**
+- Rule kinds: **Exclude** · **Replace**
 - Case: **As is** · **lowercase** · **UPPERCASE** · **Title Case**
 - Quoting: **Never** · **Multi-word only** · **Always**
 - Bookmarks window, empty: **No bookmarks match** `<values>`
@@ -104,8 +107,9 @@ Year "2019" and Venue "On Stage" becomes:
 
 ## Tests
 
-Kit: the builder against each part kind, each case and quoting option, replacements,
-exclusions (whole-value only), a missing category, and the example above verbatim; the
+Kit: the builder against each part kind, each case and quoting option, the rules in both
+orders, exclusion as whole-value only, an empty replacement, a missing category, and the
+example above verbatim; the recipe's legacy decode; the
 bookmark values from the same recipes; the Firefox reader against a synthetic
 `places.sqlite` the test builds with Firefox's tables (bookmarks, tags, a description, a
 keyword, folders); profile detection against a synthetic `profiles.ini`. The menu commands,

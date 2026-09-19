@@ -20,7 +20,6 @@ struct SearchSettingsPane: View {
     @State private var sampleFileName = ""
     @State private var sampleTags: [SearchSubjectTag] = []
     @State private var statusText: String?
-    @State private var newExclusion = ""
     @State private var firefoxProfile = AppSettingsStore.shared.current.firefoxProfilePath ?? ""
     @State private var webSearchURL = AppSettingsStore.shared.current.webSearchURL
 
@@ -40,8 +39,7 @@ struct SearchSettingsPane: View {
             }
             if selectedLibraryID != nil {
                 partsSection
-                exclusionsSection
-                replacementsSection
+                rulesSection
                 previewSection
             }
             firefoxSection
@@ -119,65 +117,40 @@ struct SearchSettingsPane: View {
         recipe.parts.swapAt(index, target)
     }
 
-    // MARK: Exclusions and replacements
+    // MARK: Rules
 
-    private var exclusionsSection: some View {
+    private var rulesSection: some View {
         Section {
-            ForEach(recipe.exclusions, id: \.self) { value in
-                HStack {
-                    Text(value).font(Theme.mono(11.5))
-                    Spacer()
-                    Button { recipe.exclusions.removeAll { $0 == value } } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                }
+            if recipe.rules.isEmpty {
+                Text("No rules yet. Add one below.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            HStack {
-                TextField("A value never to add — a prefix like sdg", text: $newExclusion)
-                    .onSubmit(addExclusion)
-                Button("Add", action: addExclusion)
-                    .disabled(newExclusion.trimmingCharacters(in: .whitespaces).isEmpty)
+            ForEach($recipe.rules) { $rule in
+                RuleRow(
+                    rule: $rule,
+                    isFirst: recipe.rules.first?.id == rule.id,
+                    isLast: recipe.rules.last?.id == rule.id,
+                    onMove: { delta in moveRule(rule.id, by: delta) },
+                    onRemove: { recipe.rules.removeAll { $0.id == rule.id } })
             }
+            Menu("Add Rule") {
+                Button("Exclude a value") { recipe.rules.append(SearchRule(kind: .exclude(""))) }
+                Button("Replace text") { recipe.rules.append(SearchRule(kind: .replace(from: "-", to: " "))) }
+            }
+            .fixedSize()
         } header: {
-            Text("Exclusions")
+            Text("Rules")
         } footer: {
-            Text("Whole values only, ignoring case: a file-name piece or a tag equal to one of these is left out. Never a substring, so “on” cannot touch “On Stage”.")
+            Text("Run top to bottom over every value the parts gathered, before case and quoting — move a rule to change the order. Exclude drops a value equal to the text, ignoring case, never a substring, so “on” cannot touch “On Stage”. Replace changes every occurrence; leave the right side empty to remove the text.")
         }
     }
 
-    private func addExclusion() {
-        let value = newExclusion.trimmingCharacters(in: .whitespaces)
-        guard !value.isEmpty, !recipe.exclusions.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame })
-        else { return }
-        recipe.exclusions.append(value)
-        newExclusion = ""
-    }
-
-    private var replacementsSection: some View {
-        Section {
-            ForEach($recipe.replacements) { $replacement in
-                HStack(spacing: 8) {
-                    TextField("Replace", text: $replacement.from)
-                        .frame(width: 120)
-                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                    TextField("with", text: $replacement.to)
-                        .frame(width: 120)
-                    Spacer()
-                    Button { recipe.replacements.removeAll { $0.id == replacement.id } } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-            Button("Add Replacement") {
-                recipe.replacements.append(SearchReplacement(from: "-", to: " "))
-            }
-        } header: {
-            Text("Replacements")
-        } footer: {
-            Text("Applied to every value before anything else, in order, every occurrence — “-” to a space keeps a hyphenated name searchable.")
-        }
+    private func moveRule(_ id: UUID, by delta: Int) {
+        guard let index = recipe.rules.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + delta
+        guard recipe.rules.indices.contains(target) else { return }
+        recipe.rules.swapAt(index, target)
     }
 
     // MARK: Preview
@@ -191,6 +164,7 @@ struct SearchSettingsPane: View {
         Section {
             LabeledContent("Sample file name") {
                 TextField("A file name to preview against", text: $sampleFileName)
+                    .textFieldStyle(.roundedBorder)
                     .font(Theme.mono(11))
             }
             if let sample {
@@ -242,6 +216,7 @@ struct SearchSettingsPane: View {
             LabeledContent("Firefox profile") {
                 HStack {
                     TextField("Profile folder", text: $firefoxProfile)
+                        .textFieldStyle(.roundedBorder)
                         .frame(minWidth: 260)
                     Button("Detect") {
                         if let found = FirefoxProfiles.detect() {
@@ -255,6 +230,7 @@ struct SearchSettingsPane: View {
             }
             LabeledContent("Web search URL") {
                 TextField("https://duckduckgo.com/?q={query}", text: $webSearchURL)
+                    .textFieldStyle(.roundedBorder)
                     .frame(minWidth: 320)
             }
             Text("The bookmarks come from the profile's places.sqlite, read from a copy. The web search opens in Firefox, or the default browser when Firefox is not installed; {query} stands for the string.")
@@ -347,6 +323,7 @@ private struct PartRow: View {
             switch part.kind {
             case .literal:
                 TextField("Text, used as typed", text: literalText)
+                    .textFieldStyle(.roundedBorder)
             case .fileName:
                 Toggle("Extension", isOn: includesExtension).toggleStyle(.checkbox)
                 Toggle("Split at _", isOn: splitsPieces).toggleStyle(.checkbox)
@@ -359,6 +336,7 @@ private struct PartRow: View {
                 .labelsHidden()
                 .frame(maxWidth: 160)
                 TextField("joiner", text: joiner)
+                    .textFieldStyle(.roundedBorder)
                     .frame(width: 48)
                     .help("Between several tags of the category")
                 formatPickers
@@ -434,5 +412,71 @@ private struct PartRow: View {
             set: { text in
                 if case .tags(let id, _) = part.kind { part.kind = .tags(categoryID: id, joiner: text) }
             })
+    }
+}
+
+/// One rule as a row: Exclude with its value, or Replace with its two
+/// sides, then move and remove.
+private struct RuleRow: View {
+    @Binding var rule: SearchRule
+    let isFirst: Bool
+    let isLast: Bool
+    let onMove: (Int) -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(kindName)
+                .font(Theme.ui(11, .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .leading)
+            switch rule.kind {
+            case .exclude:
+                TextField("A value never to add — a prefix like sdg", text: excludeText)
+                    .textFieldStyle(.roundedBorder)
+            case .replace:
+                TextField("Replace", text: replaceFrom)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 140)
+                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                TextField("with (empty removes)", text: replaceTo)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 140)
+            }
+            Spacer(minLength: 0)
+            Button { onMove(-1) } label: { Image(systemName: "chevron.up") }
+                .buttonStyle(.borderless)
+                .disabled(isFirst)
+            Button { onMove(1) } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.borderless)
+                .disabled(isLast)
+            Button(action: onRemove) { Image(systemName: "minus.circle") }
+                .buttonStyle(.borderless)
+        }
+    }
+
+    private var kindName: String {
+        switch rule.kind {
+        case .exclude: "Exclude"
+        case .replace: "Replace"
+        }
+    }
+
+    private var excludeText: Binding<String> {
+        Binding(
+            get: { if case .exclude(let text) = rule.kind { text } else { "" } },
+            set: { rule.kind = .exclude($0) })
+    }
+
+    private var replaceFrom: Binding<String> {
+        Binding(
+            get: { if case .replace(let from, _) = rule.kind { from } else { "" } },
+            set: { from in if case .replace(_, let to) = rule.kind { rule.kind = .replace(from: from, to: to) } })
+    }
+
+    private var replaceTo: Binding<String> {
+        Binding(
+            get: { if case .replace(_, let to) = rule.kind { to } else { "" } },
+            set: { to in if case .replace(let from, _) = rule.kind { rule.kind = .replace(from: from, to: to) } })
     }
 }
