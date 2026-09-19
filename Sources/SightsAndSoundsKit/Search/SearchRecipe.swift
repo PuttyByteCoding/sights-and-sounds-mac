@@ -43,11 +43,15 @@ public struct SearchFormat: Codable, Equatable, Sendable {
 /// the text wherever it appears in a value, ignoring case; a value
 /// left empty is dropped. Replace changes every occurrence of the
 /// text inside a value, case-sensitively; an empty right-hand side
-/// removes it. "-" to a space is the one this was asked for.
+/// removes it. "-" to a space is the one this was asked for. Split
+/// breaks each value at a separator into pieces — and, when asked, at
+/// the capitals inside a run, so "OnStage" is "On Stage" — and every
+/// rule below it works on the pieces; empty pieces vanish.
 public struct SearchRule: Codable, Equatable, Sendable, Identifiable {
     public enum Kind: Codable, Equatable, Sendable {
         case exclude(String)
         case replace(from: String, to: String)
+        case split(separator: String, titleCaseWords: Bool)
     }
 
     public var id: UUID

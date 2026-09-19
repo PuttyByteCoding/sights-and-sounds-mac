@@ -25,7 +25,11 @@ import Testing
                 SearchPart(kind: .tags(categoryID: band, joiner: " "), format: SearchFormat(letterCase: .asIs, quoting: .multiWord)),
                 SearchPart(kind: .literal("at the venue")),
             ],
-            rules: [SearchRule(kind: .replace(from: "-", to: " ")), SearchRule(kind: .exclude("sdg"))])
+            rules: [
+                SearchRule(kind: .replace(from: "-", to: " ")),
+                SearchRule(kind: .split(separator: "_", titleCaseWords: true)),
+                SearchRule(kind: .exclude("sdg")),
+            ])
         let bare = SearchRecipe(name: "Bare", parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))])
         let formats = SearchFormats(formats: [web, bare], defaultID: bare.id)
         try library.setSearchFormats(formats)

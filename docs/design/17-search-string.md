@@ -43,7 +43,11 @@ Year "2019" and Venue "On Stage" becomes:
    the text wherever it appears in a value, ignoring case — inside a word as much as standing
    alone; a value left empty is dropped, which is what happens to a whole piece equal to it)
    or **Replace** (every occurrence of the text inside a value becomes the other text,
-   matching case; empty removes it — `-` → ` ` is the one this was asked for). Exclude was
+   matching case; empty removes it — `-` → ` ` is the one this was asked for) or **Split**
+   (each value breaks at a separator into pieces, and at the capitals inside a run when
+   asked, so `OnStage` is `On Stage`; every rule below works on the pieces; empty pieces
+   vanish — the file-name part's own "split at _" is this rule before any other, kept for
+   the common case). Exclude was
    whole-value-only at first, so "on" could not eat "On Stage"; it was changed on request,
    because the case that mattered was a prefix glued to a name. For every value a part
    yields, the rules run top to bottom, so "replace `-` with a space, then exclude `ben folds
@@ -127,7 +131,7 @@ Year "2019" and Venue "On Stage" becomes:
 - Page sections: **Formats** · **Parts** · **Rules** · **Preview** · **Firefox**
 - Player panel: **Search** · **⌘⇧C copies** · **Other formats** · **Use for ⌘⇧C** · empty **(nothing for this item)** · hint **Click a string to copy it · “Use for ⌘⇧C” moves the default**
 - Part kinds: **Text** · **File name** · **Tags**
-- Rule kinds: **Exclude** · **Replace**
+- Rule kinds: **Exclude** · **Replace** · **Split**
 - Case: **As is** · **lowercase** · **UPPERCASE** · **Title Case**
 - Quoting: **Never** · **Multi-word only** · **Always**
 - Bookmarks window, empty: **No bookmarks match** `<values>`
