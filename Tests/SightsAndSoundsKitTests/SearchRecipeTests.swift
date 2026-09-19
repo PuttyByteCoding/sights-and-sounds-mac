@@ -91,6 +91,49 @@ import Testing
         #expect(encoded.contains(#""keep":"all""#))
     }
 
+    /// A copy is a new format — its own id, and its own ids on every
+    /// part and rule, so editing the copy never edits the original —
+    /// with the same parts and rules and the name it was given.
+    @Test func aDuplicateIsANewFormatWithTheSameContent() {
+        let band = UUID()
+        let original = SearchRecipe(
+            name: "Web",
+            parts: [SearchPart(kind: .tags(categoryID: band, joiner: " "), format: SearchFormat(quoting: .always))],
+            rules: [SearchRule(kind: .replace(from: "-", to: " ")), SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: .first))])
+        let copy = original.duplicate(named: "Web copy")
+        #expect(copy.name == "Web copy")
+        #expect(copy.id != original.id)
+        #expect(copy.parts.map(\.kind) == original.parts.map(\.kind))
+        #expect(copy.parts.map(\.format) == original.parts.map(\.format))
+        #expect(copy.rules.map(\.kind) == original.rules.map(\.kind))
+        #expect(Set(copy.parts.map(\.id)).isDisjoint(with: original.parts.map(\.id)))
+        #expect(Set(copy.rules.map(\.id)).isDisjoint(with: original.rules.map(\.id)))
+    }
+
+    /// One line per part and per rule, for the overview that shows
+    /// every format's configuration at once.
+    @Test func partsAndRulesDescribeThemselvesInOneLine() {
+        let categories = [UUID(): "Band"]
+        let band = categories.keys.first!
+        #expect(SearchPart(kind: .literal("at the venue")).summary(categoryNames: categories) == "Text “at the venue”")
+        #expect(SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true), format: SearchFormat(letterCase: .lowercase, quoting: .multiWord))
+            .summary(categoryNames: categories) == "File name · no extension · split at _ · lowercase · quote multi-word")
+        #expect(SearchPart(kind: .fileName(includesExtension: true, splitsPieces: false)).summary(categoryNames: categories)
+            == "File name · with extension")
+        #expect(SearchPart(kind: .tags(categoryID: band, joiner: ", "), format: SearchFormat(quoting: .always)).summary(categoryNames: categories)
+            == "Tags · Band · joined by “, ” · quote always")
+        #expect(SearchPart(kind: .tags(categoryID: nil, joiner: " ")).summary(categoryNames: categories) == "Tags · all categories")
+        #expect(SearchPart(kind: .tags(categoryID: UUID(), joiner: " ")).summary(categoryNames: categories) == "Tags · (missing category)")
+
+        #expect(SearchRule(kind: .exclude("sdg")).summary == "Exclude “sdg”")
+        #expect(SearchRule(kind: .exclude(#"\d{4}"#, keep: .last, regex: true)).summary == #"Exclude /\d{4}/ · keep last"#)
+        #expect(SearchRule(kind: .replace(from: "-", to: " ")).summary == "Replace “-” with “ ”")
+        #expect(SearchRule(kind: .replace(from: "x", to: "")).summary == "Remove “x”")
+        #expect(SearchRule(kind: .replace(from: "(a)", to: "$1", regex: true)).summary == "Replace /(a)/ with “$1”")
+        #expect(SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: .all)).summary == "Split at “_” · and at capitals")
+        #expect(SearchRule(kind: .split(separator: " ", titleCaseWords: false, keep: .first)).summary == "Split at “ ” · keep first")
+    }
+
     /// A stored recipe an older build cannot read is the empty set, not
     /// a crash: the column is JSON and the shape may grow.
     @Test func anUnreadableStoredRecipeIsEmpty() throws {

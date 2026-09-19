@@ -182,6 +182,16 @@ struct SearchPanel: View {
             }
             .buttonStyle(.plain)
             .help("Edit this format here")
+            Button {
+                draft = format.duplicate(named: "\(format.name) copy")
+                isEditing = true
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(Theme.ui(10))
+                    .foregroundStyle(Theme.Text.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Start a new format from a copy of this one")
             if !isDefault {
                 Button {
                     model.setDefaultSearchFormat(format.id)
