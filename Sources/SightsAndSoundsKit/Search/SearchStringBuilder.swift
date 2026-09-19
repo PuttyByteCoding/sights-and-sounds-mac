@@ -50,12 +50,29 @@ public enum SearchStringBuilder {
         switch rule.kind {
         case .replace(let from, let to):
             return from.isEmpty ? [value] : [value.replacingOccurrences(of: from, with: to)]
-        case .exclude(let text):
+        case .exclude(let text, let keep):
             // Wherever it appears, ignoring case — a whole value equal
-            // to it is left empty and dropped by the caller.
+            // to it is left empty and dropped by the caller. Keeping the
+            // first or last occurrence removes all the others.
             let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return needle.isEmpty
-                ? [value] : [value.replacingOccurrences(of: needle, with: "", options: [.caseInsensitive])]
+            guard !needle.isEmpty else { return [value] }
+            var ranges: [Range<String.Index>] = []
+            var from = value.startIndex
+            while let found = value.range(of: needle, options: [.caseInsensitive], range: from..<value.endIndex) {
+                ranges.append(found)
+                from = found.upperBound
+            }
+            let kept: Int?
+            switch keep {
+            case .none: kept = nil
+            case .first: kept = ranges.indices.first
+            case .last: kept = ranges.indices.last
+            }
+            var result = value
+            for (index, range) in ranges.enumerated().reversed() where index != kept {
+                result.removeSubrange(range)
+            }
+            return [result]
         case .split(let separator, let titleCaseWords, let keep):
             var pieces = separator.isEmpty ? [value] : value.components(separatedBy: separator)
             if titleCaseWords { pieces = pieces.map(\.splittingTitleCaseWords) }

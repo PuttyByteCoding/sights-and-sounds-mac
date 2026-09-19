@@ -72,7 +72,8 @@ import Testing
     }
 
     /// A Split rule stored before it had a keep option reads as keep
-    /// all — the shape a build wrote yesterday must not empty the list.
+    /// all, and an Exclude stored before its option reads as keep none
+    /// — the shape a build wrote yesterday must not empty the list.
     @Test func aStoredSplitRuleWithoutKeepReadsAsKeepAll() throws {
         let json = #"{"formats":[{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3D","name":"F","parts":[],"rules":[{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3E","kind":{"split":{"separator":"_","titleCaseWords":true}}},{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3F","kind":{"exclude":{"_0":"sdg"}}},{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C40","kind":{"replace":{"from":"-","to":" "}}}]}]}"#
         let formats = try JSONDecoder().decode(SearchFormats.self, from: Data(json.utf8))
@@ -85,7 +86,7 @@ import Testing
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = String(data: try encoder.encode(formats), encoding: .utf8) ?? ""
-        #expect(encoded.contains(#""exclude":{"_0":"sdg"}"#))
+        #expect(encoded.contains(#""exclude":{"_0":"sdg","keep":"none"}"#))
         #expect(encoded.contains(#""replace":{"from":"-","to":" "}"#))
         #expect(encoded.contains(#""keep":"all""#))
     }
