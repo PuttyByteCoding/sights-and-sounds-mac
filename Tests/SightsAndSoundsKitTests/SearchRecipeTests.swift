@@ -27,7 +27,7 @@ import Testing
             ],
             rules: [
                 SearchRule(kind: .replace(from: "-", to: " ")),
-                SearchRule(kind: .split(separator: "_", titleCaseWords: true)),
+                SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: .last)),
                 SearchRule(kind: .exclude("sdg")),
             ])
         let bare = SearchRecipe(name: "Bare", parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))])
@@ -69,6 +69,25 @@ import Testing
         #expect(formats.formats.first?.parts.map(\.kind) == [.literal("live")])
         #expect(formats.formats.first?.rules.map(\.kind) == [.replace(from: "-", to: " "), .exclude("sdg")])
         #expect(try library.searchRecipe().parts.map(\.kind) == [.literal("live")])
+    }
+
+    /// A Split rule stored before it had a keep option reads as keep
+    /// all — the shape a build wrote yesterday must not empty the list.
+    @Test func aStoredSplitRuleWithoutKeepReadsAsKeepAll() throws {
+        let json = #"{"formats":[{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3D","name":"F","parts":[],"rules":[{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3E","kind":{"split":{"separator":"_","titleCaseWords":true}}},{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C3F","kind":{"exclude":{"_0":"sdg"}}},{"id":"6B4D2C0A-6C0E-4E4B-9C4E-1B7C6A1B2C40","kind":{"replace":{"from":"-","to":" "}}}]}]}"#
+        let formats = try JSONDecoder().decode(SearchFormats.self, from: Data(json.utf8))
+        #expect(formats.formats.first?.rules.map(\.kind) == [
+            .split(separator: "_", titleCaseWords: true, keep: .all),
+            .exclude("sdg"),
+            .replace(from: "-", to: " "),
+        ])
+        // And every kind re-encodes in the shape it was read in.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let encoded = String(data: try encoder.encode(formats), encoding: .utf8) ?? ""
+        #expect(encoded.contains(#""exclude":{"_0":"sdg"}"#))
+        #expect(encoded.contains(#""replace":{"from":"-","to":" "}"#))
+        #expect(encoded.contains(#""keep":"all""#))
     }
 
     /// A stored recipe an older build cannot read is the empty set, not

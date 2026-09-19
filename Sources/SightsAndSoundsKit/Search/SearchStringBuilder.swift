@@ -56,9 +56,17 @@ public enum SearchStringBuilder {
             let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return needle.isEmpty
                 ? [value] : [value.replacingOccurrences(of: needle, with: "", options: [.caseInsensitive])]
-        case .split(let separator, let titleCaseWords):
-            let pieces = separator.isEmpty ? [value] : value.components(separatedBy: separator)
-            return titleCaseWords ? pieces.map(\.splittingTitleCaseWords) : pieces
+        case .split(let separator, let titleCaseWords, let keep):
+            var pieces = separator.isEmpty ? [value] : value.components(separatedBy: separator)
+            if titleCaseWords { pieces = pieces.map(\.splittingTitleCaseWords) }
+            // First and last mean the first and last piece with something
+            // in it: a doubled separator must not choose an empty one.
+            let filled = pieces.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            switch keep {
+            case .all: return pieces
+            case .first: return filled.first.map { [$0] } ?? []
+            case .last: return filled.last.map { [$0] } ?? []
+            }
         }
     }
 
