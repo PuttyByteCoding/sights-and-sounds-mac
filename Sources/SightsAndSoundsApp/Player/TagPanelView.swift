@@ -44,6 +44,11 @@ struct TagPanelView: View {
     /// pointer. Nil when nothing is in flight; `.end` is the space under
     /// the list.
     @State private var dropTarget: DropTarget?
+    /// The search across every category, above the rows: while it has
+    /// text the hits show in place of the rows — every tag, applied
+    /// ones marked — and a click applies or removes.
+    @State private var allQuery = ""
+    @FocusState private var allQueryFocused: Bool
 
     fileprivate enum DropTarget: Equatable {
         case before(PanelRow)
@@ -89,6 +94,10 @@ struct TagPanelView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+            allTagsSearchField
+            if !allQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                allTagsResults
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     // An empty vocabulary used to render the panel as a
@@ -121,6 +130,7 @@ struct TagPanelView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 14)
             }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -139,6 +149,109 @@ struct TagPanelView: View {
 
     private var appliedCount: Int {
         model.itemTags.reduce(0) { $0 + $1.tags.count }
+    }
+
+    // MARK: All-tags search
+
+    private var allTagsSearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(Theme.ui(10))
+                .foregroundStyle(Theme.Text.disabled)
+            TextField("Search all tags", text: $allQuery)
+                .textFieldStyle(.plain)
+                .font(Theme.ui(12))
+                .focused($allQueryFocused)
+                .onSubmit { applyFirstHit() }
+                .onKeyPress(.escape) {
+                    guard !allQuery.isEmpty else { return .ignored }
+                    allQuery = ""
+                    return .handled
+                }
+            if !allQuery.isEmpty {
+                Button {
+                    allQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(Theme.ui(10))
+                        .foregroundStyle(Theme.Text.disabled)
+                }
+                .buttonStyle(.plain)
+                .help("Clear the search")
+            }
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 9)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Theme.Surface.well)
+                .stroke(allQueryFocused ? Theme.Border.activeControl : Theme.Border.standard, lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .help("Every tag in every category — a click applies it, or removes it when it is on the item; Enter applies the first hit")
+        // The player's key handler takes Esc for the focus stack unless
+        // a tag field says it has a list up. While the search has text
+        // it has one, so Esc clears the search first and unwinds after.
+        .onChange(of: allQuery) { _, query in
+            if !query.isEmpty { model.tagFieldListOpen = true } else if allQueryFocused { model.tagFieldListOpen = false }
+        }
+    }
+
+    /// The hits, ranked the way every tag search in the app ranks, with
+    /// the category beside each and the applied ones marked. Never
+    /// capped to a handful: the list scrolls.
+    private var allTagsResults: some View {
+        let matches = TagSearchEntry.ranked(model.tagSearchIndex, query: allQuery, limit: 200)
+        let applied = Set(model.itemTags.flatMap(\.tags).map(\.id))
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                if matches.isEmpty {
+                    Text("No tag or alias matches.")
+                        .font(Theme.ui(12))
+                        .foregroundStyle(Theme.Text.disabled)
+                        .padding(.vertical, 8)
+                }
+                ForEach(matches, id: \.entry.id) { match in
+                    let isApplied = applied.contains(match.entry.id)
+                    Button {
+                        model.toggleTag(match.entry.id)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isApplied ? "checkmark.circle.fill" : "plus.circle")
+                                .font(Theme.ui(11))
+                                .foregroundStyle(isApplied ? Theme.Accent.amber : Theme.Text.disabled)
+                            Text(match.entry.tag.name)
+                                .font(Theme.ui(12, isApplied ? .semibold : .regular))
+                                .foregroundStyle(isApplied ? Theme.Accent.amber : Theme.Text.primary)
+                            if let alias = match.alias {
+                                Text("via “\(alias)”")
+                                    .font(Theme.ui(10))
+                                    .foregroundStyle(Theme.Text.quaternary)
+                            }
+                            Spacer(minLength: 0)
+                            Text(match.entry.categoryName)
+                                .font(Theme.ui(10.5))
+                                .foregroundStyle(Theme.categoryHue(match.entry.colorIndex))
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(isApplied ? "On this item — click to remove" : "Click to apply")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
+        }
+    }
+
+    /// Enter in the search: apply the top hit, keep the search so the
+    /// next one is a keystroke away.
+    private func applyFirstHit() {
+        guard let first = TagSearchEntry.ranked(model.tagSearchIndex, query: allQuery, limit: 1).first
+        else { return }
+        model.applyTag(first.entry.id)
     }
 
     // MARK: Rows
