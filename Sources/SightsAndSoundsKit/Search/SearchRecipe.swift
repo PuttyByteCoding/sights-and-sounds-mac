@@ -39,10 +39,10 @@ public struct SearchFormat: Codable, Equatable, Sendable {
 }
 
 /// One rule, run over every value the parts gathered, in list order —
-/// the order is the operator's, which is the point. Exclude drops a
-/// value equal to the text (whole value, ignoring case — never a
-/// substring, so "on" cannot eat "On Stage"). Replace changes every
-/// occurrence of the text inside a value; an empty right-hand side
+/// the order is the operator's, which is the point. Exclude removes
+/// the text wherever it appears in a value, ignoring case; a value
+/// left empty is dropped. Replace changes every occurrence of the
+/// text inside a value, case-sensitively; an empty right-hand side
 /// removes it. "-" to a space is the one this was asked for.
 public struct SearchRule: Codable, Equatable, Sendable, Identifiable {
     public enum Kind: Codable, Equatable, Sendable {

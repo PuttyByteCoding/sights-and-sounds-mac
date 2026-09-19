@@ -85,14 +85,27 @@ import Testing
             == "Ben Folds Five On Stage 2019")
     }
 
-    /// An exclusion matches whole values only, ignoring case: "on" on
-    /// the list does not touch "On Stage". A replacement with nothing
-    /// on the right removes the text.
-    @Test func anExclusionIsWholeValueAndAnEmptyReplacementRemovesText() {
-        let recipe = SearchRecipe(
+    /// An exclusion removes its text wherever it appears in a value,
+    /// ignoring case — inside a word as much as standing alone — and a
+    /// value left empty by it is dropped. A replacement with nothing on
+    /// the right removes text the same way, case-sensitively.
+    @Test func anExclusionRemovesTheTextWhereverItAppears() {
+        let whole = SearchRecipe(
+            parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))],
+            rules: [SearchRule(kind: .exclude("sdg"))])
+        #expect(SearchStringBuilder.string(recipe: whole, subject: subject("sdgBenFoldsSDG.mp4")) == "BenFolds")
+        #expect(SearchStringBuilder.string(recipe: whole, subject: subject("Ben sdg Folds.mp4")) == "Ben  Folds")
+
+        let pieces = SearchRecipe(
             parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true))],
-            rules: [SearchRule(kind: .exclude("on")), SearchRule(kind: .replace(from: "Stage", to: ""))])
-        #expect(SearchStringBuilder.string(recipe: recipe, subject: subject("sdg_OnStage_2019.mp4")) == "sdg On 2019")
+            rules: [SearchRule(kind: .exclude("sdg")), SearchRule(kind: .replace(from: "Stage", to: ""))])
+        // "sdg" as a whole piece vanishes; "On Stage" loses "Stage".
+        #expect(SearchStringBuilder.string(recipe: pieces, subject: subject("sdg_OnStage_2019.mp4")) == "On 2019")
+        // Case: the exclusion ignores it, the replacement does not.
+        let cased = SearchRecipe(
+            parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))],
+            rules: [SearchRule(kind: .replace(from: "stage", to: ""))])
+        #expect(SearchStringBuilder.string(recipe: cased, subject: subject("OnStage.mp4")) == "OnStage")
     }
 
     @Test func aMissingCategoryIsSkippedAndNamed() {

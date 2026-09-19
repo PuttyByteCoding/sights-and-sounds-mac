@@ -39,11 +39,13 @@ Year "2019" and Venue "On Stage" becomes:
    File-name and tag parts also carry **case** (as is · lowercase · UPPERCASE · Title Case)
    and **quoting** (never · multi-word values only · always).
 
-2. **The rules run in the operator's order; formatting last.** A rule is **Exclude** (drop a
-   value equal to the text, case-insensitively, whitespace-trimmed — whole values only, a
-   whole file-name piece or a whole tag name, never a substring, so "on" cannot eat "On
-   Stage") or **Replace** (every occurrence of the text inside a value becomes the other
-   text; empty removes it — `-` → ` ` is the one this was asked for). For every value a part
+2. **The rules run in the operator's order; formatting last.** A rule is **Exclude** (remove
+   the text wherever it appears in a value, ignoring case — inside a word as much as standing
+   alone; a value left empty is dropped, which is what happens to a whole piece equal to it)
+   or **Replace** (every occurrence of the text inside a value becomes the other text,
+   matching case; empty removes it — `-` → ` ` is the one this was asked for). Exclude was
+   whole-value-only at first, so "on" could not eat "On Stage"; it was changed on request,
+   because the case that mattered was a prefix glued to a name. For every value a part
    yields, the rules run top to bottom, so "replace `-` with a space, then exclude `ben folds
    five`" drops `Ben-Folds-Five` and the reverse order keeps it. Then the part's case and
    quoting. A value that ends up empty contributes nothing. Parts are joined with single

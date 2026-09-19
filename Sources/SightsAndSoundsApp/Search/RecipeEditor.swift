@@ -269,26 +269,55 @@ struct RuleRow: View {
     let onRemove: () -> Void
 
     var body: some View {
-        HStack(spacing: compact ? 6 : 8) {
-            ReorderHandle(id: rule.id, name: kindName)
-            Text(kindName)
-                .font(Theme.ui(compact ? 10.5 : 11, .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: compact ? 56 : 64, alignment: .leading)
-            switch rule.kind {
-            case .exclude:
-                TextField(compact ? "Value to drop" : "A value never to add — a prefix like sdg", text: excludeText)
+        switch rule.kind {
+        case .exclude:
+            HStack(spacing: compact ? 6 : 8) {
+                ReorderHandle(id: rule.id, name: kindName)
+                kindLabel
+                TextField(compact ? "Text to remove" : "Text to remove wherever it appears — a prefix like sdg", text: excludeText)
                     .textFieldStyle(.roundedBorder)
-            case .replace:
-                TextField("Replace", text: replaceFrom)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: compact ? 80 : 140)
-                Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                TextField(compact ? "with" : "with (empty removes)", text: replaceTo)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: compact ? 80 : 140)
+                Spacer(minLength: 0)
+                moveAndRemove
             }
-            Spacer(minLength: 0)
+        case .replace:
+            // Two lines: the two sides read as a pair, and neither field
+            // is squeezed to a few characters beside the other.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: compact ? 6 : 8) {
+                    ReorderHandle(id: rule.id, name: kindName)
+                    kindLabel
+                    TextField("Text to replace", text: replaceFrom)
+                        .textFieldStyle(.roundedBorder)
+                    Spacer(minLength: 0)
+                    moveAndRemove
+                }
+                HStack(spacing: compact ? 6 : 8) {
+                    Spacer().frame(width: compact ? 20 : 22)
+                    Text("with")
+                        .font(Theme.ui(compact ? 10.5 : 11, .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: compact ? 56 : 64, alignment: .leading)
+                    TextField("Replacement — empty removes the text", text: replaceTo)
+                        .textFieldStyle(.roundedBorder)
+                    Spacer(minLength: 0)
+                    // The width the move and remove buttons take above,
+                    // so the two fields line up.
+                    moveAndRemove.hidden()
+                }
+            }
+            .padding(.vertical, compact ? 3 : 0)
+        }
+    }
+
+    private var kindLabel: some View {
+        Text(kindName)
+            .font(Theme.ui(compact ? 10.5 : 11, .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: compact ? 56 : 64, alignment: .leading)
+    }
+
+    private var moveAndRemove: some View {
+        HStack(spacing: 4) {
             Button { onMove(-1) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless)
                 .disabled(isFirst)
