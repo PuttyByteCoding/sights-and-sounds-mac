@@ -158,7 +158,7 @@ struct SearchSettingsPane: View {
         } header: {
             Text("Rules")
         } footer: {
-            Text("Run top to bottom over every value the parts gathered, before case and quoting — drag the ≡ handle to change the order. Exclude drops a value equal to the text, ignoring case, never a substring, so “on” cannot touch “On Stage”. Replace changes every occurrence; leave the right side empty to remove the text.")
+            Text("Run top to bottom over every value the parts gathered, before case and quoting — drag the ≡ handle to change the order. Exclude removes its text wherever it appears, ignoring case; a value left empty is dropped. Replace changes every occurrence, matching case; leave the right side empty to remove the text.")
         }
     }
 

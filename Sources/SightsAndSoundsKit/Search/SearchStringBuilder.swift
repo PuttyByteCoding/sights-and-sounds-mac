@@ -24,8 +24,9 @@ public struct SearchSubject: Equatable, Sendable {
 
 /// A recipe and an item in, one string out (spec 17, decision 2). For
 /// every value a part yields: the rules, in their order — a replace
-/// changes the value, an exclude drops it when it matches as a whole,
-/// case-insensitively — then the part's case and quoting. Literals are
+/// changes the value, an exclude removes its text wherever it appears,
+/// case-insensitively, and a value left empty is dropped — then the
+/// part's case and quoting. Literals are
 /// prose for the search engine: used verbatim, and left out of the
 /// bookmark terms.
 public enum SearchStringBuilder {
@@ -41,7 +42,12 @@ public enum SearchStringBuilder {
                 case .replace(let from, let to):
                     if !from.isEmpty { value = value.replacingOccurrences(of: from, with: to) }
                 case .exclude(let text):
-                    if fold(value) == fold(text) { return nil }
+                    // Wherever it appears, ignoring case — a whole
+                    // value equal to it is left empty and dropped below.
+                    let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !needle.isEmpty {
+                        value = value.replacingOccurrences(of: needle, with: "", options: [.caseInsensitive])
+                    }
                 }
             }
             value = value.trimmingCharacters(in: .whitespacesAndNewlines)
