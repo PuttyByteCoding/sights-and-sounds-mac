@@ -41,7 +41,9 @@ Year "2019" and Venue "On Stage" becomes:
 
 2. **The rules run in the operator's order; formatting last.** A rule is **Exclude** (remove
    the text wherever it appears in a value, ignoring case — inside a word as much as standing
-   alone; a value left empty is dropped, which is what happens to a whole piece equal to it)
+   alone — or, when asked, every occurrence but the first or the last, so a name a file
+   repeats collapses to one; a value left empty is dropped, which is what happens to a
+   whole piece equal to it)
    or **Replace** (every occurrence of the text inside a value becomes the other text,
    matching case; empty removes it — `-` → ` ` is the one this was asked for) or **Split**
    (each value breaks at a separator into pieces, and at the capitals inside a run when

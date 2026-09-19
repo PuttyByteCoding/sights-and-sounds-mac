@@ -300,6 +300,12 @@ struct RuleRow: View {
                 kindLabel
                 TextField(compact ? "Text to remove" : "Text to remove wherever it appears — a prefix like sdg", text: excludeText)
                     .textFieldStyle(.roundedBorder)
+                Picker("", selection: excludeKeep) {
+                    ForEach(SearchExcludeKeep.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 104)
+                .help("Remove every occurrence, or all but the first or the last")
                 Spacer(minLength: 0)
                 moveAndRemove
             }
@@ -417,8 +423,18 @@ struct RuleRow: View {
 
     private var excludeText: Binding<String> {
         Binding(
-            get: { if case .exclude(let text) = rule.kind { text } else { "" } },
-            set: { rule.kind = .exclude($0) })
+            get: { if case .exclude(let text, _) = rule.kind { text } else { "" } },
+            set: { text in
+                if case .exclude(_, let keep) = rule.kind { rule.kind = .exclude(text, keep: keep) }
+            })
+    }
+
+    private var excludeKeep: Binding<SearchExcludeKeep> {
+        Binding(
+            get: { if case .exclude(_, let keep) = rule.kind { keep } else { .none } },
+            set: { keep in
+                if case .exclude(let text, _) = rule.kind { rule.kind = .exclude(text, keep: keep) }
+            })
     }
 
     private var replaceFrom: Binding<String> {

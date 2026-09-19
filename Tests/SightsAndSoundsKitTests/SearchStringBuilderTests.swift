@@ -185,6 +185,25 @@ import Testing
         #expect(SearchStringBuilder.string(recipe: lastThenGone, subject: subject(name)) == "")
     }
 
+    /// Exclude can keep one occurrence of its text — the first or the
+    /// last — and remove the rest, so a name a file repeats collapses to
+    /// one. Keep none, the default, removes every occurrence.
+    @Test func anExclusionCanKeepTheFirstOrLastOccurrence() {
+        let whole = SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))
+        func exclude(_ keep: SearchExcludeKeep) -> SearchRecipe {
+            SearchRecipe(parts: [whole], rules: [SearchRule(kind: .exclude("ben folds", keep: keep))])
+        }
+        let name = "Ben Folds Live Ben Folds.mp4"
+        #expect(SearchStringBuilder.string(recipe: exclude(.none), subject: subject(name)) == "Live")
+        #expect(SearchStringBuilder.string(recipe: exclude(.first), subject: subject(name)) == "Ben Folds Live")
+        #expect(SearchStringBuilder.string(recipe: exclude(.last), subject: subject(name)) == "Live Ben Folds")
+        // One occurrence: keeping it changes nothing; none removes it.
+        #expect(SearchStringBuilder.string(recipe: exclude(.first), subject: subject("Ben Folds Live.mp4")) == "Ben Folds Live")
+        #expect(SearchStringBuilder.string(recipe: exclude(.none), subject: subject("Ben Folds Live.mp4")) == "Live")
+        // The default is keep none.
+        #expect(SearchRule(kind: .exclude("x")).kind == .exclude("x", keep: .none))
+    }
+
     @Test func aMissingCategoryIsSkippedAndNamed() {
         let gone = UUID()
         let recipe = SearchRecipe(parts: [tags(band), tags(gone), SearchPart(kind: .literal("live"))])
