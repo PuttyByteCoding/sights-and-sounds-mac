@@ -110,6 +110,14 @@ public enum SearchStringBuilder {
         .joined(separator: " ")
     }
 
+    /// The string the rules start from: the parts applied and no rule
+    /// yet — what the first rule sees.
+    public static func stringBeforeRules(recipe: SearchRecipe, subject: SearchSubject) -> String {
+        var cut = recipe
+        cut.rules = []
+        return string(recipe: cut, subject: subject)
+    }
+
     /// The string as it stands after each rule — the recipe cut off
     /// after rule N, for every N, in rule order — so an editor can show
     /// what each rule did. One entry per rule; the last is the whole
