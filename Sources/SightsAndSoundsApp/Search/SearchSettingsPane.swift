@@ -154,7 +154,7 @@ struct SearchSettingsPane: View {
 
     private var rulesSection: some View {
         Section {
-            RecipeRules(recipe: recipeBinding)
+            RecipeRules(recipe: recipeBinding, preview: sample)
         } header: {
             Text("Rules")
         } footer: {

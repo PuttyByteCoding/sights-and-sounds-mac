@@ -108,6 +108,27 @@ import Testing
         #expect(SearchStringBuilder.string(recipe: cased, subject: subject("OnStage.mp4")) == "OnStage")
     }
 
+    /// The editor shows, under each rule, the string as it stands once
+    /// that rule and the ones above it have run: one string per rule,
+    /// in rule order, the last one being the whole recipe's string.
+    @Test func theStringAfterEachRuleIsTheRecipeCutOffThere() {
+        let recipe = SearchRecipe(
+            parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true), format: SearchFormat(quoting: .multiWord))],
+            rules: [
+                SearchRule(kind: .replace(from: "-", to: " ")),
+                SearchRule(kind: .exclude("sdg")),
+                SearchRule(kind: .exclude("ben folds five")),
+            ])
+        let steps = SearchStringBuilder.stringsAfterEachRule(recipe: recipe, subject: subject("sdg_Ben-Folds-Five_OnStage_2019.mp4"))
+        #expect(steps == [
+            #"sdg "Ben Folds Five" "On Stage" 2019"#,
+            #""Ben Folds Five" "On Stage" 2019"#,
+            #""On Stage" 2019"#,
+        ])
+        #expect(steps.last == SearchStringBuilder.string(recipe: recipe, subject: subject("sdg_Ben-Folds-Five_OnStage_2019.mp4")))
+        #expect(SearchStringBuilder.stringsAfterEachRule(recipe: SearchRecipe(parts: recipe.parts), subject: subject()).isEmpty)
+    }
+
     @Test func aMissingCategoryIsSkippedAndNamed() {
         let gone = UUID()
         let recipe = SearchRecipe(parts: [tags(band), tags(gone), SearchPart(kind: .literal("live"))])

@@ -75,6 +75,18 @@ public enum SearchStringBuilder {
         .joined(separator: " ")
     }
 
+    /// The string as it stands after each rule — the recipe cut off
+    /// after rule N, for every N, in rule order — so an editor can show
+    /// what each rule did. One entry per rule; the last is the whole
+    /// recipe's string.
+    public static func stringsAfterEachRule(recipe: SearchRecipe, subject: SearchSubject) -> [String] {
+        recipe.rules.indices.map { index in
+            var cut = recipe
+            cut.rules = Array(recipe.rules.prefix(index + 1))
+            return string(recipe: cut, subject: subject)
+        }
+    }
+
     /// The values a bookmark must contain, every one: the non-literal
     /// parts' values with the part's case applied and no quoting.
     public static func bookmarkTerms(recipe: SearchRecipe, subject: SearchSubject) -> [String] {

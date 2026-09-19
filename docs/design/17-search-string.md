@@ -92,7 +92,8 @@ Year "2019" and Venue "On Stage" becomes:
    and Remove. Then, for the chosen format, parts as rows — a ≡ drag handle, kind, source,
    formatting — with add, remove, move up/down and drag to reorder (an amber line marks where
    the row lands; the Add button is the "last" spot); below them the rules as rows of the
-   same shape, whose order is the order they run; a live preview against a **sample file name** — the library's first
+   same shape, whose order is the order they run, each with the string as it stands after
+   that rule beneath it (`stringsAfterEachRule`), against the sample; a live preview against a **sample file name** — the library's first
    file to start, then anything typed over it, with the first item's tags. An app-wide
    section on the same page holds the Firefox profile (with Detect) and the web search URL.
    The page is a draft: the preview follows every edit, and **Apply** writes it (Revert
