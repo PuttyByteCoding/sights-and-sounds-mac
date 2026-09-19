@@ -38,6 +38,21 @@ public struct SearchFormat: Codable, Equatable, Sendable {
     }
 }
 
+/// Which pieces a Split keeps: every one, or only the first or last
+/// piece with something in it — "the band is before the first
+/// underscore", "the date is after the last".
+public enum SearchSplitKeep: String, Codable, Sendable, CaseIterable {
+    case all, first, last
+
+    public var displayName: String {
+        switch self {
+        case .all: "Keep all"
+        case .first: "Keep first"
+        case .last: "Keep last"
+        }
+    }
+}
+
 /// One rule, run over every value the parts gathered, in list order —
 /// the order is the operator's, which is the point. Exclude removes
 /// the text wherever it appears in a value, ignoring case; a value
@@ -48,10 +63,10 @@ public struct SearchFormat: Codable, Equatable, Sendable {
 /// the capitals inside a run, so "OnStage" is "On Stage" — and every
 /// rule below it works on the pieces; empty pieces vanish.
 public struct SearchRule: Codable, Equatable, Sendable, Identifiable {
-    public enum Kind: Codable, Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
         case exclude(String)
         case replace(from: String, to: String)
-        case split(separator: String, titleCaseWords: Bool)
+        case split(separator: String, titleCaseWords: Bool, keep: SearchSplitKeep)
     }
 
     public var id: UUID
@@ -90,6 +105,56 @@ public struct SearchPart: Codable, Equatable, Sendable, Identifiable {
     public var isLiteral: Bool {
         if case .literal = kind { return true }
         return false
+    }
+}
+
+/// The shape Swift synthesised before this was written by hand — one
+/// key per case, its payload keyed by label (`_0` for the unlabelled
+/// one) — kept so every stored rule reads back. Hand-written for one
+/// reason: a Split stored before it had `keep` must read as keep all
+/// rather than fail the whole formats list.
+extension SearchRule.Kind: Codable {
+    private enum CodingKeys: String, CodingKey { case exclude, replace, split }
+    private enum ExcludeKeys: String, CodingKey { case _0 }
+    private enum ReplaceKeys: String, CodingKey { case from, to }
+    private enum SplitKeys: String, CodingKey { case separator, titleCaseWords, keep }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.exclude) {
+            let nested = try container.nestedContainer(keyedBy: ExcludeKeys.self, forKey: .exclude)
+            self = .exclude(try nested.decode(String.self, forKey: ._0))
+        } else if container.contains(.replace) {
+            let nested = try container.nestedContainer(keyedBy: ReplaceKeys.self, forKey: .replace)
+            self = .replace(from: try nested.decode(String.self, forKey: .from), to: try nested.decode(String.self, forKey: .to))
+        } else if container.contains(.split) {
+            let nested = try container.nestedContainer(keyedBy: SplitKeys.self, forKey: .split)
+            self = .split(
+                separator: try nested.decode(String.self, forKey: .separator),
+                titleCaseWords: try nested.decodeIfPresent(Bool.self, forKey: .titleCaseWords) ?? false,
+                keep: try nested.decodeIfPresent(SearchSplitKeep.self, forKey: .keep) ?? .all)
+        } else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath, debugDescription: "unknown search rule kind"))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .exclude(let text):
+            var nested = container.nestedContainer(keyedBy: ExcludeKeys.self, forKey: .exclude)
+            try nested.encode(text, forKey: ._0)
+        case .replace(let from, let to):
+            var nested = container.nestedContainer(keyedBy: ReplaceKeys.self, forKey: .replace)
+            try nested.encode(from, forKey: .from)
+            try nested.encode(to, forKey: .to)
+        case .split(let separator, let titleCaseWords, let keep):
+            var nested = container.nestedContainer(keyedBy: SplitKeys.self, forKey: .split)
+            try nested.encode(separator, forKey: .separator)
+            try nested.encode(titleCaseWords, forKey: .titleCaseWords)
+            try nested.encode(keep, forKey: .keep)
+        }
     }
 }
 

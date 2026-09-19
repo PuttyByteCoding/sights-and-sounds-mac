@@ -45,8 +45,9 @@ Year "2019" and Venue "On Stage" becomes:
    or **Replace** (every occurrence of the text inside a value becomes the other text,
    matching case; empty removes it — `-` → ` ` is the one this was asked for) or **Split**
    (each value breaks at a separator into pieces, and at the capitals inside a run when
-   asked, so `OnStage` is `On Stage`; every rule below works on the pieces; empty pieces
-   vanish — the file-name part's own "split at _" is this rule before any other, kept for
+   asked, so `OnStage` is `On Stage`; it keeps every piece, or only the first or the last
+   piece with something in it — the band before the first underscore, the date after the
+   last; every rule below works on what it kept; empty pieces vanish — the file-name part's own "split at _" is this rule before any other, kept for
    the common case). Exclude was
    whole-value-only at first, so "on" could not eat "On Stage"; it was changed on request,
    because the case that mattered was a prefix glued to a name. For every value a part

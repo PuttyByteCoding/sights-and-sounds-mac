@@ -138,18 +138,18 @@ import Testing
         let name = "sdg_Ben-Folds-Five_OnStage__2019.mp4"
 
         // Split alone: at the separator, words left as they are.
-        let plain = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: false))])
+        let plain = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: false, keep: .all))])
         #expect(SearchStringBuilder.string(recipe: plain, subject: subject(name)) == "sdg Ben-Folds-Five OnStage 2019")
 
         // Split with the capitals: the squashed name gets its spaces back.
-        let words = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: true))])
+        let words = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: .all))])
         #expect(SearchStringBuilder.string(recipe: words, subject: subject(name)) == #"sdg Ben-Folds-Five "On Stage" 2019"#)
 
         // Replace, then split, then exclude: the pieces are what the
         // exclude sees, so "sdg" goes as a piece of its own.
         let ordered = SearchRecipe(parts: [whole], rules: [
             SearchRule(kind: .replace(from: "-", to: " ")),
-            SearchRule(kind: .split(separator: "_", titleCaseWords: true)),
+            SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: .all)),
             SearchRule(kind: .exclude("sdg")),
         ])
         #expect(SearchStringBuilder.string(recipe: ordered, subject: subject(name)) == #""Ben Folds Five" "On Stage" 2019"#)
@@ -160,8 +160,29 @@ import Testing
         ])
 
         // An empty separator splits nothing.
-        let none = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "", titleCaseWords: false))])
+        let none = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "", titleCaseWords: false, keep: .all))])
         #expect(SearchStringBuilder.string(recipe: none, subject: subject(name)) == "sdg_Ben-Folds-Five_OnStage__2019")
+    }
+
+    /// Split can keep every piece, only the first, or only the last —
+    /// "the band is before the first underscore", "the date is after
+    /// the last". First and last mean the first and last piece with
+    /// something in it, so a doubled separator does not choose nothing.
+    @Test func aSplitRuleCanKeepTheFirstOrTheLastPiece() {
+        let whole = SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))
+        let name = "sdg_BenFolds_OnStage__2019.mp4"
+        func split(_ keep: SearchSplitKeep) -> SearchRecipe {
+            SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: keep))])
+        }
+        #expect(SearchStringBuilder.string(recipe: split(.all), subject: subject(name)) == "sdg Ben Folds On Stage 2019")
+        #expect(SearchStringBuilder.string(recipe: split(.first), subject: subject(name)) == "sdg")
+        #expect(SearchStringBuilder.string(recipe: split(.last), subject: subject(name)) == "2019")
+        // Keep last, then exclude what is left, is still nothing.
+        let lastThenGone = SearchRecipe(parts: [whole], rules: [
+            SearchRule(kind: .split(separator: "_", titleCaseWords: false, keep: .last)),
+            SearchRule(kind: .exclude("2019")),
+        ])
+        #expect(SearchStringBuilder.string(recipe: lastThenGone, subject: subject(name)) == "")
     }
 
     @Test func aMissingCategoryIsSkippedAndNamed() {

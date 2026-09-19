@@ -107,7 +107,9 @@ struct RecipeRules: View {
         Menu("Add Rule") {
             Button("Exclude a value") { recipe.rules.append(SearchRule(kind: .exclude(""))) }
             Button("Replace text") { recipe.rules.append(SearchRule(kind: .replace(from: "-", to: " "))) }
-            Button("Split at a separator") { recipe.rules.append(SearchRule(kind: .split(separator: "_", titleCaseWords: true))) }
+            Button("Split at a separator") {
+                recipe.rules.append(SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: .all)))
+            }
         }
         .fixedSize()
         .reorderTarget(.end, current: $drop) { dragged in
@@ -343,6 +345,12 @@ struct RuleRow: View {
                     .toggleStyle(.checkbox)
                     .font(Theme.ui(compact ? 10.5 : 11))
                     .help("Also break a run at the capitals inside it — OnStage becomes On Stage")
+                Picker("", selection: splitKeep) {
+                    ForEach(SearchSplitKeep.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 104)
+                .help("Every piece, or only the first or the last one with something in it")
                 Spacer(minLength: 0)
                 moveAndRemove
             }
@@ -379,17 +387,31 @@ struct RuleRow: View {
 
     private var splitSeparator: Binding<String> {
         Binding(
-            get: { if case .split(let separator, _) = rule.kind { separator } else { "" } },
+            get: { if case .split(let separator, _, _) = rule.kind { separator } else { "" } },
             set: { separator in
-                if case .split(_, let words) = rule.kind { rule.kind = .split(separator: separator, titleCaseWords: words) }
+                if case .split(_, let words, let keep) = rule.kind {
+                    rule.kind = .split(separator: separator, titleCaseWords: words, keep: keep)
+                }
             })
     }
 
     private var splitTitleCaseWords: Binding<Bool> {
         Binding(
-            get: { if case .split(_, let words) = rule.kind { words } else { false } },
+            get: { if case .split(_, let words, _) = rule.kind { words } else { false } },
             set: { words in
-                if case .split(let separator, _) = rule.kind { rule.kind = .split(separator: separator, titleCaseWords: words) }
+                if case .split(let separator, _, let keep) = rule.kind {
+                    rule.kind = .split(separator: separator, titleCaseWords: words, keep: keep)
+                }
+            })
+    }
+
+    private var splitKeep: Binding<SearchSplitKeep> {
+        Binding(
+            get: { if case .split(_, _, let keep) = rule.kind { keep } else { .all } },
+            set: { keep in
+                if case .split(let separator, let words, _) = rule.kind {
+                    rule.kind = .split(separator: separator, titleCaseWords: words, keep: keep)
+                }
             })
     }
 
