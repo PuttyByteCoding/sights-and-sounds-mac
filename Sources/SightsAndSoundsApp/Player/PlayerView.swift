@@ -1209,9 +1209,13 @@ private struct SegmentsAndTagsRail: View {
                 Rectangle().fill(Theme.Border.standard).frame(height: 1)
             }
             if model.panels.search {
+                // Sized to its content, never flexible: a flexible panel
+                // below the tag panel is offered only what the tags leave,
+                // which is nothing — it showed its header and no strings.
+                // A few formats are a few rows; the flexible panels share
+                // the rest.
                 SearchPanel()
-                    .frame(maxHeight: .infinity)
-                    .layoutPriority(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(width: width)

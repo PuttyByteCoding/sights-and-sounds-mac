@@ -29,9 +29,12 @@ struct SearchPanel: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 22)
                     .frame(maxWidth: .infinity)
-                Spacer(minLength: 0)
             } else {
-                ScrollView {
+                // A plain stack, not a scroll view: the panel is sized to
+                // its content so the rail's flexible panels cannot squeeze
+                // it to nothing, and a scroll view has no content height
+                // of its own.
+                Group {
                     VStack(alignment: .leading, spacing: 6) {
                         // The default leads, and says so: this is the
                         // string ⌘⇧C copies, whatever else is listed.
