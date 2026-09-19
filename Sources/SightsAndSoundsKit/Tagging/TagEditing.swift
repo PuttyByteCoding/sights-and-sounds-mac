@@ -415,6 +415,20 @@ extension LibraryDatabase {
     /// Items per tag for one category, in one grouped query. The table
     /// shows a use count per row, and a count per row is the N+1 that
     /// makes a thousand-tag category unopenable.
+    /// Every tag's item count, library-wide, in one grouped query — for
+    /// a search across categories.
+    public func tagUsageCounts() throws -> [UUID: Int] {
+        try writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT tag.id AS id, COUNT(mediaItemTag.mediaItemID) AS n FROM tag \
+                LEFT JOIN mediaItemTag ON mediaItemTag.tagID = tag.id GROUP BY tag.id
+                """)
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0["id"] as UUID, $0["n"] as Int) })
+        }
+    }
+
     public func tagUsageCounts(inCategory categoryID: UUID) throws -> [UUID: Int] {
         try writer.read { db in
             let rows = try Row.fetchAll(
