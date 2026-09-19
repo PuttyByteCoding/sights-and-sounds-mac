@@ -30,8 +30,13 @@ struct SettingsView: View {
         // A minimum, not a fixed width — the Settings window resizes
         // like any other (#73). The infinity maximums matter: the
         // Settings scene sizes its window to the content's ideal size,
-        // and rigid content leaves nothing to grow into (#101).
-        .frame(minWidth: 560, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
+        // and rigid content leaves nothing to grow into (#101). The
+        // ideal is what a fresh window opens at: roomy enough for the
+        // Search String tab's rows, which the old 560-point width cut
+        // into wrapped controls.
+        .frame(
+            minWidth: 560, idealWidth: 880, maxWidth: .infinity,
+            minHeight: 420, idealHeight: 720, maxHeight: .infinity)
         .padding(.bottom, 8)
         .background(SettingsWindowConfigurator())
     }
@@ -47,11 +52,31 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class AttachView: NSView {
+        private static let autosaveName = "SASSettingsWindow"
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
+            configure(window)
+            // The scene sizes the window to its content AFTER attaching
+            // it, which threw away both the resizable bit and the frame
+            // the autosave name had just restored — so an enlarged
+            // window came back small on every open. Once that pass has
+            // run, assert both again.
+            DispatchQueue.main.async { [weak window] in
+                guard let window else { return }
+                self.configure(window)
+                window.setFrameUsingName(Self.autosaveName)
+            }
+        }
+
+        private func configure(_ window: NSWindow) {
             window.styleMask.insert(.resizable)
-            window.setFrameAutosaveName("SASSettingsWindow")
+            // No ceiling: the content's maximums are infinite, and a
+            // stale AppKit maximum would stop the drag at the old size.
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            window.contentMaxSize = window.maxSize
+            window.setFrameAutosaveName(Self.autosaveName)
         }
     }
 }
