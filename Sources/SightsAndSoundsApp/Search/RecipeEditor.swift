@@ -107,6 +107,7 @@ struct RecipeRules: View {
         Menu("Add Rule") {
             Button("Exclude a value") { recipe.rules.append(SearchRule(kind: .exclude(""))) }
             Button("Replace text") { recipe.rules.append(SearchRule(kind: .replace(from: "-", to: " "))) }
+            Button("Split at a separator") { recipe.rules.append(SearchRule(kind: .split(separator: "_", titleCaseWords: true))) }
         }
         .fixedSize()
         .reorderTarget(.end, current: $drop) { dragged in
@@ -327,6 +328,24 @@ struct RuleRow: View {
                 }
             }
             .padding(.vertical, compact ? 3 : 0)
+        case .split:
+            HStack(spacing: compact ? 6 : 8) {
+                ReorderHandle(id: rule.id, name: kindName)
+                kindLabel
+                Text("at")
+                    .font(Theme.ui(compact ? 10.5 : 11))
+                    .foregroundStyle(.secondary)
+                TextField("_", text: splitSeparator)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 52)
+                    .help("The separator each value breaks at")
+                Toggle(compact ? "Capitals" : "And at capitals", isOn: splitTitleCaseWords)
+                    .toggleStyle(.checkbox)
+                    .font(Theme.ui(compact ? 10.5 : 11))
+                    .help("Also break a run at the capitals inside it — OnStage becomes On Stage")
+                Spacer(minLength: 0)
+                moveAndRemove
+            }
         }
     }
 
@@ -354,7 +373,24 @@ struct RuleRow: View {
         switch rule.kind {
         case .exclude: "Exclude"
         case .replace: "Replace"
+        case .split: "Split"
         }
+    }
+
+    private var splitSeparator: Binding<String> {
+        Binding(
+            get: { if case .split(let separator, _) = rule.kind { separator } else { "" } },
+            set: { separator in
+                if case .split(_, let words) = rule.kind { rule.kind = .split(separator: separator, titleCaseWords: words) }
+            })
+    }
+
+    private var splitTitleCaseWords: Binding<Bool> {
+        Binding(
+            get: { if case .split(_, let words) = rule.kind { words } else { false } },
+            set: { words in
+                if case .split(let separator, _) = rule.kind { rule.kind = .split(separator: separator, titleCaseWords: words) }
+            })
     }
 
     private var excludeText: Binding<String> {

@@ -35,23 +35,30 @@ public enum SearchStringBuilder {
     public static func values(
         for part: SearchPart, subject: SearchSubject, recipe: SearchRecipe
     ) -> [String] {
-        rawValues(for: part, subject: subject).compactMap { raw in
-            var value = raw
-            for rule in recipe.rules {
-                switch rule.kind {
-                case .replace(let from, let to):
-                    if !from.isEmpty { value = value.replacingOccurrences(of: from, with: to) }
-                case .exclude(let text):
-                    // Wherever it appears, ignoring case — a whole
-                    // value equal to it is left empty and dropped below.
-                    let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !needle.isEmpty {
-                        value = value.replacingOccurrences(of: needle, with: "", options: [.caseInsensitive])
-                    }
-                }
-            }
-            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return value.isEmpty ? nil : value
+        // A rule maps one value to one or more — split is the one that
+        // multiplies — and the next rule sees whatever the last left.
+        var values = rawValues(for: part, subject: subject)
+        for rule in recipe.rules {
+            values = values.flatMap { apply(rule, to: $0) }
+        }
+        return values
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func apply(_ rule: SearchRule, to value: String) -> [String] {
+        switch rule.kind {
+        case .replace(let from, let to):
+            return from.isEmpty ? [value] : [value.replacingOccurrences(of: from, with: to)]
+        case .exclude(let text):
+            // Wherever it appears, ignoring case — a whole value equal
+            // to it is left empty and dropped by the caller.
+            let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return needle.isEmpty
+                ? [value] : [value.replacingOccurrences(of: needle, with: "", options: [.caseInsensitive])]
+        case .split(let separator, let titleCaseWords):
+            let pieces = separator.isEmpty ? [value] : value.components(separatedBy: separator)
+            return titleCaseWords ? pieces.map(\.splittingTitleCaseWords) : pieces
         }
     }
 

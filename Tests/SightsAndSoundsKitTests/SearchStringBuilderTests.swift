@@ -129,6 +129,41 @@ import Testing
         #expect(SearchStringBuilder.stringsAfterEachRule(recipe: SearchRecipe(parts: recipe.parts), subject: subject()).isEmpty)
     }
 
+    /// Split is a rule like the others, so it can come after a replace
+    /// or an exclude: each value breaks at the separator into pieces,
+    /// optionally at the capitals inside a run as well, and every rule
+    /// below works on the pieces. Empty pieces vanish.
+    @Test func aSplitRuleBreaksValuesIntoPiecesInItsPlaceInTheOrder() {
+        let whole = SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false), format: SearchFormat(quoting: .multiWord))
+        let name = "sdg_Ben-Folds-Five_OnStage__2019.mp4"
+
+        // Split alone: at the separator, words left as they are.
+        let plain = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: false))])
+        #expect(SearchStringBuilder.string(recipe: plain, subject: subject(name)) == "sdg Ben-Folds-Five OnStage 2019")
+
+        // Split with the capitals: the squashed name gets its spaces back.
+        let words = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: true))])
+        #expect(SearchStringBuilder.string(recipe: words, subject: subject(name)) == #"sdg Ben-Folds-Five "On Stage" 2019"#)
+
+        // Replace, then split, then exclude: the pieces are what the
+        // exclude sees, so "sdg" goes as a piece of its own.
+        let ordered = SearchRecipe(parts: [whole], rules: [
+            SearchRule(kind: .replace(from: "-", to: " ")),
+            SearchRule(kind: .split(separator: "_", titleCaseWords: true)),
+            SearchRule(kind: .exclude("sdg")),
+        ])
+        #expect(SearchStringBuilder.string(recipe: ordered, subject: subject(name)) == #""Ben Folds Five" "On Stage" 2019"#)
+        #expect(SearchStringBuilder.stringsAfterEachRule(recipe: ordered, subject: subject(name)) == [
+            #""sdg_Ben Folds Five_OnStage__2019""#,
+            #"sdg "Ben Folds Five" "On Stage" 2019"#,
+            #""Ben Folds Five" "On Stage" 2019"#,
+        ])
+
+        // An empty separator splits nothing.
+        let none = SearchRecipe(parts: [whole], rules: [SearchRule(kind: .split(separator: "", titleCaseWords: false))])
+        #expect(SearchStringBuilder.string(recipe: none, subject: subject(name)) == "sdg_Ben-Folds-Five_OnStage__2019")
+    }
+
     @Test func aMissingCategoryIsSkippedAndNamed() {
         let gone = UUID()
         let recipe = SearchRecipe(parts: [tags(band), tags(gone), SearchPart(kind: .literal("live"))])
