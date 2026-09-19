@@ -3,8 +3,9 @@ import SightsAndSoundsKit
 
 /// The search strings as a panel in the player's right rail (spec 17,
 /// decision 9): every format the library has, rendered for the shown
-/// item. A click on a string copies it; the ⌘⇧C marker names the
-/// format the menu commands use, and a click on a marker moves it.
+/// item. The default leads under "⌘⇧C copies" — always the string the
+/// shortcut would copy — and the other formats follow, each with a
+/// button to make it the default. A click on any string copies it.
 struct SearchPanel: View {
     @Environment(PlayerModel.self) private var model
     @Environment(BrowseModel.self) private var browse
@@ -31,13 +32,30 @@ struct SearchPanel: View {
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
-                    VStack(spacing: 4) {
-                        ForEach(model.searchFormats.formats) { row($0) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        // The default leads, and says so: this is the
+                        // string ⌘⇧C copies, whatever else is listed.
+                        if let primary = model.searchFormats.defaultFormat {
+                            Text("⌘⇧C copies")
+                                .font(Theme.ui(9.5, .semibold))
+                                .foregroundStyle(Theme.Accent.amber)
+                                .padding(.horizontal, 4)
+                            row(primary, isDefault: true)
+                        }
+                        let others = model.searchFormats.formats.filter { $0.id != model.searchFormats.defaultFormat?.id }
+                        if !others.isEmpty {
+                            Text("Other formats")
+                                .font(Theme.ui(9.5, .semibold))
+                                .foregroundStyle(Theme.Text.quaternary)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 6)
+                            ForEach(others) { row($0, isDefault: false) }
+                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
                 }
-                Text("Click a string to copy it · ⌘⇧C marks the menu's format")
+                Text("Click a string to copy it · “Use for ⌘⇧C” moves the default")
                     .font(Theme.ui(9.5))
                     .foregroundStyle(Theme.Text.disabled)
                     .padding(.horizontal, 12)
@@ -47,9 +65,8 @@ struct SearchPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func row(_ format: SearchRecipe) -> some View {
+    private func row(_ format: SearchRecipe, isDefault: Bool) -> some View {
         let string = model.searchSubject.map { SearchStringBuilder.string(recipe: format, subject: $0) } ?? ""
-        let isDefault = model.searchFormats.defaultFormat?.id == format.id
         return HStack(alignment: .top, spacing: 6) {
             Button {
                 guard !string.isEmpty else { return }
@@ -73,27 +90,28 @@ struct SearchPanel: View {
             .disabled(string.isEmpty)
             .help(string.isEmpty ? "The format yields nothing for this item" : "Copy this string")
 
-            Button {
-                model.setDefaultSearchFormat(format.id)
-            } label: {
-                Text("⌘⇧C")
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(isDefault ? Theme.Accent.amber : Theme.Text.disabled)
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                            .fill(isDefault ? Theme.Surface.iconTileSelected : .clear)
-                            .stroke(isDefault ? Theme.Accent.amber : Theme.Border.subtleButton, lineWidth: 1))
+            if !isDefault {
+                Button {
+                    model.setDefaultSearchFormat(format.id)
+                } label: {
+                    Text("Use for ⌘⇧C")
+                        .font(Theme.ui(9.5))
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                                .stroke(Theme.Border.subtleButton, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .help("Make this the format ⌘⇧C, ⌘⇧F and ⌘⇧B use")
             }
-            .buttonStyle(.plain)
-            .help(isDefault ? "The format ⌘⇧C, ⌘⇧F and ⌘⇧B use" : "Use this format for ⌘⇧C, ⌘⇧F and ⌘⇧B")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.control)
                 .fill(Theme.Surface.well)
-                .stroke(isDefault ? Theme.Border.activeCard : Theme.Border.standard, lineWidth: 1))
+                .stroke(isDefault ? Theme.Accent.amber : Theme.Border.standard, lineWidth: 1))
     }
 }

@@ -87,9 +87,10 @@ Year "2019" and Venue "On Stage" becomes:
 7. **The page is a Settings tab.** "Search String", per-library scope header, the library
    picker the Tag Category Configuration tab uses. A **Formats** section: a picker of the
    library's formats, the chosen one's name, a "Use for ⌘⇧C, ⌘⇧F and ⌘⇧B" checkbox, Add
-   and Remove. Then, for the chosen format, parts as rows — kind, source, formatting —
-   with add, remove and move up/down; below them the rules as rows of the same shape, whose
-   order is the order they run; a live preview against a **sample file name** — the library's first
+   and Remove. Then, for the chosen format, parts as rows — a ≡ drag handle, kind, source,
+   formatting — with add, remove, move up/down and drag to reorder (an amber line marks where
+   the row lands; the Add button is the "last" spot); below them the rules as rows of the
+   same shape, whose order is the order they run; a live preview against a **sample file name** — the library's first
    file to start, then anything typed over it, with the first item's tags. An app-wide
    section on the same page holds the Firefox profile (with Detect) and the web search URL.
    The page is a draft: the preview follows every edit, and **Apply** writes it (Revert
@@ -97,10 +98,11 @@ Year "2019" and Venue "On Stage" becomes:
 
 9. **The player has a Search panel.** A right-rail panel like History, toggled from the
    toolbar and remembered (`PlayerPanels.search`): every format's string for the shown item,
-   the format's name above each. A click on a string copies it and the footer says so; a
-   string a format cannot make for this item reads "(nothing for this item)" and is inert.
-   Each row carries a **⌘⇧C** marker, lit on the default format; a click on a marker makes
-   that format the default, which is the same fact the Settings checkbox sets. The strings
+   the format's name above each. The default leads under the label **⌘⇧C copies** — always
+   the string the shortcut would copy — and the others follow under **Other formats**, each
+   with a **Use for ⌘⇧C** button that makes it the default, the same fact the Settings
+   checkbox sets. A click on any string copies it and the footer says so; a string a format
+   cannot make for this item reads "(nothing for this item)" and is inert. The strings
    refresh with the tags, so a tag applied in the panel beside it shows at once; the formats
    are re-read when the panel opens, so an Apply in Settings reaches an open player.
 
@@ -114,7 +116,7 @@ Year "2019" and Venue "On Stage" becomes:
 - Menu: **Search** · **Copy Search String** · **Search Firefox Bookmarks** · **Search the Web in Firefox**
 - Settings tab: **Search String**
 - Page sections: **Formats** · **Parts** · **Rules** · **Preview** · **Firefox**
-- Player panel: **Search** · marker **⌘⇧C** · empty **(nothing for this item)** · hint **Click a string to copy it · ⌘⇧C marks the menu's format**
+- Player panel: **Search** · **⌘⇧C copies** · **Other formats** · **Use for ⌘⇧C** · empty **(nothing for this item)** · hint **Click a string to copy it · “Use for ⌘⇧C” moves the default**
 - Part kinds: **Text** · **File name** · **Tags**
 - Rule kinds: **Exclude** · **Replace**
 - Case: **As is** · **lowercase** · **UPPERCASE** · **Title Case**

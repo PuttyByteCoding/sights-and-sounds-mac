@@ -21,6 +21,10 @@ struct SearchSettingsPane: View {
     @State private var sampleFileName = ""
     @State private var sampleTags: [SearchSubjectTag] = []
     @State private var statusText: String?
+    /// Where a dragged part or rule would land — the amber line under
+    /// the pointer. nil when nothing is in flight.
+    @State private var partDrop: ReorderSpot?
+    @State private var ruleDrop: ReorderSpot?
     @State private var firefoxProfile = AppSettingsStore.shared.current.firefoxProfilePath ?? ""
     @State private var webSearchURL = AppSettingsStore.shared.current.webSearchURL
 
@@ -156,6 +160,9 @@ struct SearchSettingsPane: View {
                     isLast: recipe.parts.last?.id == part.id,
                     onMove: { delta in movePart(part.id, by: delta) },
                     onRemove: { recipe.parts.removeAll { $0.id == part.id } })
+                .reorderTarget(.before(part.id), current: $partDrop) { dragged in
+                    recipe.parts = recipe.parts.moving(dragged, before: part.id)
+                }
             }
             Menu("Add Part") {
                 Button("Text") { recipe.parts.append(SearchPart(kind: .literal(""))) }
@@ -171,10 +178,13 @@ struct SearchSettingsPane: View {
                 }
             }
             .fixedSize()
+            .reorderTarget(.end, current: $partDrop) { dragged in
+                recipe.parts = recipe.parts.moving(dragged, before: nil)
+            }
         } header: {
             Text("Parts")
         } footer: {
-            Text("Top to bottom, joined with spaces. Text is used as typed; file name and tag parts take the case and quoting beside them.")
+            Text("Top to bottom, joined with spaces — drag the ≡ handle to reorder. Text is used as typed; file name and tag parts take the case and quoting beside them.")
         }
     }
 
@@ -203,16 +213,22 @@ struct SearchSettingsPane: View {
                     isLast: recipe.rules.last?.id == rule.id,
                     onMove: { delta in moveRule(rule.id, by: delta) },
                     onRemove: { recipe.rules.removeAll { $0.id == rule.id } })
+                .reorderTarget(.before(rule.id), current: $ruleDrop) { dragged in
+                    recipe.rules = recipe.rules.moving(dragged, before: rule.id)
+                }
             }
             Menu("Add Rule") {
                 Button("Exclude a value") { recipe.rules.append(SearchRule(kind: .exclude(""))) }
                 Button("Replace text") { recipe.rules.append(SearchRule(kind: .replace(from: "-", to: " "))) }
             }
             .fixedSize()
+            .reorderTarget(.end, current: $ruleDrop) { dragged in
+                recipe.rules = recipe.rules.moving(dragged, before: nil)
+            }
         } header: {
             Text("Rules")
         } footer: {
-            Text("Run top to bottom over every value the parts gathered, before case and quoting — move a rule to change the order. Exclude drops a value equal to the text, ignoring case, never a substring, so “on” cannot touch “On Stage”. Replace changes every occurrence; leave the right side empty to remove the text.")
+            Text("Run top to bottom over every value the parts gathered, before case and quoting — drag the ≡ handle to change the order. Exclude drops a value equal to the text, ignoring case, never a substring, so “on” cannot touch “On Stage”. Replace changes every occurrence; leave the right side empty to remove the text.")
         }
     }
 
@@ -392,6 +408,7 @@ private struct PartRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            ReorderHandle(id: part.id, name: kindName)
             Text(kindName)
                 .font(Theme.ui(11, .semibold))
                 .foregroundStyle(.secondary)
@@ -502,6 +519,7 @@ private struct RuleRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            ReorderHandle(id: rule.id, name: kindName)
             Text(kindName)
                 .font(Theme.ui(11, .semibold))
                 .foregroundStyle(.secondary)
@@ -554,5 +572,66 @@ private struct RuleRow: View {
         Binding(
             get: { if case .replace(_, let to) = rule.kind { to } else { "" } },
             set: { to in if case .replace(let from, _) = rule.kind { rule.kind = .replace(from: from, to: to) } })
+    }
+}
+
+// MARK: - Drag to reorder
+
+/// Where a dragged row would land: before one row, or last.
+private enum ReorderSpot: Equatable {
+    case before(UUID)
+    case end
+}
+
+/// The ≡ at the left of a part or rule row: drag it, and the row
+/// follows. The payload is the row's id, the same transferable the tag
+/// panel's rows use.
+private struct ReorderHandle: View {
+    let id: UUID
+    let name: String
+
+    var body: some View {
+        Text("≡")
+            .font(Theme.ui(13))
+            .foregroundStyle(.secondary)
+            .frame(width: 14)
+            .help("Drag to reorder")
+            .draggable(PanelRowDrag(id: id)) {
+                Text(name)
+                    .font(Theme.ui(11.5, .semibold))
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.control)
+                            .fill(Theme.Surface.raised)
+                            .stroke(Theme.Border.activeCard, lineWidth: 1))
+            }
+    }
+}
+
+extension View {
+    /// One landing spot: the row shows an amber line along its top while
+    /// a drag hovers, and takes the drop as "put the dragged row here".
+    fileprivate func reorderTarget(
+        _ spot: ReorderSpot, current: Binding<ReorderSpot?>, onDrop: @escaping (UUID) -> Void
+    ) -> some View {
+        self
+            .overlay(alignment: .top) {
+                if current.wrappedValue == spot {
+                    Rectangle().fill(Theme.Accent.amber).frame(height: 2)
+                }
+            }
+            .dropDestination(for: PanelRowDrag.self) { dropped, _ in
+                current.wrappedValue = nil
+                guard let dragged = dropped.first else { return false }
+                onDrop(dragged.id)
+                return true
+            } isTargeted: { inside in
+                if inside {
+                    current.wrappedValue = spot
+                } else if current.wrappedValue == spot {
+                    current.wrappedValue = nil
+                }
+            }
     }
 }
