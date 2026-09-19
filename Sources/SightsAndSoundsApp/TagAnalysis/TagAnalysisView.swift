@@ -777,7 +777,7 @@ private struct DecidePane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .id(candidate.id)
                 .onAppear { seed(candidate, findings: row?.findings ?? []) }
-                .sheet(item: $newTagSeed) { seedText in
+                .movableSheet(item: $newTagSeed) { seedText in
                     if let fallback = categoryID ?? model.categories.first?.id {
                         TagSheet(
                             mode: .create(categoryID: fallback, name: seedText.text),

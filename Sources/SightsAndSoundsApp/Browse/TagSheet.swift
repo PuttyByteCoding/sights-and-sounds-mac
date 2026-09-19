@@ -22,6 +22,10 @@ struct TagSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    /// Set when the sheet is up as a movable panel (`movableSheet`),
+    /// which `dismiss` cannot close; nil under a real sheet.
+    @Environment(\.panelDismiss) private var panelDismiss
+    @Environment(\.panelOpenWindow) private var panelOpenWindow
 
     let mode: Mode
     let library: LibraryDatabase
@@ -239,7 +243,7 @@ struct TagSheet: View {
 
             HStack(spacing: 10) {
                 Button("Manage Tags…") {
-                    openWindow(
+                    (panelOpenWindow ?? openWindow)(
                         id: "aux",
                         value: AuxWindowRequest(libraryID: libraryID, kind: .categories))
                 }
@@ -251,7 +255,7 @@ struct TagSheet: View {
                 // the press, so it has to be the RIGHT button. Create used
                 // to carry the escape character as a stand-in for "no
                 // default action", which made Esc create the tag.
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { close() }
                     .buttonStyle(SecondaryButtonStyle())
                     .keyboardShortcut(.cancelAction)
                 if isCreating {
@@ -274,7 +278,7 @@ struct TagSheet: View {
         .background(Theme.Surface.dialog)
         .onKeyPress { press in
             if press.key == .escape {
-                dismiss()
+                close()
                 return .handled
             }
             if isCreating, press.key == .return, enterArmed {
@@ -353,6 +357,12 @@ struct TagSheet: View {
 
     /// Both paths go through the kit's single tagging writes, so neither
     /// can mint a rival spelling or rename onto an existing name.
+    /// Close however the sheet was shown: the movable panel's own close
+    /// when it is one, else the sheet's dismiss.
+    private func close() {
+        if let panelDismiss { panelDismiss() } else { dismiss() }
+    }
+
     private func commit() {
         guard !trimmedName.isEmpty else { return }
         do {
@@ -390,7 +400,7 @@ struct TagSheet: View {
             }
             errorText = nil
             onSaved(tag)
-            dismiss()
+            close()
         } catch {
             errorText = "\(error)"
         }

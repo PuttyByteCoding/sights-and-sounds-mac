@@ -724,7 +724,7 @@ private struct PillCategoryView: View {
             categories: model.panelVocabulary.map(\.category),
             onChange: { model.refreshTagging() },
             onDismiss: restoreFieldFocus)
-        .sheet(isPresented: $creating, onDismiss: restoreFieldFocus) {
+        .movableSheet(isPresented: $creating, onDismiss: restoreFieldFocus) {
             TagSheet(
                 mode: .create(categoryID: entry.category.id, name: query),
                 library: model.library,
