@@ -204,6 +204,34 @@ import Testing
         #expect(SearchRule(kind: .exclude("x")).kind == .exclude("x", keep: .none))
     }
 
+    /// With its regex switch on, an Exclude's text is a pattern and the
+    /// matches are what it removes — keep first or last applying to the
+    /// matches — and a Replace's text is a pattern whose replacement may
+    /// name capture groups as $1, $2. An invalid pattern is left alone
+    /// rather than guessed at.
+    @Test func regexRulesRemoveAndReplaceByPattern() {
+        let whole = SearchPart(kind: .fileName(includesExtension: false, splitsPieces: false))
+        func one(_ kind: SearchRule.Kind, _ name: String) -> String {
+            SearchStringBuilder.string(recipe: SearchRecipe(parts: [whole], rules: [SearchRule(kind: kind)]), subject: subject(name))
+        }
+        // Exclude: every four-digit run goes; keep last leaves the last one.
+        #expect(one(.exclude(#"\d{4}"#, keep: .none, regex: true), "1999 Ben Folds 2019.mp4") == "Ben Folds")
+        #expect(one(.exclude(#"\d{4}"#, keep: .last, regex: true), "1999 Ben Folds 2019.mp4") == "Ben Folds 2019")
+        // Exclude ignores case as a pattern too.
+        #expect(one(.exclude("ben\\s+folds", keep: .none, regex: true), "BEN  FOLDS Live.mp4") == "Live")
+        // Replace: groups swap the two halves; the literal form would not.
+        #expect(one(.replace(from: #"(\w+)_(\w+)"#, to: "$2 $1", regex: true), "BenFolds_Live.mp4") == "Live BenFolds")
+        #expect(one(.replace(from: #"(\w+)_(\w+)"#, to: "$2 $1", regex: false), "BenFolds_Live.mp4") == "BenFolds_Live")
+        // An invalid pattern changes nothing, and says why.
+        #expect(one(.exclude("(", keep: .none, regex: true), "Ben (Folds).mp4") == "Ben (Folds)")
+        #expect(one(.replace(from: "[", to: "x", regex: true), "a[b.mp4") == "a[b")
+        #expect(SearchStringBuilder.regexProblem(in: "(") != nil)
+        #expect(SearchStringBuilder.regexProblem(in: #"\d+"#) == nil)
+        // Off by default.
+        #expect(SearchRule(kind: .exclude("x")).kind == .exclude("x", keep: .none, regex: false))
+        #expect(SearchRule(kind: .replace(from: "a", to: "b")).kind == .replace(from: "a", to: "b", regex: false))
+    }
+
     @Test func aMissingCategoryIsSkippedAndNamed() {
         let gone = UUID()
         let recipe = SearchRecipe(parts: [tags(band), tags(gone), SearchPart(kind: .literal("live"))])

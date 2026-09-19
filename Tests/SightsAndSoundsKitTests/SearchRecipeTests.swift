@@ -79,15 +79,15 @@ import Testing
         let formats = try JSONDecoder().decode(SearchFormats.self, from: Data(json.utf8))
         #expect(formats.formats.first?.rules.map(\.kind) == [
             .split(separator: "_", titleCaseWords: true, keep: .all),
-            .exclude("sdg"),
-            .replace(from: "-", to: " "),
+            .exclude("sdg", keep: .none, regex: false),
+            .replace(from: "-", to: " ", regex: false),
         ])
         // And every kind re-encodes in the shape it was read in.
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = String(data: try encoder.encode(formats), encoding: .utf8) ?? ""
-        #expect(encoded.contains(#""exclude":{"_0":"sdg","keep":"none"}"#))
-        #expect(encoded.contains(#""replace":{"from":"-","to":" "}"#))
+        #expect(encoded.contains(#""exclude":{"_0":"sdg","keep":"none","regex":false}"#))
+        #expect(encoded.contains(#""replace":{"from":"-","regex":false,"to":" "}"#))
         #expect(encoded.contains(#""keep":"all""#))
     }
 
