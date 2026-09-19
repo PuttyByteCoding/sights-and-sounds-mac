@@ -129,6 +129,22 @@ import Testing
         #expect(SearchStringBuilder.stringsAfterEachRule(recipe: SearchRecipe(parts: recipe.parts), subject: subject()).isEmpty)
     }
 
+    /// The string the rules start from: the parts applied and no rule
+    /// yet — what the first rule sees, shown above the rules so the
+    /// per-rule lines have a beginning.
+    @Test func theStringBeforeAnyRuleIsThePartsAlone() {
+        let recipe = SearchRecipe(
+            parts: [SearchPart(kind: .fileName(includesExtension: false, splitsPieces: true), format: SearchFormat(quoting: .multiWord))],
+            rules: [SearchRule(kind: .exclude("sdg")), SearchRule(kind: .replace(from: "-", to: " "))])
+        let name = "sdg_Ben-Folds-Five_OnStage_2019.mp4"
+        #expect(SearchStringBuilder.stringBeforeRules(recipe: recipe, subject: subject(name))
+            == #"sdg Ben-Folds-Five "On Stage" 2019"#)
+        // With no rules it is the whole string.
+        let bare = SearchRecipe(parts: recipe.parts)
+        #expect(SearchStringBuilder.stringBeforeRules(recipe: bare, subject: subject(name))
+            == SearchStringBuilder.string(recipe: bare, subject: subject(name)))
+    }
+
     /// Split is a rule like the others, so it can come after a replace
     /// or an exclude: each value breaks at the separator into pieces,
     /// optionally at the capitals inside a run as well, and every rule
@@ -230,6 +246,29 @@ import Testing
         // Off by default.
         #expect(SearchRule(kind: .exclude("x")).kind == .exclude("x", keep: .none, regex: false))
         #expect(SearchRule(kind: .replace(from: "a", to: "b")).kind == .replace(from: "a", to: "b", regex: false))
+    }
+
+    /// Keep first and keep last choose across EVERYTHING the part
+    /// produced, not inside each value on its own — so it makes no
+    /// difference whether the file-name part had already cut the name
+    /// into pieces before the rule ran. The reported case: with the
+    /// part's own split still on, every piece survived keep first.
+    @Test func keepFirstAndLastChooseAcrossThePartWhateverSplitItFirst() {
+        let name = "BobDylan_RoyalAlbertHall_InConcert.mp4"
+        for partSplits in [false, true] {
+            let part = SearchPart(kind: .fileName(includesExtension: false, splitsPieces: partSplits))
+            func recipe(_ keep: SearchSplitKeep) -> SearchRecipe {
+                SearchRecipe(parts: [part], rules: [SearchRule(kind: .split(separator: "_", titleCaseWords: true, keep: keep))])
+            }
+            #expect(SearchStringBuilder.string(recipe: recipe(.first), subject: subject(name)) == "Bob Dylan", "part splits: \(partSplits)")
+            #expect(SearchStringBuilder.string(recipe: recipe(.last), subject: subject(name)) == "In Concert", "part splits: \(partSplits)")
+            #expect(SearchStringBuilder.string(recipe: recipe(.all), subject: subject(name)) == "Bob Dylan Royal Albert Hall In Concert", "part splits: \(partSplits)")
+        }
+        // Several tags in one part: keep last is the last tag's last piece.
+        let tags = SearchRecipe(
+            parts: [SearchPart(kind: .tags(categoryID: band, joiner: " "))],
+            rules: [SearchRule(kind: .split(separator: " ", titleCaseWords: false, keep: .last))])
+        #expect(SearchStringBuilder.string(recipe: tags, subject: subject()) == "Five")
     }
 
     @Test func aMissingCategoryIsSkippedAndNamed() {

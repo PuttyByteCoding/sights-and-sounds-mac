@@ -53,7 +53,8 @@ Year "2019" and Venue "On Stage" becomes:
    (each value breaks at a separator into pieces, and at the capitals inside a run when
    asked, so `OnStage` is `On Stage`; it keeps every piece, or only the first or the last
    piece with something in it — the band before the first underscore, the date after the
-   last; every rule below works on what it kept; empty pieces vanish — the file-name part's own "split at _" is this rule before any other, kept for
+   last — chosen across everything the part has at that point, so a name the file-name part
+   already cut into pieces gives the same answer; every rule below works on what it kept; empty pieces vanish — the file-name part's own "split at _" is this rule before any other, kept for
    the common case). Exclude was
    whole-value-only at first, so "on" could not eat "On Stage"; it was changed on request,
    because the case that mattered was a prefix glued to a name. For every value a part
@@ -103,7 +104,8 @@ Year "2019" and Venue "On Stage" becomes:
    and Remove. Then, for the chosen format, parts as rows — a ≡ drag handle, kind, source,
    formatting — with add, remove, move up/down and drag to reorder (an amber line marks where
    the row lands; the Add button is the "last" spot); below them the rules as rows of the
-   same shape, whose order is the order they run, each with the string as it stands after
+   same shape, whose order is the order they run, headed by the string the rules start from
+   — the parts alone (`stringBeforeRules`) — and each with the string as it stands after
    that rule beneath it (`stringsAfterEachRule`), against the sample; a live preview against a **sample file name** — the library's first
    file to start, then anything typed over it, with the first item's tags. An app-wide
    section on the same page holds the Firefox profile (with Detect) and the web search URL.
