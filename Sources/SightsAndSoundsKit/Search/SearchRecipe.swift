@@ -75,14 +75,20 @@ public enum SearchExcludeKeep: String, Codable, Sendable, CaseIterable {
 /// occurrence but the first or the last, when asked; a value left
 /// empty is dropped. Replace changes every occurrence of the
 /// text inside a value, case-sensitively; an empty right-hand side
-/// removes it. "-" to a space is the one this was asked for. Split
+/// removes it. Either can take its text as a regular expression
+/// instead, in which case a Replace's right side may name capture
+/// groups as $1, $2; a pattern that does not compile does nothing. "-" to a space is the one this was asked for. Split
 /// breaks each value at a separator into pieces — and, when asked, at
 /// the capitals inside a run, so "OnStage" is "On Stage" — and every
 /// rule below it works on the pieces; empty pieces vanish.
 public struct SearchRule: Codable, Equatable, Sendable, Identifiable {
     public enum Kind: Equatable, Sendable {
-        case exclude(String, keep: SearchExcludeKeep = .none)
-        case replace(from: String, to: String)
+        /// `regex`: the text is a pattern, and the matches are what is
+        /// removed. Ignores case either way.
+        case exclude(String, keep: SearchExcludeKeep = .none, regex: Bool = false)
+        /// `regex`: `from` is a pattern and `to` its replacement, where
+        /// $1, $2 name the groups. Matches case either way.
+        case replace(from: String, to: String, regex: Bool = false)
         case split(separator: String, titleCaseWords: Bool, keep: SearchSplitKeep)
     }
 
@@ -132,8 +138,8 @@ public struct SearchPart: Codable, Equatable, Sendable, Identifiable {
 /// rather than fail the whole formats list.
 extension SearchRule.Kind: Codable {
     private enum CodingKeys: String, CodingKey { case exclude, replace, split }
-    private enum ExcludeKeys: String, CodingKey { case _0, keep }
-    private enum ReplaceKeys: String, CodingKey { case from, to }
+    private enum ExcludeKeys: String, CodingKey { case _0, keep, regex }
+    private enum ReplaceKeys: String, CodingKey { case from, to, regex }
     private enum SplitKeys: String, CodingKey { case separator, titleCaseWords, keep }
 
     public init(from decoder: Decoder) throws {
@@ -142,10 +148,14 @@ extension SearchRule.Kind: Codable {
             let nested = try container.nestedContainer(keyedBy: ExcludeKeys.self, forKey: .exclude)
             self = .exclude(
                 try nested.decode(String.self, forKey: ._0),
-                keep: try nested.decodeIfPresent(SearchExcludeKeep.self, forKey: .keep) ?? .none)
+                keep: try nested.decodeIfPresent(SearchExcludeKeep.self, forKey: .keep) ?? .none,
+                regex: try nested.decodeIfPresent(Bool.self, forKey: .regex) ?? false)
         } else if container.contains(.replace) {
             let nested = try container.nestedContainer(keyedBy: ReplaceKeys.self, forKey: .replace)
-            self = .replace(from: try nested.decode(String.self, forKey: .from), to: try nested.decode(String.self, forKey: .to))
+            self = .replace(
+                from: try nested.decode(String.self, forKey: .from),
+                to: try nested.decode(String.self, forKey: .to),
+                regex: try nested.decodeIfPresent(Bool.self, forKey: .regex) ?? false)
         } else if container.contains(.split) {
             let nested = try container.nestedContainer(keyedBy: SplitKeys.self, forKey: .split)
             self = .split(
@@ -161,14 +171,16 @@ extension SearchRule.Kind: Codable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .exclude(let text, let keep):
+        case .exclude(let text, let keep, let regex):
             var nested = container.nestedContainer(keyedBy: ExcludeKeys.self, forKey: .exclude)
             try nested.encode(text, forKey: ._0)
             try nested.encode(keep, forKey: .keep)
-        case .replace(let from, let to):
+            try nested.encode(regex, forKey: .regex)
+        case .replace(let from, let to, let regex):
             var nested = container.nestedContainer(keyedBy: ReplaceKeys.self, forKey: .replace)
             try nested.encode(from, forKey: .from)
             try nested.encode(to, forKey: .to)
+            try nested.encode(regex, forKey: .regex)
         case .split(let separator, let titleCaseWords, let keep):
             var nested = container.nestedContainer(keyedBy: SplitKeys.self, forKey: .split)
             try nested.encode(separator, forKey: .separator)

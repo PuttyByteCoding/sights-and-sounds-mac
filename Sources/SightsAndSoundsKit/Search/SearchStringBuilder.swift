@@ -58,19 +58,36 @@ public enum SearchStringBuilder {
 
     private static func apply(_ rule: SearchRule, to value: String) -> [String] {
         switch rule.kind {
-        case .replace(let from, let to):
-            return from.isEmpty ? [value] : [value.replacingOccurrences(of: from, with: to)]
-        case .exclude(let text, let keep):
+        case .replace(let from, let to, let regex):
+            guard !from.isEmpty else { return [value] }
+            if regex {
+                // A pattern that does not compile does nothing — the
+                // row says so — rather than guessing at what was meant.
+                guard let expression = try? NSRegularExpression(pattern: from) else { return [value] }
+                return [expression.stringByReplacingMatches(
+                    in: value, range: NSRange(value.startIndex..., in: value), withTemplate: to)]
+            }
+            return [value.replacingOccurrences(of: from, with: to)]
+        case .exclude(let text, let keep, let regex):
             // Wherever it appears, ignoring case — a whole value equal
             // to it is left empty and dropped by the caller. Keeping the
-            // first or last occurrence removes all the others.
+            // first or last occurrence removes all the others. As a
+            // pattern, the matches are the occurrences.
             let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !needle.isEmpty else { return [value] }
             var ranges: [Range<String.Index>] = []
-            var from = value.startIndex
-            while let found = value.range(of: needle, options: [.caseInsensitive], range: from..<value.endIndex) {
-                ranges.append(found)
-                from = found.upperBound
+            if regex {
+                guard let expression = try? NSRegularExpression(pattern: needle, options: [.caseInsensitive])
+                else { return [value] }
+                ranges = expression.matches(in: value, range: NSRange(value.startIndex..., in: value))
+                    .compactMap { Range($0.range, in: value) }
+                    .filter { !$0.isEmpty }
+            } else {
+                var from = value.startIndex
+                while let found = value.range(of: needle, options: [.caseInsensitive], range: from..<value.endIndex) {
+                    ranges.append(found)
+                    from = found.upperBound
+                }
             }
             let kept: Int?
             switch keep {
@@ -108,6 +125,17 @@ public enum SearchStringBuilder {
             }
         }
         .joined(separator: " ")
+    }
+
+    /// Why a rule's text does not work as a pattern, or nil when it
+    /// does — for the row to show beside its regex switch.
+    public static func regexProblem(in pattern: String) -> String? {
+        do {
+            _ = try NSRegularExpression(pattern: pattern)
+            return nil
+        } catch {
+            return "Not a valid pattern"
+        }
     }
 
     /// The string the rules start from: the parts applied and no rule

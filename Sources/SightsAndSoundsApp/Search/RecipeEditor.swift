@@ -316,6 +316,7 @@ struct RuleRow: View {
                 kindLabel
                 TextField(compact ? "Text to remove" : "Text to remove wherever it appears — a prefix like sdg", text: excludeText)
                     .textFieldStyle(.roundedBorder)
+                regexToggle(excludeRegex, pattern: excludeText.wrappedValue)
                 Picker("", selection: excludeKeep) {
                     ForEach(SearchExcludeKeep.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
@@ -334,6 +335,7 @@ struct RuleRow: View {
                     kindLabel
                     TextField("Text to replace", text: replaceFrom)
                         .textFieldStyle(.roundedBorder)
+                    regexToggle(replaceRegex, pattern: replaceFrom.wrappedValue)
                     Spacer(minLength: 0)
                     moveAndRemove
                 }
@@ -343,7 +345,7 @@ struct RuleRow: View {
                         .font(Theme.ui(compact ? 10.5 : 11, .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: compact ? 56 : 64, alignment: .leading)
-                    TextField("Replacement — empty removes the text", text: replaceTo)
+                    TextField(replaceRegex.wrappedValue ? "Replacement — $1, $2 for groups" : "Replacement — empty removes the text", text: replaceTo)
                         .textFieldStyle(.roundedBorder)
                     Spacer(minLength: 0)
                     // The width the move and remove buttons take above,
@@ -375,6 +377,23 @@ struct RuleRow: View {
                 .help("Every piece, or only the first or the last one with something in it")
                 Spacer(minLength: 0)
                 moveAndRemove
+            }
+        }
+    }
+
+    /// The regex switch, and the reason the text is not a pattern when
+    /// the switch is on and it is not.
+    private func regexToggle(_ isOn: Binding<Bool>, pattern: String) -> some View {
+        HStack(spacing: 4) {
+            Toggle("Regex", isOn: isOn)
+                .toggleStyle(.checkbox)
+                .font(Theme.ui(compact ? 10.5 : 11))
+                .help("Treat the text as a regular expression")
+            if isOn.wrappedValue, let problem = SearchStringBuilder.regexProblem(in: pattern) {
+                Text(problem)
+                    .font(Theme.ui(compact ? 9.5 : 10))
+                    .foregroundStyle(.red)
+                    .help("The rule does nothing until the pattern compiles")
             }
         }
     }
@@ -439,30 +458,50 @@ struct RuleRow: View {
 
     private var excludeText: Binding<String> {
         Binding(
-            get: { if case .exclude(let text, _) = rule.kind { text } else { "" } },
+            get: { if case .exclude(let text, _, _) = rule.kind { text } else { "" } },
             set: { text in
-                if case .exclude(_, let keep) = rule.kind { rule.kind = .exclude(text, keep: keep) }
+                if case .exclude(_, let keep, let regex) = rule.kind { rule.kind = .exclude(text, keep: keep, regex: regex) }
             })
     }
 
     private var excludeKeep: Binding<SearchExcludeKeep> {
         Binding(
-            get: { if case .exclude(_, let keep) = rule.kind { keep } else { .none } },
+            get: { if case .exclude(_, let keep, _) = rule.kind { keep } else { .none } },
             set: { keep in
-                if case .exclude(let text, _) = rule.kind { rule.kind = .exclude(text, keep: keep) }
+                if case .exclude(let text, _, let regex) = rule.kind { rule.kind = .exclude(text, keep: keep, regex: regex) }
+            })
+    }
+
+    private var excludeRegex: Binding<Bool> {
+        Binding(
+            get: { if case .exclude(_, _, let regex) = rule.kind { regex } else { false } },
+            set: { regex in
+                if case .exclude(let text, let keep, _) = rule.kind { rule.kind = .exclude(text, keep: keep, regex: regex) }
             })
     }
 
     private var replaceFrom: Binding<String> {
         Binding(
-            get: { if case .replace(let from, _) = rule.kind { from } else { "" } },
-            set: { from in if case .replace(_, let to) = rule.kind { rule.kind = .replace(from: from, to: to) } })
+            get: { if case .replace(let from, _, _) = rule.kind { from } else { "" } },
+            set: { from in
+                if case .replace(_, let to, let regex) = rule.kind { rule.kind = .replace(from: from, to: to, regex: regex) }
+            })
     }
 
     private var replaceTo: Binding<String> {
         Binding(
-            get: { if case .replace(_, let to) = rule.kind { to } else { "" } },
-            set: { to in if case .replace(let from, _) = rule.kind { rule.kind = .replace(from: from, to: to) } })
+            get: { if case .replace(_, let to, _) = rule.kind { to } else { "" } },
+            set: { to in
+                if case .replace(let from, _, let regex) = rule.kind { rule.kind = .replace(from: from, to: to, regex: regex) }
+            })
+    }
+
+    private var replaceRegex: Binding<Bool> {
+        Binding(
+            get: { if case .replace(_, _, let regex) = rule.kind { regex } else { false } },
+            set: { regex in
+                if case .replace(let from, let to, _) = rule.kind { rule.kind = .replace(from: from, to: to, regex: regex) }
+            })
     }
 }
 

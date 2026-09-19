@@ -45,7 +45,11 @@ Year "2019" and Venue "On Stage" becomes:
    repeats collapses to one; a value left empty is dropped, which is what happens to a
    whole piece equal to it)
    or **Replace** (every occurrence of the text inside a value becomes the other text,
-   matching case; empty removes it — `-` → ` ` is the one this was asked for) or **Split**
+   matching case; empty removes it — `-` → ` ` is the one this was asked for; either may
+   take its text as a **regular expression**, `NSRegularExpression` syntax: Exclude then
+   removes the matches and keep first/last applies to the matches, Replace's right side may
+   name groups as `$1`, `$2`, and a pattern that does not compile does nothing and is
+   flagged on the row) or **Split**
    (each value breaks at a separator into pieces, and at the capitals inside a run when
    asked, so `OnStage` is `On Stage`; it keeps every piece, or only the first or the last
    piece with something in it — the band before the first underscore, the date after the

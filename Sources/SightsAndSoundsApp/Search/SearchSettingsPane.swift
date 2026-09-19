@@ -158,7 +158,7 @@ struct SearchSettingsPane: View {
         } header: {
             Text("Rules")
         } footer: {
-            Text("Run top to bottom over every value the parts gathered, before case and quoting — drag the ≡ handle to change the order. Exclude removes its text wherever it appears, ignoring case — or all but the first or the last occurrence, when asked; a value left empty is dropped. Replace changes every occurrence, matching case; leave the right side empty to remove the text. Split breaks each value at its separator — and at the capitals inside a run, when ticked — keeping every piece or only the first or last, and the rules below work on what it kept.")
+            Text("Run top to bottom over every value the parts gathered, before case and quoting — drag the ≡ handle to change the order. Exclude removes its text wherever it appears, ignoring case — or all but the first or the last occurrence, when asked; a value left empty is dropped. Replace changes every occurrence, matching case; leave the right side empty to remove the text. Either can take its text as a regular expression (Regex): Exclude then removes the matches, and a Replace's right side may name groups as $1, $2; a pattern that does not compile does nothing. Split breaks each value at its separator — and at the capitals inside a run, when ticked — keeping every piece or only the first or last, and the rules below work on what it kept.")
         }
     }
 
