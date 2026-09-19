@@ -15,21 +15,26 @@ struct SearchPanel: View {
     @Environment(PlayerModel.self) private var model
     @Environment(BrowseModel.self) private var browse
     /// The format being edited, as a draft: the list is hidden while
-    /// it is up, and only Save touches the library.
-    @State private var draft: SearchRecipe?
+    /// it is up, and only Save touches the library. A value and a flag,
+    /// never an optional unwrapped into a binding — clearing that
+    /// binding's optional on Save trapped while the editor's fields
+    /// were still reading through it, and took the app down.
+    @State private var draft = SearchRecipe.empty
+    @State private var isEditing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Search").modifier(Theme.sectionLabel())
                 Spacer()
-                if draft == nil {
+                if !isEditing {
                     Text(model.searchFormats.formats.isEmpty ? "" : "\(model.searchFormats.formats.count)")
                         .font(Theme.mono(9.5))
                         .foregroundStyle(Theme.Text.disabled)
                     Button {
                         let count = model.searchFormats.formats.count
                         draft = SearchRecipe(name: count == 0 ? "Default" : "Format \(count + 1)")
+                        isEditing = true
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -39,8 +44,8 @@ struct SearchPanel: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            if let draftBinding = Binding($draft) {
-                editor(draftBinding)
+            if isEditing {
+                editor($draft)
             } else if model.searchFormats.formats.isEmpty {
                 Text("No search formats yet — press + to make one, or add it in Settings › Search String.")
                     .font(Theme.ui(12))
@@ -128,11 +133,11 @@ struct SearchPanel: View {
             // the tag fields and Esc to the focus stack, and a Save that
             // fired from a tag field would be a surprise.
             HStack {
-                Button("Cancel") { self.draft = nil }
+                Button("Cancel") { isEditing = false }
                 Spacer()
                 Button("Save") {
                     model.saveSearchFormat(draft.wrappedValue)
-                    self.draft = nil
+                    isEditing = false
                 }
                 .disabled(draft.wrappedValue.parts.isEmpty)
             }
@@ -169,6 +174,7 @@ struct SearchPanel: View {
 
             Button {
                 draft = format
+                isEditing = true
             } label: {
                 Image(systemName: "pencil")
                     .font(Theme.ui(10))
