@@ -33,6 +33,12 @@ struct CategoryManagerView: View {
     @State private var errorText: String?
 
     @State private var filter = ""
+    /// The search across EVERY category: its text, the index it ranks
+    /// against, and library-wide usage for the result rows. Non-empty,
+    /// the centre shows the hits instead of the picked category's table.
+    @State private var allQuery = ""
+    @State private var allIndex: [TagSearchEntry] = []
+    @State private var allUsage: [UUID: Int] = [:]
     @State private var similarOnly = false
     @State private var sortSpec: [TagSort] = [TagSort(column: .name, ascending: true)]
     @State private var mergeMode = false
@@ -117,6 +123,15 @@ struct CategoryManagerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+
+            // Across every category — the one search that does not need
+            // to know which category a tag lives in.
+            TextField("Search all tags", text: $allQuery)
+                .textFieldStyle(.roundedBorder)
+                .font(Theme.ui(12))
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+                .help("Every tag and alias in the library — a hit opens the tag in its category")
 
             ScrollView {
                 VStack(spacing: 1) {
@@ -234,6 +249,85 @@ struct CategoryManagerView: View {
     // MARK: - Centre
 
     @ViewBuilder private var centre: some View {
+        VStack(spacing: 0) {
+            if !allQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                allTagsResults
+            } else {
+                categoryCentre
+            }
+        }
+    }
+
+    /// The hits for the all-tags search, ranked the way every tag search
+    /// in the app ranks (exact, starts with, a word starts with,
+    /// contains; aliases when the name does not match), with the
+    /// category and the item count beside each. A click opens the tag
+    /// in its category and clears the search.
+    private var allTagsResults: some View {
+        let matches = TagSearchEntry.ranked(allIndex, query: allQuery, limit: 300)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(matches.isEmpty
+                    ? "No tag or alias matches “\(allQuery.trimmingCharacters(in: .whitespaces))”"
+                    : "\(matches.count) tag\(matches.count == 1 ? "" : "s") match “\(allQuery.trimmingCharacters(in: .whitespaces))”")
+                    .modifier(Theme.sectionLabel())
+                Spacer()
+                Button("Clear") { allQuery = "" }
+                    .buttonStyle(.link)
+                    .font(Theme.ui(11))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(matches, id: \.entry.id) { match in
+                        Button {
+                            open(match.entry)
+                        } label: {
+                            HStack(spacing: 8) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Theme.categoryHue(match.entry.colorIndex))
+                                    .frame(width: 6, height: 6)
+                                Text(match.entry.tag.name)
+                                    .font(Theme.ui(12, .semibold))
+                                    .foregroundStyle(Theme.Text.primary)
+                                if let alias = match.alias {
+                                    Text("via “\(alias)”")
+                                        .font(Theme.ui(10.5))
+                                        .foregroundStyle(Theme.Text.quaternary)
+                                }
+                                Text(match.entry.categoryName)
+                                    .font(Theme.ui(11))
+                                    .foregroundStyle(Theme.categoryHue(match.entry.colorIndex))
+                                Spacer(minLength: 0)
+                                Text("\(allUsage[match.entry.id] ?? 0)")
+                                    .font(Theme.mono(10.5))
+                                    .foregroundStyle(Theme.Text.tertiary)
+                                    .help("Items carrying it")
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    /// The search's hit: the tag's category into the centre, the tag
+    /// into the inspector, and the search cleared so the table shows.
+    private func open(_ entry: TagSearchEntry) {
+        selection = .category(entry.categoryID)
+        selectedTagID = entry.tag.id
+        inspectorTab = .tag
+        allQuery = ""
+        reloadTags()
+    }
+
+    @ViewBuilder private var categoryCentre: some View {
         VStack(spacing: 0) {
             switch selection {
             case .category(let id):
@@ -459,6 +553,7 @@ struct CategoryManagerView: View {
                 }
                 reloadTags()
                 reloadItemFields()
+                reloadAllTags()
             } catch { errorText = "\(error)" }
         }
     }
@@ -504,6 +599,23 @@ struct CategoryManagerView: View {
                     self.selectedTagID = nil
                 }
                 reloadTagFields()
+                reloadAllTags()
+            } catch { errorText = "\(error)" }
+        }
+    }
+
+    /// The index the all-tags search ranks against, and library-wide
+    /// usage. Rebuilt with the tags, so a rename or a new alias is
+    /// findable at once.
+    private func reloadAllTags() {
+        let library = model.library
+        Task {
+            do {
+                let vocabulary = try library.vocabulary()
+                let aliasRows = try await library.writer.read { try TagAlias.fetchAll($0) }
+                let aliases = Dictionary(grouping: aliasRows, by: \.tagID).mapValues { $0.map(\.alias) }
+                allIndex = TagSearchEntry.index(vocabulary: vocabulary, aliases: aliases)
+                allUsage = try library.tagUsageCounts()
             } catch { errorText = "\(error)" }
         }
     }
