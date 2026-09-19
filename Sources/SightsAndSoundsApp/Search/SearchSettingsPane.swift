@@ -45,6 +45,9 @@ struct SearchSettingsPane: View {
                     rulesSection
                     previewSection
                 }
+                if formats.formats.count > 1 {
+                    overviewSection
+                }
             }
             firefoxSection
             applySection
@@ -125,6 +128,13 @@ struct SearchSettingsPane: View {
                     if formats.defaultID == nil { formats.defaultID = added.id }
                     selectedFormatID = added.id
                 }
+                Button("Duplicate Format") {
+                    guard let source = formats.formats.first(where: { $0.id == selectedFormatID }) else { return }
+                    let copy = source.duplicate(named: "\(source.name) copy")
+                    formats.formats.append(copy)
+                    selectedFormatID = copy.id
+                }
+                .disabled(selectedFormatID == nil)
                 Button("Remove Format") {
                     guard let id = selectedFormatID else { return }
                     formats.formats.removeAll { $0.id == id }
@@ -136,7 +146,66 @@ struct SearchSettingsPane: View {
         } header: {
             Text("Formats")
         } footer: {
-            Text("Several formats, one library. The player's Search panel shows every format's string and copies one on a click; the menu commands use the one marked here, which the panel's ⌘⇧C marker can also move.")
+            Text("Several formats, one library. The player's Search panel shows every format's string and copies one on a click; the menu commands use the one marked here, which the panel's ⌘⇧C marker can also move. Duplicate Format copies the picked one to start another from.")
+        }
+    }
+
+    // MARK: Overview
+
+    /// Every format's configuration at once — one line per part and
+    /// per rule, and the sample's string — so two formats can be read
+    /// side by side without switching the picker between them.
+    private var overviewSection: some View {
+        let names = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
+        return Section {
+            ForEach(formats.formats) { format in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(format.name.isEmpty ? "Untitled" : format.name)
+                            .font(Theme.ui(12, .semibold))
+                        if formats.defaultFormat?.id == format.id {
+                            Text("⌘⇧C")
+                                .font(Theme.mono(9.5))
+                                .foregroundStyle(Theme.Accent.amber)
+                        }
+                        if format.id == selectedFormatID {
+                            Text("editing")
+                                .font(Theme.ui(9.5))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Edit") { selectedFormatID = format.id }
+                            .buttonStyle(.link)
+                            .font(Theme.ui(11))
+                    }
+                    if let sample {
+                        let string = SearchStringBuilder.string(recipe: format, subject: sample)
+                        Text(string.isEmpty ? "(nothing for the sample)" : string)
+                            .font(Theme.mono(11))
+                            .foregroundStyle(string.isEmpty ? .secondary : .primary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(format.parts) { part in
+                        Text("• " + part.summary(categoryNames: names))
+                            .font(Theme.ui(11))
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(format.rules) { rule in
+                        Text("→ " + rule.summary)
+                            .font(Theme.ui(11))
+                            .foregroundStyle(.secondary)
+                    }
+                    if format.parts.isEmpty, format.rules.isEmpty {
+                        Text("(empty)").font(Theme.ui(11)).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        } header: {
+            Text("All formats")
+        } footer: {
+            Text("Every format as configured — parts with •, rules with → in the order they run — against the sample. Edit picks one above; Duplicate Format starts a new one from the one picked.")
         }
     }
 

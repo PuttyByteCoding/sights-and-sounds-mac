@@ -321,3 +321,81 @@ extension LibraryDatabase {
         try searchFormats().defaultFormat ?? .empty
     }
 }
+
+// MARK: - Copying and describing
+
+extension SearchRecipe {
+    /// A new format with this one's parts and rules: its own id, and
+    /// its own ids on every part and rule, so editing the copy never
+    /// edits the original.
+    public func duplicate(named name: String) -> SearchRecipe {
+        SearchRecipe(
+            name: name,
+            parts: parts.map { SearchPart(kind: $0.kind, format: $0.format) },
+            rules: rules.map { SearchRule(kind: $0.kind) })
+    }
+}
+
+extension SearchFormat {
+    /// The case and quoting as trailing " · " pieces, empty when both
+    /// are the defaults.
+    fileprivate var summaryPieces: [String] {
+        var pieces: [String] = []
+        if letterCase != .asIs { pieces.append(letterCase.displayName) }
+        switch quoting {
+        case .never: break
+        case .multiWord: pieces.append("quote multi-word")
+        case .always: pieces.append("quote always")
+        }
+        return pieces
+    }
+}
+
+extension SearchPart {
+    /// One line: the kind, its source, and the formatting that is not
+    /// the default — for an overview of every format at once.
+    public func summary(categoryNames: [UUID: String]) -> String {
+        var pieces: [String]
+        switch kind {
+        case .literal(let text):
+            return "Text “\(text)”"
+        case .fileName(let includesExtension, let splitsPieces):
+            pieces = ["File name", includesExtension ? "with extension" : "no extension"]
+            if splitsPieces { pieces.append("split at _") }
+        case .tags(let categoryID, let joiner):
+            let source: String
+            if let categoryID {
+                source = categoryNames[categoryID] ?? "(missing category)"
+            } else {
+                source = "all categories"
+            }
+            pieces = ["Tags", source]
+            if joiner != " " { pieces.append("joined by “\(joiner)”") }
+        }
+        pieces += format.summaryPieces
+        return pieces.joined(separator: " · ")
+    }
+}
+
+extension SearchRule {
+    /// One line: what the rule does, its text — /slashed/ when it is a
+    /// pattern — and the option that is not the default.
+    public var summary: String {
+        func shown(_ text: String, regex: Bool) -> String { regex ? "/\(text)/" : "“\(text)”" }
+        switch kind {
+        case .exclude(let text, let keep, let regex):
+            var line = "Exclude \(shown(text, regex: regex))"
+            if keep != .none { line += " · keep \(keep.rawValue)" }
+            return line
+        case .replace(let from, let to, let regex):
+            return to.isEmpty
+                ? "Remove \(shown(from, regex: regex))"
+                : "Replace \(shown(from, regex: regex)) with “\(to)”"
+        case .split(let separator, let titleCaseWords, let keep):
+            var line = "Split at “\(separator)”"
+            if titleCaseWords { line += " · and at capitals" }
+            if keep != .all { line += " · keep \(keep.rawValue)" }
+            return line
+        }
+    }
+}

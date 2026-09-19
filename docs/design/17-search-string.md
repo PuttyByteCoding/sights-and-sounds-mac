@@ -100,8 +100,11 @@ Year "2019" and Venue "On Stage" becomes:
 
 7. **The page is a Settings tab.** "Search String", per-library scope header, the library
    picker the Tag Category Configuration tab uses. A **Formats** section: a picker of the
-   library's formats, the chosen one's name, a "Use for ⌘⇧C, ⌘⇧F and ⌘⇧B" checkbox, Add
-   and Remove. Then, for the chosen format, parts as rows — a ≡ drag handle, kind, source,
+   library's formats, the chosen one's name, a "Use for ⌘⇧C, ⌘⇧F and ⌘⇧B" checkbox, Add,
+   Duplicate (a copy of the picked one, new ids throughout, named "<name> copy") and
+   Remove. With more than one format, an **All formats** section lists every format's
+   configuration at once — the sample's string, one line per part (`SearchPart.summary`)
+   and per rule (`SearchRule.summary`) — with Edit to pick one. Then, for the chosen format, parts as rows — a ≡ drag handle, kind, source,
    formatting — with add, remove, move up/down and drag to reorder (an amber line marks where
    the row lands; the Add button is the "last" spot); below them the rules as rows of the
    same shape, whose order is the order they run, headed by the string the rules start from
@@ -119,7 +122,8 @@ Year "2019" and Venue "On Stage" becomes:
    with a **Use for ⌘⇧C** button that makes it the default, the same fact the Settings
    checkbox sets. A click on any string copies it and the footer says so; a string a format
    cannot make for this item reads "(nothing for this item)" and is inert. **The panel is
-   also an editor:** Edit on a row, or + in the header for a new format, replaces the list
+   also an editor:** Edit on a row, + in the header for a new format, or the copy button on
+   a row for a new format starting from that one's parts and rules, replaces the list
    with the recipe editor — the same parts and rules rows as Settings, in a two-line compact
    layout — headed by **Would copy**, the string the shown item gives for the draft,
    rewritten on every keystroke. Save writes the format to the library (a new one appended,
