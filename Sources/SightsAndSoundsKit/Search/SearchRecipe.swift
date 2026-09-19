@@ -40,7 +40,8 @@ public struct SearchFormat: Codable, Equatable, Sendable {
 
 /// Which pieces a Split keeps: every one, or only the first or last
 /// piece with something in it — "the band is before the first
-/// underscore", "the date is after the last".
+/// underscore", "the date is after the last" — chosen across
+/// everything the part has produced, however it was cut.
 public enum SearchSplitKeep: String, Codable, Sendable, CaseIterable {
     case all, first, last
 

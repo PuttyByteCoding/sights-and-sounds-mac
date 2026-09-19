@@ -40,6 +40,16 @@ public enum SearchStringBuilder {
         var values = rawValues(for: part, subject: subject)
         for rule in recipe.rules {
             values = values.flatMap { apply(rule, to: $0) }
+            // A Split's keep first / keep last chooses across EVERYTHING
+            // the part has at this point — not inside each value on its
+            // own, or a name the part had already cut into pieces would
+            // keep every piece. First and last mean the first and last
+            // with something in it, so a doubled separator cannot choose
+            // an empty one.
+            if case .split(_, _, let keep) = rule.kind, keep != .all {
+                let filled = values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                values = (keep == .first ? filled.first : filled.last).map { [$0] } ?? []
+            }
         }
         return values
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -73,17 +83,10 @@ public enum SearchStringBuilder {
                 result.removeSubrange(range)
             }
             return [result]
-        case .split(let separator, let titleCaseWords, let keep):
-            var pieces = separator.isEmpty ? [value] : value.components(separatedBy: separator)
-            if titleCaseWords { pieces = pieces.map(\.splittingTitleCaseWords) }
-            // First and last mean the first and last piece with something
-            // in it: a doubled separator must not choose an empty one.
-            let filled = pieces.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            switch keep {
-            case .all: return pieces
-            case .first: return filled.first.map { [$0] } ?? []
-            case .last: return filled.last.map { [$0] } ?? []
-            }
+        case .split(let separator, let titleCaseWords, _):
+            // Keep is applied by the caller, across the whole part.
+            let pieces = separator.isEmpty ? [value] : value.components(separatedBy: separator)
+            return titleCaseWords ? pieces.map(\.splittingTitleCaseWords) : pieces
         }
     }
 
