@@ -30,6 +30,17 @@ public struct ClipExportJob: Job {
             ClipExportJob.self, payload: JSONEncoder().encode(Payload(clipID: clipID)))
     }
 
+    /// Where an export lands: beside the parent, named for the segment.
+    /// The name is whatever the user typed, so it goes through the same
+    /// sanitizer as a template's folder names — a song called
+    /// "Medley: A/B" is a file name, not a new folder, and no name can
+    /// climb out of the parent's folder.
+    static func outputRelativePath(parentFolder: String, parentFileName: String, label: String) -> String {
+        let cleaned = OrganizeTemplate.sanitize(label)
+        let stem = (parentFileName as NSString).deletingPathExtension
+        return MediaPath.normalize("\(parentFolder)/\(stem) - \(cleaned.isEmpty ? "clip" : cleaned).mp4")
+    }
+
     public func run(_ context: JobContext) async throws {
         let library = context.library
         guard let clip = try await library.writer.read({ try MediaItem.fetchOne($0, key: payload.clipID) })
@@ -44,10 +55,8 @@ public struct ClipExportJob: Job {
         else { throw MoveError.sourceUnavailable }
 
         // Output beside the parent, named by the clip's label.
-        let label = clip.notes.isEmpty ? "clip" : clip.notes
-        let stem = (parent.fileName as NSString).deletingPathExtension
-        var outputRelative = MediaPath.normalize(
-            "\(parent.folderPath)/\(stem) - \(label).mp4")
+        var outputRelative = Self.outputRelativePath(
+            parentFolder: parent.folderPath, parentFileName: parent.fileName, label: clip.notes)
         guard let source = try await library.writer.read({
             try Source.fetchOne($0, key: parent.sourceID)
         }) else { throw MoveError.sourceUnavailable }
