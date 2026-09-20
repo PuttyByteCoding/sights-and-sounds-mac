@@ -301,28 +301,18 @@ final class AppModel {
 
     func runner(for libraryID: UUID) throws -> JobRunner {
         if let existing = runners[libraryID] { return existing }
-        let runner = JobRunner(library: try library(for: libraryID))
+        let runner = JobRunner(
+            library: try library(for: libraryID),
+            jobTypes: [
+                ImportJob.self, ContentHashJob.self, ThumbnailBatchJob.self,
+                HashDuplicateSweepJob.self, FingerprintCaptureJob.self,
+                FingerprintMatchSweepJob.self, ClipExportJob.self, RemuxJob.self,
+                EncodeJob.self, BlockRemovalJob.self, OcrJob.self, JoinJob.self,
+                ReorganizeJob.self, WritebackJob.self, RestoreTagsJob.self,
+                ValidationJob.self, MetadataSweepJob.self,
+            ],
+            paused: tasksPaused)
         runners[libraryID] = runner
-        Task {
-            await runner.setPaused(tasksPaused)
-            await runner.register(ImportJob.self)
-            await runner.register(ContentHashJob.self)
-            await runner.register(ThumbnailBatchJob.self)
-            await runner.register(HashDuplicateSweepJob.self)
-            await runner.register(FingerprintCaptureJob.self)
-            await runner.register(FingerprintMatchSweepJob.self)
-            await runner.register(ClipExportJob.self)
-            await runner.register(RemuxJob.self)
-            await runner.register(EncodeJob.self)
-            await runner.register(BlockRemovalJob.self)
-            await runner.register(OcrJob.self)
-            await runner.register(JoinJob.self)
-            await runner.register(ReorganizeJob.self)
-            await runner.register(WritebackJob.self)
-            await runner.register(RestoreTagsJob.self)
-            await runner.register(ValidationJob.self)
-            await runner.register(MetadataSweepJob.self)
-        }
         return runner
     }
 

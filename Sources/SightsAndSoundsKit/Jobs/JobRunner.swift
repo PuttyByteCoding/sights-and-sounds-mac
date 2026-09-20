@@ -9,11 +9,19 @@ import GRDB
 /// changes to it.
 public actor JobRunner {
     private let library: LibraryDatabase
-    private var jobTypes: [String: any Job.Type] = [:]
+    private var jobTypes: [String: any Job.Type]
     private var cancelRequested: Set<UUID> = []
 
-    public init(library: LibraryDatabase) {
+    /// `jobTypes` and `paused` are taken here, not set afterwards, so a
+    /// runner is complete before anyone can reach it: a caller that
+    /// enqueues and drains the moment it has the runner must never meet
+    /// a kind that is "not registered yet" or a pause that has not
+    /// landed.
+    public init(library: LibraryDatabase, jobTypes: [any Job.Type] = [], paused: Bool = false) {
         self.library = library
+        self.jobTypes = Dictionary(
+            jobTypes.map { ($0.kind, $0) }, uniquingKeysWith: { _, last in last })
+        self.isPaused = paused
         Self.settleInterrupted(in: library)
     }
 
@@ -132,16 +140,38 @@ public actor JobRunner {
     /// already running finishes, queued jobs wait, and enqueues still
     /// land. Session-only — resuming needs a runPending() kick to drain
     /// what accumulated.
-    public private(set) var isPaused = false
+    public private(set) var isPaused: Bool
 
     public func setPaused(_ paused: Bool) {
         isPaused = paused
     }
 
     /// Drain the queue: run every queued job, oldest first, serially.
-    /// Returns the ids it settled, in order; stops early when paused.
+    /// Returns the ids the drain settled, in order; stops early when
+    /// paused.
+    ///
+    /// There is one drain at a time. An actor is reentrant: while a drain
+    /// is suspended inside a job, a second call gets in — and every
+    /// window and panel calls this. A second loop would start the next
+    /// queued job beside the running one, so a caller that arrives
+    /// mid-drain joins the drain in flight instead. It returns when that
+    /// drain does, which is after anything the caller queued has run:
+    /// the loop looks for the next job again after every job.
     @discardableResult
     public func runPending() async throws -> [UUID] {
+        if let drain { return try await drain.value }
+        let task = Task { try await self.drainQueue() }
+        drain = task
+        return try await task.value
+    }
+
+    private var drain: Task<[UUID], any Error>?
+
+    private func drainQueue() async throws -> [UUID] {
+        // Cleared in the same actor turn that finds the queue empty, so
+        // a caller either joins a loop that will look again or starts
+        // its own — never neither.
+        defer { drain = nil }
         var settled: [UUID] = []
         while !isPaused, let next = try nextQueued() {
             await run(next)
