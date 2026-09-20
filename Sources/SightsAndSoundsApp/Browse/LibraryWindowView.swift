@@ -25,7 +25,7 @@ struct LibraryWindowView: View {
                 ProgressView()
             }
         }
-        .task {
+        .task { [app] in
             guard model == nil else { return }
             do {
                 model = BrowseModel(

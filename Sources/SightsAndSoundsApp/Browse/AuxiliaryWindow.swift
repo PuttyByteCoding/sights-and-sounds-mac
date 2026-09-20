@@ -89,7 +89,7 @@ struct AuxiliaryWindowView: View {
             }
         }
         .defaultToolbarShowsLabels()
-        .task {
+        .task { [app] in
             guard model == nil else { return }
             do {
                 let made = BrowseModel(
