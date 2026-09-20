@@ -19,16 +19,33 @@ set -uo pipefail
 
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-# Files worth checking. Add extensions as the repo grows. Prunes build and
-# dependency directories.
+cd "$ROOT" || exit 2
+
+# Files worth checking. Add extensions as the repo grows.
+#
+# In a git checkout the list is what git TRACKS: that is what CI sees and
+# what can be pushed. Walking the working tree instead also scanned dist/,
+# editor state and local indexes, so a local run and CI disagreed. The
+# design handoff's .html and .js are text too and are under the guard.
+# Outside a checkout (a path argument), fall back to walking the folder.
+wanted() {
+  while IFS= read -r -d '' file; do
+    case "$file" in
+      *.swift|*.m|*.h|*.sql|*.json|*.plist|*.md|*.yml|*.yaml|*.sh|*.strings|*.pbxproj|*.html|*.js|*.css|*.txt)
+        printf '%s\0' "$file" ;;
+    esac
+  done
+}
+
 list_files() {
-  find "$ROOT" \
-    \( -path '*/.git' -o -path '*/.build' -o -path '*/DerivedData' \
-       -o -path '*/node_modules' -o -path '*/.swiftpm' \) -prune -o \
-    -type f \( -name '*.swift' -o -name '*.m' -o -name '*.h' -o -name '*.sql' \
-               -o -name '*.json' -o -name '*.plist' -o -name '*.md' \
-               -o -name '*.yml' -o -name '*.yaml' -o -name '*.sh' \
-               -o -name '*.strings' -o -name '*.pbxproj' \) -print0
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git ls-files -z | wanted
+  else
+    find . \
+      \( -path '*/.git' -o -path '*/.build' -o -path '*/DerivedData' \
+         -o -path '*/node_modules' -o -path '*/.swiftpm' \) -prune -o \
+      -type f -print0 | sed -e 's#\./##g' | wanted
+  fi
 }
 
 FILE_COUNT=$(list_files | tr -dc '\0' | wc -c | tr -d ' ')
@@ -65,11 +82,14 @@ CREATE[[:space:]]+TABLE[[:space:]]+videos\b'
 # Property"), so it names a banned term for the same reason the ledger
 # does. Only the index — the sixteen specs stay under the guard, where a
 # real slip would be caught.
+#
+# Anchored to the exact paths. As substrings they exempted any file that
+# happened to be called terminology.md, anywhere.
 filter_own() {
-  grep -v '/check-terminology\.sh:' \
-    | grep -v '/terminology\.md:' \
-    | grep -v '/replatform-brief\.' \
-    | grep -v '/docs/design/README\.md:'
+  grep -v '^scripts/check-terminology\.sh:' \
+    | grep -v '^docs/terminology\.md:' \
+    | grep -v '^docs/replatform-brief\.[^/:]*:' \
+    | grep -v '^docs/design/README\.md:'
 }
 
 fail=0

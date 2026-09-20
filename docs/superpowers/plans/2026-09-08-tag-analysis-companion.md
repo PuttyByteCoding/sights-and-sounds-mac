@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Work in the worktree `/Users/mark/Code/sights-and-sounds-claude` on branch `feature/tag-analysis-companion` (already carries the spec). Never touch `/Users/mark/Code/sights-and-sounds-mac`.
+- Work in the worktree `~/Code/sights-and-sounds-claude` on branch `feature/tag-analysis-companion` (already carries the spec). Never touch `~/Code/sights-and-sounds-mac`.
 - Build with zero warnings: `swift build 2>&1 | grep -E "warning:|error:|Build complete"`.
 - Tests: `swift test` (Kit + App targets). Guards: `scripts/check-no-private-data.sh`, `scripts/check-terminology.sh`. Launch check: `./scripts/make-app-bundle.sh && open dist/SightsAndSounds.app`, then `pkill -f sights-and-sounds-claude/dist`.
 - Commit messages: `Area: what changed`, body says why/what/how verified, ends with the Co-Authored-By and Claude-Session trailers used on this branch. Never `--no-verify`.

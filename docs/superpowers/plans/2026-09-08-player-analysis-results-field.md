@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Worktree `/Users/mark/Code/sights-and-sounds-claude`; never the main checkout. Zero-warning build, full `swift test`, both `scripts/check-*.sh`, and a bundle launch before pushing.
+- Worktree `~/Code/sights-and-sounds-claude`; never the main checkout. Zero-warning build, full `swift test`, both `scripts/check-*.sh`, and a bundle launch before pushing.
 - Copy verbatim: heading "Tag Analysis Results"; placeholder "Open Tag Analysis to see results"; list text "Scanning…" and "Nothing found for this video."
 - Settings decode tolerantly (`decodeIfPresent` with defaults) like every other field.
 - Tests never write `AppSettingsStore.shared`; pure functions take positions as parameters.
