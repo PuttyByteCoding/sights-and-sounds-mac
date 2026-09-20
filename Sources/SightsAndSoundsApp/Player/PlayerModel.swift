@@ -80,6 +80,7 @@ final class PlayerModel {
     private var skipSettings = SkipSettings()
     private var timeObserver: Any?
     private var endObserver: (any NSObjectProtocol)?
+    private var statusObserver: NSKeyValueObservation?
     private var completionRecorded = false
     private let fileAccess: any FileAccess = LiveFileAccess()
 
@@ -448,7 +449,9 @@ final class PlayerModel {
                 guard let self, self.loadGeneration == generation else { return }
                 switch outcome {
                 case .success(let (loaded, url)): self.apply(loaded: loaded, url: url)
-                case .failure(let error): self.loadError = "\(error)"
+                case .failure(let error):
+                    self.stopForFailedLoad()
+                    self.loadError = "\(error)"
                 }
             }
         }
@@ -456,10 +459,12 @@ final class PlayerModel {
 
     private func apply(loaded: MediaItem?, url: URL?) {
         guard let loaded else {
+            stopForFailedLoad()
             loadError = "The item no longer exists."
             return
         }
         guard let url else {
+            stopForFailedLoad()
             item = loaded
             publishToSession()
             loadError = "The item's source is offline."
@@ -486,7 +491,8 @@ final class PlayerModel {
             name: .sasPlaybackDidLoad, object: nil,
             userInfo: ["libraryID": libraryID, "sender": playerToken])
 
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        let playerItem = AVPlayerItem(url: url)
+        player.replaceCurrentItem(with: playerItem)
         // Mute is SESSION state, not per-item: the settings toggle seeds
         // it once at launch, and from then on the operator's own toggle
         // is the truth until the app restarts. Re-reading the setting on
@@ -500,6 +506,7 @@ final class PlayerModel {
         pendingSeekTarget = nil
         isBuffering = false
         installObserver()
+        observeStatus(of: playerItem)
         refreshTagging()
         refreshBlocks()
         publishToSession()
@@ -516,6 +523,22 @@ final class PlayerModel {
     }
 
     private(set) var fileURL: URL?
+
+    /// A load that cannot play leaves nothing playing. `load` has already
+    /// taken the observers off, so without this the LAST item carried on
+    /// under the new item's title — playhead frozen, `isPlaying` still
+    /// true, and `fileURL` still answering for a file that is no longer
+    /// the one on screen.
+    private func stopForFailedLoad() {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        isPlaying = false
+        isBuffering = false
+        pendingSeekTarget = nil
+        fileURL = nil
+        currentSeconds = 0
+        durationSeconds = 0
+    }
 
     // MARK: - Transport
 
@@ -1225,6 +1248,23 @@ final class PlayerModel {
         timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
+    }
+
+    /// A file the player cannot open says so. Nothing used to watch the
+    /// item's status, so a damaged or unsupported file was a black frame
+    /// that claimed to be playing.
+    private func observeStatus(of playerItem: AVPlayerItem) {
+        statusObserver = playerItem.observe(\.status) { [weak self] observed, _ in
+            guard observed.status == .failed else { return }
+            let reason = observed.error?.localizedDescription ?? "unknown error"
+            Task { @MainActor [weak self] in
+                guard let self, self.player.currentItem === observed else { return }
+                self.stopForFailedLoad()
+                self.loadError = "This file could not be played: \(reason)"
+            }
+        }
     }
 
     /// Write resume position + last-watched. Called on pause, item switch
