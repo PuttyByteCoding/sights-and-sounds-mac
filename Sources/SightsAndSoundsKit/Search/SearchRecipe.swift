@@ -293,6 +293,17 @@ extension SearchFormats: Codable {
     }
 }
 
+public enum SearchFormatsError: Error, CustomStringConvertible, Equatable {
+    case storedFormatsUnreadable
+
+    public var description: String {
+        switch self {
+        case .storedFormatsUnreadable:
+            "this library's search formats were written in a form this version cannot read, so they were left untouched"
+        }
+    }
+}
+
 extension LibraryDatabase {
     /// The library's formats; the empty set when none is stored or the
     /// stored JSON cannot be read — the shape may grow, and a recipe
@@ -304,12 +315,35 @@ extension LibraryDatabase {
         return (try? JSONDecoder().decode(SearchFormats.self, from: data)) ?? .empty
     }
 
-    public func setSearchFormats(_ formats: SearchFormats) throws {
+    /// True when formats are stored but this build cannot decode them —
+    /// a newer build's shape, or a damaged value. `searchFormats()` shows
+    /// that as the empty set; this is how a caller tells the two apart.
+    public func storedSearchFormatsAreUnreadable() throws -> Bool {
+        try writer.read { db in
+            try Self.isUnreadable(try LibraryInfo.fetchOne(db)?.searchRecipe)
+        }
+    }
+
+    private static func isUnreadable(_ raw: String?) throws -> Bool {
+        guard let raw, let data = raw.data(using: .utf8) else { return false }
+        return (try? JSONDecoder().decode(SearchFormats.self, from: data)) == nil
+    }
+
+    /// Save the formats. Refuses when what is stored cannot be read:
+    /// an editor that opened on "no formats" would otherwise replace
+    /// every format the library has with whatever it was showing.
+    /// `replacingUnreadable` is the deliberate way past that.
+    public func setSearchFormats(
+        _ formats: SearchFormats, replacingUnreadable: Bool = false
+    ) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = String(data: try encoder.encode(formats), encoding: .utf8)
         try writer.write { db in
             guard var info = try LibraryInfo.fetchOne(db) else { return }
+            if !replacingUnreadable, try Self.isUnreadable(info.searchRecipe) {
+                throw SearchFormatsError.storedFormatsUnreadable
+            }
             info.searchRecipe = encoded
             try info.update(db)
         }

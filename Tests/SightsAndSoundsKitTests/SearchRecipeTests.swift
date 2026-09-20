@@ -144,4 +144,26 @@ import Testing
         #expect(try library.searchFormats() == .empty)
         #expect(try library.searchRecipe() == .empty)
     }
+
+    /// Reading an unreadable value as empty is fine. Saving over it is
+    /// not: every format the library had would be gone, silently.
+    @Test func savingNeverReplacesFormatsThisBuildCannotRead() throws {
+        let library = try makeLibrary()
+        try library.writer.write { db in
+            try db.execute(sql: "UPDATE libraryInfo SET searchRecipe = '{\"formats\": \"from a newer build\"}'")
+        }
+        #expect(try library.storedSearchFormatsAreUnreadable())
+
+        let mine = SearchFormats(formats: [SearchRecipe(name: "Mine")], defaultID: nil)
+        #expect(throws: SearchFormatsError.storedFormatsUnreadable) {
+            try library.setSearchFormats(mine)
+        }
+        let stored = try library.writer.read { try String.fetchOne($0, sql: "SELECT searchRecipe FROM libraryInfo") }
+        #expect(stored == "{\"formats\": \"from a newer build\"}")
+
+        // Replacing them is a decision someone makes, not a side effect.
+        try library.setSearchFormats(mine, replacingUnreadable: true)
+        #expect(try library.searchFormats() == mine)
+        #expect(try !library.storedSearchFormatsAreUnreadable())
+    }
 }
