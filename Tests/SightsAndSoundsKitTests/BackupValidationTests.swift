@@ -47,6 +47,71 @@ import Testing
         try library.close()
     }
 
+    /// SQLite reads a `-wal` file it finds beside a database as that
+    /// database's pending writes. Left next to a restored file, the old
+    /// library's WAL belongs to a different database — a documented way
+    /// to corrupt one.
+    @Test func restoreArchivesTheOldFileWithItsSidecarsAndLeavesNoneBehind() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-restore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let libraryURL = dir.appendingPathComponent("Library.sqlite")
+        let archiveDir = dir.appendingPathComponent("Backups/Library", isDirectory: true)
+
+        // The backup holds one item; the live library moves on to two.
+        let library = try LibraryDatabase.open(at: libraryURL)
+        try library.ensureInfo(name: "Library")
+        let source = Source(name: "S", rootPath: "/tmp/sas-restore-media")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4").insert(db)
+        }
+        let backupURL = try library.backup(into: dir.appendingPathComponent("Backups"))
+        try await library.writer.write { db in
+            try MediaItem(sourceID: source.id, kind: .video, relativePath: "b.mp4").insert(db)
+        }
+        try library.close()
+        // What a close that failed to checkpoint leaves behind.
+        try Data("stale wal".utf8).write(to: URL(fileURLWithPath: libraryURL.path + "-wal"))
+        try Data("stale shm".utf8).write(to: URL(fileURLWithPath: libraryURL.path + "-shm"))
+
+        let archived = try LibraryDatabase.restore(
+            backup: backupURL, over: libraryURL, archivingInto: archiveDir)
+
+        let archivedURL = try #require(archived)
+        #expect(FileManager.default.fileExists(atPath: archivedURL.path))
+        #expect(FileManager.default.fileExists(atPath: archivedURL.path + "-wal"))
+        #expect(FileManager.default.fileExists(atPath: archivedURL.path + "-shm"))
+        #expect(!FileManager.default.fileExists(atPath: libraryURL.path + "-wal"))
+        #expect(!FileManager.default.fileExists(atPath: libraryURL.path + "-shm"))
+
+        let restored = try LibraryDatabase.open(at: libraryURL)
+        #expect(try await restored.writer.read { try MediaItem.fetchCount($0) } == 1)
+        try restored.close()
+    }
+
+    @Test func restoreRefusesABackupThatIsNotALibraryAndTouchesNothing() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-restore-bad-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let libraryURL = dir.appendingPathComponent("Library.sqlite")
+        let library = try LibraryDatabase.open(at: libraryURL)
+        try library.ensureInfo(name: "Library")
+        try library.close()
+        let junk = dir.appendingPathComponent("junk.sqlite")
+        try Data("not a database".utf8).write(to: junk)
+
+        #expect(throws: (any Error).self) {
+            try LibraryDatabase.restore(
+                backup: junk, over: libraryURL, archivingInto: dir.appendingPathComponent("Archive"))
+        }
+        let untouched = try LibraryDatabase.open(at: libraryURL)
+        #expect(try untouched.info()?.name == "Library")
+        try untouched.close()
+    }
+
     @Test func verifyRefusesGarbage() throws {
         let junk = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-junk-\(UUID().uuidString).sqlite")

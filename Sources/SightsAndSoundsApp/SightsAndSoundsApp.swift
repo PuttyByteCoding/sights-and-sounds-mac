@@ -326,39 +326,76 @@ final class AppModel {
         return runner
     }
 
-    /// Restore a library file from a backup: verify the backup opens,
-    /// close the live handle, archive the current file beside the backups
-    /// (never destroyed), copy the backup into place, drop caches so the
-    /// next open is fresh. Caller has confirmed and closed windows.
+    /// Why a library's file cannot be swapped or let go of right now.
+    enum LibraryInUse: Error, CustomStringConvertible {
+        case windowsOpen
+        case jobRunning
+
+        var description: String {
+            switch self {
+            case .windowsOpen: "close this library's windows first"
+            case .jobRunning: "a background task is running on this library — let it finish or cancel it first"
+            }
+        }
+    }
+
+    /// The handle is about to be closed under whoever holds it. A dialog
+    /// asking nicely is not a guard: a window left open keeps a closed
+    /// handle and every read after that fails, and a job mid-write is
+    /// writing to a file that is about to be moved.
+    private func ensureNotInUse(_ id: UUID) throws {
+        guard !openLibraryIDs.contains(id) else { throw LibraryInUse.windowsOpen }
+        // No runner this session means nothing can be running; a row left
+        // `running` by a crash is settled when a runner is next created
+        // and must not block a restore until then.
+        guard runners[id] != nil, let open = openHandles[id] else { return }
+        let running = try open.writer.read { db in
+            try Int.fetchOne(
+                db, sql: "SELECT COUNT(*) FROM job WHERE state = ?",
+                arguments: [JobState.running.rawValue]) ?? 0
+        }
+        guard running == 0 else { throw LibraryInUse.jobRunning }
+    }
+
+    /// Restore a library file from a backup: refuse while the library is
+    /// in use, close the live handle, then let the kit verify the backup,
+    /// archive the current file with its sidecars beside the backups
+    /// (never destroyed) and copy the backup into place. Caches are
+    /// dropped so the next open is fresh.
     func restoreLibrary(id: UUID, from backupURL: URL) throws {
         guard let ref = libraries.first(where: { $0.id == id }) else {
             throw CocoaError(.fileNoSuchFile)
         }
         _ = try LibraryDatabase.verifyBackup(at: backupURL)
+        try ensureNotInUse(id)
 
-        if let open = try? library(for: id) { try? open.close() }
+        // Opened if it was not, so the close can fold the WAL into the
+        // file that is about to be archived. A close that fails stops the
+        // restore: swapping the file under a handle that is still open is
+        // the thing this must never do.
+        try library(for: id).close()
         runners[id] = nil
         openHandles[id] = nil
 
-        let currentURL = URL(fileURLWithPath: ref.filePath)
-        let archiveDir = LibraryDatabase.defaultBackupDirectory()
-            .appendingPathComponent(ref.name, isDirectory: true)
-        try FileManager.default.createDirectory(at: archiveDir, withIntermediateDirectories: true)
-        let archive = archiveDir.appendingPathComponent(
-            "\(ref.name) pre-restore \(Date().timeIntervalSince1970).sqlite")
-        if FileManager.default.fileExists(atPath: currentURL.path) {
-            try FileManager.default.moveItem(at: currentURL, to: archive)
-        }
-        try FileManager.default.copyItem(at: backupURL, to: currentURL)
+        try LibraryDatabase.restore(
+            backup: backupURL, over: URL(fileURLWithPath: ref.filePath),
+            archivingInto: LibraryDatabase.defaultBackupDirectory()
+                .appendingPathComponent(ref.name, isDirectory: true))
         refresh()
     }
 
     /// Forget a library: close its open handle, drop its runner, delete
     /// the registry row. The library FILE on disk is untouched — Add
     /// Existing… re-registers it, reconciled by the library's own id.
-    /// Caller has confirmed and closed the library's windows.
+    /// Refused while the library has windows open or a task running.
     func removeLibrary(id: UUID) {
-        if let open = openHandles[id] { try? open.close() }
+        do {
+            try ensureNotInUse(id)
+            try openHandles[id]?.close()
+        } catch {
+            loadError = "Could not remove the library from the list: \(error)"
+            return
+        }
         runners[id] = nil
         openHandles[id] = nil
         do {
