@@ -117,6 +117,25 @@ import Testing
         #expect(!markedLoser.needsReview)
     }
 
+    @Test func decideRefusesAParentAndItsOwnSegment() throws {
+        let (f, parent, _, _) = try decideFixture()
+        // A segment's file IS the parent's file: "keep the song, delete
+        // the show" would stage the only copy of both.
+        let segment = try f.library.createEmbeddedClip(
+            parentID: parent.id, name: "Song", startSeconds: 0, endSeconds: 10, role: .song)
+
+        #expect(throws: DecideError.parentAndSegment) {
+            try f.library.decide(
+                keeper: segment.id, loser: parent.id, candidateID: nil, mergeTagIDs: [])
+        }
+        #expect(throws: DecideError.parentAndSegment) {
+            try f.library.decide(
+                keeper: parent.id, loser: segment.id, candidateID: nil, mergeTagIDs: [])
+        }
+        let untouched = try f.library.writer.read { try MediaItem.fetchOne($0, key: parent.id)! }
+        #expect(!untouched.markedForDeletion)
+    }
+
     @Test func singleValueCategoryKeeperWins() throws {
         let (f, keeper, loser, _) = try decideFixture()
         // Make Recording Type single-value; give the loser AUD while the

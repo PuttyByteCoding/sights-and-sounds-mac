@@ -144,6 +144,97 @@ import Testing
         #expect(candidates.count == 1)  // no second row for the same pair
     }
 
+    // MARK: Segments are not files
+
+    /// A segment row carries its parent's path — its file IS the parent's
+    /// file. A sweep that treats it as a file pairs the parent with its
+    /// own songs, and resolving that pair stages the one real file.
+    private func insertSegment(
+        _ library: LibraryDatabase, of parent: MediaItem, hash: String? = nil
+    ) async throws -> MediaItem {
+        let segment = try library.createEmbeddedClip(
+            parentID: parent.id, name: "Song", startSeconds: 0, endSeconds: 10, role: .song)
+        if let hash {
+            try await library.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE mediaItem SET contentHash = ? WHERE id = ?",
+                    arguments: [hash, segment.id])
+            }
+        }
+        return segment
+    }
+
+    @Test func hashSweepNeverPairsAParentWithItsSegments() async throws {
+        let (library, runner, source) = try await makeLibrary()
+        let parent = try await insertItem(library, source, path: "show.mp4", hash: "same")
+        // Rows an earlier sweep hashed: same bytes, because same file.
+        _ = try await insertSegment(library, of: parent, hash: "same")
+        _ = try await insertSegment(library, of: parent, hash: "same")
+
+        let job = try await runner.enqueue(HashDuplicateSweepJob.self)
+        try await runner.runPending()
+        let row = try await library.writer.read { try JobRecord.fetchOne($0, key: job.id)! }
+        #expect(row.summary == "no new identical-file pairs")
+        let candidates = try await library.writer.read { try DuplicateCandidate.fetchAll($0) }
+        #expect(candidates.isEmpty)
+    }
+
+    @Test func fingerprintSweepIgnoresSegmentFingerprints() async throws {
+        let (library, runner, source) = try await makeLibrary()
+        let parent = try await insertItem(library, source, path: "show.mp4")
+        let segment = try await insertSegment(library, of: parent)
+        var rng = DemoVocabulary.SeededGenerator(seed: 44)
+        let fp = (0..<800).map { _ in Int32(truncatingIfNeeded: rng.next()) }
+        try await library.writer.write { db in
+            for id in [parent.id, segment.id] {
+                try AudioFingerprintRecord(
+                    mediaItemID: id, durationSeconds: 100,
+                    fingerprint: AudioFingerprintRecord.pack(fp), toolVersion: "t").insert(db)
+            }
+        }
+
+        _ = try await runner.enqueue(FingerprintMatchSweepJob.self)
+        try await runner.runPending()
+        let candidates = try await library.writer.read { try DuplicateCandidate.fetchAll($0) }
+        #expect(candidates.isEmpty)
+    }
+
+    @Test func fingerprintCaptureQueuesFilesNotSegments() async throws {
+        let (library, _, source) = try await makeLibrary()
+        let parent = try await insertItem(library, source, path: "show.mp4")
+        _ = try await insertSegment(library, of: parent)
+
+        let pending = try await library.writer.read { try FingerprintCaptureJob.pendingItems($0) }
+        #expect(pending.map(\.id) == [parent.id])
+    }
+
+    @Test func sweepsClearThePairsAnEarlierSweepMadeWithSegments() async throws {
+        let (library, runner, source) = try await makeLibrary()
+        let parent = try await insertItem(library, source, path: "show.mp4", hash: "same")
+        let segment = try await insertSegment(library, of: parent, hash: "same")
+        let other = try await insertItem(library, source, path: "other.mp4")
+        try await library.writer.write { db in
+            // Left behind by the old sweep: pending, machine-made.
+            try DuplicateCandidate(itemA: parent.id, itemB: segment.id, source: .contentHash).insert(db)
+            // A pair a person made is theirs to resolve.
+            try DuplicateCandidate(itemA: other.id, itemB: segment.id, source: .manual).insert(db)
+        }
+
+        _ = try await runner.enqueue(HashDuplicateSweepJob.self)
+        try await runner.runPending()
+        let candidates = try await library.writer.read { try DuplicateCandidate.fetchAll($0) }
+        #expect(candidates.map(\.source) == [.manual])
+    }
+
+    @Test func statusCountsFilesNotSegments() async throws {
+        let (library, _, source) = try await makeLibrary()
+        let parent = try await insertItem(library, source, path: "show.mp4")
+        _ = try await insertSegment(library, of: parent)
+
+        #expect(try library.contentHashStatus().missing == 1)
+        #expect(try library.fingerprintStatus().missing == 1)
+    }
+
     @Test func captureJobWithoutToolIsANoteNotAFailure() async throws {
         // On machines without fpcalc the sweep succeeds with guidance.
         guard FingerprintCaptureJob.fpcalcPath() == nil else { return }

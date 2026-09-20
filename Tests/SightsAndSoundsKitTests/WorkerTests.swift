@@ -125,6 +125,24 @@ import Testing
         #expect(secondRow.summary == "0 hashed")
     }
 
+    @Test func hashSweepHashesFilesNotSegments() async throws {
+        let f = try await WorkerFixture()
+        defer { f.tearDown() }
+        try await f.importAll()
+        let parent = try await f.items[0]
+        // A song inside a.mp4: same path, no bytes of its own.
+        let segment = try f.library.createEmbeddedClip(
+            parentID: parent.id, name: "Song", startSeconds: 0, endSeconds: 1, role: .song)
+
+        let job = try await f.runner.enqueue(ContentHashJob.self)
+        try await f.runner.runPending()
+        let row = try await f.library.writer.read { try JobRecord.fetchOne($0, key: job.id)! }
+        #expect(row.summary == "2 hashed")
+
+        let stored = try await f.library.writer.read { try MediaItem.fetchOne($0, key: segment.id)! }
+        #expect(stored.contentHash == nil)
+    }
+
     // MARK: Thumbnail sweep
 
     @Test func thumbnailSweepGeneratesFromDiskStateAndSelfHeals() async throws {
