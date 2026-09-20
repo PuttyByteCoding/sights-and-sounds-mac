@@ -36,6 +36,7 @@ struct MaintenanceView: View {
     @State private var status: String?
     @State private var errorText: String?
     @State private var confirmPurge = false
+    @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -496,10 +497,15 @@ struct MaintenanceView: View {
                 Button(stagedCount == 0
                     ? "Nothing staged"
                     : "Purge \(stagedCount) staged rows · \(ByteCountFormatter.string(fromByteCount: reclaimable, countStyle: .file))") {
-                    confirmPurge = true
+                    askBeforePurging()
                 }
                 .buttonStyle(DestructiveButtonStyle())
                 .disabled(stagedCount == 0)
+                .unsavedSegmentsPrompt(
+                    $unsavedSegments,
+                    deletableCount: stagedCount - (unsavedSegments?.count ?? 0),
+                    saveSegments: { model.saveSegmentsAsFiles($0) },
+                    deleteTheOthers: { purge() })
                 .confirmationDialog(
                     "Permanently delete \(stagedCount) marked items and their staged files? This cannot be undone.",
                     isPresented: $confirmPurge
@@ -589,12 +595,24 @@ struct MaintenanceView: View {
         }
     }
 
+    private func askBeforePurging() {
+        do {
+            let unsaved = try model.library.unsavedSegments(ofFlagged: nil)
+            if unsaved.isEmpty { confirmPurge = true } else { unsavedSegments = unsaved }
+        } catch {
+            errorText = "\(error)"
+        }
+    }
+
     private func purge() {
         do {
             let outcome = try model.library.purgeDeleted()
             var text = "\(outcome.rowsDeleted) items removed, \(outcome.filesDeleted) files deleted."
             if !outcome.fileFailures.isEmpty {
                 text += " \(outcome.fileFailures.count) files could not be deleted and their items were kept."
+            }
+            if !outcome.keptForSegments.isEmpty {
+                text += " \(outcome.keptForSegments.count) videos were kept because their segments are not saved as files."
             }
             if !outcome.rowFailures.isEmpty {
                 text += " \(outcome.rowFailures.count) items could not be removed from the library: "
