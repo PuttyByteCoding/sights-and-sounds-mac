@@ -58,12 +58,11 @@ public struct RepairJob: Job {
 
         await context.reportProgress(current: 0, total: 3)
 
-        // 1. Run the recipe into a temp file.
+        // 1. Run the recipe into a working file on the item's own volume.
         let ext = (item.relativePath as NSString).pathExtension
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sas-repair-\(item.id.uuidString).\(ext.isEmpty ? "mp4" : ext)")
-        try? FileManager.default.removeItem(at: tempURL)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let tempURL = try LibraryDatabase.workingURL(
+            toReplace: fileURL, fileExtension: ext.isEmpty ? "mp4" : ext)
+        defer { try? FileManager.default.removeItem(at: tempURL.deletingLastPathComponent()) }
         try FfmpegTool.run(
             payload.recipe.resolvedArguments(input: fileURL.path, output: tempURL.path),
             tool: tool)
@@ -81,20 +80,9 @@ public struct RepairJob: Job {
             try Source.fetchOne($0, key: item.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-        var archiveRelative = "\(MediaPath.archiveFolder)/\(item.relativePath)"
-        if fileAccess.isReachable(root.appendingPathComponent(archiveRelative)) {
-            let archiveExt = (archiveRelative as NSString).pathExtension
-            let base = (archiveRelative as NSString).deletingPathExtension
-            archiveRelative = archiveExt.isEmpty
-                ? "\(base)-\(LibraryDatabase.collisionStamp())"
-                : "\(base)-\(LibraryDatabase.collisionStamp()).\(archiveExt)"
-        }
-        try LibraryDatabase.moveWithRetries(
-            fileAccess: fileAccess, from: fileURL,
-            to: root.appendingPathComponent(archiveRelative))
-        try LibraryDatabase.moveWithRetries(
-            fileAccess: fileAccess, from: tempURL,
-            to: root.appendingPathComponent(item.relativePath))
+        let archiveRelative = try LibraryDatabase.replaceFile(
+            under: root, currentRelative: item.relativePath, newRelative: item.relativePath,
+            with: tempURL, fileAccess: fileAccess)
         await context.reportProgress(current: 2, total: 3)
 
         // The file plays: clear the flag and the staging that came with
