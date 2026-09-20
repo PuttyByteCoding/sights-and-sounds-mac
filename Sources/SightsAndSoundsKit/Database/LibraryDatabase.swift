@@ -786,6 +786,23 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // A file's moves updated its own row only, so segments authored
+        // before a move still carried the folder the file had left. New
+        // moves carry them (`updateWithSegmentPaths`); this brings home
+        // the ones already left behind.
+        migrator.registerMigration("segmentsFollowTheirFile") { db in
+            try db.execute(
+                sql: """
+                UPDATE mediaItem SET \
+                    relativePath = (SELECT p.relativePath FROM mediaItem p WHERE p.id = mediaItem.parentMediaItemID), \
+                    folderPath = (SELECT p.folderPath FROM mediaItem p WHERE p.id = mediaItem.parentMediaItemID), \
+                    fileName = (SELECT p.fileName FROM mediaItem p WHERE p.id = mediaItem.parentMediaItemID) \
+                WHERE parentMediaItemID IS NOT NULL \
+                AND EXISTS (SELECT 1 FROM mediaItem p WHERE p.id = mediaItem.parentMediaItemID \
+                            AND p.relativePath <> mediaItem.relativePath)
+                """)
+        }
+
         return migrator
     }
 

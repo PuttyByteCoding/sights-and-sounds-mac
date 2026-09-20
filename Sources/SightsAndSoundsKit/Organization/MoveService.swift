@@ -85,7 +85,7 @@ extension LibraryDatabase {
         try writer.write { db in
             var updated = item
             updated.setRelativePath(toPath)
-            try updated.update(db)
+            try updated.updateWithSegmentPaths(db)
             try log.insert(db)
         }
         return log
@@ -117,7 +117,7 @@ extension LibraryDatabase {
                 arguments: [Date(), logID])
             if var item = try MediaItem.fetchOne(db, key: log.mediaItemID) {
                 item.setRelativePath(log.fromPath)
-                try item.update(db)
+                try item.updateWithSegmentPaths(db)
             }
         }
     }

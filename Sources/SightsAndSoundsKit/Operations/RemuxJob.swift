@@ -112,7 +112,7 @@ public struct RemuxJob: Job {
             updated.setRelativePath(finalRelative)
             updated.fileSize = newSize
             updated.bitrate = finalBitrate ?? updated.bitrate
-            try updated.update(db)
+            try updated.updateWithSegmentPaths(db)
         }
         await context.reportProgress(current: 3, total: 3)
         await context.setSummary(

@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import SightsAndSoundsKit
 
@@ -80,6 +81,77 @@ import Testing
 
         // One-shot: a second revert is refused.
         #expect(throws: (any Error).self) { try f.library.revertMove(log.id) }
+    }
+
+    // MARK: Segments follow their file
+
+    /// A segment is a range inside its show's file, and carries that
+    /// file's path so it lists in the same folder. When the show moved,
+    /// only the show's row was updated: its songs stayed listed under the
+    /// folder the show had left.
+    @Test func aShowsSegmentsMoveWithItAndComeBackWithIt() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "inbox/show.mp4")
+        let song = try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+
+        let log = try f.library.moveFile(itemID: show.id, to: "shows/1995/show.mp4")
+        var moved = try await f.reload(song.id)
+        #expect(moved.relativePath == "shows/1995/show.mp4")
+        #expect(moved.folderPath == "shows/1995")
+        #expect(moved.fileName == "show.mp4")
+        #expect(moved.notes == "Song")  // the segment's own name is untouched
+
+        try f.library.revertMove(log.id)
+        moved = try await f.reload(song.id)
+        #expect(moved.relativePath == "inbox/show.mp4")
+        #expect(moved.folderPath == "inbox")
+    }
+
+    @Test func stagingAShowTakesItsSegmentsPathsAlong() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "shows/show.mp4")
+        let song = try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+
+        try f.library.stage(.toDelete, itemID: show.id)
+        #expect(try await f.reload(song.id).relativePath == "_ToDelete/shows/show.mp4")
+        #expect(try await f.reload(song.id).markedForDeletion == false)  // only its path moved
+
+        try f.library.unstage(.toDelete, itemID: show.id)
+        #expect(try await f.reload(song.id).relativePath == "shows/show.mp4")
+    }
+
+    @Test func segmentsLeftBehindByEarlierMovesAreBroughtHome() async throws {
+        // A library from before this fix: the show moved, its song did not.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-segment-heal-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Old.sqlite")
+
+        let queue = try DatabaseQueue(path: url.path)
+        try LibraryDatabase.migrator.migrate(queue, upTo: "searchRecipe")
+        let source = Source(name: "S", rootPath: "/tmp/sas-segment-heal-media")
+        let show = MediaItem(sourceID: source.id, kind: .video, relativePath: "shows/1995/show.mp4")
+        let song = MediaItem(
+            sourceID: source.id, kind: .video, relativePath: "inbox/show.mp4",
+            parentMediaItemID: show.id, clipStartSeconds: 0, clipEndSeconds: 5, isClip: true)
+        try await queue.write { db in
+            try source.insert(db)
+            try show.insert(db)
+            try song.insert(db)
+        }
+        try queue.close()
+
+        let upgraded = try LibraryDatabase.open(at: url)
+        let healed = try await upgraded.writer.read { try MediaItem.fetchOne($0, key: song.id)! }
+        #expect(healed.relativePath == "shows/1995/show.mp4")
+        #expect(healed.folderPath == "shows/1995")
+        #expect(healed.fileName == "show.mp4")
+        try upgraded.close()
     }
 
     @Test func collisionGetsATimestampSuffixNeverOverwrites() async throws {
