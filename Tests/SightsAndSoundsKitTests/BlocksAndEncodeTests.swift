@@ -7,6 +7,41 @@ import Testing
 /// where it doesn't (CI has no ffmpeg; the jobs must handle that).
 @Suite struct BlocksAndEncodeTests {
 
+    // MARK: The playhead's own seeks
+
+    /// The player's time observer ticks four times a second. An exact
+    /// seek on a big or networked file takes longer than that, and until
+    /// it lands every tick still reports a time past the out-point: a
+    /// tick that seeks again cancels the seek in flight, so it never
+    /// lands at all.
+    @Test func aTickNeverReissuesASeekThatIsStillInFlight() {
+        let clip = (start: 10.0, end: 20.0)
+        #expect(SegmentMath.tickSeek(
+            at: 20.2, seekInFlight: false, clip: clip, hidden: [], skipsHidden: true, duration: 100) == 10)
+        #expect(SegmentMath.tickSeek(
+            at: 20.2, seekInFlight: true, clip: clip, hidden: [], skipsHidden: true, duration: 100) == nil)
+
+        #expect(SegmentMath.tickSeek(
+            at: 31, seekInFlight: false, clip: nil, hidden: [(30, 40)], skipsHidden: true, duration: 100) == 40)
+        #expect(SegmentMath.tickSeek(
+            at: 31, seekInFlight: true, clip: nil, hidden: [(30, 40)], skipsHidden: true, duration: 100) == nil)
+    }
+
+    @Test func aTickLoopsAClipBeforeItSkipsABlockAndSkipsOnlyWhenAsked() {
+        // Past the out-point AND inside a hide block: one seek, the loop.
+        #expect(SegmentMath.tickSeek(
+            at: 21, seekInFlight: false, clip: (start: 10, end: 20), hidden: [(20, 30)],
+            skipsHidden: true, duration: 100) == 10)
+        // Paused, or authoring a block: hide blocks do not skip.
+        #expect(SegmentMath.tickSeek(
+            at: 31, seekInFlight: false, clip: nil, hidden: [(30, 40)], skipsHidden: false, duration: 100) == nil)
+        // Nothing to do is nil.
+        #expect(SegmentMath.tickSeek(
+            at: 5, seekInFlight: false, clip: (start: 0, end: 20), hidden: [(30, 40)],
+            skipsHidden: true, duration: 100) == nil)
+    }
+
+
     // MARK: Segment math
 
     @Test func normalizedMergesOverlapsAndClamps() {

@@ -109,4 +109,23 @@ public enum SegmentMath {
         }
         return nil
     }
+
+    /// What a playback tick should seek to, if anything: back to a clip's
+    /// in-point once its out-point is passed, else past a hide block.
+    ///
+    /// Nothing while a seek is in flight. Until an exact seek lands, the
+    /// player keeps reporting the old time — still past the out-point,
+    /// still inside the block — so a tick that seeks again cancels the
+    /// seek it is waiting for, four times a second, and on a file slow
+    /// enough to need longer than a tick the seek never lands.
+    public static func tickSeek(
+        at seconds: Double, seekInFlight: Bool,
+        clip: (start: Double, end: Double)?,
+        hidden: [(Double, Double)], skipsHidden: Bool, duration: Double
+    ) -> Double? {
+        guard !seekInFlight else { return nil }
+        if let clip, seconds >= clip.end { return clip.start }
+        guard skipsHidden else { return nil }
+        return skipTarget(at: seconds, hidden: hidden, duration: duration)
+    }
 }
