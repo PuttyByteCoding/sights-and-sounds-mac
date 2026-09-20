@@ -68,15 +68,18 @@ import Testing
         let videoURL = dir.appendingPathComponent("clip.mp4")
         try await DemoMediaFactory.writeVideo(to: videoURL, seconds: 2, variant: 3)
         let videoAsset = AVURLAsset(url: videoURL)
-        let videoDuration = CMTimeGetSeconds(videoAsset.duration)
+        let videoDuration = CMTimeGetSeconds(try await videoAsset.load(.duration))
         #expect(abs(videoDuration - 2.0) < 0.5)
-        #expect(!videoAsset.tracks(withMediaType: .video).isEmpty)
+        let videoTracks = try await videoAsset.loadTracks(withMediaType: .video)
+        #expect(!videoTracks.isEmpty)
 
         let audioURL = dir.appendingPathComponent("track.m4a")
         try DemoMediaFactory.writeAudio(to: audioURL, seconds: 2, variant: 1)
         let audioAsset = AVURLAsset(url: audioURL)
-        #expect(abs(CMTimeGetSeconds(audioAsset.duration) - 2.0) < 0.5)
-        #expect(!audioAsset.tracks(withMediaType: .audio).isEmpty)
+        let audioDuration = CMTimeGetSeconds(try await audioAsset.load(.duration))
+        #expect(abs(audioDuration - 2.0) < 0.5)
+        let audioTracks = try await audioAsset.loadTracks(withMediaType: .audio)
+        #expect(!audioTracks.isEmpty)
 
         // Sizes are real and non-trivial.
         let videoSize = try FileManager.default.attributesOfItem(atPath: videoURL.path)[.size] as! Int64
