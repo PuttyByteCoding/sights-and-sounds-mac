@@ -69,6 +69,10 @@ import Testing
         try Data(repeating: 1, count: 100).write(to: root.appendingPathComponent("shows/healthy.mp4"))
         try Data(repeating: 2, count: 50).write(to: root.appendingPathComponent("shows/orphan.mp4"))
         try Data(repeating: 3, count: 10).write(to: root.appendingPathComponent("shows/shrunk.mp4"))
+        // An archived original is on disk with no row by design — not an orphan.
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("_Replaced/shows"), withIntermediateDirectories: true)
+        try Data(repeating: 4, count: 20).write(to: root.appendingPathComponent("_Replaced/shows/healthy.mkv"))
 
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "V")

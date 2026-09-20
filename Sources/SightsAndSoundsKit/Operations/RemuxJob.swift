@@ -81,7 +81,7 @@ public struct RemuxJob: Job {
             try Source.fetchOne($0, key: item.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-        var archiveRelative = "_Replaced/\(item.relativePath)"
+        var archiveRelative = "\(MediaPath.archiveFolder)/\(item.relativePath)"
         if fileAccess.isReachable(root.appendingPathComponent(archiveRelative)) {
             let ext = (archiveRelative as NSString).pathExtension
             let base = (archiveRelative as NSString).deletingPathExtension

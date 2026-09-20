@@ -97,6 +97,7 @@ public struct ImportJob: Job {
                 let full = url.standardizedFileURL.path
                 guard full.hasPrefix(rootPath + "/") else { return nil }
                 let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))
+                guard !MediaPath.isArchived(relative) else { return nil }
                 return (relative, url, kind)
             }
             .sorted { $0.relative < $1.relative }
