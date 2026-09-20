@@ -33,25 +33,40 @@ enum ProcessRunner {
         let outPipe = captureStdout ? Pipe() : nil
         process.standardOutput = outPipe ?? FileHandle.nullDevice
 
+        // Exit is signalled by the termination handler rather than
+        // `waitUntilExit`, which spins the calling thread's run loop, and
+        // each stream is drained on a thread of its own rather than on a
+        // dispatch queue. Callers are often themselves blocked on a pool
+        // thread; on a machine with few cores the shared pools can have
+        // nothing left to run a queued reader on, and then the reader,
+        // the tool and the caller all wait for each other.
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+
         try process.run()
 
         let collected = OSAllocatedUnfairLock(initialState: (out: Data(), err: Data()))
-        let readers = DispatchGroup()
+        let drained = DispatchSemaphore(value: 0)
+        var readers = 0
         if let outPipe {
             let handle = outPipe.fileHandleForReading
-            DispatchQueue.global().async(group: readers) {
+            readers += 1
+            Thread.detachNewThread {
                 let data = handle.readDataToEndOfFile()
                 collected.withLock { $0.out = data }
+                drained.signal()
             }
         }
         let errHandle = errPipe.fileHandleForReading
-        DispatchQueue.global().async(group: readers) {
+        readers += 1
+        Thread.detachNewThread {
             let data = errHandle.readDataToEndOfFile()
             collected.withLock { $0.err = data }
+            drained.signal()
         }
 
-        process.waitUntilExit()
-        readers.wait()
+        exited.wait()
+        for _ in 0..<readers { drained.wait() }
         let (out, err) = collected.withLock { ($0.out, $0.err) }
         return Output(status: process.terminationStatus, stdout: out, stderr: err)
     }
