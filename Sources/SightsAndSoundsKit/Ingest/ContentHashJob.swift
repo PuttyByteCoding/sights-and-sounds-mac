@@ -25,8 +25,9 @@ public struct ContentHashJob: Job {
     public func run(_ context: JobContext) async throws {
         let library = context.library
 
-        // Work is decided per run: unhashed items, no prior failure row,
-        // on enabled sources that are reachable right now.
+        // Work is decided per run: unhashed files (a segment has no bytes
+        // of its own — hashing it would hash its parent again), no prior
+        // failure row, on enabled sources that are reachable right now.
         let sources = try await library.writer.read { db in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
@@ -41,6 +42,7 @@ public struct ContentHashJob: Job {
                 sql: """
                 SELECT mediaItem.* FROM mediaItem \
                 WHERE mediaItem.contentHash IS NULL \
+                AND mediaItem.parentMediaItemID IS NULL \
                 AND NOT EXISTS (SELECT 1 FROM contentHashFailure \
                                 WHERE contentHashFailure.mediaItemID = mediaItem.id) \
                 ORDER BY mediaItem.relativePath

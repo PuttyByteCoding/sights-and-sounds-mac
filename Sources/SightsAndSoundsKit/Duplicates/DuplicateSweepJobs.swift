@@ -4,6 +4,10 @@ import GRDB
 /// Flags byte-identical pairs: same non-null content hash → a pending
 /// candidate. Existing rows (any status — including rejected) block
 /// re-flagging via the pair's unique index.
+///
+/// Files only. A segment row carries its parent's path and has no bytes
+/// of its own, so pairing it with anything compares the parent's file
+/// with itself.
 public struct HashDuplicateSweepJob: Job {
     public static let kind = "duplicates.hashSweep"
 
@@ -11,12 +15,14 @@ public struct HashDuplicateSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
+        try await library.writer.write { try DuplicateCandidate.dropSweepPairsWithSegments($0) }
         let hashes = try await library.writer.read { db -> [String] in
             try String.fetchAll(
                 db,
                 sql: """
                 SELECT contentHash, COUNT(*) AS n FROM mediaItem \
-                WHERE contentHash IS NOT NULL GROUP BY contentHash HAVING n > 1
+                WHERE contentHash IS NOT NULL AND parentMediaItemID IS NULL \
+                GROUP BY contentHash HAVING n > 1
                 """)
         }
 
@@ -25,7 +31,11 @@ public struct HashDuplicateSweepJob: Job {
             try await context.checkCancellation()
             let ids = try await library.writer.read { db -> [UUID] in
                 try UUID.fetchAll(
-                    db, sql: "SELECT id FROM mediaItem WHERE contentHash = ? ORDER BY id",
+                    db,
+                    sql: """
+                    SELECT id FROM mediaItem \
+                    WHERE contentHash = ? AND parentMediaItemID IS NULL ORDER BY id
+                    """,
                     arguments: [hash])
             }
             for i in 0..<ids.count {
@@ -82,16 +92,7 @@ public struct FingerprintCaptureJob: Job {
             sources.values.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
 
         let pending = try await library.writer.read { db -> [MediaItem] in
-            try MediaItem.fetchAll(
-                db,
-                sql: """
-                SELECT mediaItem.* FROM mediaItem \
-                WHERE NOT EXISTS (SELECT 1 FROM audioFingerprint \
-                                  WHERE audioFingerprint.mediaItemID = mediaItem.id) \
-                AND NOT EXISTS (SELECT 1 FROM fingerprintFailure \
-                                WHERE fingerprintFailure.mediaItemID = mediaItem.id) \
-                ORDER BY mediaItem.relativePath
-                """)
+            try Self.pendingItems(db)
         }.filter { online.contains($0.sourceID) }
 
         var computed = 0
@@ -123,6 +124,22 @@ public struct FingerprintCaptureJob: Job {
         }
         await context.setSummary(
             failed == 0 ? "\(computed) fingerprinted" : "\(computed) fingerprinted, \(failed) failed")
+    }
+
+    /// What still needs a fingerprint: a file (never a segment, whose
+    /// audio is its parent's) with no record yet and no recorded failure.
+    static func pendingItems(_ db: Database) throws -> [MediaItem] {
+        try MediaItem.fetchAll(
+            db,
+            sql: """
+            SELECT mediaItem.* FROM mediaItem \
+            WHERE mediaItem.parentMediaItemID IS NULL \
+            AND NOT EXISTS (SELECT 1 FROM audioFingerprint \
+                            WHERE audioFingerprint.mediaItemID = mediaItem.id) \
+            AND NOT EXISTS (SELECT 1 FROM fingerprintFailure \
+                            WHERE fingerprintFailure.mediaItemID = mediaItem.id) \
+            ORDER BY mediaItem.relativePath
+            """)
     }
 
     struct FpcalcResult {
@@ -177,8 +194,17 @@ public struct FingerprintMatchSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
+        try await library.writer.write { try DuplicateCandidate.dropSweepPairsWithSegments($0) }
+        // Files only: a fingerprint an earlier sweep took for a segment
+        // is the parent's whole file under another id.
         let records = try await library.writer.read { db -> [AudioFingerprintRecord] in
-            try AudioFingerprintRecord.fetchAll(db)
+            try AudioFingerprintRecord.fetchAll(
+                db,
+                sql: """
+                SELECT audioFingerprint.* FROM audioFingerprint \
+                JOIN mediaItem ON mediaItem.id = audioFingerprint.mediaItemID \
+                WHERE mediaItem.parentMediaItemID IS NULL
+                """)
         }
         guard records.count > 1 else {
             await context.setSummary("fewer than two fingerprints — nothing to compare")
@@ -234,5 +260,22 @@ public struct FingerprintMatchSweepJob: Job {
         }
         await context.setSummary(
             flagged == 0 ? "no new fingerprint matches" : "\(flagged) fingerprint matches flagged")
+    }
+}
+
+extension DuplicateCandidate {
+    /// The sweeps once treated segment rows as files and queued each
+    /// parent against its own segments. Those pairs are not decisions
+    /// anyone can make, so a sweep clears the pending ones it made before
+    /// it looks for new pairs. A pair a person made, or already resolved,
+    /// is left alone.
+    static func dropSweepPairsWithSegments(_ db: Database) throws {
+        try db.execute(
+            sql: """
+            DELETE FROM duplicateCandidate \
+            WHERE status = 'pending' AND source IN ('contentHash', 'fingerprint') \
+            AND (itemAID IN (SELECT id FROM mediaItem WHERE parentMediaItemID IS NOT NULL) \
+              OR itemBID IN (SELECT id FROM mediaItem WHERE parentMediaItemID IS NOT NULL))
+            """)
     }
 }

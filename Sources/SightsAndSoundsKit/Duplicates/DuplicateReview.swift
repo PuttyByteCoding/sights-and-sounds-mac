@@ -18,6 +18,7 @@ public enum DecideError: Error, CustomStringConvertible, Equatable {
     case notFound
     case keeperMarkedForDeletion
     case candidateDoesNotLinkPair
+    case parentAndSegment
 
     public var description: String {
         switch self {
@@ -26,6 +27,8 @@ public enum DecideError: Error, CustomStringConvertible, Equatable {
         case .keeperMarkedForDeletion:
             "the keeper is marked for deletion — restore it first, or keep the other side"
         case .candidateDoesNotLinkPair: "the candidate does not link these two items"
+        case .parentAndSegment:
+            "one of these is a segment of the other — they share one file, so neither can be deleted as a duplicate"
         }
     }
 }
@@ -94,8 +97,12 @@ extension LibraryDatabase {
         guard keeperID != loserID else { throw DecideError.samePair }
         var outcome = try writer.write { db in
             guard let keeper = try MediaItem.fetchOne(db, key: keeperID),
-                  try MediaItem.fetchOne(db, key: loserID) != nil
+                  let loser = try MediaItem.fetchOne(db, key: loserID)
             else { throw DecideError.notFound }
+            // A segment's file IS its parent's file: deleting either as
+            // the other's duplicate stages the only copy of both.
+            guard keeper.parentMediaItemID != loserID, loser.parentMediaItemID != keeperID
+            else { throw DecideError.parentAndSegment }
             guard !keeper.markedForDeletion else { throw DecideError.keeperMarkedForDeletion }
 
             if let candidateID {

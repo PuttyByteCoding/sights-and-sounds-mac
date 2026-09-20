@@ -23,7 +23,11 @@ extension LibraryDatabase {
         try writer.read { db in
             SweepStatus(
                 missing: try Int.fetchOne(
-                    db, sql: "SELECT COUNT(*) FROM mediaItem WHERE contentHash IS NULL") ?? 0,
+                    db,
+                    sql: """
+                    SELECT COUNT(*) FROM mediaItem \
+                    WHERE contentHash IS NULL AND parentMediaItemID IS NULL
+                    """) ?? 0,
                 failed: try Int.fetchOne(
                     db, sql: "SELECT COUNT(*) FROM contentHashFailure") ?? 0)
         }
@@ -36,8 +40,9 @@ extension LibraryDatabase {
                     db,
                     sql: """
                     SELECT COUNT(*) FROM mediaItem \
-                    WHERE NOT EXISTS (SELECT 1 FROM audioFingerprint \
-                                      WHERE audioFingerprint.mediaItemID = mediaItem.id) \
+                    WHERE mediaItem.parentMediaItemID IS NULL \
+                    AND NOT EXISTS (SELECT 1 FROM audioFingerprint \
+                                    WHERE audioFingerprint.mediaItemID = mediaItem.id) \
                     AND NOT EXISTS (SELECT 1 FROM fingerprintFailure \
                                     WHERE fingerprintFailure.mediaItemID = mediaItem.id)
                     """) ?? 0,
