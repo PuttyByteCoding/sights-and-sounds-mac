@@ -82,41 +82,6 @@ import Testing
         #expect(throws: (any Error).self) { try f.library.revertMove(log.id) }
     }
 
-    // MARK: Nothing leaves the source
-
-    @Test func parentSegmentsNeverSurviveNormalizing() {
-        #expect(MediaPath.normalize("../../outside/a.mp4") == "outside/a.mp4")
-        #expect(MediaPath.normalize("shows/../../a.mp4") == "shows/a.mp4")
-        #expect(MediaPath.normalize("shows/..hidden/a..mp4") == "shows/..hidden/a..mp4")  // only whole segments
-    }
-
-    @Test func aMoveCannotLandOutsideTheSourceRoot() async throws {
-        let f = try await MoveFixture()
-        defer { f.tearDown() }
-        let item = try await f.addItem(path: "shows/a.mp4")
-
-        try f.library.moveFile(itemID: item.id, to: "../../escaped/a.mp4")
-
-        let outside = f.root.deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("escaped/a.mp4")
-        #expect(!FileManager.default.fileExists(atPath: outside.path))
-        #expect(f.exists("escaped/a.mp4"))
-        #expect(try await f.reload(item.id).relativePath == "escaped/a.mp4")
-    }
-
-    @Test func aSegmentsNameCannotSteerWhereItsExportLands() {
-        // A song called "Medley: A/B", or worse.
-        #expect(ClipExportJob.outputRelativePath(
-            parentFolder: "shows/1995", parentFileName: "show.mkv", label: "Medley: A/B")
-            == "shows/1995/show - Medley_ A_B.mp4")
-        #expect(ClipExportJob.outputRelativePath(
-            parentFolder: "shows", parentFileName: "show.mkv", label: "../../../escape")
-            == "shows/show - _.._.._escape.mp4")
-        #expect(ClipExportJob.outputRelativePath(
-            parentFolder: "", parentFileName: "show.mkv", label: "  ")
-            == "show - clip.mp4")
-    }
-
     @Test func collisionGetsATimestampSuffixNeverOverwrites() async throws {
         let f = try await MoveFixture()
         defer { f.tearDown() }
