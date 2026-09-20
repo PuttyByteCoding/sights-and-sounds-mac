@@ -25,24 +25,33 @@ struct UnsavedSegmentsPrompt: ViewModifier {
         return "\(videos.count) \(videoWord) \(segmentCount) \(segmentWord) not saved as files"
     }
 
+    // The strings are built outside `body`: as one expression inside the
+    // dialog's builders, the CI toolchain (Xcode 16) gives up type-checking.
+    private var saveLabel: String {
+        segmentCount == 1 ? "Save the Segment as a File" : "Save \(segmentCount) Segments as Files"
+    }
+
+    private var message: String {
+        var names: String = videos.prefix(5).map(\.parentFileName).joined(separator: ", ")
+        if videos.count > 5 { names += ", and \(videos.count - 5) more" }
+        return "A segment plays from its video's file, so these videos stay until their segments are saved: "
+            + names
+            + ". Saving writes each segment to a file of its own beside the video; delete the videos after that."
+    }
+
+    private var isPresented: Binding<Bool> {
+        Binding(get: { unsaved != nil }, set: { if !$0 { unsaved = nil } })
+    }
+
     func body(content: Content) -> some View {
-        content.confirmationDialog(
-            title,
-            isPresented: Binding(get: { unsaved != nil }, set: { if !$0 { unsaved = nil } })
-        ) {
-            Button("Save \(segmentCount == 1 ? "the Segment" : "\(segmentCount) Segments") as Files") {
-                saveSegments(videos.flatMap(\.segmentIDs))
-            }
+        content.confirmationDialog(title, isPresented: isPresented) {
+            Button(saveLabel) { saveSegments(videos.flatMap(\.segmentIDs)) }
             if deletableCount > 0 {
                 Button("Delete the Other \(deletableCount)", role: .destructive) { deleteTheOthers() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                "A segment plays from its video's file, so these videos stay until their segments are saved: "
-                    + videos.prefix(5).map(\.parentFileName).joined(separator: ", ")
-                    + (videos.count > 5 ? ", and \(videos.count - 5) more" : "")
-                    + ". Saving writes each segment to a file of its own beside the video; delete the videos after that.")
+            Text(message)
         }
     }
 }
