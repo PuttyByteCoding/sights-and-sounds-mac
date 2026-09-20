@@ -368,10 +368,19 @@ extension LibraryDatabase {
                         """,
                         arguments: [keeper.id, source.id])
                 }
+                // The key that stamped the discarded tag stamps the keeper.
+                // Left alone, the cascade below deletes the binding and
+                // the key silently stops doing anything.
+                try db.execute(
+                    sql: "UPDATE tagKeyBinding SET tagID = ? WHERE tagID = ?",
+                    arguments: [keeper.id, source.id])
                 // Cascades take the taggings, aliases and field values
                 // still hanging off the source row.
                 try Tag.deleteOne(db, key: source.id)
             }
+            // Saved filters name tags inside JSON; no cascade reaches them.
+            try SavedFilter.remapTags(
+                db, from: Set(sources.map(\.id)).subtracting([keeper.id]), to: keeper.id)
             return keeper
         }
     }

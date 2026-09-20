@@ -30,6 +30,48 @@ public struct SavedFilter: Codable, Equatable, Identifiable, Sendable,
     }
 }
 
+extension MediaFilter {
+    /// The same filter after `sources` were merged into `keeper`: every
+    /// term naming a merged tag names the keeper instead, once per slot.
+    /// If that leaves the keeper both wanted (required or optional) and
+    /// excluded, the exclusion goes — "A but not B" cannot be said once B
+    /// is A, and a filter that lists A is a better guess at what was
+    /// meant than one that can never list anything.
+    func remappingTags(_ sources: Set<UUID>, to keeper: UUID) -> MediaFilter {
+        func remap(_ terms: [FilterTerm]) -> [FilterTerm] {
+            var seen = Set<FilterTerm>()
+            return terms.map { term -> FilterTerm in
+                if case .tag(let id) = term, sources.contains(id) { return .tag(keeper) }
+                return term
+            }.filter { seen.insert($0).inserted }
+        }
+        var copy = self
+        copy.required = remap(required)
+        copy.optional = remap(optional)
+        copy.excluded = remap(excluded)
+        if copy.required.contains(.tag(keeper)) || copy.optional.contains(.tag(keeper)) {
+            copy.excluded.removeAll { $0 == .tag(keeper) }
+        }
+        return copy
+    }
+}
+
+extension SavedFilter {
+    /// Saved filters name tags inside JSON, where no foreign key can
+    /// follow a merge. Rewrite the ones that name a merged tag; a filter
+    /// this build cannot decode is left exactly as it is.
+    static func remapTags(_ db: Database, from sources: Set<UUID>, to keeper: UUID) throws {
+        for var saved in try SavedFilter.fetchAll(db) {
+            guard let filter = saved.filter,
+                  !filter.referencedTagIDs.isDisjoint(with: sources) else { continue }
+            let remapped = filter.remappingTags(sources, to: keeper)
+            saved.filterJSON = String(
+                data: try JSONEncoder().encode(remapped), encoding: .utf8) ?? saved.filterJSON
+            try saved.update(db)
+        }
+    }
+}
+
 extension LibraryDatabase {
 
     public func savedFilters() throws -> [SavedFilter] {
