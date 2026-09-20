@@ -96,7 +96,7 @@ struct PlayerView: View {
                 KeyMapSheet().environment(model)
             }
         }
-        .task {
+        .task { [browse] in
             guard model == nil else { return }
             do {
                 let made = PlayerModel(

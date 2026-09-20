@@ -421,17 +421,18 @@ final class BrowseModel {
                                 colorIndex: entry.category.colorIndex)
                         }
                     }
-                    // Deliberately the SYNCHRONOUS read: we're already on
-                    // a detached task (like the item fetch above), and the
-                    // explicit closure type sidesteps the async overload's
-                    // inference ambiguity on the CI toolchain (Xcode 16).
-                    let links: [Row] = try library.writer.read { db -> [Row] in
+                    // The ids leave the closure, never the rows: `Row` is
+                    // not Sendable, and Swift 6.4 resolves a read inside an
+                    // async context to the async overload. The explicit
+                    // closure type keeps the older CI toolchain's inference
+                    // unambiguous.
+                    let links = try await library.writer.read { db -> [(item: UUID, tag: UUID)] in
                         try Row.fetchAll(db, sql: "SELECT mediaItemID, tagID FROM mediaItemTag")
+                            .map { (item: $0["mediaItemID"], tag: $0["tagID"]) }
                     }
                     var tagsByItem: [UUID: [UUID]] = [:]
                     for link in links {
-                        tagsByItem[link["mediaItemID"] as UUID, default: []]
-                            .append(link["tagID"] as UUID)
+                        tagsByItem[link.item, default: []].append(link.tag)
                     }
                     for item in rows {
                         let tagIDs = tagsByItem[item.id] ?? []

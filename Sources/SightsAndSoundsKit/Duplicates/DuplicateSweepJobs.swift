@@ -11,8 +11,8 @@ public struct HashDuplicateSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        let groups = try library.writer.read { db -> [Row] in
-            try Row.fetchAll(
+        let hashes = try await library.writer.read { db -> [String] in
+            try String.fetchAll(
                 db,
                 sql: """
                 SELECT contentHash, COUNT(*) AS n FROM mediaItem \
@@ -21,9 +21,8 @@ public struct HashDuplicateSweepJob: Job {
         }
 
         var flagged = 0
-        for group in groups {
+        for hash in hashes {
             try await context.checkCancellation()
-            let hash: String = group["contentHash"]
             let ids = try await library.writer.read { db -> [UUID] in
                 try UUID.fetchAll(
                     db, sql: "SELECT id FROM mediaItem WHERE contentHash = ? ORDER BY id",
