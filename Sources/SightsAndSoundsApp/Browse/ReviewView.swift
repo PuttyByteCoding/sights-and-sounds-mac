@@ -460,8 +460,8 @@ struct ReviewView: View {
         do {
             let outcome = try model.library.purgeDeleted(itemIDs: Array(deleteTicked))
             resolvedThisPass[.deleteList, default: 0] += outcome.rowsDeleted
-            errorText = outcome.fileFailures.isEmpty
-                ? nil : outcome.fileFailures.joined(separator: "; ")
+            let failures = outcome.fileFailures + outcome.rowFailures
+            errorText = failures.isEmpty ? nil : failures.joined(separator: "; ")
             deleteTicked = []
             reload()
             model.refreshAll()

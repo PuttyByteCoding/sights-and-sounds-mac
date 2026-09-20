@@ -277,6 +277,9 @@ extension LibraryDatabase {
         public var rowsDeleted = 0
         public var filesDeleted = 0
         public var fileFailures: [String] = []
+        /// Items whose file left but whose row could not be removed —
+        /// one line each. The purge carries on past them.
+        public var rowFailures: [String] = []
     }
 
     /// The size of everything currently flagged for deletion — the
@@ -293,6 +296,11 @@ extension LibraryDatabase {
     /// (through the boundary; offline sources' items are skipped
     /// entirely), then rows — cascades sweep tags, values, feature state
     /// and candidates. The caller owns the confirmation.
+    ///
+    /// A show's segments leave with it. A segment is a named range inside
+    /// the show's file; once that file is gone it names nothing, and a
+    /// parentless copy of it would claim the show's path as a top-level
+    /// item.
     ///
     /// `itemIDs` narrows it to a reviewed subset; nil means everything
     /// flagged. **The flag check stays the guard either way** — a passed
@@ -338,14 +346,19 @@ extension LibraryDatabase {
                 }
             }
             // Embedded clip rows are pure metadata — always removable.
-            let removed = try writer.write { db -> Bool in
-                // Re-point children (their parent is leaving), then delete.
-                try db.execute(
-                    sql: "UPDATE mediaItem SET parentMediaItemID = NULL WHERE parentMediaItemID = ?",
-                    arguments: [item.id])
-                return try MediaItem.deleteOne(db, key: item.id)
+            // One item's database error must not strand the rest of the
+            // list: its file is already gone, so say so and carry on.
+            do {
+                outcome.rowsDeleted += try writer.write { db -> Int in
+                    try db.execute(
+                        sql: "DELETE FROM mediaItem WHERE parentMediaItemID = ?",
+                        arguments: [item.id])
+                    let segments = db.changesCount
+                    return try MediaItem.deleteOne(db, key: item.id) ? segments + 1 : segments
+                }
+            } catch {
+                outcome.rowFailures.append("\(item.fileName): \(error)")
             }
-            if removed { outcome.rowsDeleted += 1 }
         }
         return outcome
     }

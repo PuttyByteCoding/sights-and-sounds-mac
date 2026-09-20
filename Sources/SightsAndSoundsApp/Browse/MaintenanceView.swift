@@ -596,6 +596,10 @@ struct MaintenanceView: View {
             if !outcome.fileFailures.isEmpty {
                 text += " \(outcome.fileFailures.count) files could not be deleted and their items were kept."
             }
+            if !outcome.rowFailures.isEmpty {
+                text += " \(outcome.rowFailures.count) items could not be removed from the library: "
+                    + outcome.rowFailures.joined(separator: "; ")
+            }
             status = text
             reload()
             model.refreshAll()
