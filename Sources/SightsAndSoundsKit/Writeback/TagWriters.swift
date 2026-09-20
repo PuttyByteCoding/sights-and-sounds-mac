@@ -5,6 +5,19 @@ public struct TagWriteResult: Sendable {
     public let success: Bool
     public let usedRemuxFallback: Bool
     public let error: String?
+    /// What the format-native tool said when it failed and the write
+    /// fell through to the remux — kept whether or not the remux then
+    /// succeeded, so "why did this file take the slow path" has an answer.
+    public let nativeToolError: String?
+
+    public init(
+        success: Bool, usedRemuxFallback: Bool, error: String?, nativeToolError: String? = nil
+    ) {
+        self.success = success
+        self.usedRemuxFallback = usedRemuxFallback
+        self.error = error
+        self.nativeToolError = nativeToolError
+    }
 }
 
 /// Writes resolved `FieldWrite`s into a file's embedded tags — ported
@@ -26,6 +39,26 @@ public enum TagWriters {
     public static func ffprobePath() -> String? { toolPath("ffprobe") }
     public static func metaflacPath() -> String? { toolPath("metaflac") }
     public static func atomicParsleyPath() -> String? { toolPath("AtomicParsley") }
+
+    /// The tools one write may use. Detected from the machine by default;
+    /// a test hands in stand-ins.
+    public struct Tools: Sendable {
+        public var metaflac: String?
+        public var atomicParsley: String?
+        public var ffmpeg: String?
+
+        public init(metaflac: String?, atomicParsley: String?, ffmpeg: String?) {
+            self.metaflac = metaflac
+            self.atomicParsley = atomicParsley
+            self.ffmpeg = ffmpeg
+        }
+
+        public static var detected: Tools {
+            Tools(
+                metaflac: metaflacPath(), atomicParsley: atomicParsleyPath(),
+                ffmpeg: FfmpegTool.path())
+        }
+    }
 
     // MARK: - Reading (snapshots)
 
@@ -82,12 +115,18 @@ public enum TagWriters {
     /// Write fields into the file. Wipe-and-rewrite semantics (ported):
     /// the write replaces the file's tag set with exactly these fields —
     /// which is why a pre-write snapshot is mandatory upstream.
-    public static func write(fields: [FieldWrite], to url: URL) -> TagWriteResult {
+    public static func write(
+        fields: [FieldWrite], to url: URL, tools: Tools = .detected
+    ) -> TagWriteResult {
         let ext = url.pathExtension.lowercased()
-        if ext == "flac", let metaflac = metaflacPath() {
+        var nativeToolError: String?
+        if ext == "flac", let metaflac = tools.metaflac {
             do {
-                try runTool(metaflac, ["--remove-all-tags", url.path])
-                var arguments: [String] = []
+                // One invocation, wipe then set: metaflac checks every
+                // operation before it touches the file and writes the
+                // result once. As two runs, a rewrite that failed (or an
+                // app that quit in between) left the file with no tags.
+                var arguments = ["--remove-all-tags"]
                 for field in fields {
                     for value in field.values {
                         arguments.append("--set-tag=\(field.vorbisName)=\(value)")
@@ -96,10 +135,10 @@ public enum TagWriters {
                 try runTool(metaflac, arguments + [url.path])
                 return TagWriteResult(success: true, usedRemuxFallback: false, error: nil)
             } catch {
-                // fall through to ffmpeg
+                nativeToolError = "metaflac: \(error)"  // then fall through to ffmpeg
             }
         }
-        if ["mp4", "m4a", "m4v", "mov"].contains(ext), let parsley = atomicParsleyPath() {
+        if ["mp4", "m4a", "m4v", "mov"].contains(ext), let parsley = tools.atomicParsley {
             do {
                 var arguments = [url.path, "--overWrite", "--metaEnema"]
                 for field in fields {
@@ -113,18 +152,26 @@ public enum TagWriters {
                 try runTool(parsley, arguments)
                 return TagWriteResult(success: true, usedRemuxFallback: false, error: nil)
             } catch {
-                // fall through to ffmpeg
+                nativeToolError = "AtomicParsley: \(error)"  // then fall through to ffmpeg
             }
         }
-        return ffmpegRemuxWrite(fields: fields, url: url)
+        let remux = ffmpegRemuxWrite(fields: fields, url: url, ffmpeg: tools.ffmpeg)
+        guard let nativeToolError else { return remux }
+        AppLog.shared.warning("writeback", "\(url.lastPathComponent): \(nativeToolError)")
+        return TagWriteResult(
+            success: remux.success, usedRemuxFallback: true,
+            error: remux.error.map { "\($0) (after \(nativeToolError))" },
+            nativeToolError: nativeToolError)
     }
 
     /// The coverage floor: an ffmpeg `-c copy` remux carrying `-metadata`
     /// pairs — exercised on every machine with ffmpeg, whatever else is
     /// installed. Temp + atomic swap; the essence is untouched by
     /// construction and the tags are recoverable from the snapshot.
-    static func ffmpegRemuxWrite(fields: [FieldWrite], url: URL) -> TagWriteResult {
-        guard let ffmpeg = FfmpegTool.path() else {
+    static func ffmpegRemuxWrite(
+        fields: [FieldWrite], url: URL, ffmpeg: String? = FfmpegTool.path()
+    ) -> TagWriteResult {
+        guard let ffmpeg else {
             return TagWriteResult(
                 success: false, usedRemuxFallback: true,
                 error: FfmpegTool.installHint)
@@ -167,6 +214,14 @@ public enum TagWriters {
         }
     }
 
+    /// metaflac names the problem first and then prints its usage text,
+    /// so the end of its output alone says nothing; keep both ends.
+    static func excerpt(of output: String) -> String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 400 else { return trimmed }
+        return "\(trimmed.prefix(200)) … \(trimmed.suffix(200))"
+    }
+
     private static func runTool(_ tool: String, _ arguments: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tool)
@@ -177,11 +232,10 @@ public enum TagWriters {
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let tail = String(
-                data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
-            )?.suffix(300) ?? ""
+            let output = String(
+                data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             throw FfmpegTool.FfmpegError(
-                exitCode: process.terminationStatus, stderrTail: String(tail))
+                exitCode: process.terminationStatus, stderrTail: excerpt(of: output))
         }
     }
 }
