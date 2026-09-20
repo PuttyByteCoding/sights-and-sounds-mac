@@ -816,9 +816,11 @@ public final class LibraryDatabase: Sendable {
     ) throws -> [(path: String, count: Int)] {
         let baseline = FilterCompiler.Baseline.sql(kinds)
         return try writer.read { db in
+            // `notHidden` like every other sidebar count: a folder row
+            // says what clicking it lists.
             var sql = """
                 SELECT mediaItem.folderPath AS path, COUNT(*) AS n FROM mediaItem \
-                WHERE \(baseline.sql)
+                WHERE \(baseline.sql) AND \(FilterCompiler.Baseline.notHidden)
                 """
             var arguments: [any DatabaseValueConvertible] = baseline.args
             if let sourceID {

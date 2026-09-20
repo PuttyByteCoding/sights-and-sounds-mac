@@ -117,7 +117,7 @@ extension MediaFilter {
         return lists.flatMap { slot, terms in
             terms.compactMap { term in
                 switch term {
-                case .folder, .subtree: nil
+                case .folder, .subtree, .source: nil
                 default: (term, slot)
                 }
             }
@@ -127,12 +127,7 @@ extension MediaFilter {
     /// Clear the three slots, keeping the folder selection and the
     /// search text — "Clear all" on the chip bar clears the chips.
     public mutating func clearSlots() {
-        let folders = required.filter {
-            if case .folder = $0 { return true }
-            if case .subtree = $0 { return true }
-            return false
-        }
-        required = folders
+        required = required.filter(\.isTreeScope)
         optional = []
         excluded = []
     }
@@ -141,12 +136,43 @@ extension MediaFilter {
     /// (nil clears it) — the sidebar's tree is single-selection navigation,
     /// mirroring the old app's "the Sources tree replaces any previous
     /// folder term".
-    public mutating func selectSubtree(_ path: String?) {
-        required.removeAll {
-            if case .folder = $0 { return true }
-            if case .subtree = $0 { return true }
-            return false
+    ///
+    /// The tree is per source, so the selection carries the source it was
+    /// made under: two sources can both hold a `shows` folder, and the
+    /// row that was clicked counts only its own.
+    public mutating func selectSubtree(_ path: String?, sourceID: UUID? = nil) {
+        required.removeAll(where: \.isTreeScope)
+        guard let path else { return }
+        if let sourceID { required.append(.source(sourceID)) }
+        required.append(.subtree(path))
+    }
+}
+
+extension MediaFilter {
+    /// The folder the tree has selected, and the source it was selected
+    /// under (nil for a filter saved before folders carried one). Read
+    /// from the filter, so a saved filter that is applied lights up the
+    /// right row without a second copy of the selection to keep in step.
+    public var treeScope: (path: String, sourceID: UUID?)? {
+        var path: String?
+        var sourceID: UUID?
+        for term in required {
+            switch term {
+            case .subtree(let value), .folder(let value): path = value
+            case .source(let id): sourceID = id
+            default: break
+            }
         }
-        if let path { required.append(.subtree(path)) }
+        return path.map { ($0, sourceID) }
+    }
+}
+
+extension FilterTerm {
+    /// The terms the sidebar's tree owns: where you are, not a chip.
+    var isTreeScope: Bool {
+        switch self {
+        case .folder, .subtree, .source: true
+        default: false
+        }
     }
 }

@@ -372,6 +372,7 @@ struct SidebarView: View {
                     toggle: { toggle(source.id, in: &expandedSources) })
                 if expandedSources.contains(source.id) {
                     FolderRows(
+                        sourceID: source.id,
                         nodes: model.folderTrees[source.id] ?? [],
                         depth: 0, expanded: $expandedFolders)
                 }
@@ -859,33 +860,38 @@ private struct SourceRow: View {
 /// `OutlineGroup` because every row here is painted from the tokens.
 private struct FolderRows: View {
     @Environment(BrowseModel.self) private var model
+    /// The source this tree hangs under: a click scopes to it, and two
+    /// sources' `shows` folders select and expand independently.
+    let sourceID: UUID
     let nodes: [FolderNode]
     let depth: Int
     @Binding var expanded: Set<String>
 
+    private func key(_ node: FolderNode) -> String { "\(sourceID.uuidString)/\(node.path)" }
+
     var body: some View {
         ForEach(nodes) { node in
             SidebarRow(
-                selected: model.selectedFolderPath == node.path,
-                action: { model.selectFolder(node.path) }
+                selected: model.isSelectedFolder(node.path, in: sourceID),
+                action: { model.selectFolder(node.path, in: sourceID) }
             ) {
                 if node.children.isEmpty {
                     Color.clear.frame(width: 9)
                 } else {
-                    Chevron(expanded: expanded.contains(node.path))
+                    Chevron(expanded: expanded.contains(key(node)))
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            if expanded.contains(node.path) {
-                                expanded.remove(node.path)
+                            if expanded.contains(key(node)) {
+                                expanded.remove(key(node))
                             } else {
-                                expanded.insert(node.path)
+                                expanded.insert(key(node))
                             }
                         }
                 }
                 Text(node.name)
                     .font(Theme.ui(12))
                     .foregroundStyle(
-                        model.selectedFolderPath == node.path
+                        model.isSelectedFolder(node.path, in: sourceID)
                             ? Theme.Accent.amber : Theme.Text.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -893,8 +899,8 @@ private struct FolderRows: View {
                 CountText(node.subtreeCount)
             }
             .padding(.leading, CGFloat(depth) * 12 + 20)
-            if expanded.contains(node.path), !node.children.isEmpty {
-                FolderRows(nodes: node.children, depth: depth + 1, expanded: $expanded)
+            if expanded.contains(key(node)), !node.children.isEmpty {
+                FolderRows(sourceID: sourceID, nodes: node.children, depth: depth + 1, expanded: $expanded)
             }
         }
     }

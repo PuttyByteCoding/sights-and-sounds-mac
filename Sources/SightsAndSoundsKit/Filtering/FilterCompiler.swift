@@ -283,6 +283,9 @@ public enum FilterCompiler {
                 [escapeLike(root) + "/%"]
             )
 
+        case .source(let id):
+            return ("mediaItem.sourceID = ?", [id])
+
         case .missingCategory(let categoryID):
             return (Baseline.missingCategory, [categoryID])
 
