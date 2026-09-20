@@ -138,19 +138,11 @@ public struct FingerprintCaptureJob: Job {
 
     /// `fpcalc -raw -json <file>` → duration + raw sub-fingerprints.
     static func runFpcalc(tool: String, file: URL) throws -> FpcalcResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = ["-raw", "-json", file.path]
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        try process.run()
-        process.waitUntilExit()
-        let stdout = out.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw FpcalcError(message: "fpcalc exited \(process.terminationStatus): \(stderr.prefix(200))")
+        // A long file's raw fingerprint is far more than a pipe holds.
+        let output = try ProcessRunner.run(tool, ["-raw", "-json", file.path])
+        let stdout = output.stdout
+        guard output.status == 0 else {
+            throw FpcalcError(message: "fpcalc exited \(output.status): \(output.stderrText.prefix(200))")
         }
         // Raw sub-fingerprints are unsigned 32-bit on the wire; about half
         // of any real fingerprint exceeds Int32.max, so decode unsigned and

@@ -68,21 +68,13 @@ public enum TagWriters {
         guard let ffprobe = ffprobePath() else {
             throw FfmpegTool.FfmpegError(exitCode: -1, stderrTail: "ffprobe not found")
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ffprobe)
-        process.arguments = [
+        let output = try ProcessRunner.run(ffprobe, [
             "-v", "error", "-show_entries", "format_tags:stream_tags",
             "-of", "json", url.path,
-        ]
-        let out = Pipe()
-        process.standardOutput = out
-        process.standardError = Pipe()
-        try process.run()
-        process.waitUntilExit()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0, let json = String(data: data, encoding: .utf8)
+        ])
+        guard output.status == 0, let json = String(data: output.stdout, encoding: .utf8)
         else {
-            throw FfmpegTool.FfmpegError(exitCode: process.terminationStatus, stderrTail: "ffprobe failed")
+            throw FfmpegTool.FfmpegError(exitCode: output.status, stderrTail: "ffprobe failed")
         }
         return json
     }
@@ -223,19 +215,10 @@ public enum TagWriters {
     }
 
     private static func runTool(_ tool: String, _ arguments: [String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = arguments
-        let stderr = Pipe()
-        process.standardError = stderr
-        process.standardOutput = Pipe()
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let output = String(
-                data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let output = try ProcessRunner.run(tool, arguments, captureStdout: false)
+        guard output.status == 0 else {
             throw FfmpegTool.FfmpegError(
-                exitCode: process.terminationStatus, stderrTail: excerpt(of: output))
+                exitCode: output.status, stderrTail: excerpt(of: output.stderrText))
         }
     }
 }

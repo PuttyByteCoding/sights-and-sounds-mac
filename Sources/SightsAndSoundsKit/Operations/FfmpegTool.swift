@@ -22,19 +22,11 @@ public enum FfmpegTool {
 
     /// Run ffmpeg with the given arguments (`-y -hide_banner` prepended).
     public static func run(_ arguments: [String], tool: String) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = ["-y", "-hide_banner", "-loglevel", "error"] + arguments
-        let stderr = Pipe()
-        process.standardError = stderr
-        process.standardOutput = Pipe()
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let tail = String(
-                data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
-            )?.suffix(400) ?? ""
-            throw FfmpegError(exitCode: process.terminationStatus, stderrTail: String(tail))
+        // ffmpeg's stdout is never wanted here; its stderr is the error.
+        let output = try ProcessRunner.run(
+            tool, ["-y", "-hide_banner", "-loglevel", "error"] + arguments, captureStdout: false)
+        guard output.status == 0 else {
+            throw FfmpegError(exitCode: output.status, stderrTail: String(output.stderrText.suffix(400)))
         }
     }
 }

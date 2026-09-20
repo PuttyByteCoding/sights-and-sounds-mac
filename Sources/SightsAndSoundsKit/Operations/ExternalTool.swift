@@ -65,17 +65,7 @@ extension ExternalTool {
     /// The first line of `<tool> -version`, which is what every one of
     /// these prints and what a person would check by hand.
     public static func detectedVersion(ofToolAt path: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["-version"]
-        let out = Pipe()
-        process.standardOutput = out
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(data: data, encoding: .utf8)?
-            .split(separator: "\n").first
-            .map(String.init)
+        guard let output = try? ProcessRunner.run(path, ["-version"]) else { return nil }
+        return output.stdoutText.split(separator: "\n").first.map(String.init)
     }
 }
