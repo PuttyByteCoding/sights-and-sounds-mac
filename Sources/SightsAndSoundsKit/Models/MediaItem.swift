@@ -226,6 +226,20 @@ public struct MediaItem: Codable, Equatable, Identifiable, Sendable, FetchableRe
         folderPath = MediaPath.folder(of: normalized)
         fileName = MediaPath.fileName(of: normalized)
     }
+
+    /// Save this item after `setRelativePath`, and bring its segments
+    /// along. A segment is a range inside this item's file and carries
+    /// the file's path so it lists in the same folder; every place a
+    /// file's path changes goes through here so they cannot part ways.
+    func updateWithSegmentPaths(_ db: Database) throws {
+        try update(db)
+        try db.execute(
+            sql: """
+            UPDATE mediaItem SET relativePath = ?, folderPath = ?, fileName = ? \
+            WHERE parentMediaItemID = ?
+            """,
+            arguments: [relativePath, folderPath, fileName, id])
+    }
 }
 
 extension String {
