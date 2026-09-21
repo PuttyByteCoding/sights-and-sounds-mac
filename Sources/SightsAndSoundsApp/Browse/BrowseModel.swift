@@ -884,6 +884,15 @@ final class BrowseModel {
         (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil
     }
 
+    /// The same lookup as something that can be handed off and run
+    /// later, away from the main actor — what a thumbnail request takes,
+    /// so a tile never pays for database reads and a reachability check
+    /// just to find its thumbnail was cached all along.
+    func fileResolver(for item: MediaItem) -> @Sendable () -> URL? {
+        let library = library, fileAccess = fileAccess
+        return { (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil }
+    }
+
     // MARK: - Operations
 
     /// Save segments as files of their own — what the delete list offers

@@ -416,6 +416,13 @@ final class PlayerModel {
         (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil
     }
 
+    /// The same lookup, to be run later and off the main actor; see
+    /// `BrowseModel.fileResolver(for:)`.
+    func queueFileResolver(for item: MediaItem) -> @Sendable () -> URL? {
+        let library = library, fileAccess = fileAccess
+        return { (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil }
+    }
+
     // MARK: - Loading
 
     /// Loads race under fast ←/→ — the counter lets only the newest
