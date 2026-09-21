@@ -35,6 +35,12 @@ public final class LibraryDatabase: Sendable {
     /// main file — the step that makes a library portable as *one* file.
     /// Copy or move a library only after closing it.
     public func close() throws {
+        // Let SQLite refresh the planner's statistics for tables whose
+        // use this session suggests it would help. Cheap by design, and
+        // without it the planner has no idea a tag is on twenty items and
+        // a kind is on all of them. A failure here is not worth refusing
+        // to close over.
+        try? writer.writeWithoutTransaction { db in try db.execute(sql: "PRAGMA optimize") }
         if writer is DatabasePool {
             _ = try writer.writeWithoutTransaction { db in
                 try db.checkpoint(.truncate)
@@ -800,6 +806,18 @@ public final class LibraryDatabase: Sendable {
                 WHERE parentMediaItemID IS NOT NULL \
                 AND EXISTS (SELECT 1 FROM mediaItem p WHERE p.id = mediaItem.parentMediaItemID \
                             AND p.relativePath <> mediaItem.relativePath)
+                """)
+        }
+
+        // The child side of mediaItem's self-referencing foreign key, and
+        // the column every segment lookup filters on. Unindexed, deleting
+        // any item scanned the whole table looking for its segments.
+        // Partial: almost every row has no parent.
+        migrator.registerMigration("segmentLookupIndex") { db in
+            try db.execute(
+                sql: """
+                CREATE INDEX mediaItem_parentMediaItemID ON mediaItem(parentMediaItemID) \
+                WHERE parentMediaItemID IS NOT NULL
                 """)
         }
 
