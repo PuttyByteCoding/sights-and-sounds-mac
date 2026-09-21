@@ -37,6 +37,10 @@ public enum FilterTerm: Hashable, Sendable, Codable {
     case folder(String)
     /// The item's file sits in this directory or anywhere below it.
     case subtree(String)
+    /// The item belongs to this source. Paths are source-relative, so a
+    /// folder term alone matches that folder on every source; the
+    /// sidebar's tree is per source and pairs its folder with this.
+    case source(UUID)
     /// The item has no tags from this category.
     case missingCategory(UUID)
     /// A structural status flag is set.

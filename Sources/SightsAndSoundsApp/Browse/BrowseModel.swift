@@ -30,7 +30,17 @@ final class BrowseModel {
     /// What each saved filter would show, under the CURRENT media kinds —
     /// the number beside its sidebar row.
     private(set) var savedFilterCounts: [UUID: Int] = [:]
-    var selectedFolderPath: String?
+    /// The tree's selection, read from the filter it lives in — so an
+    /// applied saved filter selects its folder, and nothing can drift.
+    var selectedFolderPath: String? { filter.treeScope?.path }
+
+    /// True for the row that was clicked: the same path under another
+    /// source is a different folder. A filter from before folders knew
+    /// their source matches the path wherever it appears, as it lists.
+    func isSelectedFolder(_ path: String, in sourceID: UUID) -> Bool {
+        guard let scope = filter.treeScope, scope.path == path else { return false }
+        return scope.sourceID == nil || scope.sourceID == sourceID
+    }
 
     /// The offline banner's toggle. It hides items from the LISTING;
     /// `items` stays the full listing so the banner can keep counting
@@ -486,13 +496,11 @@ final class BrowseModel {
 
     // MARK: - Sidebar actions
 
-    func selectFolder(_ path: String?) {
-        selectedFolderPath = path
-        filter.selectSubtree(path)
+    func selectFolder(_ path: String?, in sourceID: UUID? = nil) {
+        filter.selectSubtree(path, sourceID: sourceID)
     }
 
     func clearFilter() {
-        selectedFolderPath = nil
         searchDebounce?.cancel()
         searchDisplayText = ""
         filter = MediaFilter()
@@ -819,7 +827,7 @@ final class BrowseModel {
             return (entry.category.name, "Missing")
         case .status(let flag):
             return ("Status", flag.displayName)
-        case .folder, .subtree:
+        case .folder, .subtree, .source:
             return nil
         }
     }
