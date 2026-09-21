@@ -12,6 +12,9 @@ enum SyntheticPicture {
             state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return 40 + Float(state >> 40 & 0xFF) / 255 * 180
         }
+
+        /// Uniform in -1...1.
+        mutating func signedUnit() -> Float { (next() - 130) / 90 }
     }
 
     /// A `width` x `height` frame, black (code 16) outside `area`, with
@@ -30,12 +33,42 @@ enum SyntheticPicture {
         return PictureFrame(width: width, height: height, luma: luma, positionSeconds: seconds)
     }
 
-    /// Full-band noise at `sourceWidth` x `sourceHeight`, scaled up to
+    /// A texture with a picture's kind of spectrum, falling away with
+    /// frequency but present right up to the limit: noise at every scale
+    /// from one pixel up, the coarse scales the strongest.
+    static func texture(width: Int, height: Int) -> [Float] {
+        var noise = Noise()
+        var out = [Float](repeating: 128, count: width * height)
+        var scale = 1
+        while scale <= 32 {
+            let columns = width / scale + 2, rows = height / scale + 2
+            let layer = (0..<columns * rows).map { _ in noise.signedUnit() }
+            let weight: Float = pow(Float(scale), 1.5) * 0.35
+            for y in 0..<height {
+                for x in 0..<width { out[y * width + x] += layer[(y / scale) * columns + x / scale] * weight }
+            }
+            scale *= 2
+        }
+        // A lens and a sensor soften what they sample. Hard-edged blocks
+        // alias, which levels the top of the spectrum the way noise does,
+        // and no camera picture looks like that.
+        func softened(_ plane: [Float], step: Int, limit: Int) -> [Float] {
+            plane.indices.map { index in
+                let position = step == 1 ? index % width : index / width
+                let before = position > 0 ? plane[index - step] : plane[index]
+                let after = position < limit - 1 ? plane[index + step] : plane[index]
+                let sum: Float = before + 2 * plane[index] + after
+                return sum / 4
+            }
+        }
+        return softened(softened(out, step: 1, limit: width), step: width, limit: height)
+    }
+
+    /// A `texture` made at `sourceWidth` x `sourceHeight` and scaled up to
     /// `width` x `height` by linear interpolation: a picture with the
     /// pixel count of one size and the detail of another.
     static func upscaledNoise(width: Int, height: Int, sourceWidth: Int, sourceHeight: Int) -> PictureFrame {
-        var noise = Noise()
-        let source = (0..<sourceWidth * sourceHeight).map { _ in noise.next() }
+        let source = texture(width: sourceWidth, height: sourceHeight)
         func at(_ x: Int, _ y: Int) -> Float {
             source[min(y, sourceHeight - 1) * sourceWidth + min(x, sourceWidth - 1)]
         }
@@ -138,12 +171,16 @@ enum SyntheticPicture {
 @Suite struct DetailSpectrumTests {
     private let whole = PictureGeometry.ActiveArea(left: 0, top: 0, width: 640, height: 360)
 
-    @Test func fullBandNoiseFillsTheFrame() {
+    @Test func aNativePictureReadsAboutHalfTheBandAndIsNotNoiseLimited() {
         let frame = SyntheticPicture.upscaledNoise(width: 640, height: 360, sourceWidth: 640, sourceHeight: 360)
         let across = DetailSpectrum.horizontal(frame, in: whole)!
         let down = DetailSpectrum.vertical(frame, in: whole)!
-        #expect(across.fraction > 0.95 && across.cliffFraction == 1)
-        #expect(down.fraction > 0.95 && down.cliffFraction == 1)
+        // A picture's energy falls away with frequency, so even a native
+        // one encloses 99.9 % of it well short of the limit. A real 1080p
+        // photograph read 0.52; what matters is what an upscale reads
+        // against this.
+        #expect(across.fraction > 0.4 && across.fraction < 0.6 && !across.noiseLimited)
+        #expect(down.fraction > 0.4 && down.fraction < 0.6 && !down.noiseLimited)
     }
 
     @Test func anUpscaleStopsWhereItsSourceDid() {
@@ -151,14 +188,28 @@ enum SyntheticPicture {
         let findings = DetailSpectrum.measure([frame], in: whole)
         let width = findings.value("detail.effectiveWidth", .high)!
         let height = findings.value("detail.effectiveHeight", .high)!
-        // Linear interpolation rolls off slowly, so the step is found a
-        // little past the source's limit: well short of the frame, near
-        // the source, is the claim.
-        #expect(width > 140 && width < 280)
-        #expect(height > 80 && height < 160)
-        #expect(findings.value("detail.horizontalFill")! < 0.45)
-        // Noise is the case the energy reading gets wrong, and says so.
-        #expect(findings.value("detail.energyWidth", .high)! > 450)
+        // A quarter of the size each way reads a quarter of what the
+        // native picture does: 0.12 of the frame against 0.48.
+        #expect(width > 60 && width < 100)
+        #expect(height > 35 && height < 60)
+        #expect(findings.value("detail.horizontalFill")! < 0.16)
+        #expect(findings.value("detail.noiseLimitedShare") == 0)
+    }
+
+    @Test func aReadingThatLiesInTheNoiseIsWithheld() {
+        // The same upscale with white noise laid over it afterwards. The
+        // spectrum levels off into the noise long before the top of the
+        // band and the energy cutoff lands out there, describing the noise.
+        let clean = SyntheticPicture.upscaledNoise(width: 640, height: 360, sourceWidth: 160, sourceHeight: 90)
+        var noise = SyntheticPicture.Noise()
+        let noisy = PictureFrame(width: 640, height: 360, luma: clean.luma.map { $0 + noise.signedUnit() * 14 })
+        let cutoff = DetailSpectrum.horizontal(noisy, in: whole)!
+        #expect(cutoff.noiseLimited)
+        #expect(cutoff.noiseMeetsFraction < 0.5)
+        let findings = DetailSpectrum.measure([noisy], in: whole)
+        #expect(findings.value("detail.noiseLimitedShare") == 1)
+        #expect(findings.value("detail.effectiveWidth", .high) == nil)
+        #expect(findings.value("detail.energyWidth", .high)! > 500)  // kept, as the raw reading
     }
 
     @Test func softerAcrossThanDownIsReportedAsAShape() {

@@ -35,6 +35,13 @@ public enum DetailSpectrum {
         public var bulkFraction: Double
         /// Where the spectrum falls off a cliff, or 1 when it never does.
         public var cliffFraction: Double
+        /// Where the spectrum levels off into its own noise.
+        public var noiseMeetsFraction: Double
+        /// The cutoffs lie above that point, and so describe the noise.
+        public var noiseLimited: Bool
+
+        /// The smaller of the two readings.
+        public var effectiveFraction: Double { min(fraction, cliffFraction) }
     }
 
     /// How far below its own low-frequency trend the spectrum has to fall,
@@ -106,6 +113,21 @@ public enum DetailSpectrum {
         return cutoff(ofPower: power)
     }
 
+    /// Reads the cutoffs, and says whether they can be believed.
+    ///
+    /// Noise is flat across the spectrum and a picture is not, so a noisy
+    /// frame's spectrum falls until it meets the noise and then runs level
+    /// to the top of the band. Anything read above that meeting point is a
+    /// reading of the noise. Measured on a synthetic clip scaled up from
+    /// 300 pixels across with heavy noise added afterwards, the spectrum
+    /// met its noise at about 15 % of the band and the energy cutoff read
+    /// 703 of 720 pixels. A sharp computer-made picture with hard aliased
+    /// edges runs level at the top too and is withheld with the noisy
+    /// ones: unknown, rather than wrong. Subtracting the floor was tried and made the
+    /// cutoffs erratic, because so little of a picture's energy is up
+    /// there to begin with. So the reading is kept as it is and marked
+    /// `noiseLimited` when it lies in the noise: what such a frame holds
+    /// cannot be told from its spectrum, and it is better to say so.
     static func cutoff(ofPower power: [Float]) -> Cutoff? {
         let total = power.dropFirst().reduce(0, +)
         // A flat frame has no spectrum to read a cutoff from.
@@ -121,10 +143,30 @@ public enum DetailSpectrum {
                 break
             }
         }
+
+        // Where the spectrum stops falling like a picture and starts
+        // running level like noise. A picture loses 6 dB or more with each
+        // doubling of frequency; noise loses none, and noise that has been
+        // through an encoder, which quantises its finest part hardest,
+        // loses a little. The knee is the lowest frequency from which every
+        // octave up to the top loses less than 4 dB.
+        func level(around bin: Double) -> Float {
+            let range = max(Int(bin * 0.9), 1)...min(max(Int(bin * 1.1), 1), power.count - 1)
+            return 10 * log10(max(power[range].reduce(0, +) / Float(range.count), 1e-12))
+        }
+        var meets = power.count
+        var bin = Double(power.count) / 2
+        while bin >= Double(power.count) / 64 {
+            guard level(around: bin) - level(around: bin * 2) < 4 else { break }
+            meets = Int(bin)
+            bin /= 1.19
+        }
+        let cliff = cliff(inPower: power)
         let nyquist = Double(power.count)
         return Cutoff(
             fraction: Double(edge) / nyquist, bulkFraction: Double(bulk ?? edge) / nyquist,
-            cliffFraction: Double(cliff(inPower: power)) / nyquist)
+            cliffFraction: Double(cliff) / nyquist, noiseMeetsFraction: Double(meets) / nyquist,
+            noiseLimited: meets * 3 < power.count && min(edge, cliff) > meets)
     }
 
     /// The bin at which the spectrum drops away from its own trend.
@@ -190,23 +232,40 @@ public enum DetailSpectrum {
     /// Per-frame cutoffs and their summaries, in pixels of the active area.
     public static func measure(_ frames: [PictureFrame], in area: PictureGeometry.ActiveArea) -> SignalFindings {
         var findings = SignalFindings()
-        var across: [(Double, Double)] = [], down: [(Double, Double)] = []
-        var acrossBulk: [(Double, Double)] = [], downBulk: [(Double, Double)] = []
-        var acrossCliff: [(Double, Double)] = [], downCliff: [(Double, Double)] = []
+        typealias Series = [(Double, Double)]
+        var across: Series = [], down: Series = [], acrossBulk: Series = [], downBulk: Series = []
+        var acrossCliff: Series = [], downCliff: Series = []
+        var effectiveAcross: Series = [], effectiveDown: Series = []
+        var limited = 0, read = 0
         for frame in frames {
+            let at = frame.positionSeconds
             if let cutoff = horizontal(frame, in: area) {
-                across.append((frame.positionSeconds, cutoff.fraction * Double(area.width)))
-                acrossBulk.append((frame.positionSeconds, cutoff.bulkFraction * Double(area.width)))
-                acrossCliff.append((frame.positionSeconds, cutoff.cliffFraction * Double(area.width)))
+                read += 1
+                if cutoff.noiseLimited { limited += 1 }
+                across.append((at, cutoff.fraction * Double(area.width)))
+                acrossBulk.append((at, cutoff.bulkFraction * Double(area.width)))
+                acrossCliff.append((at, cutoff.cliffFraction * Double(area.width)))
+                if !cutoff.noiseLimited {
+                    effectiveAcross.append((at, cutoff.effectiveFraction * Double(area.width)))
+                }
             }
             if let cutoff = vertical(frame, in: area) {
-                down.append((frame.positionSeconds, cutoff.fraction * Double(area.height)))
-                downBulk.append((frame.positionSeconds, cutoff.bulkFraction * Double(area.height)))
-                downCliff.append((frame.positionSeconds, cutoff.cliffFraction * Double(area.height)))
+                down.append((at, cutoff.fraction * Double(area.height)))
+                downBulk.append((at, cutoff.bulkFraction * Double(area.height)))
+                downCliff.append((at, cutoff.cliffFraction * Double(area.height)))
+                if !cutoff.noiseLimited {
+                    effectiveDown.append((at, cutoff.effectiveFraction * Double(area.height)))
+                }
             }
         }
-        let effectiveAcross = zip(across, acrossCliff).map { ($0.0, min($0.1, $1.1)) }
-        let effectiveDown = zip(down, downCliff).map { ($0.0, min($0.1, $1.1)) }
+        // Only frames whose reading is of the picture, and only when most
+        // frames gave one: in a noisy file the few frames that slip past
+        // the test are reading noise like the rest. Such a file gets no
+        // effective size at all, which is the truth: its spectrum cannot say.
+        if limited * 2 > read {
+            effectiveAcross = []
+            effectiveDown = []
+        }
         FrameSummary.record("detail.effectiveWidth", effectiveAcross, into: &findings)
         FrameSummary.record("detail.effectiveHeight", effectiveDown, into: &findings)
         FrameSummary.record("detail.energyWidth", across, into: &findings)
@@ -215,6 +274,7 @@ public enum DetailSpectrum {
         FrameSummary.record("detail.bulkHeight", downBulk, into: &findings)
         FrameSummary.record("detail.cliffWidth", acrossCliff, into: &findings)
         FrameSummary.record("detail.cliffHeight", downCliff, into: &findings)
+        if read > 0 { findings.measure("detail.noiseLimitedShare", Double(limited) / Double(read)) }
 
         // The best the file shows, against the size it was encoded at.
         if let best = FrameSummary.percentile(effectiveAcross.map(\.1), 0.9), best > 0 {

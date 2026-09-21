@@ -1,7 +1,9 @@
 import Foundation
 
 /// Measures the picture from a handful of decoded stills: where the active
-/// picture is, and how much real detail it holds.
+/// picture is, how much real detail it holds, what range and depth its
+/// samples actually use, how much detail its colour carries, and what its
+/// noise is like.
 ///
 /// Everything here is evidence about the source rather than the encode.
 /// Bars baked into the frame and a spectrum that stops well short of the
@@ -9,7 +11,7 @@ import Foundation
 /// worth having when the container can only describe the last encoder.
 public struct PictureStillsStage: SignalStage {
     public let name = "pictureStills"
-    public let version = 1
+    public let version = 2
     public let kinds: Set<MediaKind> = [.video]
 
     public init() {}
@@ -39,6 +41,9 @@ public struct PictureStillsStage: SignalStage {
             width: Int(geometry.value("geometry.activeWidth") ?? Double(first.width)),
             height: Int(geometry.value("geometry.activeHeight") ?? Double(first.height)))
         findings.merge(DetailSpectrum.measure(stills.frames, in: area))
+        findings.merge(ColourReading.measure(stills.frames, in: area))
+        findings.merge(ChromaReading.measure(stills.frames, in: area))
+        findings.merge(NoiseReading.measure(stills.frames, in: area))
         return findings
     }
 }
