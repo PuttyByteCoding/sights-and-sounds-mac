@@ -63,9 +63,9 @@ public struct RepairJob: Job {
         let tempURL = try LibraryDatabase.workingURL(
             toReplace: fileURL, fileExtension: ext.isEmpty ? "mp4" : ext)
         defer { try? FileManager.default.removeItem(at: tempURL.deletingLastPathComponent()) }
-        try FfmpegTool.run(
+        try await FfmpegTool.run(
             payload.recipe.resolvedArguments(input: fileURL.path, output: tempURL.path),
-            tool: tool)
+            tool: tool, isCancelled: { await context.isCancelled })
 
         // 2. Re-probe the RESULT. A repair that produced an unplayable
         //    file must not replace a file that at least still exists.

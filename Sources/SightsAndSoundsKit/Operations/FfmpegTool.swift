@@ -29,4 +29,42 @@ public enum FfmpegTool {
             throw FfmpegError(exitCode: output.status, stderrTail: String(output.stderrText.suffix(400)))
         }
     }
+
+    /// Run ffmpeg from a job: the same call, but cancellable. Throws
+    /// `CancellationError` when the job was cancelled mid-run.
+    public static func run(
+        _ arguments: [String], tool: String,
+        isCancelled: @escaping @Sendable () async -> Bool
+    ) async throws {
+        let output = try await ProcessRunner.run(
+            tool, ["-y", "-hide_banner", "-loglevel", "error"] + arguments,
+            captureStdout: false, isCancelled: isCancelled)
+        guard output.status == 0 else {
+            throw FfmpegError(exitCode: output.status, stderrTail: String(output.stderrText.suffix(400)))
+        }
+    }
+
+    /// Have ffmpeg make a new file at `output` — whole, or not at all.
+    ///
+    /// ffmpeg writes as it goes, so a run that fails, is cancelled, or
+    /// dies with the app leaves however much it had written. Written
+    /// straight to its place in the library, that half file is what the
+    /// next scan imports. So ffmpeg writes to a working file outside
+    /// anything the library lists, on the same volume, and only a finished
+    /// file is moved into place. `arguments` are everything except the
+    /// output path, which goes last.
+    public static func produce(
+        _ output: URL, arguments: [String], tool: String,
+        fileAccess: any FileAccess,
+        isCancelled: @escaping @Sendable () async -> Bool
+    ) async throws {
+        try FileManager.default.createDirectory(
+            at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let working = try LibraryDatabase.workingURL(
+            toReplace: output.deletingLastPathComponent(),
+            fileExtension: output.pathExtension.isEmpty ? "mp4" : output.pathExtension)
+        defer { try? FileManager.default.removeItem(at: working.deletingLastPathComponent()) }
+        try await run(arguments + [working.path], tool: tool, isCancelled: isCancelled)
+        try fileAccess.moveFile(at: working, to: output)
+    }
 }

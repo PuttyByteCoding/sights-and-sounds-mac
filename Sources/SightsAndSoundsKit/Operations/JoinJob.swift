@@ -146,10 +146,11 @@ public struct JoinJob: Job {
         let outputURL = root.appendingPathComponent(outputRelative)
 
         await context.reportProgress(current: 0, total: 1)
-        try FfmpegTool.run(
-            ["-f", "concat", "-safe", "0", "-i", listURL.path, "-c", "copy",
-             "-movflags", "+faststart", outputURL.path],
-            tool: tool)
+        try await FfmpegTool.produce(
+            outputURL,
+            arguments: ["-f", "concat", "-safe", "0", "-i", listURL.path, "-c", "copy",
+                        "-movflags", "+faststart"],
+            tool: tool, fileAccess: fileAccess, isCancelled: { await context.isCancelled })
 
         let probe = await MediaProbe.probe(url: outputURL)
         let size = (try? fileAccess.fileSize(at: outputURL)) ?? 0

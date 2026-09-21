@@ -77,8 +77,10 @@ public struct BlockRemovalJob: Job {
         if hasAudio { arguments += ["-map", "[a]"] }
         arguments += ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"]
         if hasAudio { arguments += ["-c:a", "aac", "-b:a", "192k"] }
-        arguments += ["-movflags", "+faststart", outputURL.path]
-        try FfmpegTool.run(arguments, tool: tool)
+        arguments += ["-movflags", "+faststart"]
+        try await FfmpegTool.produce(
+            outputURL, arguments: arguments, tool: tool, fileAccess: fileAccess,
+            isCancelled: { await context.isCancelled })
 
         let probe = await MediaProbe.probe(url: outputURL)
         let size = (try? fileAccess.fileSize(at: outputURL)) ?? 0
