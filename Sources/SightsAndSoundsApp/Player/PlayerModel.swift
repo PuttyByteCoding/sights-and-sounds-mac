@@ -1217,18 +1217,22 @@ final class PlayerModel {
                    duration.isFinite, duration > 0 {
                     self.durationSeconds = duration
                 }
-                // Clip loop-back at the out-point.
-                if let end = self.item?.clipEndSeconds, time.seconds >= end {
-                    self.seek(to: self.item?.clipStartSeconds ?? 0)
+                // Clip loop-back at the out-point, and hide blocks skipped
+                // live — the same math the removal edit uses, so what you
+                // hear is what the edit keeps. (An open half-authored block
+                // doesn't skip.) Never while a seek is still in flight:
+                // see `tickSeek`.
+                var clip: (start: Double, end: Double)?
+                if let end = self.item?.clipEndSeconds {
+                    clip = (start: self.item?.clipStartSeconds ?? 0, end: end)
                 }
-                // Hide blocks skip live — the same math the removal edit
-                // uses, so what you hear is what the edit keeps. (An open
-                // half-authored block doesn't skip.)
-                if self.isPlaying, self.pendingBlockStart == nil,
-                   let target = SegmentMath.skipTarget(
-                       at: time.seconds,
-                       hidden: self.hideBlocks.map { ($0.startSeconds, $0.endSeconds) },
-                       duration: self.durationSeconds) {
+                if let target = SegmentMath.tickSeek(
+                    at: time.seconds,
+                    seekInFlight: self.pendingSeekTarget != nil,
+                    clip: clip,
+                    hidden: self.hideBlocks.map { ($0.startSeconds, $0.endSeconds) },
+                    skipsHidden: self.isPlaying && self.pendingBlockStart == nil,
+                    duration: self.durationSeconds) {
                     self.seek(to: target)
                 }
                 // One completion tally per session, on first crossing 90%.
