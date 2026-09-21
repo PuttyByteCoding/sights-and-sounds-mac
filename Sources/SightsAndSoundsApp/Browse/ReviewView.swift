@@ -1054,6 +1054,9 @@ private struct ComparePane: View {
                 .help(component.note ?? "")
             }
 
+            SignalSummaryView(item: item)
+                .padding(.top, 3)
+
             HStack {
                 Button("Play") {
                     // The Review window swaps to the player in place
