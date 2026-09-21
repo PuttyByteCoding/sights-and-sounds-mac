@@ -81,8 +81,19 @@ public enum FilterCompiler {
         clauses.append(baseline.sql)
         whereArgs.append(contentsOf: baseline.args)
 
-        // Required: AND each term.
+        // Required: AND each term. A required TAG is asked as membership
+        // of that tag's item list rather than as a correlated EXISTS: the
+        // two mean the same, but only the list lets the planner start from
+        // the tag's (tagID, mediaItemID) index and fetch items by key. As
+        // EXISTS it could only be tested per candidate row, so the query
+        // walked every item of the selected kinds to find a tag on twenty.
         for term in filter.required {
+            if case .tag(let id) = term {
+                clauses.append(
+                    "mediaItem.id IN (SELECT mediaItemTag.mediaItemID FROM mediaItemTag WHERE mediaItemTag.tagID = ?)")
+                whereArgs.append(id)
+                continue
+            }
             let t = termSQL(term)
             clauses.append(t.sql)
             whereArgs.append(contentsOf: t.args)
