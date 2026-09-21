@@ -323,7 +323,7 @@ final class AppModel {
                 FingerprintMatchSweepJob.self, ClipExportJob.self, RemuxJob.self,
                 EncodeJob.self, BlockRemovalJob.self, OcrJob.self, JoinJob.self,
                 ReorganizeJob.self, WritebackJob.self, RestoreTagsJob.self,
-                ValidationJob.self, MetadataSweepJob.self,
+                ValidationJob.self, MetadataSweepJob.self, MediaSignalJob.self,
             ],
             paused: tasksPaused)
         runners[libraryID] = runner
