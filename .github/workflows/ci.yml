@@ -2,8 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # dev is where PRs land: two green PRs can still break it together,
+    # and only a run on the merged result shows that.
+    branches: [main, dev]
   pull_request:
+
+# A newer push to the same branch or PR makes the older run pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   terminology:
@@ -23,12 +30,44 @@ jobs:
     # A hung test must fail in minutes, not burn six hours of macOS
     # runner time (learned 2026-08-25: parallel AVAssetWriter sessions
     # deadlocked the small CI VM).
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Swift version
-        run: swift --version
-      - name: Build
-        run: swift build
+        id: swift
+        run: |
+          swift --version
+          echo "version=$(swift --version 2>&1 | head -1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Cache .build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          # The toolchain is in the key: a new compiler means a cold
+          # build, which is also what makes the warnings check complete.
+          key: spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}
+      # The encode, block-removal, writeback and fingerprint tests return
+      # early with "brew install …" when these are missing, so without
+      # them the jobs that rewrite files are never executed here.
+      - name: Media tools
+        run: brew install ffmpeg chromaprint
+      - name: Build, with zero warnings
+        run: ./scripts/check-build-warnings.sh
       - name: Test
         run: swift test
+
+  bundle:
+    name: App bundle
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # The release configuration and the bundle script are otherwise
+      # only ever run by hand.
+      - name: Build the bundle
+        run: ./scripts/make-app-bundle.sh
+      - name: The bundle is whole
+        run: |
+          test -x dist/SightsAndSounds.app/Contents/MacOS/SightsAndSounds
+          test -f dist/SightsAndSounds.app/Contents/Info.plist
+          # Without the resource bundle the app runs in the system font.
+          ls -d dist/SightsAndSounds.app/Contents/Resources/*.bundle
