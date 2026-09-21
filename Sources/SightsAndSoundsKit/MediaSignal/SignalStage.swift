@@ -55,6 +55,7 @@ public enum SignalStages {
         DeclaredStage(),
         FrameTimingStage(),
         ProbeToolsStage(),
+        AudioSignalStage(),
         PictureStillsStage(),
     ]
 }
