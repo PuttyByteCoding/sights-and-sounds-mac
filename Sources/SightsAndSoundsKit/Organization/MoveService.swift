@@ -285,7 +285,11 @@ extension LibraryDatabase {
 
     public struct PurgeOutcome: Sendable, Equatable {
         public var rowsDeleted = 0
+        /// Files that left the library, by either route.
         public var filesDeleted = 0
+        /// How many of those went to the Trash and can be put back. The
+        /// rest were on a volume with no Trash and are gone.
+        public var filesTrashed = 0
         public var fileFailures: [String] = []
         /// Items whose file left but whose row could not be removed —
         /// one line each. The purge carries on past them.
@@ -351,10 +355,11 @@ extension LibraryDatabase {
         }
     }
 
-    /// Permanently delete marked-for-deletion items: files first
-    /// (through the boundary; offline sources' items are skipped
-    /// entirely), then rows — cascades sweep tags, values, feature state
-    /// and candidates. The caller owns the confirmation.
+    /// Remove marked-for-deletion items: files first (through the
+    /// boundary's `discardFile` — to the Trash where the volume has one,
+    /// else for good; offline sources' items are skipped entirely), then
+    /// rows — cascades sweep tags, values, feature state and candidates.
+    /// The caller owns the confirmation.
     ///
     /// A show that still has unsaved segments is left alone, file and
     /// row: a segment plays from its show's file, so deleting the show
@@ -410,7 +415,7 @@ extension LibraryDatabase {
                     .appendingPathComponent(item.relativePath)
                 if fileAccess.isReachable(url) {
                     do {
-                        try fileAccess.removeFile(at: url)
+                        if try fileAccess.discardFile(at: url) == .trashed { outcome.filesTrashed += 1 }
                         outcome.filesDeleted += 1
                     } catch {
                         outcome.fileFailures.append("\(item.fileName): \(error)")

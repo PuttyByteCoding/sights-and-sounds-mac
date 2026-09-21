@@ -33,7 +33,7 @@ struct ReviewView: View {
         var safety: String {
             switch self {
             case .duplicates: "Resolving a group only moves the losing copy to the delete list."
-            case .deleteList: "Files leave disk only when you delete them here."
+            case .deleteList: "Files leave the library only when you delete them here, and go to the Trash."
             case .issues: "Every fix archives the original first."
             }
         }
@@ -403,7 +403,7 @@ struct ReviewView: View {
                     ) {
                         Button("Delete", role: .destructive) { purge() }
                     } message: {
-                        Text("Files move to the purge list and are removed on the next maintenance pass. The operation log keeps a revert entry until then.")
+                        Text("The files move to the Trash and their items leave the library. On a volume that has no Trash they are deleted for good.")
                     }
             case .issues:
                 Button("Run fix") { runFix() }
@@ -426,7 +426,7 @@ struct ReviewView: View {
         case .deleteList:
             deleteTicked.isEmpty
                 ? "Nothing selected. Tick the files you want gone."
-                : "Deleting moves files to a purge list; they leave disk on the next maintenance pass."
+                : "Deleting moves the files to the Trash and removes their items from the library."
         case .issues:
             pickedRecipeID == nil
                 ? "Pick a fix to run against this file."
@@ -478,7 +478,11 @@ struct ReviewView: View {
         do {
             let outcome = try model.library.purgeDeleted(itemIDs: Array(deleteTicked))
             resolvedThisPass[.deleteList, default: 0] += outcome.rowsDeleted
-            let failures = outcome.fileFailures + outcome.rowFailures + outcome.keptForSegments
+            var failures = outcome.fileFailures + outcome.rowFailures + outcome.keptForSegments
+            let permanent = outcome.filesDeleted - outcome.filesTrashed
+            if permanent > 0 {
+                failures.append("\(permanent) deleted for good: their volume has no Trash")
+            }
             errorText = failures.isEmpty ? nil : failures.joined(separator: "; ")
             deleteTicked = []
             reload()
