@@ -9,6 +9,9 @@ struct ItemGridView: View {
     /// The view name, shown for a moment after `V` cycles — otherwise
     /// the whole grid changes and nothing says why.
     @State private var viewToast: String?
+    /// The grid's width, for working out how many columns an up or down
+    /// arrow should cross.
+    @State private var gridWidth: CGFloat = 0
 
     // Cell size is a view option; the adaptive maximum tracks the
     // chosen minimum so cells stay near the picked size. Tiles top-align
@@ -27,24 +30,7 @@ struct ItemGridView: View {
             } else if model.visibleItems.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
-                        ForEach(model.visibleItems) { item in
-                            ItemCell(item: item)
-                                .transition(.opacity)
-                        }
-                    }
-                    .padding(16)
-                    // The listing is DIFFED, not blanked: tiles that survive
-                    // the filter change slide to their new positions while
-                    // departures fade out and arrivals fade in. Keyed on the
-                    // ids, so a re-query returning the same items animates
-                    // nothing — and a rapid cycle interrupts cleanly instead
-                    // of stacking fades.
-                    .animation(
-                        .easeInOut(duration: Theme.Motion.listingSettle),
-                        value: model.visibleItems.map(\.id))
-                }
+                ScrollViewReader { scroller in listing(scroller) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -85,6 +71,36 @@ struct ItemGridView: View {
         .animation(.easeOut(duration: 0.15), value: viewToast)
     }
 
+    /// The grid itself, out of `body`: the older CI compiler gives up
+    /// type-checking a body this deep.
+    private func listing(_ scroller: ScrollViewProxy) -> some View {
+        ScrollView {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                ForEach(model.visibleItems) { item in
+                    ItemCell(item: item, hasKeyboardFocus: focused && model.focusedItemID == item.id)
+                        .transition(.opacity)
+                }
+            }
+            .padding(16)
+            // The listing is DIFFED, not blanked: tiles that survive
+            // the filter change slide to their new positions while
+            // departures fade out and arrivals fade in. Keyed on the
+            // ids, so a re-query returning the same items animates
+            // nothing — and a rapid cycle interrupts cleanly instead
+            // of stacking fades.
+            .animation(
+                .easeInOut(duration: Theme.Motion.listingSettle),
+                value: model.visibleItems.map(\.id))
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
+        // The focus can be moved off screen by the keyboard;
+        // follow it, by as little as it takes.
+        .onChange(of: model.focusedItemID) { _, id in
+            guard let id else { return }
+            scroller.scrollTo(id)
+        }
+    }
+
     @ViewBuilder private var emptyState: some View {
         if model.filter.isEmpty && !model.hideOfflineItems {
             EmptyGridState(
@@ -99,11 +115,29 @@ struct ItemGridView: View {
         }
     }
 
+    private static let focusMoves: [KeyEquivalent: GridFocusMove] = [
+        .leftArrow: .left, .rightArrow: .right, .upArrow: .up, .downArrow: .down,
+    ]
+
+    /// Arrows move the focus, Return plays it, Space selects it.
     /// `V` cycles the saved views; Esc unwinds exactly one layer — the
     /// selection here, since a popover takes the key press itself.
     private func handle(_ press: KeyPress) -> Bool {
         if press.key == .escape, !model.selection.isEmpty {
             model.clearSelection()
+            return true
+        }
+        if let move = Self.focusMoves[press.key], press.modifiers.isEmpty {
+            model.moveFocus(move, columns: GridFocus.columns(
+                width: gridWidth, tileMinimum: GridDisplaySettings.shared.grid.thumbnailSize))
+            return true
+        }
+        if press.key == .return, model.focusedItemID != nil {
+            model.playFocusedItem()
+            return true
+        }
+        if press.key == .space, model.focusedItemID != nil {
+            model.toggleSelectionOfFocusedItem()
             return true
         }
         guard press.characters.lowercased() == "v", press.modifiers.isEmpty else { return false }
@@ -183,6 +217,8 @@ private struct EmptyGridState: View {
 private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
     let item: MediaItem
+    /// The keyboard is on this tile (and the grid has the keyboard).
+    var hasKeyboardFocus = false
     @State private var thumbnail: NSImage?
     /// The tag action a right-click on one of this tile's pills picked.
     @State private var pending: TagAction?
@@ -211,6 +247,16 @@ private struct ItemCell: View {
                     },
                     itemID: item.id))
             })
+            // Where the keyboard is. An outline rather than a fill, so it
+            // reads as "here" and not as "selected", which is the amber
+            // border the tile draws itself.
+            .overlay {
+                if hasKeyboardFocus {
+                    RoundedRectangle(cornerRadius: Theme.Radius.card)
+                        .stroke(Theme.Text.primary.opacity(0.7), lineWidth: 2)
+                        .padding(-3)
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { play() }
             .onTapGesture {
@@ -221,6 +267,17 @@ private struct ItemCell: View {
                     range: flags.contains(.shift))
             }
             .contextMenu { menu }
+            // Two tap gestures give a tile no role and no way to be
+            // pressed. It is a button that plays, that can also be
+            // selected.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(item.fileName)
+            .accessibilityAddTraits(
+                model.selection.contains(item.id) ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction(.default) { play() }
+            .accessibilityAction(named: "Select") {
+                model.click(item.id, extend: true, range: false)
+            }
             .tagActions(
                 $pending, library: model.library, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
@@ -334,13 +391,7 @@ private struct ItemCell: View {
         }
     }
 
-    private func play() {
-        guard model.isOnline(item) else { return }
-        model.playerRequest = PlayerRequest(
-            libraryID: model.libraryID, itemID: item.id,
-            definition: .listing(filter: model.filter, kinds: model.kinds, ordering: model.ordering),
-            playlist: model.visibleItems.map(\.id))
-    }
+    private func play() { model.play(item) }
 
     // An embedded clip resolves to its parent's file — the file on disk.
     private func revealInFinder() {

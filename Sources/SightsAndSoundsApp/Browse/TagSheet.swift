@@ -166,6 +166,8 @@ struct TagSheet: View {
                                         Image(systemName: "xmark").font(Theme.ui(8, .semibold))
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("Remove alias \(alias)")
+                                    .help("Remove this alias")
                                 }
                                 .padding(.vertical, 3)
                                 .padding(.horizontal, 8)

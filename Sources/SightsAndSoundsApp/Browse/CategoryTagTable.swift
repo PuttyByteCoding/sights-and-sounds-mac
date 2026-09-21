@@ -242,6 +242,8 @@ struct TagTable: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 34)
+            .accessibilityLabel("Actions for \(tag.name)")
+            .help("More actions")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 7)

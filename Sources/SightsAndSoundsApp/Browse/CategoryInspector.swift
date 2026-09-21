@@ -323,6 +323,8 @@ struct TagInspector: View {
                                             .foregroundStyle(Theme.Text.disabled)
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("Remove alias \(alias)")
+                                    .help("Remove this alias")
                                 }
                                 .padding(.vertical, 3)
                                 .padding(.horizontal, 8)
@@ -495,6 +497,7 @@ struct FieldList: View {
                             .foregroundStyle(Theme.Text.disabled)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Delete field \(field.name)")
                     .help("Delete this field and every value stored under it")
                 }
             }

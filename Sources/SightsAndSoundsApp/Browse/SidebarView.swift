@@ -471,6 +471,7 @@ struct SidebarView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        .accessibilityLabel("Change tag order")
         .help("Order these tags by name or by how many items they hold")
     }
 
@@ -660,6 +661,9 @@ private struct SidebarRow<Content: View>: View {
     var selected = false
     /// A slot's colour tints the row behind it.
     var tint: Color?
+    /// What state the row is in, for a reader that cannot see its tint
+    /// or strikethrough: "required", "excluded".
+    var accessibilityState: String?
     var action: () -> Void
     @ViewBuilder var content: Content
 
@@ -675,6 +679,12 @@ private struct SidebarRow<Content: View>: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: action)
             .onHover { hovering = $0 }
+            // A tap gesture is invisible to assistive technology: it has
+            // no role, no state and nothing to press. Say what this is.
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityValue(accessibilityState ?? "")
+            .accessibilityAction(.default, action)
     }
 
     private var background: Color {
@@ -779,6 +789,8 @@ private struct TagQueryField: View {
                         .foregroundStyle(Theme.Text.disabled)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .help("Clear")
             }
         }
         .padding(.vertical, 4)
@@ -1008,6 +1020,13 @@ private struct SlotRow: View {
         let slot = model.filter.slot(of: term)
         SidebarRow(
             tint: slot?.color,
+            accessibilityState: slot.map { slot in
+                switch slot {
+                case .required: "required"
+                case .optional: "optional"
+                case .excluded: "excluded"
+                }
+            } ?? "not filtering",
             action: { model.filter.cycle(term) },
         ) {
             FilterSlotChip(slot: slot)

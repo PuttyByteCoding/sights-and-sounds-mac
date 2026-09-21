@@ -180,6 +180,8 @@ struct StagingBoxView: View {
                     .foregroundStyle(hue.opacity(0.7))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(name)")
+            .help("Remove")
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)

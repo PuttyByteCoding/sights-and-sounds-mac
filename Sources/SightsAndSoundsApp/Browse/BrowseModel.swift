@@ -836,9 +836,45 @@ final class BrowseModel {
     /// grid no longer showed, Delete acting on the visible few, and Add
     /// Tag acting on all of them.
     private func pruneSelection() {
+        if let focused = focusedItemID, !visibleItems.contains(where: { $0.id == focused }) {
+            focusedItemID = nil
+        }
         guard !selection.isEmpty else { return }
         selection.formIntersection(visibleItems.map(\.id))
         if let anchor = selectionAnchor, !selection.contains(anchor) { selectionAnchor = nil }
+    }
+
+    // MARK: - Keyboard focus
+
+    /// The tile the keyboard is on. Separate from the selection: moving
+    /// through the grid must not tick everything it passes.
+    private(set) var focusedItemID: UUID?
+
+    func moveFocus(_ move: GridFocusMove, columns: Int) {
+        let ids = visibleItems.map(\.id)
+        let current = focusedItemID.flatMap { ids.firstIndex(of: $0) }
+        guard let next = GridFocus.index(after: move, from: current, count: ids.count, columns: columns)
+        else { return }
+        focusedItemID = ids[next]
+    }
+
+    func toggleSelectionOfFocusedItem() {
+        guard let id = focusedItemID else { return }
+        click(id, extend: true, range: false)
+    }
+
+    /// Play from this item, with the listing as the queue.
+    func play(_ item: MediaItem) {
+        guard isOnline(item) else { return }
+        playerRequest = PlayerRequest(
+            libraryID: libraryID, itemID: item.id,
+            definition: .listing(filter: filter, kinds: kinds, ordering: ordering),
+            playlist: visibleItems.map(\.id))
+    }
+
+    func playFocusedItem() {
+        guard let id = focusedItemID, let item = visibleItems.first(where: { $0.id == id }) else { return }
+        play(item)
     }
 
     /// The selected items in listing order — the order a queue plays
@@ -1188,3 +1224,39 @@ struct BrowseRefresh: OptionSet, Sendable, Hashable {
         return parts
     }
 }
+
+enum GridFocusMove: Sendable { case left, right, up, down }
+
+/// Where an arrow key takes the grid's focus. Pure, so the rule can be
+/// tested without a window.
+enum GridFocus {
+    /// nil focus, or one that is no longer in the listing, starts at the
+    /// first tile. Left and right walk the listing and stop at its ends;
+    /// up and down keep the column, and going down into a ragged last row
+    /// that has no tile in this column takes the last tile instead.
+    static func index(after move: GridFocusMove, from current: Int?, count: Int, columns: Int) -> Int? {
+        guard count > 0 else { return nil }
+        guard let current, current >= 0, current < count else { return 0 }
+        let columns = max(1, columns)
+        switch move {
+        case .left: return max(0, current - 1)
+        case .right: return min(count - 1, current + 1)
+        case .up: return current - columns >= 0 ? current - columns : current
+        case .down:
+            if current + columns < count { return current + columns }
+            let lastRowStart = ((count - 1) / columns) * columns
+            return current < lastRowStart ? count - 1 : current
+        }
+    }
+
+    /// How many columns the adaptive grid lays out at this width: the
+    /// same arithmetic as `LazyVGrid`'s — 16 pt of padding each side,
+    /// 16 pt between tiles, tiles no narrower than the chosen size.
+    static func columns(width: CGFloat, tileMinimum: CGFloat) -> Int {
+        let padding: CGFloat = 16, spacing: CGFloat = 16
+        let available = width - padding * 2
+        guard tileMinimum > 0, available > 0 else { return 1 }
+        return max(1, Int((available + spacing) / (tileMinimum + spacing)))
+    }
+}
+

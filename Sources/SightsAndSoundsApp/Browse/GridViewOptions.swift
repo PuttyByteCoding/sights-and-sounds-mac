@@ -343,6 +343,9 @@ struct GridViewOptions: View {
                             .rotationEffect(.degrees(expanded == option.value ? 90 : 0))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        expanded == option.value ? "Hide \(option.label) settings" : "Show \(option.label) settings")
+                    .help(expanded == option.value ? "Hide settings" : "Show settings")
                 }
             }
             .padding(.vertical, 4)
