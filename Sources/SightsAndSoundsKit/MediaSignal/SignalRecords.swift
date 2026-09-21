@@ -169,6 +169,16 @@ extension LibraryDatabase {
         }
     }
 
+    /// Remove a stage's marker and rows, as if it had never looked.
+    public func forgetSignalStage(itemID: UUID, stage: String) throws {
+        try writer.write { db in
+            for table in ["mediaSignalDeclared", "mediaSignalMeasurement", "mediaSignalStage"] {
+                try db.execute(
+                    sql: "DELETE FROM \(table) WHERE mediaItemID = ? AND stage = ?", arguments: [itemID, stage])
+            }
+        }
+    }
+
     public func signalDeclared(itemID: UUID) throws -> [String: String] {
         try writer.read { db in
             let rows = try SignalDeclared

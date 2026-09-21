@@ -111,20 +111,30 @@ public enum FrameSampler {
         var rejections: [FrameRejection] = []
         var fallback: PictureFrame?
         var nextCandidate = start
-        while rejections.count <= retries, let buffer = output.copyNextSampleBuffer() {
-            let shown = buffer.presentationTimeStamp.seconds
-            guard shown.isFinite, shown >= nextCandidate - 0.001, let pixels = buffer.imageBuffer,
-                  let frame = PictureFrame(pixels, positionSeconds: shown)
-            else { continue }
-            var rejection = FrameTriage.rejection(of: frame)
-            if rejection == nil, FrameTriage.textCoverage(of: pixels) > textCoverageLimit {
-                rejection = .text
+        var chosen: PictureFrame?
+        var more = true
+        while more, chosen == nil, rejections.count <= retries {
+            more = autoreleasepool {
+                guard let buffer = output.copyNextSampleBuffer() else { return false }
+                let shown = buffer.presentationTimeStamp.seconds
+                guard shown.isFinite, shown >= nextCandidate - 0.001, let pixels = buffer.imageBuffer,
+                      let frame = PictureFrame(pixels, positionSeconds: shown)
+                else { return true }
+                var rejection = FrameTriage.rejection(of: frame)
+                if rejection == nil, FrameTriage.textCoverage(of: pixels) > textCoverageLimit {
+                    rejection = .text
+                }
+                guard let rejection else {
+                    chosen = frame
+                    return true
+                }
+                rejections.append(rejection)
+                if rejection != .black, fallback == nil { fallback = frame }
+                nextCandidate = shown + retryStepSeconds
+                return true
             }
-            guard let rejection else { return (frame, nil, rejections) }
-            rejections.append(rejection)
-            if rejection != .black, fallback == nil { fallback = frame }
-            nextCandidate = shown + retryStepSeconds
         }
+        if let chosen { return (chosen, nil, rejections) }
         return (nil, fallback, rejections)
     }
 
@@ -202,17 +212,28 @@ public enum FrameSampler {
             throw SignalStageError("cannot decode frames: \(reader.error?.localizedDescription ?? "unknown")")
         }
         var count = 0
-        while let buffer = output.copyNextSampleBuffer() {
-            if count.isMultiple(of: 60), await isCancelled() {
+        var polls = 0
+        var more = true
+        while more {
+            if polls.isMultiple(of: 60), await isCancelled() {
                 reader.cancelReading()
                 throw CancellationError()
             }
-            let shown = buffer.presentationTimeStamp.seconds
-            guard shown.isFinite, let pixels = buffer.imageBuffer,
-                  let frame = PictureFrame(pixels, positionSeconds: shown, lumaOnly: true)
-            else { continue }
-            each(frame.working(in: area))
-            count += 1
+            polls += 1
+            // Each frame in a pool of its own. Decoding leaves autoreleased
+            // objects behind, and a loop that never returns to its caller
+            // never drains them: over a sweep of days that is the app's
+            // memory growing until it is killed.
+            more = autoreleasepool {
+                guard let buffer = output.copyNextSampleBuffer() else { return false }
+                let shown = buffer.presentationTimeStamp.seconds
+                guard shown.isFinite, let pixels = buffer.imageBuffer,
+                      let frame = PictureFrame(pixels, positionSeconds: shown, lumaOnly: true)
+                else { return true }
+                each(frame.working(in: area))
+                count += 1
+                return true
+            }
         }
         return count
     }

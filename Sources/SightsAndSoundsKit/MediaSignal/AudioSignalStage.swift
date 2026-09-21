@@ -49,17 +49,22 @@ public struct AudioSignalStage: SignalStage {
         }
 
         var buffers = 0
-        while let buffer = output.copyNextSampleBuffer() {
+        var more = true
+        while more {
             buffers += 1
             if buffers.isMultiple(of: 500), await file.isCancelled() {
                 reader.cancelReading()
                 throw CancellationError()
             }
-            guard let data = try? buffer.dataBuffer?.dataBytes() else { continue }
-            let interleaved = data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
-            if channels == 1 {
-                meter.consume(left: interleaved, right: nil)
-            } else {
+            // A pool per buffer: see FrameSampler.sequence.
+            more = autoreleasepool {
+                guard let buffer = output.copyNextSampleBuffer() else { return false }
+                guard let data = try? buffer.dataBuffer?.dataBytes() else { return true }
+                let interleaved = data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+                if channels == 1 {
+                    meter.consume(left: interleaved, right: nil)
+                    return true
+                }
                 let count = interleaved.count / 2
                 var left = [Float](repeating: 0, count: count), right = left
                 var unity: Float = 1
@@ -69,6 +74,7 @@ public struct AudioSignalStage: SignalStage {
                     vDSP_vsmul(source.baseAddress! + 1, 2, &unity, &right, 1, vDSP_Length(count))
                 }
                 meter.consume(left: left, right: right)
+                return true
             }
         }
         if reader.status == .failed {

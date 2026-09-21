@@ -23,6 +23,18 @@ public struct MediaSignalJob: Job {
     let stages: [any SignalStage]
     let scope: Set<UUID>?
 
+    /// Seconds a stage may take on one item before the sweep gives up on
+    /// it and moves on.
+    var stageTimeout: @Sendable (MediaItem) -> Double = { item in 600 + (item.durationSeconds ?? 0) / 4 }
+
+    /// The drive a file lives on stopped answering part-way through.
+    public struct SourceWentOffline: Error, CustomStringConvertible, Equatable {
+        public let sourceName: String
+        public var description: String {
+            "\(sourceName) went offline; stopped without marking the files that could not be read"
+        }
+    }
+
     public init(payload: Data?) throws {
         fileAccess = LiveFileAccess()
         stages = SignalStages.all
@@ -74,14 +86,32 @@ public struct MediaSignalJob: Job {
             var failed = false
             for stageName in entry.stages {
                 guard let stage = byName[stageName] else { continue }
+                // Written before the stage starts, so it is what a crash
+                // leaves behind. A file that takes the app down is then a
+                // reported failure on the next launch instead of the first
+                // thing the sweep opens again, every time.
+                try library.recordSignalStage(
+                    itemID: entry.item.id, stage: stage.name, version: stage.version,
+                    findings: SignalFindings(), failure: Self.interruptedMessage)
                 do {
-                    let findings = try await stage.examine(input)
+                    let findings = try await Self.examine(
+                        input, with: stage, givingUpAfter: stageTimeout(entry.item))
                     try library.recordSignalStage(
                         itemID: entry.item.id, stage: stage.name, version: stage.version,
                         findings: findings)
                 } catch is CancellationError {
+                    // Stopped by hand: the file did nothing wrong.
+                    try library.forgetSignalStage(itemID: entry.item.id, stage: stage.name)
                     throw CancellationError()
                 } catch {
+                    // A drive that stopped answering fails every file on it
+                    // the same way. Marking them would bury the real
+                    // failures under thousands of false ones, so the sweep
+                    // stops and leaves them unmarked for when it is back.
+                    if !source.isOnline(using: fileAccess) {
+                        try library.forgetSignalStage(itemID: entry.item.id, stage: stage.name)
+                        throw SourceWentOffline(sourceName: source.name)
+                    }
                     try library.recordSignalStage(
                         itemID: entry.item.id, stage: stage.name, version: stage.version,
                         findings: SignalFindings(), failure: "\(error)")
@@ -115,6 +145,57 @@ public struct MediaSignalJob: Job {
             failedItems == 0
                 ? "\(examined) items examined"
                 : "\(examined) items examined, \(failedItems) with a stage that failed")
+    }
+
+    static let interruptedMessage =
+        "interrupted: the app quit, or crashed, while this stage was examining the file. Retry failed examines it again."
+
+    struct StageGaveUp: Error, CustomStringConvertible {
+        let seconds: Double
+        var description: String {
+            "gave up after \(Int(seconds)) s: the stage never finished, which is usually a damaged file the decoder cannot get past"
+        }
+    }
+
+    /// Run one stage, but not for ever. A decoder blocked inside a damaged
+    /// file never returns and cannot be interrupted, and a structured task
+    /// would wait for it; so the stage runs on a task of its own and
+    /// whichever of "it finished" and "time is up" comes first is the
+    /// answer. A stage that is given up on is left behind, still blocked.
+    /// That costs a thread; the alternative costs the rest of the sweep.
+    static func examine(
+        _ input: SignalStageInput, with stage: any SignalStage, givingUpAfter seconds: Double
+    ) async throws -> SignalFindings {
+        let once = OnceOnly()
+        return try await withCheckedThrowingContinuation { continuation in
+            let work = Task.detached(priority: .utility) {
+                do {
+                    let findings = try await stage.examine(input)
+                    if once.claim() { continuation.resume(returning: findings) }
+                } catch {
+                    if once.claim() { continuation.resume(throwing: error) }
+                }
+            }
+            Task.detached(priority: .utility) {
+                try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0.05) * 1_000_000_000))
+                guard once.claim() else { return }
+                work.cancel()
+                continuation.resume(throwing: StageGaveUp(seconds: seconds))
+            }
+        }
+    }
+
+    /// Whoever asks first gets `true`, and only they resume the continuation.
+    final class OnceOnly: @unchecked Sendable {
+        private let lock = NSLock()
+        private var claimed = false
+        func claim() -> Bool {
+            lock.withLock {
+                if claimed { return false }
+                claimed = true
+                return true
+            }
+        }
     }
 
     static func drawConclusions(for itemID: UUID, in library: LibraryDatabase) throws {

@@ -147,9 +147,14 @@ public enum ChromaReading {
     /// edges they belong to. Tape delays colour relative to brightness, and
     /// the picture's colours hang off the right-hand side of things.
     static func horizontalOffset(_ frame: PictureFrame, in area: PictureGeometry.ActiveArea) -> Double? {
-        let factor = frame.width / max(frame.chromaWidth, 1)
-        let rowFactor = frame.height / max(frame.chromaHeight, 1)
-        guard factor >= 1, rowFactor >= 1 else { return nil }
+        // Rounded, not truncated: an 853-wide picture has 427 chroma
+        // samples a row, and 853 / 427 truncates to 1.
+        let factor = Int((Double(frame.width) / Double(max(frame.chromaWidth, 1))).rounded())
+        let rowFactor = Int((Double(frame.height) / Double(max(frame.chromaHeight, 1))).rounded())
+        guard factor >= 1, rowFactor >= 1,
+              (area.left + area.width) * factor <= frame.width,
+              (area.top + area.height) * rowFactor <= frame.height
+        else { return nil }
         let reach = 4
         var scores = [Double](repeating: 0, count: reach * 2 + 1)
         var lumaRow = [Float](repeating: 0, count: area.width)
