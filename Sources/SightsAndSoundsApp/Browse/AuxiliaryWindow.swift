@@ -128,7 +128,6 @@ struct AuxiliaryWindowView: View {
                     dismiss()
                 } else {
                     model.playerRequest = nil
-                    model.refreshAll()
                 }
             }
             .id(playing)

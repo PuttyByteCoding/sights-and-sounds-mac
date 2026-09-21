@@ -441,7 +441,6 @@ struct OrganiseView: View {
                 status = "\(plan.movableCount) moves queued — each one logged and revertible"
                 reloadHistory()
                 preview()
-                model.refreshAll()
             } catch { errorText = "\(error)" }
         }
     }
@@ -451,7 +450,6 @@ struct OrganiseView: View {
             try model.library.revertMove(log.id)
             errorText = nil
             reloadHistory()
-            model.refreshAll()
         } catch { errorText = "\(error)" }
     }
 
@@ -462,7 +460,6 @@ struct OrganiseView: View {
                 ? nil : outcome.failures.joined(separator: "; ")
             status = "\(outcome.reverted) moves put back"
             reloadHistory()
-            model.refreshAll()
         } catch { errorText = "\(error)" }
     }
 

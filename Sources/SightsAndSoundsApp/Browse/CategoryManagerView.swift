@@ -100,7 +100,6 @@ struct CategoryManagerView: View {
                 reloadTags()
                 selectedTagID = tag.id
                 inspectorTab = .tag
-                model.refreshAll()
             })
     }
 
@@ -371,7 +370,6 @@ struct CategoryManagerView: View {
                             categories: categories,
                             onChange: {
                                 reloadTags()
-                                model.refreshAll()
                             })
                     if mergeMode {
                         MergeBar(
@@ -697,7 +695,6 @@ struct CategoryManagerView: View {
             mergeTargetID = nil
             mergeTargetIsNew = false
             reloadTags()
-            model.refreshAll()
         } catch { errorText = "\(error)" }
     }
 }

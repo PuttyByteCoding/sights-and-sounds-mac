@@ -163,7 +163,6 @@ private struct ItemCell: View {
                     pending: $pending,
                     removal: TagRemoval(label: TagRemoval.label(for: item.kind)) {
                         try? model.library.removeTag(tag.id, from: item.id)
-                        model.refreshAll()
                     },
                     itemID: item.id))
             })
@@ -180,7 +179,7 @@ private struct ItemCell: View {
             .tagActions(
                 $pending, library: model.library, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
-                onChange: { model.refreshAll() })
+                onChange: {})
             .task(id: item.id) {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id,
@@ -199,7 +198,6 @@ private struct ItemCell: View {
             systemImage: item.isFavorite ? "star.slash" : "star"
         ) {
             _ = try? model.library.toggleFlag(.favorite, itemID: item.id)
-            model.refreshAll()
         }
         Divider()
         // File-location actions, not media operations.
@@ -230,13 +228,11 @@ private struct ItemCell: View {
         if item.markedForDeletion {
             Button("Restore from Deletion Staging", systemImage: "arrow.uturn.backward") {
                 try? model.library.unstage(.toDelete, itemID: item.id)
-                model.refreshAll()
             }
         }
         if item.playbackIssue {
             Button("Clear Playback Issue", systemImage: "play.circle") {
                 try? model.library.unstage(.playbackIssue, itemID: item.id)
-                model.refreshAll()
             }
         }
         if item.parentMediaItemID == nil {

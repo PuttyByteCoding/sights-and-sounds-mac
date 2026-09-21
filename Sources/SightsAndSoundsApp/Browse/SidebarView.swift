@@ -985,7 +985,7 @@ private struct TagFilterRow: View {
             .tagActions(
                 $pending, library: model.library, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
-                onChange: { model.refreshAll() })
+                onChange: {})
     }
 }
 

@@ -262,9 +262,10 @@ final class BrowseModel {
     private var changeSubscription: LibraryChangeHub.Subscription?
     private var lastRefreshBegan = ContinuousClock.now
 
-    /// A refresh that began after the change's last commit has already
-    /// read it — that is this window's own write, followed at once by its
-    /// own `refreshAll()`. Anyone else's write reloads what it touches.
+    /// Whoever wrote, reload what the change touches. A refresh that
+    /// began after the change's last commit has already read it (the
+    /// opening `refreshAll()` racing the first deliveries, say), so that
+    /// delivery is skipped.
     private func libraryChanged(_ change: LibraryChange) {
         guard lastRefreshBegan < change.lastCommitAt else { return }
         refresh(BrowseRefresh.parts(for: change.domains))
@@ -608,7 +609,6 @@ final class BrowseModel {
                 updated.name = name
                 try updated.update(db)
             }
-            refreshAll()
         } catch {
             errorMessage = "\(error)"
         }
@@ -661,7 +661,6 @@ final class BrowseModel {
         do {
             try library.updateSavedFilter(saved.id, to: filter)
             savedFilters = (try? library.savedFilters()) ?? savedFilters
-            refreshAll()
         } catch {
             errorMessage = "\(error)"
         }
@@ -692,7 +691,6 @@ final class BrowseModel {
                 updated.enabled = enabled
                 try updated.update(db)
             }
-            refreshAll()
         } catch {
             errorMessage = "\(error)"
         }
@@ -705,7 +703,6 @@ final class BrowseModel {
         do {
             let source = Source(name: url.lastPathComponent, rootPath: url.path)
             try library.writer.write { try source.insert($0) }
-            refreshAll()
             return source
         } catch {
             errorMessage = "\(error)"
@@ -756,7 +753,6 @@ final class BrowseModel {
                 errorMessage = "\(error)"
             }
             importStatus[source.id] = nil
-            refreshAll()
             // Import finishing is a worker signal: new rows want hashes
             // and thumbnails.
             onWorkFinished()
@@ -832,7 +828,6 @@ final class BrowseModel {
         do {
             try library.setNeedsReview(ids, false)
             clearSelection()
-            refreshAll()
         } catch {
             errorMessage = "\(error)"
         }
@@ -855,7 +850,6 @@ final class BrowseModel {
             }
         }
         clearSelection()
-        refreshAll()
         if let first = failures.first {
             errorMessage = failures.count == 1
                 ? "Could not mark \(first)"
@@ -883,7 +877,6 @@ final class BrowseModel {
             // One transaction in the kit: the bulk edit lands whole or
             // not at all.
             try library.assignTag(tagID, to: selectedItems.map(\.id))
-            refreshAll()
         } catch {
             errorMessage = "\(error)"
         }
@@ -1104,7 +1097,6 @@ final class BrowseModel {
             } catch {
                 errorMessage = "\(error)"
             }
-            refreshAll()
         }
     }
 }

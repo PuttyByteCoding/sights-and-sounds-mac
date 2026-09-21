@@ -107,7 +107,6 @@ struct ImportView: View {
                 },
                 onOpen: {
                     finished = nil
-                    model.refreshAll()
                 })
         }
     }
@@ -538,7 +537,6 @@ struct ImportView: View {
                         .buttonStyle(SecondaryButtonStyle(compact: true))
                     Button("Run in background") {
                         step = .review
-                        model.refreshAll()
                     }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                 }
@@ -759,7 +757,6 @@ struct ImportView: View {
                 \(extensionSkips) skipped — extension not enabled
                 """
             step = .review
-            model.refreshAll()
             // Import finishing is a worker signal: new rows want hashes
             // and thumbnails.
             app.signalMaintenance(for: model.libraryID)

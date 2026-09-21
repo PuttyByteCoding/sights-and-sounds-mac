@@ -113,6 +113,25 @@ import Testing
         #expect(inbox.all.count <= 5)  // fifty commits, not fifty refreshes
     }
 
+    /// The first change after a quiet spell goes out at once, and the
+    /// window it opens closes silently if nothing else happened.
+    @Test func oneEditIsOneDelivery() async throws {
+        let f = try await quietFixture()
+        let inbox = Inbox()
+        let subscription = f.library.changes.subscribe { inbox.receive($0.domains) }
+        defer { subscription.cancel() }
+
+        try f.library.assignTag(f.bandB.id, to: f.show1995.id)
+        try await settle()
+
+        #expect(inbox.all == [[.tagging]])
+
+        // And the hub is ready to be immediate again afterwards.
+        try f.library.addAlias("Soundboard", toTag: f.sbd.id)
+        try await settle()
+        #expect(inbox.all == [[.tagging], [.vocabulary]])
+    }
+
     @Test func aCancelledSubscriptionHearsNothingMore() async throws {
         let f = try await quietFixture()
         let inbox = Inbox()

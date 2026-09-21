@@ -94,7 +94,6 @@ struct BrowseView: View {
             if let request = model.playerRequest {
                 PlayerView(request: request) {
                     model.playerRequest = nil
-                    model.refreshAll()
                 }
                 .id(request)  // a new request rebuilds the player from scratch
             } else {
