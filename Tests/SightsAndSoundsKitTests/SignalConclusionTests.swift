@@ -258,4 +258,37 @@ import Testing
         #expect(try library.signalEvidence(itemID: item.id).isEmpty)
         #expect(try library.signalInferences(itemID: item.id).isEmpty)
     }
+
+    @Test func theSummaryWordsOpinionsAsOpinionsAndASegmentGetsItsParents() async throws {
+        let (library, item) = try await library()
+        #expect(try library.signalSummary(for: item) == nil)  // never examined
+
+        var findings = SignalFindings()
+        findings.declare("container.writingApplication", "HandBrake 1.7.0")
+        findings.measure("cadence.duplicatePeriod", 2)
+        findings.measured.append(.init("cadence.duplicateFraction", 0.5, scope: .median))
+        findings.measure("timing.typicalFrameRate", 14)
+        findings.measure("audio.bandwidth40Hz", 8_000)
+        try library.recordSignalStage(itemID: item.id, stage: "declared", version: 1, findings: findings)
+        try MediaSignalJob.drawConclusions(for: item.id, in: library)
+
+        let summary = try #require(try library.signalSummary(for: item))
+        #expect(summary.origins.first?.phrase == "Probably Early Web / Low-Bitrate Digital")
+        #expect(summary.origins.first?.evidence.contains { $0.contains("one in every 2") } == true)
+        let fact = try #require(summary.history.first { $0.isFact })
+        #expect(fact.phrase == "Re-encoded by a transcoder")
+        #expect(summary.history.contains { $0.phrase == "Probably Frame rate converted" })
+
+        var segment = MediaItem(sourceID: item.sourceID, kind: .video, relativePath: item.relativePath, needsReview: false)
+        segment.parentMediaItemID = item.id
+        #expect(try library.signalSummary(for: segment) == summary)
+    }
+
+    @Test func anExaminedItemWithNothingToSayIsUnknownNotMissing() async throws {
+        let (library, item) = try await library()
+        try library.recordSignalStage(itemID: item.id, stage: "declared", version: 1, findings: SignalFindings())
+        try MediaSignalJob.drawConclusions(for: item.id, in: library)
+        let summary = try #require(try library.signalSummary(for: item))
+        #expect(summary.origins.map(\.phrase) == ["Origin unknown"])
+    }
 }
