@@ -156,16 +156,8 @@ final class BrowseModel {
 
     // Cross-WINDOW reconciliation: the auxiliary workspace windows (the
     // former sheets) each host their own BrowseModel over the same
-    // library. Whichever model refreshes broadcasts; the others follow
-    // quietly. The sender token breaks the loop.
-    private final class DefaultCenterBag: @unchecked Sendable {
-        var tokens: [any NSObjectProtocol] = []
-        deinit {
-            for token in tokens { NotificationCenter.default.removeObserver(token) }
-        }
-    }
-    private let changeObservers = DefaultCenterBag()
-    private let changeToken = UUID()
+    // library. They all follow the library's change hub; see
+    // `libraryChanged`.
 
     /// Sources with an import in flight, and their progress line.
     private(set) var importStatus: [UUID: String] = [:]
@@ -226,17 +218,14 @@ final class BrowseModel {
         self.onWorkFinished = onWorkFinished
         refreshAll()
 
-        changeObservers.tokens.append(NotificationCenter.default.addObserver(
-            forName: .sasLibraryDataChanged, object: nil, queue: .main
-        ) { [weak self] note in
-            let libraryID = note.userInfo?["libraryID"] as? UUID
-            let sender = note.userInfo?["sender"] as? UUID
-            Task { @MainActor in
-                guard let self, libraryID == self.libraryID, sender != self.changeToken
-                else { return }
-                self.refreshAll(broadcast: false)
-            }
-        })
+        // Whoever writes — this model, another window, the player, a view
+        // with the library in hand, a job — the library says what changed
+        // and this window follows. It replaces a broadcast that meant "a
+        // browse model refreshed", which the player and the jobs never
+        // sent and a kind toggle sent for nothing.
+        changeSubscription = library.changes.subscribe { [weak self] change in
+            Task { @MainActor in self?.libraryChanged(change) }
+        }
 
         // Mount/unmount drives online-state transitions and wakes the
         // workers — the reachability check stays the fallback truth.
@@ -261,7 +250,19 @@ final class BrowseModel {
     /// shape as refreshItems; the last refresh requested wins.
     private var refreshAllGeneration = 0
 
-    func refreshAll(broadcast: Bool = true) {
+    private var changeSubscription: LibraryChangeHub.Subscription?
+    private var lastRefreshBegan = ContinuousClock.now
+
+    /// A refresh that began after the change's last commit has already
+    /// read it — that is this window's own write, followed at once by its
+    /// own `refreshAll()`. Anyone else's write gets one refresh here.
+    private func libraryChanged(_ change: LibraryChange) {
+        guard lastRefreshBegan < change.lastCommitAt else { return }
+        refreshAll()
+    }
+
+    func refreshAll() {
+        lastRefreshBegan = .now
         refreshAllGeneration += 1
         let generation = refreshAllGeneration
         let library = library, kinds = kinds, fileAccess = fileAccess
@@ -299,13 +300,6 @@ final class BrowseModel {
                     self.counts = counts
                     self.pendingDuplicateCount = pending
                     self.refreshItems()
-                    if broadcast {
-                        NotificationCenter.default.post(
-                            name: .sasLibraryDataChanged, object: nil,
-                            userInfo: [
-                                "libraryID": self.libraryID, "sender": self.changeToken,
-                            ])
-                    }
                 }
             } catch {
                 await MainActor.run { [weak self] in
@@ -1036,11 +1030,4 @@ final class BrowseModel {
             refreshAll()
         }
     }
-}
-
-extension Notification.Name {
-    /// Posted (with libraryID + sender in userInfo) after a BrowseModel
-    /// publishes a refresh — how windows over the same library stay in
-    /// agreement without sharing a model.
-    static let sasLibraryDataChanged = Notification.Name("sasLibraryDataChanged")
 }

@@ -62,8 +62,8 @@ struct AuxWindowRequest: Codable, Hashable {
 
 /// Hosts one auxiliary surface in its own window, with its own
 /// BrowseModel over the shared library handle. Cross-window edits
-/// reconcile through the library-data-changed broadcast — whichever
-/// model writes, every window over that library follows.
+/// reconcile through the library's change hub — whoever writes, every
+/// window over that library follows.
 struct AuxiliaryWindowView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss

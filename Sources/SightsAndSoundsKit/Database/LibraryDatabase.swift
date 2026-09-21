@@ -16,10 +16,16 @@ public final class LibraryDatabase: Sendable {
     /// The file this library lives in; nil for in-memory databases.
     public let fileURL: URL?
 
+    /// What changed in this library, for anyone who asks. Started after
+    /// the migrations, so it observes the current schema and says nothing
+    /// about them.
+    public let changes: LibraryChangeHub
+
     private init(writer: any DatabaseWriter, fileURL: URL?) throws {
         self.writer = writer
         self.fileURL = fileURL
         try Self.migrator.migrate(writer)
+        changes = LibraryChangeHub(writer: writer)
     }
 
     /// Open (creating if absent) the library file at `url`.

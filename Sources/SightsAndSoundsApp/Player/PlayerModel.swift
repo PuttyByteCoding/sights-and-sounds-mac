@@ -322,20 +322,28 @@ final class PlayerModel {
             }
         }
         if panels.history { refreshHistory() }
-        // Tag edits anywhere reshape the rail's counts. Same library
-        // only; the player's own edits recount directly.
-        changeObserver = NotificationCenter.default.addObserver(
-            forName: .sasLibraryDataChanged, object: nil, queue: .main
-        ) { [weak self] note in
-            let changed = note.userInfo?["libraryID"] as? UUID
-            Task { @MainActor in
-                guard let self, changed == self.libraryID else { return }
-                self.recountQueue()
-            }
+        // Edits made anywhere reach an open player: a rename in the Tag
+        // Manager, a bulk tag in the grid, blocks from another window. It
+        // used to hear only that a browse window had refreshed, and then
+        // only recounted the queue — the tag panel kept the old names
+        // until the next item.
+        changeSubscription = library.changes.subscribe { [weak self] change in
+            Task { @MainActor in self?.libraryChanged(change) }
         }
     }
 
-    private var changeObserver: (any NSObjectProtocol)?
+    private var changeSubscription: LibraryChangeHub.Subscription?
+    /// When this player last re-read its tagging; its own edits do that
+    /// at once, and the hub's echo of them is then skipped.
+    private var lastTaggingRefreshBegan = ContinuousClock.now
+
+    private func libraryChanged(_ change: LibraryChange) {
+        if !change.domains.isDisjoint(with: [.vocabulary, .tagging]) {
+            if lastTaggingRefreshBegan < change.lastCommitAt { refreshTagging() }
+            recountQueue()
+        }
+        if change.domains.contains(.itemDetails) { refreshBlocks() }
+    }
     private var loadObserver: (any NSObjectProtocol)?
     /// This player's identity on the load broadcast, so a History queue
     /// can tell another player's load from its own.
@@ -840,6 +848,7 @@ final class PlayerModel {
     }
 
     func refreshTagging() {
+        lastTaggingRefreshBegan = .now
         guard let item else { return }
         do {
             itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
@@ -1289,8 +1298,8 @@ final class PlayerModel {
 
     func shutdown() {
         itemShown(nil)
-        if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
-        changeObserver = nil
+        changeSubscription?.cancel()
+        changeSubscription = nil
         if let loadObserver { NotificationCenter.default.removeObserver(loadObserver) }
         loadObserver = nil
         analysisSession?.playerDidClose()
