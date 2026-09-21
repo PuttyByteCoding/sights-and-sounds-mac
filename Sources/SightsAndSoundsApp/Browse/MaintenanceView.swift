@@ -36,6 +36,7 @@ struct MaintenanceView: View {
     @State private var status: String?
     @State private var errorText: String?
     @State private var confirmPurge = false
+    @State private var isPurging = false
     @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
 
     var body: some View {
@@ -499,7 +500,7 @@ struct MaintenanceView: View {
                     askBeforePurging()
                 }
                 .buttonStyle(DestructiveButtonStyle())
-                .disabled(stagedCount == 0)
+                .disabled(stagedCount == 0 || isPurging)
                 .unsavedSegmentsPrompt(
                     $unsavedSegments,
                     deletableCount: stagedCount - (unsavedSegments?.count ?? 0),
@@ -603,9 +604,22 @@ struct MaintenanceView: View {
         }
     }
 
+    /// Off the main actor, like Review's: a file move per item.
     private func purge() {
+        let library = model.library
+        isPurging = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try library.purgeDeleted() }
+            }.value
+            isPurging = false
+            finishPurge(result)
+        }
+    }
+
+    private func finishPurge(_ result: Result<LibraryDatabase.PurgeOutcome, any Error>) {
         do {
-            let outcome = try model.library.purgeDeleted()
+            let outcome = try result.get()
             var text = "\(outcome.rowsDeleted) items removed, \(outcome.filesTrashed) files moved to the Trash."
             let permanent = outcome.filesDeleted - outcome.filesTrashed
             if permanent > 0 {

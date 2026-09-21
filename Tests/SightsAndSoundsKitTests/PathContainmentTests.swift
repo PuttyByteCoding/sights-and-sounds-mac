@@ -51,4 +51,48 @@ import Testing
             parentFolder: "", parentFileName: "show.mkv", label: "  ")
             == "show - clip.mp4")
     }
+
+    /// Counts attempts and always fails the same way.
+    private final class AlwaysFails: FileAccess, @unchecked Sendable {
+        let error: any Error
+        private let lock = NSLock()
+        private var count = 0
+        var attempts: Int { lock.withLock { count } }
+        init(_ error: any Error) { self.error = error }
+        func isReachable(_ url: URL) -> Bool { true }
+        func contentsOfDirectory(at url: URL) throws -> [URL] { [] }
+        func allFiles(under url: URL) throws -> [URL] { [] }
+        func fileSize(at url: URL) throws -> Int64 { 0 }
+        func readFile(at url: URL, chunk: (Data) throws -> Void) throws {}
+        func removeFile(at url: URL) throws {}
+        func moveFile(at url: URL, to destination: URL) throws {
+            lock.withLock { count += 1 }
+            throw error
+        }
+    }
+
+    /// Retrying is for a volume that hiccuped. "Something is already
+    /// there" and "you may not write here" will be just as true in a
+    /// tenth of a second, and each retry slept: a revert of a few
+    /// thousand moves that could not land spent a second and a half on
+    /// every one of them.
+    @Test func aMoveThatCanNeverSucceedIsNotRetried() {
+        for code in [CocoaError.Code.fileWriteFileExists, .fileWriteNoPermission, .fileWriteVolumeReadOnly] {
+            let files = AlwaysFails(CocoaError(code))
+            #expect(throws: (any Error).self) {
+                try LibraryDatabase.moveWithRetries(
+                    fileAccess: files, from: URL(fileURLWithPath: "/tmp/a"), to: URL(fileURLWithPath: "/tmp/b"))
+            }
+            #expect(files.attempts == 1)
+        }
+    }
+
+    @Test func aMoveThatMightSucceedNextTimeIsRetried() {
+        let files = AlwaysFails(CocoaError(.fileWriteUnknown))
+        #expect(throws: (any Error).self) {
+            try LibraryDatabase.moveWithRetries(
+                fileAccess: files, from: URL(fileURLWithPath: "/tmp/a"), to: URL(fileURLWithPath: "/tmp/b"))
+        }
+        #expect(files.attempts == 6)
+    }
 }

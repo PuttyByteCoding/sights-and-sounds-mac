@@ -841,19 +841,27 @@ final class BrowseModel {
         // Each item is a file move, so this cannot be one transaction.
         // What it can be is honest: carry on past a failure, always
         // refresh so the grid shows what did happen, and say what did not.
-        var failures: [String] = []
-        for item in items {
-            do {
-                try library.stage(.toDelete, itemID: item.id)
-            } catch {
-                failures.append("\(item.fileName): \(error)")
-            }
-        }
+        // And off the main actor: a selection of a few hundred on a
+        // networked drive is a few hundred file moves.
+        let library = library
         clearSelection()
-        if let first = failures.first {
-            errorMessage = failures.count == 1
-                ? "Could not mark \(first)"
-                : "\(failures.count) of \(items.count) could not be marked. First: \(first)"
+        Task {
+            let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
+                var failures: [String] = []
+                for item in items {
+                    do {
+                        try library.stage(.toDelete, itemID: item.id)
+                    } catch {
+                        failures.append("\(item.fileName): \(error)")
+                    }
+                }
+                return failures
+            }.value
+            if let first = failures.first {
+                errorMessage = failures.count == 1
+                    ? "Could not mark \(first)"
+                    : "\(failures.count) of \(items.count) could not be marked. First: \(first)"
+            }
         }
     }
 
