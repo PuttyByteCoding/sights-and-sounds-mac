@@ -183,6 +183,9 @@ extension LibraryDatabase {
         if let custom = AppSettingsStore.shared.current.backupDirectory {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
+        if AppSettingsStore.isUnderTest {
+            return AppSettingsStore.testScratch.appendingPathComponent("Backups", isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("SightsAndSounds/Backups", isDirectory: true)
     }

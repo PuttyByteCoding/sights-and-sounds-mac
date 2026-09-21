@@ -86,6 +86,21 @@ import Testing
         #expect(AppSettingsStore(fileURL: file).current.skip.key7Seconds == 300)
     }
 
+    /// Every model reads `AppSettingsStore.shared`, and the thumbnail
+    /// sweep writes under `ThumbnailStore.root`. In a test run both used
+    /// to be the developer's own: tests behaved according to whoever's
+    /// machine they ran on, and wrote into a real cache.
+    @Test func aTestRunNeverTouchesTheRealSettingsOrCache() {
+        let temp = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        #expect(AppSettingsStore.isUnderTest)
+        #expect(AppSettingsStore.shared.fileURL.standardizedFileURL.path.hasPrefix(temp))
+        #expect(AppSettingsStore.shared.fileURL != AppSettingsStore.defaultFileURL())
+        #expect(ThumbnailStore.root.standardizedFileURL.path.hasPrefix(temp))
+        #expect(LibraryDatabase.defaultBackupDirectory().standardizedFileURL.path.hasPrefix(temp))
+        // And it starts from defaults, whatever this machine's file says.
+        #expect(AppSettingsStore.shared.current.thumbnailDirectory == nil)
+    }
+
     @Test func vocabularyExportImportRoundTrips() async throws {
         let f = try FilterFixture()
         try f.library.addAlias("Soundboard", toTag: f.sbd.id)

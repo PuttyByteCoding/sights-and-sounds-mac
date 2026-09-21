@@ -79,6 +79,10 @@ actor WaveformProvider {
     private var inFlight: [UUID: Task<[Float]?, Never>] = [:]
 
     private let cacheRoot: URL = {
+        // Player tests play real files, which computes waveforms.
+        if AppSettingsStore.isUnderTest {
+            return AppSettingsStore.testScratch.appendingPathComponent("Waveforms", isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("SightsAndSounds/Waveforms", isDirectory: true)
     }()

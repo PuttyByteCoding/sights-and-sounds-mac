@@ -669,11 +669,29 @@ public enum VideoAnchor: String, Codable, Sendable, CaseIterable {
 /// saves on update. Consumers read `AppSettingsStore.shared.current` at
 /// use time, so changes apply to the next operation without relaunch.
 public final class AppSettingsStore: @unchecked Sendable {
-    public static let shared = AppSettingsStore()
+    /// The app's store — and, in a test run, a scratch one. Nearly every
+    /// model reads `shared`, so tests ran with whatever the developer had
+    /// set (muted, loop, skip distances, the key map, a custom thumbnail
+    /// folder) and any test that called `update` would have rewritten the
+    /// real file. Tests get defaults and a file of their own.
+    public static let shared = AppSettingsStore(
+        fileURL: isUnderTest ? testScratch.appendingPathComponent("settings.json") : nil)
+
+    /// True when this process is a test runner. XCTest is loaded into
+    /// every test process (swift-testing runs through its helper too) and
+    /// never into the app.
+    public static let isUnderTest: Bool =
+        NSClassFromString("XCTestCase") != nil
+        || ProcessInfo.processInfo.processName == "swiftpm-testing-helper"
+
+    /// Where a test run keeps what the app keeps in Application Support
+    /// and Caches: one folder per process, under the temp directory.
+    public static let testScratch: URL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("sas-test-run-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
 
     private let lock = NSLock()
     private var settings: AppSettings
-    private let fileURL: URL
+    let fileURL: URL
 
     public var current: AppSettings {
         lock.lock()
