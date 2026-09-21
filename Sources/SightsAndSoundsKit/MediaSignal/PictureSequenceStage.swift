@@ -14,6 +14,7 @@ public struct PictureSequenceStage: SignalStage {
     public let name = "pictureSequences"
     public let version = 1
     public let kinds: Set<MediaKind> = [.video]
+    public let pass = 3
 
     public init() {}
 

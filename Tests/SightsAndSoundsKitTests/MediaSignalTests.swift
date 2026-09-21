@@ -252,6 +252,7 @@ import Testing
         var name = "stub"
         var version = 1
         var kinds: Set<MediaKind> = [.video]
+        var pass = 0
         var result: Result<SignalFindings, SignalStageError> = .success(SignalFindings())
 
         func examine(_ file: SignalStageInput) async throws -> SignalFindings { try result.get() }

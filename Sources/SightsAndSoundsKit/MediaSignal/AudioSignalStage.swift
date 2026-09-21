@@ -14,6 +14,7 @@ public struct AudioSignalStage: SignalStage {
     public let name = "audioSignal"
     public let version = 1
     public let kinds: Set<MediaKind> = [.video, .audio]
+    public let pass = 1
 
     public init() {}
 

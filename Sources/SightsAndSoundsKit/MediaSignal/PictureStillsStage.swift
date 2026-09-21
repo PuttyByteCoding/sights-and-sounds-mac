@@ -13,6 +13,7 @@ public struct PictureStillsStage: SignalStage {
     public let name = "pictureStills"
     public let version = 2
     public let kinds: Set<MediaKind> = [.video]
+    public let pass = 2
 
     public init() {}
 

@@ -13,6 +13,7 @@ import Testing
         var name = "scripted"
         var version = 1
         var kinds: Set<MediaKind> = [.video]
+        var pass = 0
         var body: @Sendable (SignalStageInput) async throws -> SignalFindings
 
         func examine(_ file: SignalStageInput) async throws -> SignalFindings { try await body(file) }
@@ -135,6 +136,114 @@ import Testing
         try await MediaSignalJob(stages: [stage], fileAccess: Drive()).run(context(library))
         let state = try #require(try library.signalStageStates(itemID: items[0].id).first { $0.stage == "scripted" })
         #expect(state.failureMessage == "not a movie")
+    }
+}
+
+/// The order the work is done in, and who it makes wait.
+@Suite struct MediaSignalOrderTests {
+    typealias ScriptedStage = MediaSignalLongRunTests.ScriptedStage
+
+    private func library(items: Int) async throws -> (LibraryDatabase, [MediaItem]) {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Order")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("order"))
+        let made = (0..<items).map {
+            MediaItem(sourceID: source.id, kind: .video, relativePath: "clip\($0).mp4", needsReview: false)
+        }
+        try await library.writer.write { db in
+            try source.insert(db)
+            for item in made { try item.insert(db) }
+        }
+        return (library, made)
+    }
+
+    private func context(_ library: LibraryDatabase, summary: OSAllocatedBox<String> = .init("")) -> JobContext {
+        JobContext(
+            library: library, jobID: UUID(), progressHandler: { _, _ in },
+            cancellationCheck: { false }, summaryHandler: { summary.set($0) })
+    }
+
+    private func stage(_ name: String, pass: Int, log: OSAllocatedBox<[String]>) -> ScriptedStage {
+        var stage = ScriptedStage { file in
+            log.set(log.get() + ["\(name) \(file.url.lastPathComponent)"])
+            return SignalFindings()
+        }
+        stage.name = name
+        stage.pass = pass
+        return stage
+    }
+
+    @Test func theCheapStagesCoverTheWholeLibraryBeforeAnySlowOneStarts() async throws {
+        let (library, _) = try await library(items: 3)
+        let log = OSAllocatedBox<[String]>([])
+        let stages: [any SignalStage] = [
+            stage("declared", pass: 0, log: log), stage("timing", pass: 0, log: log),
+            stage("sequences", pass: 2, log: log),
+        ]
+        try await MediaSignalJob(stages: stages, fileAccess: MediaSignalLongRunTests.Drive()).run(context(library))
+        #expect(log.get() == [
+            // One visit per file for everything cheap, so a file is not
+            // opened twice where once would do...
+            "declared clip0.mp4", "timing clip0.mp4", "declared clip1.mp4", "timing clip1.mp4",
+            "declared clip2.mp4", "timing clip2.mp4",
+            // ...and only then the slow pass.
+            "sequences clip0.mp4", "sequences clip1.mp4", "sequences clip2.mp4",
+        ])
+        #expect(try library.itemsNeedingSignalStages(stages).isEmpty)
+    }
+
+    @Test func theSweepStepsAsideWhenAnotherJobIsWaitingAndQueuesItsOwnReturn() async throws {
+        let (library, items) = try await library(items: 3)
+        let log = OSAllocatedBox<[String]>([])
+        var slow = stage("slow", pass: 1, log: log)
+        let inner = slow.body
+        slow.body = { file in
+            // Somebody asks for a clip export while the first file is open.
+            if file.url.lastPathComponent == "clip0.mp4" {
+                try await library.writer.write { try JobRecord(kind: "clip.export").insert($0) }
+            }
+            return try await inner(file)
+        }
+        let summary = OSAllocatedBox("")
+        let payload = try JSONEncoder().encode(MediaSignalJob.Payload(itemIDs: items.map(\.id)))
+        var job = try MediaSignalJob(payload: payload)
+        job.stages = [slow]
+        job.fileAccess = MediaSignalLongRunTests.Drive()
+        try await job.run(context(library, summary: summary))
+
+        #expect(log.get() == ["slow clip0.mp4"])  // finished what it had open, then stopped
+        let queued = try await library.writer.read { db in
+            try JobRecord.filter(sql: "state = 'queued'").order(sql: "createdAt, rowid").fetchAll(db)
+        }
+        // The export first, then the sweep's return, carrying the same scope.
+        #expect(queued.map(\.kind) == ["clip.export", MediaSignalJob.kind])
+        #expect(queued.last?.payload == payload)
+        #expect(summary.get().contains("stepped aside"))
+        #expect(try library.itemsNeedingSignalStages([slow]).count == 2)
+    }
+
+    @Test func aScopedSweepDoesNotHandTheLaneBackToTheSweepItInterrupted() async throws {
+        let (library, items) = try await library(items: 2)
+        // The whole-library sweep's return is already waiting.
+        try await library.writer.write { try JobRecord(kind: MediaSignalJob.kind).insert($0) }
+        let log = OSAllocatedBox<[String]>([])
+        var job = try MediaSignalJob(payload: JSONEncoder().encode(MediaSignalJob.Payload(itemIDs: items.map(\.id))))
+        job.stages = [stage("slow", pass: 1, log: log)]
+        job.fileAccess = MediaSignalLongRunTests.Drive()
+        try await job.run(context(library))
+        #expect(log.get().count == 2)  // ran to its end
+        let queued = try await library.writer.read { try JobRecord.filter(sql: "state = 'queued'").fetchCount($0) }
+        #expect(queued == 1)  // and queued nothing more
+    }
+
+    @Test func withNothingWaitingTheSweepRunsToTheEndAndQueuesNothing() async throws {
+        let (library, _) = try await library(items: 2)
+        let log = OSAllocatedBox<[String]>([])
+        try await MediaSignalJob(stages: [stage("slow", pass: 1, log: log)], fileAccess: MediaSignalLongRunTests.Drive())
+            .run(context(library))
+        #expect(log.get().count == 2)
+        let queued = try await library.writer.read { try JobRecord.filter(sql: "state = 'queued'").fetchCount($0) }
+        #expect(queued == 0)
     }
 }
 

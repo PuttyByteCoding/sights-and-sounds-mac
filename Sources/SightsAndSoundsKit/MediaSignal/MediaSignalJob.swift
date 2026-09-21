@@ -19,9 +19,12 @@ public struct MediaSignalJob: Job {
         public init(itemIDs: [UUID]) { self.itemIDs = itemIDs }
     }
 
-    let fileAccess: any FileAccess
-    let stages: [any SignalStage]
+    var fileAccess: any FileAccess
+    var stages: [any SignalStage]
     let scope: Set<UUID>?
+    /// Kept as it arrived, so a sweep that steps aside can queue its own
+    /// return with the same scope.
+    let payload: Data?
 
     /// Seconds a stage may take on one item before the sweep gives up on
     /// it and moves on.
@@ -38,6 +41,7 @@ public struct MediaSignalJob: Job {
     public init(payload: Data?) throws {
         fileAccess = LiveFileAccess()
         stages = SignalStages.all
+        self.payload = payload
         scope = payload.flatMap { try? JSONDecoder().decode(Payload.self, from: $0) }
             .map { Set($0.itemIDs) }
     }
@@ -46,6 +50,7 @@ public struct MediaSignalJob: Job {
         self.fileAccess = fileAccess
         self.stages = stages
         self.scope = scope
+        payload = scope.flatMap { try? JSONEncoder().encode(Payload(itemIDs: Array($0))) }
     }
 
     @discardableResult
@@ -56,6 +61,11 @@ public struct MediaSignalJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
+        // Days of work with nobody at the keyboard: without this the Mac
+        // idles to sleep and the sweep with it, and App Nap throttles what
+        // is left. The display may still sleep.
+        let awake = Awake(reason: "Examining media files")
+        defer { awake.end() }
 
         // Only sources reachable right now. An offline drive must leave no
         // marker: a marker means "looked, and this is what was there".
@@ -70,38 +80,63 @@ public struct MediaSignalJob: Job {
             .filter { scope?.contains($0.item.id) ?? true }
         let byName = Dictionary(uniqueKeysWithValues: stages.map { ($0.name, $0) })
 
-        var examined = 0
-        var failedItems = 0
-        await context.reportProgress(current: 0, total: work.count)
+        // A visit is one item in one pass: the file is opened once for
+        // every stage of that pass it still lacks. Passes run in order
+        // across the whole library.
+        struct Visit {
+            var item: MediaItem
+            var stages: [any SignalStage]
+        }
+        var visits: [Visit] = []
+        for pass in Set(stages.map(\.pass)).sorted() {
+            for entry in work {
+                let due = entry.stages.compactMap { byName[$0] }.filter { $0.pass == pass }
+                if !due.isEmpty { visits.append(Visit(item: entry.item, stages: due)) }
+            }
+        }
 
-        for (index, entry) in work.enumerated() {
+        var examined = 0
+        var failedItems: Set<UUID> = []
+        await context.reportProgress(current: 0, total: visits.count)
+
+        for (index, visit) in visits.enumerated() {
             try await context.checkCancellation()
-            guard let source = sources[entry.item.sourceID] else { continue }
+            // One lane runs a library's jobs, so a sweep that takes days
+            // would make an import or an export wait days. Between visits
+            // it looks for anything queued, and if there is, queues its own
+            // return behind it and ends. What it had open is finished first.
+            if index > 0, try Self.anotherJobIsWaiting(in: library, forScopedSweep: scope != nil) {
+                try await library.writer.write { db in
+                    try JobRecord(kind: Self.kind, payload: payload).insert(db)
+                }
+                await context.setSummary(
+                    "\(examined) of \(visits.count) visits done; stepped aside for other work and continues after it")
+                return
+            }
+            guard let source = sources[visit.item.sourceID] else { continue }
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-                .appendingPathComponent(entry.item.relativePath)
-            let input = SignalStageInput(url: url, kind: entry.item.kind) {
+                .appendingPathComponent(visit.item.relativePath)
+            let input = SignalStageInput(url: url, kind: visit.item.kind) {
                 await context.isCancelled
             }
 
-            var failed = false
-            for stageName in entry.stages {
-                guard let stage = byName[stageName] else { continue }
+            for stage in visit.stages {
                 // Written before the stage starts, so it is what a crash
                 // leaves behind. A file that takes the app down is then a
                 // reported failure on the next launch instead of the first
                 // thing the sweep opens again, every time.
                 try library.recordSignalStage(
-                    itemID: entry.item.id, stage: stage.name, version: stage.version,
+                    itemID: visit.item.id, stage: stage.name, version: stage.version,
                     findings: SignalFindings(), failure: Self.interruptedMessage)
                 do {
                     let findings = try await Self.examine(
-                        input, with: stage, givingUpAfter: stageTimeout(entry.item))
+                        input, with: stage, givingUpAfter: stageTimeout(visit.item))
                     try library.recordSignalStage(
-                        itemID: entry.item.id, stage: stage.name, version: stage.version,
+                        itemID: visit.item.id, stage: stage.name, version: stage.version,
                         findings: findings)
                 } catch is CancellationError {
                     // Stopped by hand: the file did nothing wrong.
-                    try library.forgetSignalStage(itemID: entry.item.id, stage: stage.name)
+                    try library.forgetSignalStage(itemID: visit.item.id, stage: stage.name)
                     throw CancellationError()
                 } catch {
                     // A drive that stopped answering fails every file on it
@@ -109,20 +144,21 @@ public struct MediaSignalJob: Job {
                     // failures under thousands of false ones, so the sweep
                     // stops and leaves them unmarked for when it is back.
                     if !source.isOnline(using: fileAccess) {
-                        try library.forgetSignalStage(itemID: entry.item.id, stage: stage.name)
+                        try library.forgetSignalStage(itemID: visit.item.id, stage: stage.name)
                         throw SourceWentOffline(sourceName: source.name)
                     }
                     try library.recordSignalStage(
-                        itemID: entry.item.id, stage: stage.name, version: stage.version,
+                        itemID: visit.item.id, stage: stage.name, version: stage.version,
                         findings: SignalFindings(), failure: "\(error)")
-                    failed = true
+                    failedItems.insert(visit.item.id)
                 }
                 try await context.checkCancellation()
             }
-            try Self.drawConclusions(for: entry.item.id, in: library)
+            // After every visit, so what is known so far is already read:
+            // the cheap pass alone says "re-encoded by HandBrake".
+            try Self.drawConclusions(for: visit.item.id, in: library)
             examined += 1
-            if failed { failedItems += 1 }
-            await context.reportProgress(current: index + 1, total: work.count)
+            await context.reportProgress(current: index + 1, total: visits.count)
         }
 
         // Items whose findings are complete but whose conclusions were
@@ -142,9 +178,23 @@ public struct MediaSignalJob: Job {
         }
 
         await context.setSummary(
-            failedItems == 0
-                ? "\(examined) items examined"
-                : "\(examined) items examined, \(failedItems) with a stage that failed")
+            failedItems.isEmpty
+                ? "\(examined) visits to \(work.count) items"
+                : "\(examined) visits to \(work.count) items, \(failedItems.count) with a stage that failed")
+    }
+
+    /// A sweep of the whole library steps aside for anything. A scoped
+    /// one, which somebody asked for and is waiting on, steps aside for
+    /// anything but another sweep: otherwise it and the whole-library
+    /// sweep it interrupted would hand the lane back and forth one file
+    /// at a time, leaving a job row behind for each.
+    static func anotherJobIsWaiting(in library: LibraryDatabase, forScopedSweep scoped: Bool) throws -> Bool {
+        try library.writer.read { db in
+            try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS (SELECT 1 FROM job WHERE state = 'queued' AND (? = 0 OR kind <> ?))",
+                arguments: [scoped ? 1 : 0, kind]) ?? false
+        }
     }
 
     static let interruptedMessage =
@@ -183,6 +233,16 @@ public struct MediaSignalJob: Job {
                 continuation.resume(throwing: StageGaveUp(seconds: seconds))
             }
         }
+    }
+
+    /// Holds the system awake for as long as it lives.
+    final class Awake: @unchecked Sendable {
+        private let token: NSObjectProtocol
+        init(reason: String) {
+            token = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleSystemSleepDisabled], reason: reason)
+        }
+        func end() { ProcessInfo.processInfo.endActivity(token) }
     }
 
     /// Whoever asks first gets `true`, and only they resume the continuation.
