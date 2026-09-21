@@ -895,6 +895,7 @@ private struct TransportBlock: View {
                     .foregroundStyle(Theme.Text.primary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
             .help("Play/Pause (Space, 5)")
             transportButton("forward.end.fill", help: "Next item (\(model.keyMap.labels.previousNext))") {
                 model.goNext()
@@ -1315,6 +1316,7 @@ private struct SegmentRowView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityLabel("Play from \(TransportBarTime.format(row.start))")
             .help("Play from \(TransportBarTime.format(row.start))")
             Button {
                 model.removeSegment(row)
@@ -1323,6 +1325,7 @@ private struct SegmentRowView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.Text.disabled)
+            .accessibilityLabel(row.kind == .hide ? "Remove this hide block" : "Remove this segment")
             .help(row.kind == .hide
                 ? "Remove this hide block — the file is untouched"
                 : "Remove this segment — the range's name, not the media")
@@ -1811,6 +1814,7 @@ private struct QueuePanel: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .accessibilityLabel("Order this queue")
                 .help("Order this queue — re-sorts the snapshot without re-running it")
                 Button {
                     model.refreshQueue()
@@ -1822,6 +1826,7 @@ private struct QueuePanel: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(model.isRefreshingQueue)
+                .accessibilityLabel("Refresh this queue")
                 .help("Refresh — re-run this queue's definition (⌘R)")
             }
             .padding(.horizontal, 8)
@@ -1991,6 +1996,8 @@ private struct KeyMapSheet: View {
                             .foregroundStyle(Theme.Text.disabled)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                    .help("Clear")
                 }
             }
             .padding(.vertical, 4)

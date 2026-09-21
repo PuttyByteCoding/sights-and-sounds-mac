@@ -118,6 +118,7 @@ struct CategoryManagerView: View {
                         .foregroundStyle(Theme.Text.tertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("New category")
                 .help("New category")
             }
             .padding(.horizontal, 12)

@@ -177,6 +177,7 @@ struct TagPanelView: View {
                         .foregroundStyle(Theme.Text.disabled)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
                 .help("Clear the search")
             }
         }
@@ -727,6 +728,8 @@ private struct PillCategoryView: View {
                                     .foregroundStyle(hue.opacity(0.7))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Remove tag \(tag.name)")
+                            .help("Remove this tag")
                         }
                         .padding(.vertical, 3)
                         .padding(.horizontal, 9)

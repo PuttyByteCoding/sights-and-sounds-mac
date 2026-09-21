@@ -244,6 +244,8 @@ struct LibraryPropertiesView: View {
                                     .foregroundStyle(Theme.Text.disabled)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Remove separator \(String(character))")
+                            .help("Remove this separator")
                         }
                         .padding(.vertical, 3)
                         .padding(.horizontal, 8)
@@ -326,6 +328,8 @@ struct LibraryPropertiesView: View {
                                     .foregroundStyle(Theme.Text.disabled)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Remove extension \(ext)")
+                            .help("Remove this extension")
                         }
                     }
                     .padding(.vertical, 3)

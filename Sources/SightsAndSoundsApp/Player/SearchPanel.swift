@@ -39,6 +39,7 @@ struct SearchPanel: View {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("New format")
                     .help("New format")
                 }
             }
@@ -181,6 +182,7 @@ struct SearchPanel: View {
                     .foregroundStyle(Theme.Text.tertiary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Edit this format")
             .help("Edit this format here")
             Button {
                 draft = format.duplicate(named: "\(format.name) copy")
@@ -191,6 +193,7 @@ struct SearchPanel: View {
                     .foregroundStyle(Theme.Text.tertiary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Duplicate this format")
             .help("Start a new format from a copy of this one")
             if !isDefault {
                 Button {

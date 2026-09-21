@@ -527,6 +527,8 @@ private struct CategoryPlanCard: View {
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(expanded ? "Hide details" : "Show details")
+                .help(expanded ? "Hide details" : "Show details")
             }
             if expanded, category.include {
                 VStack(alignment: .leading, spacing: 7) {
