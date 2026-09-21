@@ -103,6 +103,7 @@ public struct ValidationJob: Job {
                 let full = url.standardizedFileURL.path
                 guard full.hasPrefix(rootPath + "/") else { continue }
                 let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))
+                guard !MediaPath.isArchived(relative) else { continue }
                 if !knownPaths.contains(relative.lowercased()) {
                     findings.append(ValidationFinding(
                         kind: .orphanFile,

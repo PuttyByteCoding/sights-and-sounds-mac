@@ -90,6 +90,49 @@ import Testing
 
     // MARK: - Import from a list
 
+    // MARK: The archive is not library content
+
+    /// Remux and Repair keep the original under `_Replaced/`. Those files
+    /// have no rows on purpose; listing them would hand every archived
+    /// original back as a new item to curate.
+    @Test func theScanDoesNotListArchivedOriginals() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Scan")
+        let (source, root) = try makeSource(
+            files: ["shows/a.mp4", "_Replaced/shows/a.mkv", "_replaced/old/b.avi"], in: library)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let outcome = try await MediaScanner.scan(source: source, library: library)
+        #expect(outcome.candidates.map(\.relativePath) == ["shows/a.mp4"])
+    }
+
+    @Test func importNeverInsertsArchivedOriginals() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Scan")
+        let (source, root) = try makeSource(
+            files: ["shows/a.mp4", "_Replaced/shows/a.mkv"], in: library)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = JobRunner(library: library)
+        await runner.register(ImportJob.self)
+
+        // A whole-source import, and one that names the archive outright.
+        _ = try await ImportJob.enqueue(on: runner, sourceID: source.id)
+        _ = try await ImportJob.enqueue(
+            on: runner, sourceID: source.id, relativePaths: ["_Replaced/shows/a.mkv"])
+        try await runner.runPending()
+
+        let paths = try library.mediaItems(matching: MediaFilter(), kinds: .all).map(\.relativePath)
+        #expect(paths == ["shows/a.mp4"])
+    }
+
+    @Test func onlyTheTopLevelFolderIsTheArchive() {
+        #expect(MediaPath.isArchived("_Replaced/shows/a.mkv"))
+        #expect(MediaPath.isArchived("_replaced/a.mkv"))
+        #expect(!MediaPath.isArchived("shows/_Replaced/a.mkv"))
+        #expect(!MediaPath.isArchived("_Replaced.mkv"))
+        #expect(!MediaPath.isArchived("_ReplacedShows/a.mkv"))
+    }
+
     @Test func importInsertsOnlyTheNamedFiles() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Scan")

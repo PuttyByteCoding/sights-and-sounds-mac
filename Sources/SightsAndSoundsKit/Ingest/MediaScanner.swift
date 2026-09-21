@@ -89,6 +89,7 @@ public enum MediaScanner {
             let full = url.standardizedFileURL.path
             guard full.hasPrefix(rootPath + "/") else { continue }
             let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))
+            guard !MediaPath.isArchived(relative) else { continue }
             let ext = url.pathExtension.lowercased()
             guard let kind = MediaProbe.kind(
                 forExtension: ext, video: videoSet, audio: audioSet) else {

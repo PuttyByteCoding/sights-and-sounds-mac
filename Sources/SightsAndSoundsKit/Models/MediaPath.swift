@@ -26,6 +26,22 @@ public enum MediaPath {
         return String(normalizedPath[..<idx])
     }
 
+    /// Where Remux and Repair keep the original they replaced. Machinery
+    /// like the staging folders, with one difference: its files have no
+    /// rows, on purpose.
+    public static let archiveFolder = "_Replaced"
+
+    /// True for a path under the source's top-level archive folder.
+    /// Every surface that walks a source's disk asks this — the scan, the
+    /// import and validation — so an archived original is never offered
+    /// back as a new item or reported as an orphan. Compared without case,
+    /// like every stored path.
+    public static func isArchived(_ normalizedPath: String) -> Bool {
+        let first = normalizedPath.prefix { $0 != "/" }
+        return first.count < normalizedPath.count
+            && first.caseInsensitiveCompare(archiveFolder) == .orderedSame
+    }
+
     /// The file-name portion of a normalized relative path.
     public static func fileName(of normalizedPath: String) -> String {
         guard let idx = normalizedPath.lastIndex(of: "/") else { return normalizedPath }
