@@ -119,7 +119,22 @@ public enum FilterCompiler {
 
         // Free-text search: filename/path/notes/OCR, one LIKE pattern.
         let query = filter.searchText.trimmingCharacters(in: .whitespaces)
-        if !query.isEmpty {
+        if query.count >= 3 {
+            // The trigram index: the query as one quoted phrase matches
+            // that text anywhere inside a path, a note or a recognised
+            // line, whatever its case. Quoted, nothing in it is an
+            // operator; only a quote itself needs doubling.
+            clauses.append(
+                """
+                mediaItem.id IN (SELECT searchRow.mediaItemID FROM searchText \
+                JOIN searchRow ON searchRow.id = searchText.rowid \
+                WHERE searchText MATCH ?)
+                """)
+            whereArgs.append("\"" + query.replacingOccurrences(of: "\"", with: "\"\"") + "\"")
+        } else if !query.isEmpty {
+            // Fewer than three characters is less than one trigram, which
+            // the index cannot answer: the old scan, for the rare query
+            // short enough to need it.
             let pattern = "%" + escapeLike(query) + "%"
             clauses.append(
                 """
