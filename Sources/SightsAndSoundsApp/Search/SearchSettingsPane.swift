@@ -21,6 +21,9 @@ struct SearchSettingsPane: View {
     @State private var sampleFileName = ""
     @State private var sampleTags: [SearchSubjectTag] = []
     @State private var statusText: String?
+    /// The library holds formats this version cannot decode. The editor
+    /// shows none, and Apply must not write that "none" over them.
+    @State private var storedFormatsUnreadable = false
     @State private var firefoxProfile = AppSettingsStore.shared.current.firefoxProfilePath ?? ""
     @State private var webSearchURL = AppSettingsStore.shared.current.webSearchURL
 
@@ -72,6 +75,10 @@ struct SearchSettingsPane: View {
                     .disabled(!isDirty)
                 Button("Revert") { load() }
                     .disabled(!isDirty)
+                if storedFormatsUnreadable {
+                    Button("Replace Stored Formats") { apply(replacingUnreadable: true) }
+                        .help("Discard the formats this version cannot read and save the ones shown here")
+                }
                 if let statusText {
                     Text(statusText).font(.callout).foregroundStyle(.secondary)
                 }
@@ -340,6 +347,7 @@ struct SearchSettingsPane: View {
         guard let id = selectedLibraryID, let library = try? model.library(for: id) else {
             formats = .empty
             savedFormats = .empty
+            storedFormatsUnreadable = false
             selectedFormatID = nil
             categories = []
             sampleFileName = ""
@@ -349,6 +357,10 @@ struct SearchSettingsPane: View {
         do {
             formats = try library.searchFormats()
             savedFormats = formats
+            storedFormatsUnreadable = try library.storedSearchFormatsAreUnreadable()
+            if storedFormatsUnreadable {
+                statusText = "This library's search formats were saved in a form this version cannot read. They are untouched, and Apply will not replace them."
+            }
             if !formats.formats.contains(where: { $0.id == selectedFormatID }) {
                 selectedFormatID = formats.defaultFormat?.id
             }
@@ -364,11 +376,13 @@ struct SearchSettingsPane: View {
 
     /// Write the draft: the formats to the library, the Firefox fields
     /// to settings.json.
-    private func apply() {
-        if let id = selectedLibraryID, let library = try? model.library(for: id), formats != savedFormats {
+    private func apply(replacingUnreadable: Bool = false) {
+        if let id = selectedLibraryID, let library = try? model.library(for: id),
+           formats != savedFormats || replacingUnreadable {
             do {
-                try library.setSearchFormats(formats)
+                try library.setSearchFormats(formats, replacingUnreadable: replacingUnreadable)
                 savedFormats = formats
+                storedFormatsUnreadable = false
             } catch {
                 statusText = "Could not save the formats: \(error)"
                 return

@@ -697,7 +697,31 @@ public final class AppSettingsStore: @unchecked Sendable {
         do {
             return try JSONDecoder().decode(AppSettings.self, from: data)
         } catch {
-            AppLog.shared.error("settings", "settings.json is invalid — using defaults: \(error)")
+            let aside = setAside(invalidFile: url)
+            AppLog.shared.error(
+                "settings",
+                "settings.json is invalid — using defaults"
+                    + (aside.map { ", the file was kept as \($0.lastPathComponent)" } ?? "")
+                    + ": \(error)")
+            return nil
+        }
+    }
+
+    /// Keep a copy of a settings file that would not decode. Defaults
+    /// are about to take its place in memory, and the first save writes
+    /// them over the file — a typo in a hand edit must not cost every
+    /// setting that was in it.
+    private static func setAside(invalidFile url: URL) -> URL? {
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyyMMdd-HHmmss"
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        let aside = url.deletingLastPathComponent().appendingPathComponent(
+            "\(url.deletingPathExtension().lastPathComponent).invalid-\(stamp.string(from: Date())).\(url.pathExtension)")
+        do {
+            if FileManager.default.fileExists(atPath: aside.path) { return aside }
+            try FileManager.default.copyItem(at: url, to: aside)
+            return aside
+        } catch {
             return nil
         }
     }

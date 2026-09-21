@@ -61,6 +61,31 @@ import Testing
         #expect(store.current == AppSettings())
     }
 
+    /// Falling back to defaults is right; the first save then replacing
+    /// the file someone hand-edited is not. The unreadable file is set
+    /// aside before anything can write over it.
+    @Test func anInvalidSettingsFileIsSetAsideBeforeItCanBeOverwritten() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-settings-aside-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("settings.json")
+        let handEdited = "{ \"backupDirectory\": \"/Volumes/Backups\""  // the brace went missing
+        try Data(handEdited.utf8).write(to: file)
+
+        let store = AppSettingsStore(fileURL: file)
+        store.update { $0.skip.key7Seconds = 300 }
+
+        let aside = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix("settings.invalid-") && $0.hasSuffix(".json") }
+        #expect(aside.count == 1)
+        let name = try #require(aside.first)
+        let kept = try String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)
+        #expect(kept == handEdited)
+        // And the live file is valid again.
+        #expect(AppSettingsStore(fileURL: file).current.skip.key7Seconds == 300)
+    }
+
     @Test func vocabularyExportImportRoundTrips() async throws {
         let f = try FilterFixture()
         try f.library.addAlias("Soundboard", toTag: f.sbd.id)
