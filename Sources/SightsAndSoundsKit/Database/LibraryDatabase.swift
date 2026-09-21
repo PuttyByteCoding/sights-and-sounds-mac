@@ -821,6 +821,20 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // Moves written down before the disk is touched; see PendingMove.
+        migrator.registerMigration("moveJournal") { db in
+            try db.create(table: "pendingMove") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull()
+                t.column("sourceID", .blob).notNull()
+                t.column("fileName", .text).notNull()
+                t.column("fromPath", .text).notNull()
+                t.column("toPath", .text).notNull()
+                t.column("sessionID", .blob)
+                t.column("startedAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 

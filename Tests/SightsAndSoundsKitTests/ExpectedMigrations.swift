@@ -15,6 +15,6 @@ enum ExpectedMigrations {
         "playbackIssueEvidence", "moveSessions", "separatorCharacters", "tagAnalysis",
         "savedFilters", "tagAnalysisMarker", "jsonSchemas", "fingerprintUnsignedRetry",
         "tagAnalysisIgnore", "searchRecipe", "segmentsFollowTheirFile",
-        "segmentLookupIndex",
+        "segmentLookupIndex", "moveJournal",
     ]
 }
