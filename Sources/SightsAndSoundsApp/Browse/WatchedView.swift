@@ -135,7 +135,6 @@ struct WatchedView: View {
             ) {
                 _ = try? model.library.toggleFlag(.favorite, itemID: item.id)
                 reload()
-                model.refreshAll()
             }
             Button("Reveal in Finder") { reveal(item) }
                 .disabled(!model.isOnline(item))

@@ -62,14 +62,19 @@ public final class LibraryChangeHub: Sendable {
         "contentHash", "resumePositionSeconds", "lastWatchedAt", "watchCount",
     ]
 
-    /// A burst of commits is delivered once, this long after its first.
+    /// The first change after a quiet spell is delivered at once, so a
+    /// single edit shows immediately. It opens a window this long;
+    /// whatever else commits inside it is delivered together when it
+    /// closes, which opens the next. A burst of thousands of commits is
+    /// therefore one immediate delivery and then at most ten a second.
     static let coalescingWindow: DispatchTimeInterval = .milliseconds(100)
 
     private struct State {
         var handlers: [UUID: Handler] = [:]
         var pending: Set<LibraryChangeDomain> = []
         var lastCommitAt = ContinuousClock.now
-        var flushScheduled = false
+        /// A coalescing window is open: changes wait for it to close.
+        var windowOpen = false
         var observations: [AnyDatabaseCancellable] = []
     }
 
@@ -123,23 +128,43 @@ public final class LibraryChangeHub: Sendable {
     }
 
     private func note(_ domain: LibraryChangeDomain) {
-        let schedule = state.withLock { state -> Bool in
+        let opensWindow = state.withLock { state -> Bool in
             state.pending.insert(domain)
             state.lastCommitAt = .now
-            guard !state.flushScheduled else { return false }
-            state.flushScheduled = true
+            guard !state.windowOpen else { return false }
+            state.windowOpen = true
             return true
         }
-        guard schedule else { return }
-        delivery.asyncAfter(deadline: .now() + Self.coalescingWindow) { [weak self] in self?.flush() }
+        guard opensWindow else { return }
+        // Asynchronously: this runs inside the writer's queue, and a
+        // handler must never run there.
+        delivery.async { [weak self] in self?.deliverPending() }
+        delivery.asyncAfter(deadline: .now() + Self.coalescingWindow) { [weak self] in
+            self?.closeWindow()
+        }
     }
 
-    private func flush() {
-        let (change, handlers) = state.withLock { state -> (LibraryChange, [Handler]) in
-            defer {
-                state.pending = []
-                state.flushScheduled = false
+    /// The window has run its time. If anything committed inside it,
+    /// deliver that and keep the window open for another spell; if not,
+    /// the next change is a first change again.
+    private func closeWindow() {
+        let more = state.withLock { state -> Bool in
+            if state.pending.isEmpty {
+                state.windowOpen = false
+                return false
             }
+            return true
+        }
+        guard more else { return }
+        deliverPending()
+        delivery.asyncAfter(deadline: .now() + Self.coalescingWindow) { [weak self] in
+            self?.closeWindow()
+        }
+    }
+
+    private func deliverPending() {
+        let (change, handlers) = state.withLock { state -> (LibraryChange, [Handler]) in
+            defer { state.pending = [] }
             return (
                 LibraryChange(domains: state.pending, lastCommitAt: state.lastCommitAt),
                 Array(state.handlers.values))

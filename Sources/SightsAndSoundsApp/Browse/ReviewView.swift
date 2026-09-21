@@ -486,7 +486,6 @@ struct ReviewView: View {
             errorText = failures.isEmpty ? nil : failures.joined(separator: "; ")
             deleteTicked = []
             reload()
-            model.refreshAll()
         } catch { errorText = "\(error)" }
     }
 
@@ -514,7 +513,6 @@ struct ReviewView: View {
                 try await runner.runPending()
                 resolvedThisPass[.issues, default: 0] += 1
                 reload()
-                model.refreshAll()
             } catch { errorText = "\(error)" }
         }
     }
@@ -561,7 +559,6 @@ struct ReviewView: View {
                 }
                 reclaimable = (try? library.reclaimableBytes()) ?? 0
                 try? app.appDatabase?.seedRepairRecipes()
-                model.refreshAll()
             } catch {
                 errorText = "\(error)"
             }

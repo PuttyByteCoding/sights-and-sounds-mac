@@ -55,6 +55,20 @@ import Testing
         try await waitUntil { (model.counts.byTag[tag.id] ?? 0) == 1 }
     }
 
+    /// The model's own writes need no refresh call after them either:
+    /// there is none in `applyTagToSelection` any more.
+    @Test func theModelsOwnBulkTagShowsWithoutARefreshCall() async throws {
+        let (library, _, item, tag) = try await makeLibrary()
+        let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
+        try await waitUntil { model.items.count == 1 }
+        model.click(item.id, extend: true, range: false)
+
+        model.applyTagToSelection(tag.id)
+
+        try await waitUntil { (model.counts.byTag[tag.id] ?? 0) == 1 }
+        try await waitUntil { model.itemTags[item.id]?.map(\.name) == ["Band A"] || !GridDisplaySettings.shared.grid.needsTagData }
+    }
+
     @Test func anOpenPlayerSeesATagRenamedInAnotherWindow() async throws {
         let (library, source, item, tag) = try await makeLibrary()
         // The tag panel only loads for an item that can play.

@@ -82,11 +82,13 @@ own signal (`sasPlaybackDidLoad`) and keeps it.
 
 ## Coalescing
 
-A reorganize commits thousands of transactions. The hub unions the domains
-of every commit into a pending set and delivers it once, 100 ms after the
-first change of a burst, then starts again. A subscriber therefore sees at
-most ten deliveries a second however fast the writer goes. Delivery is on a
-private serial queue; subscribers hop to their own actor.
+A reorganize commits thousands of transactions. The first change after a
+quiet spell is delivered at once, so a single edit shows immediately; it
+opens a 100 ms window, and whatever else commits inside the window is
+delivered together when it closes, which opens the next. A subscriber
+therefore sees one immediate delivery and then at most ten a second,
+however fast the writer goes. Delivery is on a private serial queue, never
+on the writer's; subscribers hop to their own actor.
 
 ## Subscribers
 

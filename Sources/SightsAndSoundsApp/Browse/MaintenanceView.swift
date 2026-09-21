@@ -378,7 +378,6 @@ struct MaintenanceView: View {
                 Button("Mark for Deletion") {
                     try? model.library.stage(.toDelete, itemID: itemID)
                     reload()
-                    model.refreshAll()
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             }
@@ -624,7 +623,6 @@ struct MaintenanceView: View {
             }
             status = text
             reload()
-            model.refreshAll()
         } catch {
             errorText = "\(error)"
         }

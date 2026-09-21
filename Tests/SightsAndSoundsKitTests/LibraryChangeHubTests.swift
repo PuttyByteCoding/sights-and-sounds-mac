@@ -101,16 +101,42 @@ import Testing
         let subscription = f.library.changes.subscribe { inbox.receive($0.domains) }
         defer { subscription.cancel() }
 
+        let started = ContinuousClock.now
         for n in 0..<50 {
             try await f.library.writer.write { db in
                 try MediaItem(
                     sourceID: f.mainSource.id, kind: .video, relativePath: "burst/\(n).mp4").insert(db)
             }
         }
+        let burst = started.duration(to: .now)
         try await settle()
 
         #expect(inbox.union == [.items])
-        #expect(inbox.all.count <= 5)  // fifty commits, not fifty refreshes
+        // The promise is one delivery at once and then one per 100 ms
+        // window, however many commits land. How many windows fifty
+        // commits span depends on the machine, so the bound is worked out
+        // from how long they took here rather than guessed.
+        let windows = Int(burst / .milliseconds(100)) + 1
+        #expect(inbox.all.count <= windows + 2)
+    }
+
+    /// The first change after a quiet spell goes out at once, and the
+    /// window it opens closes silently if nothing else happened.
+    @Test func oneEditIsOneDelivery() async throws {
+        let f = try await quietFixture()
+        let inbox = Inbox()
+        let subscription = f.library.changes.subscribe { inbox.receive($0.domains) }
+        defer { subscription.cancel() }
+
+        try f.library.assignTag(f.bandB.id, to: f.show1995.id)
+        try await settle()
+
+        #expect(inbox.all == [[.tagging]])
+
+        // And the hub is ready to be immediate again afterwards.
+        try f.library.addAlias("Soundboard", toTag: f.sbd.id)
+        try await settle()
+        #expect(inbox.all == [[.tagging], [.vocabulary]])
     }
 
     @Test func aCancelledSubscriptionHearsNothingMore() async throws {

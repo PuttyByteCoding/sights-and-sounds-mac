@@ -447,7 +447,6 @@ struct OperationsView: View {
                     ocr: ocr, interval: interval)
                 _ = try await runner.runPending()
                 status = "Queued on this library — follow it in Background Tasks"
-                model.refreshAll()
             } catch {
                 status = "\(error)"
             }
