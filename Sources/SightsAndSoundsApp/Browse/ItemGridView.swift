@@ -162,7 +162,9 @@ private struct ItemCell: View {
                     tag: tag, library: model.library, libraryID: model.libraryID,
                     pending: $pending,
                     removal: TagRemoval(label: TagRemoval.label(for: item.kind)) {
-                        try? model.library.removeTag(tag.id, from: item.id)
+                        model.attempt("remove the tag") {
+                            try model.library.removeTag(tag.id, from: item.id)
+                        }
                     },
                     itemID: item.id))
             })
@@ -197,7 +199,9 @@ private struct ItemCell: View {
             item.isFavorite ? "Remove from Favourites" : "Add to Favourites",
             systemImage: item.isFavorite ? "star.slash" : "star"
         ) {
-            _ = try? model.library.toggleFlag(.favorite, itemID: item.id)
+            model.attempt("change the favourite") {
+                _ = try model.library.toggleFlag(.favorite, itemID: item.id)
+            }
         }
         Divider()
         // File-location actions, not media operations.
@@ -227,12 +231,16 @@ private struct ItemCell: View {
         }
         if item.markedForDeletion {
             Button("Restore from Deletion Staging", systemImage: "arrow.uturn.backward") {
-                try? model.library.unstage(.toDelete, itemID: item.id)
+                model.attempt("restore \(item.fileName)") {
+                    try model.library.unstage(.toDelete, itemID: item.id)
+                }
             }
         }
         if item.playbackIssue {
             Button("Clear Playback Issue", systemImage: "play.circle") {
-                try? model.library.unstage(.playbackIssue, itemID: item.id)
+                model.attempt("clear the playback issue") {
+                    try model.library.unstage(.playbackIssue, itemID: item.id)
+                }
             }
         }
         if item.parentMediaItemID == nil {

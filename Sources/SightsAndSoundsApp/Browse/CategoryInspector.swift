@@ -247,7 +247,9 @@ struct TagInspector: View {
                     Toggle(isOn: Binding(
                         get: { tag.isFavorite },
                         set: { on in
-                            try? library.setTagFavorite(tag.id, on)
+                            Writes.attempt("change the favourite", report: $errorText) {
+                                try library.setTagFavorite(tag.id, on)
+                            }
                             onChange()
                         })
                     ) {
@@ -257,7 +259,9 @@ struct TagInspector: View {
                     Toggle(isOn: Binding(
                         get: { tag.hiddenByDefault },
                         set: { on in
-                            try? library.setTagHidden(tag.id, on)
+                            Writes.attempt("change whether the tag is hidden", report: $errorText) {
+                                try library.setTagHidden(tag.id, on)
+                            }
                             onChange()
                         })
                     ) {
@@ -309,7 +313,9 @@ struct TagInspector: View {
                                         .font(Theme.ui(11))
                                         .foregroundStyle(Theme.Text.secondary)
                                     Button {
-                                        try? library.removeAlias(alias, fromTag: tag.id)
+                                        Writes.attempt("remove the alias", report: $errorText) {
+                                            try library.removeAlias(alias, fromTag: tag.id)
+                                        }
                                         onChange()
                                     } label: {
                                         Image(systemName: "xmark")
@@ -334,8 +340,11 @@ struct TagInspector: View {
                                 .fill(Theme.Surface.well)
                                 .stroke(Theme.Border.standard, lineWidth: 1))
                         .onSubmit {
-                            try? library.addAlias(newAlias, toTag: tag.id)
-                            newAlias = ""
+                            // The text stays in the field when it could not
+                            // be added, so it can be corrected.
+                            if Writes.attempt("add the alias", report: $errorText, {
+                                try library.addAlias(newAlias, toTag: tag.id)
+                            }) { newAlias = "" }
                             onChange()
                         }
                 }
@@ -371,8 +380,10 @@ struct TagInspector: View {
                                         .fill(Theme.Surface.well)
                                         .stroke(Theme.Border.standard, lineWidth: 1))
                                 .onSubmit {
-                                    try? library.setFieldValue(
-                                        values[field.id] ?? "", ofTag: tag.id, field: field)
+                                    Writes.attempt("save \(field.name)", report: $errorText) {
+                                        try library.setFieldValue(
+                                            values[field.id] ?? "", ofTag: tag.id, field: field)
+                                    }
                                     onChange()
                                 }
                             }
@@ -406,7 +417,9 @@ struct TagInspector: View {
                             "Delete \u{201C}\(tag.name)\u{201D}?", isPresented: $confirmDelete
                         ) {
                             Button("Delete", role: .destructive) {
-                                try? library.deleteTag(tag.id)
+                                Writes.attempt("delete the tag", report: $errorText) {
+                                    try library.deleteTag(tag.id)
+                                }
                                 onChange()
                             }
                         } message: {
@@ -438,6 +451,9 @@ struct TagInspector: View {
 
 /// The fields of one scope, listed and edited in place.
 struct FieldList: View {
+    /// A write that failed; shown as an alert, since this view has no
+    /// error line of its own.
+    @State private var failure: String?
     let fields: [FieldDefinition]
     let library: LibraryDatabase
     let scope: FieldScope
@@ -469,7 +485,9 @@ struct FieldList: View {
                     }
                     Spacer(minLength: 0)
                     Button {
-                        try? library.deleteField(field.id)
+                        Writes.attempt("delete the field", report: $failure) {
+                            try library.deleteField(field.id)
+                        }
                         onChange()
                     } label: {
                         Image(systemName: "xmark")
@@ -506,6 +524,7 @@ struct FieldList: View {
                 .foregroundStyle(Theme.Text.disabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .failureAlert($failure)
     }
 
     private func add() {
@@ -513,8 +532,9 @@ struct FieldList: View {
             name: newName, dataType: newType, scope: scope,
             tagCategoryID: scope == .tag ? categoryID : nil,
             sortOrder: (fields.map(\.sortOrder).max() ?? 0) + 10)
-        _ = try? library.createField(field)
-        newName = ""
+        if Writes.attempt("add the field", report: $failure, { _ = try library.createField(field) }) {
+            newName = ""
+        }
         onChange()
     }
 }
@@ -554,6 +574,9 @@ struct FieldEditor: View {
 /// deduped against existing names AND aliases, with the counts shown
 /// before anything is written.
 struct PasteTagListSheet: View {
+    /// A write that failed; shown as an alert, since this view has no
+    /// error line of its own.
+    @State private var failure: String?
     let category: TagCategory
     let library: LibraryDatabase
     let onDone: () -> Void
@@ -605,6 +628,7 @@ struct PasteTagListSheet: View {
         .frame(width: 460)
         .background(Theme.Surface.dialog)
         .onAppear { loadExisting() }
+        .failureAlert($failure)
     }
 
     /// Normalized, deduped within the paste and against what exists.
@@ -643,10 +667,24 @@ struct PasteTagListSheet: View {
     }
 
     private func create() {
+        // Every name is tried; the sheet stays open when any could not
+        // be created, so what happened is on screen rather than lost
+        // with the sheet.
+        var failed: [String] = []
         for name in newNames {
-            _ = try? library.ensureTag(named: name, inCategory: category.id)
+            do {
+                _ = try library.ensureTag(named: name, inCategory: category.id)
+            } catch {
+                AppLog.shared.error("writes", "Could not create the tag \(name): \(error)")
+                failed.append(name)
+            }
         }
         onDone()
+        guard failed.isEmpty else {
+            failure = "\(failed.count) of \(newNames.count) tags could not be created: "
+                + failed.prefix(5).joined(separator: ", ")
+            return
+        }
         dismiss()
     }
 }

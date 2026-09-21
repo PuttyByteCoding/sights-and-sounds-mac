@@ -139,6 +139,25 @@ final class BrowseModel {
     var errorMessage: String? {
         didSet {
             if let errorMessage { AppLog.shared.error("browse", errorMessage) }
+            errorIsFromListing = false
+        }
+    }
+    /// The listing clears the error line when it succeeds — but only an
+    /// error the listing itself put there. It used to clear whatever was
+    /// showing, so "could not delete" vanished on the next refresh, which
+    /// is a fraction of a second after every write.
+    private var errorIsFromListing = false
+
+    /// Run a write the user asked for from a view. A failure is said on
+    /// the error line and stays there; it is never swallowed.
+    @discardableResult
+    func attempt(_ what: String, _ body: () throws -> Void) -> Bool {
+        do {
+            try body()
+            return true
+        } catch {
+            errorMessage = "Could not \(what): \(error)"
+            return false
         }
     }
 
@@ -559,9 +578,10 @@ final class BrowseModel {
                     self.filteredMissingCounts = payload.filteredMissingCounts
                     self.hideBlockItemIDs = payload.hideBlockItemIDs
                     self.snapshotRefs = payload.snapshotRefs
-                    self.errorMessage = nil
+                    if self.errorIsFromListing { self.errorMessage = nil }
                 case .failure(let error):
                     self.errorMessage = "\(error)"
+                    self.errorIsFromListing = true
                 }
             }
         }

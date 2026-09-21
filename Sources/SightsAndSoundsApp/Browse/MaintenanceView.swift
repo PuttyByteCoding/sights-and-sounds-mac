@@ -377,7 +377,9 @@ struct MaintenanceView: View {
         case .missingFile:
             if let itemID = finding.mediaItemID {
                 Button("Mark for Deletion") {
-                    try? model.library.stage(.toDelete, itemID: itemID)
+                    Writes.attempt("mark the item for deletion", report: $errorText) {
+                        try model.library.stage(.toDelete, itemID: itemID)
+                    }
                     reload()
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
