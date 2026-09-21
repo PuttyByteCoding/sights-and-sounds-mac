@@ -22,7 +22,10 @@ final class BrowseModel {
     /// Which media kinds this listing includes. Several at once is
     /// allowed and none is not — the guard lives in `MediaKinds` and in
     /// the query, not in whichever view last remembered to apply it.
-    var kinds: MediaKinds = .video { didSet { refreshAll() } }
+    /// Changing it writes nothing, so it reloads only what depends on it:
+    /// the counts, the trees and the listing — not the sources, their
+    /// drives, or the vocabulary.
+    var kinds: MediaKinds = .video { didSet { refresh([.counts, .savedFilterCounts, .listing]) } }
     var filter = MediaFilter() { didSet { refreshItems() } }
     /// The library's named filters, alphabetical — the sidebar's Saved
     /// Filters section.
@@ -139,7 +142,7 @@ final class BrowseModel {
         }
     }
 
-    private let fileAccess: any FileAccess = LiveFileAccess()
+    private let fileAccess: any FileAccess
     private let jobRunner: JobRunner
     private let onWorkFinished: () -> Void
     // Observer tokens live in a bag whose own deinit removes them —
@@ -209,8 +212,10 @@ final class BrowseModel {
 
     init(
         libraryID: UUID, library: LibraryDatabase, runner: JobRunner,
+        fileAccess: any FileAccess = LiveFileAccess(),
         onWorkFinished: @escaping () -> Void = {}
     ) {
+        self.fileAccess = fileAccess
         self.libraryID = libraryID
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
@@ -235,7 +240,10 @@ final class BrowseModel {
                 forName: name, object: nil, queue: .main
             ) { [weak self] _ in
                 Task { @MainActor in
-                    self?.refreshAll()
+                    // A drive appearing or leaving is not a database
+                    // change, so the hub says nothing: ask directly, and
+                    // only for what a drive can affect.
+                    self?.refresh([.sources, .counts, .listing])
                     self?.onWorkFinished()
                 }
             })
@@ -246,68 +254,137 @@ final class BrowseModel {
 
     /// Everything here runs off the main actor — the source reachability
     /// checks touch the FILESYSTEM, and an offline network volume used to
-    /// block the UI for the length of its timeout. Same generation-guard
-    /// shape as refreshItems; the last refresh requested wins.
-    private var refreshAllGeneration = 0
+    /// block the UI for the length of its timeout. Each part has its own
+    /// generation, so the last request for that part wins and a slow
+    /// sources check cannot overwrite newer counts.
+    private var refreshGenerations: [Int: Int] = [:]
 
     private var changeSubscription: LibraryChangeHub.Subscription?
     private var lastRefreshBegan = ContinuousClock.now
 
     /// A refresh that began after the change's last commit has already
     /// read it — that is this window's own write, followed at once by its
-    /// own `refreshAll()`. Anyone else's write gets one refresh here.
+    /// own `refreshAll()`. Anyone else's write reloads what it touches.
     private func libraryChanged(_ change: LibraryChange) {
         guard lastRefreshBegan < change.lastCommitAt else { return }
-        refreshAll()
+        refresh(BrowseRefresh.parts(for: change.domains))
     }
 
+    /// Everything. For opening a window, and for callers that have not
+    /// yet been narrowed.
     func refreshAll() {
         lastRefreshBegan = .now
-        refreshAllGeneration += 1
-        let generation = refreshAllGeneration
+        refresh(.everything)
+    }
+
+    /// Reload just these parts of what the window shows.
+    func refresh(_ parts: BrowseRefresh) {
+        guard !parts.isEmpty else { return }
+        var generations: [Int: Int] = [:]
+        for bit in parts.bits {
+            refreshGenerations[bit, default: 0] += 1
+            generations[bit] = refreshGenerations[bit]
+        }
         let library = library, kinds = kinds, fileAccess = fileAccess
+        // The trees hang off the enabled sources; when the sources are not
+        // being reloaded, the ones already on screen are the ones to use.
+        let knownSources = sources
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                let sources = try library.sources()
-                let onlineIDs = Set(
-                    sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
-                let vocabulary = try library.vocabulary()
-                    .filter { !$0.category.hiddenFromBrowse }
-                    .map { CategoryTags(category: $0.category, tags: $0.tags) }
-                let aliases = Dictionary(
-                    grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
-                    by: \.tagID
-                ).mapValues { $0.map(\.alias) }
-                var trees: [UUID: [FolderNode]] = [:]
-                for source in sources where source.enabled {
-                    trees[source.id] = FolderTreeBuilder.build(
-                        from: try library.folderCounts(kinds: kinds, sourceID: source.id))
+                var loaded = Loaded()
+                if parts.contains(.sources) {
+                    let sources = try library.sources()
+                    loaded.sources = sources
+                    loaded.onlineIDs = Set(
+                        sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
                 }
-                let pending = try library.pendingCandidates().count
-                // Every sidebar number in one batch (#96) — the counts
-                // and the listing they label share one baseline, so they
-                // cannot disagree.
-                let counts = try library.browseCounts(kinds: kinds)
+                if parts.contains(.vocabulary) {
+                    loaded.vocabulary = try library.vocabulary()
+                        .filter { !$0.category.hiddenFromBrowse }
+                        .map { CategoryTags(category: $0.category, tags: $0.tags) }
+                    loaded.aliases = Dictionary(
+                        grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
+                        by: \.tagID
+                    ).mapValues { $0.map(\.alias) }
+                }
+                if parts.contains(.counts) {
+                    var trees: [UUID: [FolderNode]] = [:]
+                    for source in loaded.sources ?? knownSources where source.enabled {
+                        trees[source.id] = FolderTreeBuilder.build(
+                            from: try library.folderCounts(kinds: kinds, sourceID: source.id))
+                    }
+                    loaded.trees = trees
+                    // Every sidebar number in one batch (#96) — the counts
+                    // and the listing they label share one baseline, so
+                    // they cannot disagree.
+                    loaded.counts = try library.browseCounts(kinds: kinds)
+                }
+                if parts.contains(.duplicates) {
+                    loaded.pendingDuplicates = try library.pendingCandidates().count
+                }
+                if parts.contains(.savedFilters) {
+                    loaded.savedFilters = try library.savedFilters()
+                }
+                if parts.contains(.menuFacts), !parts.contains(.listing) {
+                    // With the listing these ride along in its payload.
+                    loaded.hideBlockItemIDs = try library.itemIDsWithHideBlocks()
+                    loaded.snapshotRefs = try library.recentSnapshotRefs(perItem: 10)
+                }
+                let result = loaded
                 await MainActor.run { [weak self] in
-                    guard let self, self.refreshAllGeneration == generation else { return }
-                    self.sources = sources
-                    self.onlineSourceIDs = onlineIDs
-                    self.vocabulary = vocabulary
-                    self.savedFilters = (try? library.savedFilters()) ?? []
-                    self.refreshSavedFilterCounts()
-                    self.tagAliases = aliases
-                    self.folderTrees = trees
-                    self.counts = counts
-                    self.pendingDuplicateCount = pending
-                    self.refreshItems()
+                    self?.apply(result, parts: parts, generations: generations)
                 }
             } catch {
                 await MainActor.run { [weak self] in
-                    guard let self, self.refreshAllGeneration == generation else { return }
+                    guard let self else { return }
                     self.errorMessage = "\(error)"
                 }
             }
         }
+    }
+
+    private struct Loaded: Sendable {
+        var sources: [Source]?
+        var onlineIDs: Set<UUID>?
+        var vocabulary: [CategoryTags]?
+        var aliases: [UUID: [String]]?
+        var trees: [UUID: [FolderNode]]?
+        var counts: BrowseCounts?
+        var pendingDuplicates: Int?
+        var savedFilters: [SavedFilter]?
+        var hideBlockItemIDs: Set<UUID>?
+        var snapshotRefs: [UUID: [SnapshotRef]]?
+    }
+
+    private func apply(_ loaded: Loaded, parts: BrowseRefresh, generations: [Int: Int]) {
+        func current(_ part: BrowseRefresh) -> Bool {
+            part.bits.allSatisfy { generations[$0] == refreshGenerations[$0] }
+        }
+        if current(.sources), let sources = loaded.sources, let onlineIDs = loaded.onlineIDs {
+            self.sources = sources
+            self.onlineSourceIDs = onlineIDs
+        }
+        if current(.vocabulary), let vocabulary = loaded.vocabulary, let aliases = loaded.aliases {
+            self.vocabulary = vocabulary
+            self.tagAliases = aliases
+        }
+        if current(.counts), let counts = loaded.counts, let trees = loaded.trees {
+            self.counts = counts
+            self.folderTrees = trees
+        }
+        if current(.duplicates), let pending = loaded.pendingDuplicates {
+            self.pendingDuplicateCount = pending
+        }
+        if current(.savedFilters), let savedFilters = loaded.savedFilters {
+            self.savedFilters = savedFilters
+        }
+        if current(.menuFacts), let blocks = loaded.hideBlockItemIDs, let snapshots = loaded.snapshotRefs {
+            self.hideBlockItemIDs = blocks
+            self.snapshotRefs = snapshots
+        }
+        // After the saved filters themselves, so new ones are counted.
+        if parts.contains(.savedFilterCounts) { refreshSavedFilterCounts() }
+        if parts.contains(.listing) { refreshItems() }
     }
 
     /// The search field's live text — always in sync with keystrokes.
@@ -1029,5 +1106,58 @@ final class BrowseModel {
             }
             refreshAll()
         }
+    }
+}
+
+/// The parts of a browse window that can be reloaded on their own.
+struct BrowseRefresh: OptionSet, Sendable, Hashable {
+    let rawValue: Int
+
+    /// Sources and whether each one's drive is there (a filesystem check).
+    static let sources = BrowseRefresh(rawValue: 1 << 0)
+    /// Categories, tags and aliases.
+    static let vocabulary = BrowseRefresh(rawValue: 1 << 1)
+    /// Every sidebar number, and the folder trees.
+    static let counts = BrowseRefresh(rawValue: 1 << 2)
+    static let savedFilters = BrowseRefresh(rawValue: 1 << 3)
+    static let savedFilterCounts = BrowseRefresh(rawValue: 1 << 4)
+    /// The pending-duplicates badge.
+    static let duplicates = BrowseRefresh(rawValue: 1 << 5)
+    /// The grid: items, their pills, faceted counts, duplicate flags.
+    static let listing = BrowseRefresh(rawValue: 1 << 6)
+    /// What the tile menus ask about: hide blocks and tag snapshots.
+    static let menuFacts = BrowseRefresh(rawValue: 1 << 7)
+
+    static let everything: BrowseRefresh = [
+        .sources, .vocabulary, .counts, .savedFilters, .savedFilterCounts, .duplicates, .listing, .menuFacts,
+    ]
+
+    var bits: [Int] { (0..<8).filter { rawValue & (1 << $0) != 0 } }
+
+    /// What a change in the library can affect on screen. Erring wide is
+    /// a wasted query; erring narrow is a stale window — so where a
+    /// domain could plausibly matter, it is included.
+    static func parts(for domains: Set<LibraryChangeDomain>) -> BrowseRefresh {
+        var parts: BrowseRefresh = []
+        for domain in domains {
+            switch domain {
+            case .items, .tagging:
+                parts.formUnion([.counts, .savedFilterCounts, .listing])
+            case .vocabulary:
+                // A rename, a hidden-by-default flag, a new category:
+                // names, counts and which items are listed.
+                parts.formUnion([.vocabulary, .counts, .listing])
+            case .sources:
+                // Enabling or disabling a source changes every listing.
+                parts.formUnion([.sources, .counts, .savedFilterCounts, .listing])
+            case .savedFilters:
+                parts.formUnion([.savedFilters, .savedFilterCounts])
+            case .duplicates:
+                parts.formUnion([.duplicates, .listing])
+            case .itemDetails:
+                parts.formUnion(.menuFacts)
+            }
+        }
+        return parts
     }
 }
