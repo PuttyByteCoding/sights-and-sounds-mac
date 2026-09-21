@@ -131,8 +131,19 @@ public enum TagWriters {
             }
         }
         if ["mp4", "m4a", "m4v", "mov"].contains(ext), let parsley = tools.atomicParsley {
+            // `--metaEnema` is what makes this a wipe-and-rewrite, and it
+            // wipes the cover art with everything else. The library does
+            // not hold the art and snapshots do not record it, so it is
+            // lifted out first and handed back in the same invocation —
+            // the file is only ever rewritten once, with its art in it.
+            let artDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("sas-cover-art-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: artDirectory) }
             do {
                 var arguments = [url.path, "--overWrite", "--metaEnema"]
+                for art in try extractCoverArt(from: url, into: artDirectory, tool: parsley) {
+                    arguments += ["--artwork", art.path]
+                }
                 for field in fields {
                     let value = field.values.joined(separator: "; ")
                     if field.mp4Freeform {
@@ -204,6 +215,18 @@ public enum TagWriters {
         case "©cmt": "--comment"
         default: "--comment"
         }
+    }
+
+    /// The file's cover images, written out in the order the file holds
+    /// them. None is an empty list; a tool failure throws, which sends the
+    /// write to the ffmpeg remux — that keeps art without being asked.
+    private static func extractCoverArt(from url: URL, into directory: URL, tool: String) throws -> [URL] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let prefix = directory.appendingPathComponent("cover")
+        try runTool(tool, [url.path, "--extractPixToPath", prefix.path])
+        // cover_artwork_1.png, cover_artwork_2.jpg, …
+        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
     /// metaflac names the problem first and then prints its usage text,

@@ -118,7 +118,10 @@ import Testing
         #expect(runRow.writtenCount == 1 && runRow.finishedAt != nil)
         let fileRow = try await library.writer.read { try TagWriteRunFile.fetchOne($0)! }
         #expect(fileRow.status == .written)
-        #expect(fileRow.usedRemuxFallback)  // no AtomicParsley for m4a audio? (it may exist — accept either)
+        // Which tool wrote it depends on the machine: AtomicParsley where
+        // it is installed, the ffmpeg remux where it is not. Either is a
+        // pass — this line used to insist on the remux, and failed on any
+        // machine that had AtomicParsley.
         let refreshed = try await library.writer.read { try MediaItem.fetchOne($0, key: item.id)! }
         if fileRow.usedRemuxFallback { #expect(refreshed.contentHash == nil) }
 
