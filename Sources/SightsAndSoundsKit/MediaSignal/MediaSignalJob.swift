@@ -89,14 +89,37 @@ public struct MediaSignalJob: Job {
                 }
                 try await context.checkCancellation()
             }
+            try Self.drawConclusions(for: entry.item.id, in: library)
             examined += 1
             if failed { failedItems += 1 }
             await context.reportProgress(current: index + 1, total: work.count)
+        }
+
+        // Items whose findings are complete but whose conclusions were
+        // drawn by older rules, or never: rows are read, not files, so
+        // this covers offline sources too.
+        var redrawn = 0
+        if scope == nil {
+            for itemID in try library.itemsNeedingSignalConclusions(rulesVersion: SignalRules.version) {
+                try await context.checkCancellation()
+                try Self.drawConclusions(for: itemID, in: library)
+                redrawn += 1
+            }
+        }
+        if examined == 0, redrawn > 0 {
+            await context.setSummary("conclusions re-drawn for \(redrawn) items")
+            return
         }
 
         await context.setSummary(
             failedItems == 0
                 ? "\(examined) items examined"
                 : "\(examined) items examined, \(failedItems) with a stage that failed")
+    }
+
+    static func drawConclusions(for itemID: UUID, in library: LibraryDatabase) throws {
+        let (evidence, conclusions) = SignalInferenceRules.conclude(try library.signalFacts(itemID: itemID))
+        try library.replaceSignalConclusions(
+            itemID: itemID, evidence: evidence, conclusions: conclusions, rulesVersion: SignalRules.version)
     }
 }
