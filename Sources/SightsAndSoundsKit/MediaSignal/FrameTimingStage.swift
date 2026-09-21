@@ -13,6 +13,7 @@ public struct FrameTimingStage: SignalStage {
     public let name = "frameTiming"
     public let version = 1
     public let kinds: Set<MediaKind> = [.video]
+    public let pass = 0
 
     public init() {}
 

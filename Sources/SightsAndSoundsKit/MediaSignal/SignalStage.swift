@@ -20,6 +20,13 @@ public protocol SignalStage: Sendable {
     /// The kinds of item the stage has anything to say about.
     var kinds: Set<MediaKind> { get }
 
+    /// Which pass over the library the stage belongs to. Every item is
+    /// taken through pass 0 before any item starts pass 1, so what is cheap
+    /// to know is known about the whole library within minutes, while the
+    /// passes that decode take their days. Stages that share a pass are run
+    /// in one visit to the file.
+    var pass: Int { get }
+
     func examine(_ file: SignalStageInput) async throws -> SignalFindings
 }
 

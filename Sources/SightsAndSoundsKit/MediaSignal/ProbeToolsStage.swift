@@ -13,6 +13,7 @@ public struct ProbeToolsStage: SignalStage {
     public let name = "probeTools"
     public let version = 1
     public let kinds: Set<MediaKind> = [.video, .audio]
+    public let pass = 0
 
     let ffprobe: String?
     let mediainfo: String?

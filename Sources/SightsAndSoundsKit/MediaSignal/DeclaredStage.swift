@@ -13,6 +13,7 @@ public struct DeclaredStage: SignalStage {
     public let name = "declared"
     public let version = 1
     public let kinds: Set<MediaKind> = [.video, .audio]
+    public let pass = 0
 
     public init() {}
 
