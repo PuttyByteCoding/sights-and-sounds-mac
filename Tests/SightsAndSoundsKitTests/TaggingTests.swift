@@ -86,6 +86,40 @@ import Testing
         #expect(tags.contains { $0.category.id == f.band.id })
     }
 
+    // MARK: Bulk
+
+    @Test func bulkAssignFollowsTheSingleSelectRuleOnEveryItem() throws {
+        let f = try FilterFixture()
+        try f.library.writer.write { db in
+            var recType = f.recordingType
+            recType.allowMultiple = false
+            try recType.update(db)
+        }
+        try f.library.assignTag(f.aud.id, to: [f.show1995.id, f.show2001.id])
+
+        for id in [f.show1995.id, f.show2001.id] {
+            let recTypeTags = try f.library.tags(of: id)
+                .first { $0.category.id == f.recordingType.id }?.tags ?? []
+            #expect(recTypeTags.map(\.name) == ["AUD"])
+        }
+    }
+
+    /// One transaction: a bulk edit that cannot finish changes nothing.
+    /// Item by item, a failure on the fifth left four tagged and the
+    /// grid showing none of it.
+    @Test func bulkAssignIsAllOrNothing() throws {
+        let f = try FilterFixture()
+        let before = try f.library.tags(of: f.show1995.id).flatMap(\.tags).map(\.id)
+
+        #expect(throws: (any Error).self) {
+            // The second id is no item: its link row fails the foreign key.
+            try f.library.assignTag(f.bandB.id, to: [f.show1995.id, UUID()])
+        }
+
+        let after = try f.library.tags(of: f.show1995.id).flatMap(\.tags).map(\.id)
+        #expect(after == before)
+    }
+
     @Test func multiSelectCategoryAccumulates() throws {
         let f = try FilterFixture()
         try f.library.assignTag(f.bandB.id, to: f.show1995.id)

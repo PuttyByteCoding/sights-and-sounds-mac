@@ -45,7 +45,7 @@ final class BrowseModel {
     /// The offline banner's toggle. It hides items from the LISTING;
     /// `items` stays the full listing so the banner can keep counting
     /// what it hid, which is what makes the state recoverable.
-    var hideOfflineItems = false
+    var hideOfflineItems = false { didSet { pruneSelection() } }
 
     /// The listing's sort. One control orders both the grid and the play
     /// queue.
@@ -479,6 +479,7 @@ final class BrowseModel {
                 switch outcome {
                 case .success(let payload):
                     self.items = payload.items
+                    self.pruneSelection()
                     self.itemTags = payload.tags
                     self.itemMissingCategories = payload.missingCategories
                     self.duplicateFlaggedIDs = payload.duplicateIDs
@@ -735,6 +736,17 @@ final class BrowseModel {
         selectionAnchor = nil
     }
 
+    /// The selection is what is ticked AND on screen. Called whenever the
+    /// listing changes, so "N selected" and every bulk action agree: a
+    /// selection that outlived its listing had the bar counting items the
+    /// grid no longer showed, Delete acting on the visible few, and Add
+    /// Tag acting on all of them.
+    private func pruneSelection() {
+        guard !selection.isEmpty else { return }
+        selection.formIntersection(visibleItems.map(\.id))
+        if let anchor = selectionAnchor, !selection.contains(anchor) { selectionAnchor = nil }
+    }
+
     /// The selected items in listing order — the order a queue plays
     /// them in, and the order any bulk action reports.
     var selectedItems: [MediaItem] {
@@ -745,7 +757,7 @@ final class BrowseModel {
     /// worklist reads, so clearing it here is the same act as clearing
     /// it one item at a time.
     func markSelectionReviewed() {
-        let ids = Array(selection)
+        let ids = selectedItems.map(\.id)
         do {
             try library.setNeedsReview(ids, false)
             clearSelection()
@@ -760,14 +772,23 @@ final class BrowseModel {
     /// is deleted, and Review is where it is undone.
     func markSelectionForDeletion() {
         let items = selectedItems
-        do {
-            for item in items {
+        // Each item is a file move, so this cannot be one transaction.
+        // What it can be is honest: carry on past a failure, always
+        // refresh so the grid shows what did happen, and say what did not.
+        var failures: [String] = []
+        for item in items {
+            do {
                 try library.stage(.toDelete, itemID: item.id)
+            } catch {
+                failures.append("\(item.fileName): \(error)")
             }
-            clearSelection()
-            refreshAll()
-        } catch {
-            errorMessage = "\(error)"
+        }
+        clearSelection()
+        refreshAll()
+        if let first = failures.first {
+            errorMessage = failures.count == 1
+                ? "Could not mark \(first)"
+                : "\(failures.count) of \(items.count) could not be marked. First: \(first)"
         }
     }
 
@@ -788,7 +809,9 @@ final class BrowseModel {
     /// the rule cannot be skipped by tagging in bulk.
     func applyTagToSelection(_ tagID: UUID) {
         do {
-            for id in selection { try library.assignTag(tagID, to: id) }
+            // One transaction in the kit: the bulk edit lands whole or
+            // not at all.
+            try library.assignTag(tagID, to: selectedItems.map(\.id))
             refreshAll()
         } catch {
             errorMessage = "\(error)"

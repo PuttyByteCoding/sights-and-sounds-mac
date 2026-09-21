@@ -187,19 +187,28 @@ extension LibraryDatabase {
     /// false) this replaces any other tag of that category on the item —
     /// Year 1995 supersedes Year 1994 rather than joining it.
     public func assignTag(_ tagID: UUID, to itemID: UUID) throws {
+        try assignTag(tagID, to: [itemID])
+    }
+
+    /// Apply a tag to many items — the same rule per item, in ONE
+    /// transaction: a bulk edit lands whole or not at all, and the tag
+    /// and its category are looked up once rather than once per item.
+    public func assignTag(_ tagID: UUID, to itemIDs: [UUID]) throws {
         try writer.write { db in
             guard let tag = try Tag.fetchOne(db, key: tagID),
                   let category = try TagCategory.fetchOne(db, key: tag.tagCategoryID)
             else { throw DatabaseError(message: "no such tag") }
-            if !category.allowMultiple {
-                try db.execute(
-                    sql: """
-                    DELETE FROM mediaItemTag WHERE mediaItemID = ? AND tagID IN \
-                    (SELECT id FROM tag WHERE tagCategoryID = ?)
-                    """,
-                    arguments: [itemID, category.id])
+            for itemID in itemIDs {
+                if !category.allowMultiple {
+                    try db.execute(
+                        sql: """
+                        DELETE FROM mediaItemTag WHERE mediaItemID = ? AND tagID IN \
+                        (SELECT id FROM tag WHERE tagCategoryID = ?)
+                        """,
+                        arguments: [itemID, category.id])
+                }
+                try MediaItemTag(mediaItemID: itemID, tagID: tagID).insert(db, onConflict: .ignore)
             }
-            try MediaItemTag(mediaItemID: itemID, tagID: tagID).insert(db, onConflict: .ignore)
         }
     }
 
