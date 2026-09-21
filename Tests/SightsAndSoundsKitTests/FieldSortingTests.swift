@@ -11,7 +11,7 @@ import Testing
     /// inserted out of order, lesson numbers as a media-item number field.
     private struct LearningFixture {
         let library: LibraryDatabase
-        let source = Source(name: "Courses", rootPath: "/Volumes/Media/Courses")
+        let source = Source(name: "Courses", rootPath: TestRoots.unreachable("Courses"))
         let lessonNumber = FieldDefinition(name: "Lesson Number", dataType: .number, scope: .mediaItem)
         let lessons: [MediaItem]  // insertion order: 10, 2, 1, 3
         let unnumbered: MediaItem
@@ -73,7 +73,7 @@ import Testing
 
     @Test func textFieldsSortAsText() throws {
         let library = try LibraryDatabase.openInMemory()
-        let source = Source(name: "S", rootPath: "/tmp/media")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("media"))
         let venue = FieldDefinition(name: "Venue", dataType: .text, scope: .mediaItem)
         let names = ["zebra Hall", "Apollo", "midtown Arena"]
         try library.writer.write { db in

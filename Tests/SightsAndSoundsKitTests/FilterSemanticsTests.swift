@@ -221,7 +221,7 @@ extension SavedFilterTests {
     @Test func markingStampsTheCurrentVersionAndUpserts() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Marker")
-        let source = Source(name: "S", rootPath: "/tmp/marker")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("marker"))
         try await library.writer.write { try source.insert($0) }
         let item = MediaItem(
             sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
@@ -237,7 +237,7 @@ extension SavedFilterTests {
     @Test func theThreeStatusPredicatesPartitionTheLibrary() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Marker")
-        let source = Source(name: "S", rootPath: "/tmp/marker")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("marker"))
         try await library.writer.write { try source.insert($0) }
 
         func insert(_ path: String) async throws -> MediaItem {

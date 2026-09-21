@@ -9,8 +9,8 @@ import Testing
 
     private struct Fixture {
         let library: LibraryDatabase
-        let first = Source(name: "First", rootPath: "/tmp/sas-scope-first")
-        let second = Source(name: "Second", rootPath: "/tmp/sas-scope-second")
+        let first = Source(name: "First", rootPath: TestRoots.unreachable("sas-scope-first"))
+        let second = Source(name: "Second", rootPath: TestRoots.unreachable("sas-scope-second"))
 
         init() throws {
             library = try LibraryDatabase.openInMemory()

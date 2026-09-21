@@ -8,7 +8,7 @@ import Testing
     private func makeLibrary() async throws -> (LibraryDatabase, Source, TagCategory) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Evidence")
-        let source = Source(name: "S", rootPath: "/tmp/evidence")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("evidence"))
         let category = TagCategory(name: "Artist")
         try await library.writer.write { db in
             try source.insert(db)
@@ -142,7 +142,7 @@ import Testing
     private func makeLibrary() async throws -> (LibraryDatabase, Source, TagCategory) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Scope")
-        let source = Source(name: "S", rootPath: "/tmp/scope")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("scope"))
         let category = TagCategory(name: "Artist")
         try await library.writer.write { db in
             try source.insert(db)

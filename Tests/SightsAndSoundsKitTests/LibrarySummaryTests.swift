@@ -12,7 +12,7 @@ import Testing
     /// items and one embedded clip.
     private func seededLibrary() throws -> LibraryDatabase {
         let library = try LibraryDatabase.openInMemory()
-        let source = Source(name: "Main", rootPath: "/Volumes/Media/Concerts")
+        let source = Source(name: "Main", rootPath: TestRoots.unreachable("Concerts"))
         let band = TagCategory(name: "Band")
         let parent = MediaItem(
             sourceID: source.id, kind: .video, relativePath: "a.mp4",

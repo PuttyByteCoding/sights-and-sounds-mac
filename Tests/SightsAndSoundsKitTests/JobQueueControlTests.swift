@@ -107,7 +107,7 @@ private struct FailingJob: Job {
     @Test func statusRetryAndResetBehaveForContentHashes() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Sweeps")
-        let source = Source(name: "S", rootPath: "/tmp/sweeps")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("sweeps"))
         try await library.writer.write { try source.insert($0) }
 
         let hashed = MediaItem(
@@ -141,7 +141,7 @@ private struct FailingJob: Job {
     @Test func metadataRetryClearsOnlyFailedMarkers() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Sweeps")
-        let source = Source(name: "S", rootPath: "/tmp/sweeps")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("sweeps"))
         try await library.writer.write { try source.insert($0) }
         let good = MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)
         let bad = MediaItem(sourceID: source.id, kind: .video, relativePath: "b.mp4", needsReview: false)

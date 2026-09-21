@@ -11,7 +11,7 @@ import Testing
         func names(seed: UInt64) async throws -> [String] {
             let library = try LibraryDatabase.openInMemory()
             try library.ensureInfo(name: "Demo")
-            let source = Source(name: "S", rootPath: "/tmp/demo")
+            let source = Source(name: "S", rootPath: TestRoots.unreachable("demo"))
             try await DemoLibrarySeeder.seed(library: library, source: source, seed: seed)
             return try await library.writer.read {
                 try MediaItem.order(sql: "relativePath").fetchAll($0).map(\.relativePath)
@@ -27,7 +27,7 @@ import Testing
     @Test func seededLibraryAnswersTheFilterSurface() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Demo")
-        let source = Source(name: "S", rootPath: "/tmp/demo")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("demo"))
         let report = try await DemoLibrarySeeder.seed(library: library, source: source)
 
         #expect(report.shows == 22)
@@ -89,7 +89,7 @@ import Testing
     @Test func makeFileCallbackDrivesSizesAndPaths() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Demo")
-        let source = Source(name: "S", rootPath: "/tmp/demo")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("demo"))
         final class PathBox: @unchecked Sendable {
             private let lock = NSLock()
             private var stored: [String] = []

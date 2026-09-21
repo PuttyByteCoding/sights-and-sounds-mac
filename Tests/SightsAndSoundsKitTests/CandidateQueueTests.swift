@@ -10,7 +10,7 @@ import Testing
     private func makeLibrary() async throws -> (LibraryDatabase, Source) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Candidates")
-        let source = Source(name: "S", rootPath: "/tmp/candidates")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("candidates"))
         try await library.writer.write { try source.insert($0) }
         return (library, source)
     }

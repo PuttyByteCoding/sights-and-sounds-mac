@@ -16,7 +16,7 @@ import Testing
         // A real on-disk library with content.
         let library = try LibraryDatabase.open(at: dir.appendingPathComponent("Live.sqlite"))
         try library.ensureInfo(name: "Concerts")
-        let source = Source(name: "S", rootPath: "/tmp/x")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("x"))
         let category = TagCategory(name: "Band")
         try await library.writer.write { db in
             try source.insert(db)
@@ -63,7 +63,7 @@ import Testing
         // The backup holds one item; the live library moves on to two.
         let library = try LibraryDatabase.open(at: libraryURL)
         try library.ensureInfo(name: "Library")
-        let source = Source(name: "S", rootPath: "/tmp/sas-restore-media")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("sas-restore-media"))
         try await library.writer.write { db in
             try source.insert(db)
             try MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4").insert(db)

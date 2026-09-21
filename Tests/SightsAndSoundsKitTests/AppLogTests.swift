@@ -68,8 +68,11 @@ import Testing
         _ = try await runner.enqueue(SadJob.self)
         try await runner.runPending()
 
+        // By this job's own kind: the log is one shared ring, and about
+        // fifteen other suites run failing jobs into it in parallel. The
+        // first error line in it is whoever got there first.
         let failure = AppLog.shared.snapshot().first {
-            $0.category == "jobs" && $0.level == .error
+            $0.category == "jobs" && $0.level == .error && $0.message.contains("test.sad")
         }
         #expect(failure?.message.contains("nope") == true)
     }

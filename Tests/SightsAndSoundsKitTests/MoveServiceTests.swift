@@ -134,7 +134,7 @@ import Testing
 
         let queue = try DatabaseQueue(path: url.path)
         try LibraryDatabase.migrator.migrate(queue, upTo: "searchRecipe")
-        let source = Source(name: "S", rootPath: "/tmp/sas-segment-heal-media")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("sas-segment-heal-media"))
         let show = MediaItem(sourceID: source.id, kind: .video, relativePath: "shows/1995/show.mp4")
         let song = MediaItem(
             sourceID: source.id, kind: .video, relativePath: "inbox/show.mp4",
