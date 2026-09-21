@@ -321,8 +321,11 @@ Requires Xcode 16+ (Swift 6). Open `Package.swift` in Xcode, or:
 swift build          # build kit + app shell
 swift test           # filter semantics, SQL shape, schema integrity, jobs
 swift run            # run the app (dev; keyboard focus handled)
-./scripts/check-terminology.sh
+./scripts/check-terminology.sh      # banned names from the old app
+./scripts/check-no-private-data.sh  # no library data, archives or home paths tracked
 ```
+
+The build must be free of warnings; CI runs both guards beside the build and tests.
 
 For a double-clickable app with a dock presence:
 
@@ -343,7 +346,7 @@ For a double-clickable app with a dock presence:
 | `Sources/SightsAndSoundsApp/Resources/Fonts` | Archivo and JetBrains Mono (OFL, licences alongside) |
 | `docs/` | Replatform brief, terminology ledger |
 | `docs/design/` | The design handoff: sixteen specs, tokens, comps and screenshots |
-| `scripts/` | Terminology guard (bash 3.2 portable, wired into CI) |
+| `scripts/` | The guards CI runs (`check-terminology.sh`, `check-no-private-data.sh`; bash 3.2 portable) and `make-app-bundle.sh` |
 
 ## Rules that hold from day one
 
