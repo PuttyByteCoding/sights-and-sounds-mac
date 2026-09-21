@@ -13,6 +13,25 @@ import SightsAndSoundsKit
 ///
 /// One name, one place — layout rule 5. A hex that appears in two views
 /// belongs here, not in both.
+///
+/// Two places are deliberately NOT painted from here, and a review that
+/// counts semantic colours or system fonts will find both:
+///
+///   - **The Settings window** (`SettingsView`, `SearchSettingsPane`).
+///     It is a standard macOS `Settings` scene — a `TabView` of grouped
+///     `Form`s on the system's own background, which follows the system
+///     appearance. `.secondary` and `.caption` are right there: these
+///     tokens are tuned for the app's dark charcoal and would be
+///     unreadable on a light Settings window. That is the "standard
+///     controls" half of the sentence above, not drift.
+///   - **The recipe editor's views** (`RecipeParts`, `RecipeRules`, in
+///     `RecipeEditor.swift`). They appear in Settings AND in the
+///     player's search panel, so they use semantic colours, which read
+///     on both backgrounds. A token would be right in one and wrong in
+///     the other.
+///   - **SF Symbols sized with `.font(.system(size:))`.** That sets a
+///     symbol's size; it is not text, so neither Archivo nor JetBrains
+///     Mono applies. Text never uses it.
 enum Theme {
 
     // MARK: - Surfaces
