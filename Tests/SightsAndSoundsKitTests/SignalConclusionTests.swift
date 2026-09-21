@@ -179,7 +179,7 @@ import Testing
         let conclusions = SignalInferenceRules.conclusions(from: evidence)
         #expect(conclusions.contains { $0.category == "Digital SD" })
         #expect(conclusions.contains { $0.category == "Early Web / Low-Bitrate Digital" })
-        let unknown = try? #require(conclusions.first { $0.category == "Unknown" })
+        let unknown = conclusions.first { $0.category == "Unknown" }
         #expect(unknown != nil)
         #expect(unknown?.supportedBy.isEmpty == false)
     }
