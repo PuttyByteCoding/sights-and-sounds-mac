@@ -120,14 +120,33 @@ import Testing
             }
             return SignalFindings()
         }
+        var serial = MediaSignalJob(stages: [stage], fileAccess: drive)
+        serial.filesAtOnce = 1
+        let job = serial
         await #expect(throws: MediaSignalJob.SourceWentOffline.self) {
-            try await MediaSignalJob(stages: [stage], fileAccess: drive).run(context(library))
+            try await job.run(context(library))
         }
         // The first file is done; the one in flight and the one after it
         // carry no marker at all, so they are examined when the drive is back.
         #expect(try library.signalStageStates(itemID: items[0].id).contains { $0.stage == "scripted" })
         #expect(try library.signalStageStates(itemID: items[1].id).isEmpty)
         #expect(try library.signalStageStates(itemID: items[2].id).isEmpty)
+    }
+
+    @Test func filesInHandTogetherWhenTheDriveGoesAreAllLeftUnmarked() async throws {
+        let (library, items) = try await library(items: 3)
+        let drive = Drive()
+        let stage = ScriptedStage { file in
+            if file.url.lastPathComponent == "clip0.mp4" { drive.unplug() }
+            // Long enough for all three to be open when it goes.
+            try await Task.sleep(nanoseconds: 60_000_000)
+            throw SignalStageError("AVFoundation cannot open this file")
+        }
+        let job = MediaSignalJob(stages: [stage], fileAccess: drive)
+        await #expect(throws: MediaSignalJob.SourceWentOffline.self) {
+            try await job.run(context(library))
+        }
+        for item in items { #expect(try library.signalStageStates(itemID: item.id).isEmpty) }
     }
 
     @Test func aFileThatFailsOnADriveStillThereIsMarkedAsBefore() async throws {
@@ -180,7 +199,9 @@ import Testing
             stage("declared", pass: 0, log: log), stage("timing", pass: 0, log: log),
             stage("sequences", pass: 2, log: log),
         ]
-        try await MediaSignalJob(stages: stages, fileAccess: MediaSignalLongRunTests.Drive()).run(context(library))
+        var job = MediaSignalJob(stages: stages, fileAccess: MediaSignalLongRunTests.Drive())
+        job.filesAtOnce = 1
+        try await job.run(context(library))
         #expect(log.get() == [
             // One visit per file for everything cheap, so a file is not
             // opened twice where once would do...
@@ -209,6 +230,7 @@ import Testing
         var job = try MediaSignalJob(payload: payload)
         job.stages = [slow]
         job.fileAccess = MediaSignalLongRunTests.Drive()
+        job.filesAtOnce = 1
         try await job.run(context(library, summary: summary))
 
         #expect(log.get() == ["slow clip0.mp4"])  // finished what it had open, then stopped
@@ -234,6 +256,38 @@ import Testing
         #expect(log.get().count == 2)  // ran to its end
         let queued = try await library.writer.read { try JobRecord.filter(sql: "state = 'queued'").fetchCount($0) }
         #expect(queued == 1)  // and queued nothing more
+    }
+
+    @Test func severalFilesAreExaminedAtOnceAndNeverMoreThanAsked() async throws {
+        let (library, _) = try await library(items: 9)
+        let running = OSAllocatedBox(0), most = OSAllocatedBox(0)
+        var slow = ScriptedStage { _ in
+            running.set(running.get() + 1)
+            most.set(max(most.get(), running.get()))
+            try await Task.sleep(nanoseconds: 40_000_000)
+            running.set(running.get() - 1)
+            return SignalFindings()
+        }
+        slow.name = "slow"
+        var job = MediaSignalJob(stages: [slow], fileAccess: MediaSignalLongRunTests.Drive())
+        job.filesAtOnce = 3
+        let summary = OSAllocatedBox("")
+        try await job.run(context(library, summary: summary))
+        #expect(most.get() == 3)
+        #expect(try library.itemsNeedingSignalStages([slow]).isEmpty)
+        // Where the time went, so a slow sweep can be understood from its row.
+        #expect(summary.get().contains("slow"))
+    }
+
+    @Test func passesStillDoNotOverlapWhenFilesDo() async throws {
+        let (library, _) = try await library(items: 6)
+        let log = OSAllocatedBox<[String]>([])
+        let stages: [any SignalStage] = [stage("cheap", pass: 0, log: log), stage("dear", pass: 2, log: log)]
+        var job = MediaSignalJob(stages: stages, fileAccess: MediaSignalLongRunTests.Drive())
+        job.filesAtOnce = 3
+        try await job.run(context(library))
+        let order = log.get().map { $0.hasPrefix("cheap") }
+        #expect(order == Array(repeating: true, count: 6) + Array(repeating: false, count: 6))
     }
 
     @Test func withNothingWaitingTheSweepRunsToTheEndAndQueuesNothing() async throws {

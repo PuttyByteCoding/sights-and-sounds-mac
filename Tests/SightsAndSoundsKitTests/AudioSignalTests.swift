@@ -150,6 +150,37 @@ enum SyntheticSound {
 }
 
 @Suite struct AudioSignalStageTests {
+    @Test func aShortTrackIsHeardWholeAndALongOneInEvenlySpreadWindows() {
+        let stage = AudioSignalStage()
+        #expect(stage.windows(durationSeconds: 540) == nil)  // nine minutes: all of it
+        let windows = stage.windows(durationSeconds: 7200)
+        #expect(windows?.count == 12)
+        #expect(windows?.allSatisfy { $0.seconds == 30 } == true)
+        // Spread across the running time, clear of the very start and end.
+        #expect((windows?.first?.start ?? 0) > 60)
+        #expect((windows?.last?.start ?? 0) < 7200 - 60)
+        let starts = windows?.map(\.start) ?? []
+        #expect(starts == starts.sorted())
+    }
+
+    @Test func aSampledTrackSaysSoAndReportsHowMuchWasHeard() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-audio-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("long.m4a")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try DemoMediaFactory.writeAudio(to: url, seconds: 40)
+        // The same rule at a scale a test can afford: over 20 s, four 3 s windows.
+        let stage = AudioSignalStage(wholeTrackLimit: 20, windowCount: 4, windowSeconds: 3)
+        let findings = try await stage.examine(SignalStageInput(url: url, kind: .audio))
+        #expect(findings.value("audio.sampled") == 1)
+        #expect(abs(findings.value("audio.secondsMeasured")! - 12) < 1)
+        #expect(findings.value("audio.integratedLoudnessLufs") != nil)
+
+        let whole = try await AudioSignalStage().examine(SignalStageInput(url: url, kind: .audio))
+        #expect(whole.value("audio.sampled") == 0)
+        #expect(abs(whole.value("audio.secondsMeasured")! - 40) < 1)
+    }
+
     @Test func theStageDecodesASynthesizedTrack() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-audio-\(UUID().uuidString)", isDirectory: true)
