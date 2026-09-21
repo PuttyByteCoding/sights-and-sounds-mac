@@ -849,6 +849,74 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Free-text search as an index lookup. `searchText` is an FTS5
+        // table with the trigram tokenizer, which is what lets it answer
+        // "this text anywhere inside", case-insensitively — the same
+        // question the LIKEs asked, without reading every row.
+        //
+        // One row per item (its path and notes) and one per recognised
+        // text line. FTS5 rows are addressed by rowid only, so `searchRow`
+        // says which item (and which line) each rowid is; it hangs off
+        // both by foreign key, so deleting an item or a line cascades into
+        // it, and its own delete trigger takes the FTS row with it.
+        // Triggers keep all of it in step, so no write site knows the
+        // index exists.
+        migrator.registerMigration("searchIndex") { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE searchText USING fts5(body, tokenize='trigram');
+
+                CREATE TABLE searchRow (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    ocrLineID BLOB REFERENCES ocrTextLine(id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX searchRow_item ON searchRow(mediaItemID) WHERE ocrLineID IS NULL;
+                CREATE INDEX searchRow_mediaItemID ON searchRow(mediaItemID);
+                CREATE UNIQUE INDEX searchRow_ocrLineID ON searchRow(ocrLineID) WHERE ocrLineID IS NOT NULL;
+
+                CREATE TRIGGER searchRow_delete AFTER DELETE ON searchRow BEGIN
+                    DELETE FROM searchText WHERE rowid = OLD.id;
+                END;
+
+                CREATE TRIGGER mediaItem_search_insert AFTER INSERT ON mediaItem BEGIN
+                    INSERT INTO searchRow (mediaItemID) VALUES (NEW.id);
+                    INSERT INTO searchText (rowid, body)
+                        SELECT id, NEW.relativePath || char(10) || NEW.notes FROM searchRow
+                        WHERE mediaItemID = NEW.id AND ocrLineID IS NULL;
+                END;
+
+                CREATE TRIGGER mediaItem_search_update AFTER UPDATE OF relativePath, notes ON mediaItem
+                WHEN OLD.relativePath IS NOT NEW.relativePath OR OLD.notes IS NOT NEW.notes BEGIN
+                    UPDATE searchText SET body = NEW.relativePath || char(10) || NEW.notes
+                    WHERE rowid = (SELECT id FROM searchRow
+                                   WHERE mediaItemID = NEW.id AND ocrLineID IS NULL);
+                END;
+
+                CREATE TRIGGER ocrTextLine_search_insert AFTER INSERT ON ocrTextLine BEGIN
+                    INSERT INTO searchRow (mediaItemID, ocrLineID) VALUES (NEW.mediaItemID, NEW.id);
+                    INSERT INTO searchText (rowid, body)
+                        SELECT id, NEW.text FROM searchRow WHERE ocrLineID = NEW.id;
+                END;
+
+                CREATE TRIGGER ocrTextLine_search_update AFTER UPDATE OF text ON ocrTextLine BEGIN
+                    UPDATE searchText SET body = NEW.text
+                    WHERE rowid = (SELECT id FROM searchRow WHERE ocrLineID = NEW.id);
+                END;
+                """)
+            // What is already in the library.
+            try db.execute(sql: """
+                INSERT INTO searchRow (mediaItemID) SELECT id FROM mediaItem;
+                INSERT INTO searchRow (mediaItemID, ocrLineID) SELECT mediaItemID, id FROM ocrTextLine;
+                INSERT INTO searchText (rowid, body)
+                    SELECT searchRow.id, mediaItem.relativePath || char(10) || mediaItem.notes
+                    FROM searchRow JOIN mediaItem ON mediaItem.id = searchRow.mediaItemID
+                    WHERE searchRow.ocrLineID IS NULL;
+                INSERT INTO searchText (rowid, body)
+                    SELECT searchRow.id, ocrTextLine.text
+                    FROM searchRow JOIN ocrTextLine ON ocrTextLine.id = searchRow.ocrLineID;
+                """)
+        }
+
         return migrator
     }
 

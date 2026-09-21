@@ -16,6 +16,6 @@ enum ExpectedMigrations {
         "savedFilters", "tagAnalysisMarker", "jsonSchemas", "fingerprintUnsignedRetry",
         "tagAnalysisIgnore", "searchRecipe", "segmentsFollowTheirFile",
         "segmentLookupIndex", "moveJournal",
-        "moveJournalRevertsAndSwaps",
+        "moveJournalRevertsAndSwaps", "searchIndex",
     ]
 }
