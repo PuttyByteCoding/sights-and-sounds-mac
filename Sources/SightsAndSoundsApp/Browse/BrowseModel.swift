@@ -359,6 +359,8 @@ final class BrowseModel {
         var duplicateIDs: Set<UUID>
         var filteredTagCounts: [UUID: Int]
         var filteredMissingCounts: [UUID: Int]
+        var hideBlockItemIDs: Set<UUID>
+        var snapshotRefs: [UUID: [SnapshotRef]]
     }
 
     /// Everything a tile needs about one item that is not on its row.
@@ -404,7 +406,13 @@ final class BrowseModel {
                     filteredTagCounts: try library.filteredTagCounts(
                         kinds: kinds, filter: filter),
                     filteredMissingCounts: try library.filteredMissingCategoryCounts(
-                        kinds: kinds, filter: filter))
+                        kinds: kinds, filter: filter),
+                    // What the tiles' context menus ask about, fetched
+                    // here once: a menu's items are built every time a
+                    // tile's body runs, so asking there is a read per
+                    // tile per render, on the main thread.
+                    hideBlockItemIDs: try library.itemIDsWithHideBlocks(),
+                    snapshotRefs: try library.recentSnapshotRefs(perItem: 10))
                 if grid.needsTagData {
                     let vocabulary = try library.vocabulary()
                         .filter { !$0.category.hiddenFromBrowse }
@@ -466,6 +474,8 @@ final class BrowseModel {
                     self.duplicateFlaggedIDs = payload.duplicateIDs
                     self.filteredTagCounts = payload.filteredTagCounts
                     self.filteredMissingCounts = payload.filteredMissingCounts
+                    self.hideBlockItemIDs = payload.hideBlockItemIDs
+                    self.snapshotRefs = payload.snapshotRefs
                     self.errorMessage = nil
                 case .failure(let error):
                     self.errorMessage = "\(error)"
@@ -871,8 +881,12 @@ final class BrowseModel {
         }
     }
 
+    /// Filled with each listing; see `ListingPayload`.
+    private var hideBlockItemIDs: Set<UUID> = []
+    private var snapshotRefs: [UUID: [SnapshotRef]] = [:]
+
     func hasHideBlocks(_ item: MediaItem) -> Bool {
-        ((try? library.blocks(of: item.id)) ?? []).contains { $0.kind == .hide }
+        hideBlockItemIDs.contains(item.id)
     }
 
     func scanText(_ item: MediaItem) {
@@ -921,12 +935,8 @@ final class BrowseModel {
         }
     }
 
-    func snapshots(of itemID: UUID) -> [EmbeddedTagSnapshot] {
-        (try? library.writer.read { db in
-            try EmbeddedTagSnapshot
-                .filter(sql: "mediaItemID = ?", arguments: [itemID])
-                .order(sql: "capturedAt DESC").limit(10).fetchAll(db)
-        }) ?? []
+    func snapshots(of itemID: UUID) -> [SnapshotRef] {
+        snapshotRefs[itemID] ?? []
     }
 
     func runValidation() async {
