@@ -56,18 +56,22 @@ public struct RemuxJob: Job {
 
         await context.reportProgress(current: 0, total: 3)
 
-        // 1. Write and verify the replacement in a temp location.
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sas-remux-\(item.id.uuidString).mp4")
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        try? FileManager.default.removeItem(at: tempURL)
+        // 1. Write and verify the replacement beside nothing the library
+        //    lists, on the item's own volume.
+        let tempURL = try LibraryDatabase.workingURL(toReplace: fileURL, fileExtension: "mp4")
+        defer { try? FileManager.default.removeItem(at: tempURL.deletingLastPathComponent()) }
         try await AVExport.passthrough(
             assetURL: fileURL, to: tempURL,
             optimizeForNetworkUse: payload.mode == .optimize)
 
+        // A result that cannot be probed is not verified, and an
+        // unverified result never replaces a file that at least exists.
         let probe = await MediaProbe.probe(url: tempURL)
-        if let original = item.durationSeconds, let remuxed = probe.durationSeconds,
-           abs(original - remuxed) > 2.0 {
+        guard let remuxed = probe.durationSeconds, remuxed > 0 else {
+            throw AVExport.ExportFailure(
+                message: "the remuxed file could not be read back — original left untouched")
+        }
+        if let original = item.durationSeconds, abs(original - remuxed) > 2.0 {
             throw AVExport.ExportFailure(
                 message: String(
                     format: "remux duration drifted (%.1fs → %.1fs) — original left untouched",
@@ -75,34 +79,21 @@ public struct RemuxJob: Job {
         }
         await context.reportProgress(current: 1, total: 3)
 
-        // 2. Archive the original under _Replaced, only now that the
-        //    replacement is verified.
+        // 2. Archive the original and land the result — only now that the
+        //    replacement is verified. A remux always lands as .mp4; the
+        //    path follows so the row stays honest.
         guard let source = try await library.writer.read({
             try Source.fetchOne($0, key: item.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-        var archiveRelative = "\(MediaPath.archiveFolder)/\(item.relativePath)"
-        if fileAccess.isReachable(root.appendingPathComponent(archiveRelative)) {
-            let ext = (archiveRelative as NSString).pathExtension
-            let base = (archiveRelative as NSString).deletingPathExtension
-            archiveRelative = ext.isEmpty
-                ? "\(base)-\(LibraryDatabase.collisionStamp())"
-                : "\(base)-\(LibraryDatabase.collisionStamp()).\(ext)"
-        }
-        try LibraryDatabase.moveWithRetries(
-            fileAccess: fileAccess, from: fileURL,
-            to: root.appendingPathComponent(archiveRelative))
-        await context.reportProgress(current: 2, total: 3)
-
-        // 3. The remuxed file takes the item's place. A remux always lands
-        //    as .mp4; the path follows so the row stays honest.
         var newRelative = item.relativePath
         if (newRelative as NSString).pathExtension.lowercased() != "mp4" {
             newRelative = ((newRelative as NSString).deletingPathExtension) + ".mp4"
         }
-        try LibraryDatabase.moveWithRetries(
-            fileAccess: fileAccess, from: tempURL,
-            to: root.appendingPathComponent(newRelative))
+        let archiveRelative = try LibraryDatabase.replaceFile(
+            under: root, currentRelative: item.relativePath, newRelative: newRelative,
+            with: tempURL, fileAccess: fileAccess)
+        await context.reportProgress(current: 2, total: 3)
 
         let newSize = (try? fileAccess.fileSize(at: root.appendingPathComponent(newRelative))) ?? 0
         let finalRelative = newRelative
