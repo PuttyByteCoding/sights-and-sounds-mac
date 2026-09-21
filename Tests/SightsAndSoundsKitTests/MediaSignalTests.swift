@@ -382,7 +382,7 @@ import Testing
         #expect(try library.signalDeclared(itemID: item.id)["video.codecTag"] == "avc1")
         #expect(try library.signalMeasurements(itemID: item.id).contains { $0.key == "timing.frameCount" && $0.value == 24 })
         let states = try library.signalStageStates(itemID: item.id)
-        #expect(states.map(\.stage) == ["broken", "declared", "frameTiming"])
+        #expect(states.map(\.stage) == ["broken", "conclusions", "declared", "frameTiming"])
         #expect(states.first { $0.stage == "broken" }?.failureMessage == "synthetic failure")
         #expect(try library.itemsNeedingSignalStages(stages).isEmpty)
     }
