@@ -38,14 +38,49 @@ extension LibraryDatabase {
         return destination
     }
 
-    /// Sanity-open a backup file: it must be a readable library whose
-    /// migrations apply cleanly. Returns its identity for display.
+    /// Sanity-open a backup file: it must be a database SQLite accepts
+    /// and a library (it has the identity and migration tables). Returns
+    /// its identity for display.
+    ///
+    /// Read-only, always. The ordinary `open` migrates, and a backup is
+    /// the one file that must stay exactly as it was written: looking at
+    /// the list used to bring every old backup up to the current schema
+    /// in place, and leave -wal/-shm files beside each. A restored backup
+    /// is migrated when the app next opens it as the library, with the
+    /// pre-restore archive still there if that goes wrong.
     public static func verifyBackup(at url: URL) throws -> LibraryInfo? {
         do {
-            let library = try LibraryDatabase.open(at: url)
-            let info = try library.info()
-            try library.close()
-            return info
+            var config = Configuration()
+            config.readonly = true
+            // `immutable`: a backup is a copy of a WAL-mode database and
+            // carries that mode in its header. Read-only is not enough for
+            // such a file — SQLite still wants to create the -shm beside
+            // it, and fails where it cannot. Immutable tells it the file
+            // will not change under it, so it needs no sidecars at all.
+            var components = URLComponents()
+            components.scheme = "file"
+            components.path = url.path
+            components.queryItems = [URLQueryItem(name: "immutable", value: "1")]
+            let queue = try DatabaseQueue(
+                path: components.string ?? url.path, configuration: config)
+            defer { try? queue.close() }
+            return try queue.read { db in
+                guard try db.tableExists("grdb_migrations"), try db.tableExists("libraryInfo") else {
+                    throw BackupError.backupUnreadable("not a library file")
+                }
+                guard try String.fetchOne(db, sql: "PRAGMA quick_check") == "ok" else {
+                    throw BackupError.backupUnreadable("the file is damaged")
+                }
+                // Only the columns every schema version has: a newer
+                // column the backup predates must not make it unreadable.
+                guard let row = try Row.fetchOne(
+                    db, sql: "SELECT libraryID, name, createdAt FROM libraryInfo LIMIT 1")
+                else { return nil }
+                return LibraryInfo(
+                    libraryID: row["libraryID"], name: row["name"], createdAt: row["createdAt"])
+            }
+        } catch let error as BackupError {
+            throw error
         } catch {
             throw BackupError.backupUnreadable("\(error)")
         }
@@ -113,8 +148,17 @@ extension LibraryDatabase {
     /// but nothing enumerated them for display — so the list existed
     /// only in the Finder.
     public static func backups(in directory: URL) -> [BackupFile] {
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.fileSizeKey, .creationDateKey])) ?? []
+        // `backup(into:)` files each library's backups in a folder named
+        // for it, so the list is the directory and one level below.
+        let keys: [URLResourceKey] = [.fileSizeKey, .creationDateKey, .isDirectoryKey]
+        let top = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: keys)) ?? []
+        let contents = top.flatMap { url -> [URL] in
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else { return [url] }
+            return (try? FileManager.default.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: keys)) ?? []
+        }
         return contents
             .filter { $0.pathExtension.lowercased() == "sqlite" }
             .map { url in

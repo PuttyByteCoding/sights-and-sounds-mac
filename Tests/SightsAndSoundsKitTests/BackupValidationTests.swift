@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import SightsAndSoundsKit
 
@@ -110,6 +111,58 @@ import Testing
         let untouched = try LibraryDatabase.open(at: libraryURL)
         #expect(try untouched.info()?.name == "Library")
         try untouched.close()
+    }
+
+    /// `backup(into:)` files each library's backups under a folder named
+    /// for it. The listing looked only at the top level, so it never saw
+    /// a backup the app itself had made and "last backup" stayed empty.
+    @Test func theListingFindsTheBackupsTheAppMakes() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-backup-list-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = try LibraryDatabase.open(at: dir.appendingPathComponent("Concerts.sqlite"))
+        try library.ensureInfo(name: "Concerts")
+        let backupsDir = dir.appendingPathComponent("Backups", isDirectory: true)
+        let made = try library.backup(into: backupsDir)
+        try library.close()
+
+        let listed = LibraryDatabase.backups(in: backupsDir)
+
+        #expect(listed.map(\.url.lastPathComponent) == [made.lastPathComponent])
+        #expect(listed.first?.libraryName == "Concerts")
+    }
+
+    /// Looking at a backup must not change it. Opening one through the
+    /// ordinary path ran every newer migration on it and left -wal/-shm
+    /// files beside it — so showing the list upgraded every old backup
+    /// in place, and one bad migration would have reached them all.
+    @Test func lookingAtABackupNeverMigratesOrWritesBesideIt() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-backup-readonly-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // A backup from an older build: stopped two migrations short.
+        let url = dir.appendingPathComponent("Old backup.sqlite")
+        let queue = try DatabaseQueue(path: url.path)
+        try LibraryDatabase.migrator.migrate(queue, upTo: "fingerprintUnsignedRetry")
+        try queue.write { db in
+            try db.execute(
+                sql: "INSERT INTO libraryInfo (id, libraryID, name, createdAt) VALUES (1, ?, 'Old', ?)",
+                arguments: [UUID(), Date()])
+        }
+        let before = try queue.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations") }
+        try queue.close()
+
+        #expect(try LibraryDatabase.verifyBackup(at: url)?.name == "Old")
+        #expect(LibraryDatabase.backups(in: dir).first?.libraryName == "Old")
+
+        let reopened = try DatabaseQueue(path: url.path)
+        let after = try reopened.read { try String.fetchAll($0, sql: "SELECT identifier FROM grdb_migrations") }
+        try reopened.close()
+        #expect(after == before)
+        #expect(!FileManager.default.fileExists(atPath: url.path + "-wal"))
+        #expect(!FileManager.default.fileExists(atPath: url.path + "-shm"))
     }
 
     @Test func verifyRefusesGarbage() throws {
