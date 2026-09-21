@@ -164,10 +164,14 @@ final class AppModel {
 
     init() {
         do {
-            let dir = try FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask,
-                appropriateFor: nil, create: true
-            ).appendingPathComponent("SightsAndSounds", isDirectory: true)
+            // A test that builds an AppModel gets a registry of its own,
+            // not the list of this machine's real libraries.
+            let dir = AppSettingsStore.isUnderTest
+                ? AppSettingsStore.testScratch
+                : try FileManager.default.url(
+                    for: .applicationSupportDirectory, in: .userDomainMask,
+                    appropriateFor: nil, create: true
+                ).appendingPathComponent("SightsAndSounds", isDirectory: true)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             appDatabase = try AppDatabase.open(at: dir.appendingPathComponent("App.sqlite"))
         } catch {

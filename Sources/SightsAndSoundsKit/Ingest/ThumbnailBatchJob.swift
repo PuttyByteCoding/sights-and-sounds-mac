@@ -11,6 +11,10 @@ public enum ThumbnailStore {
         if let custom = AppSettingsStore.shared.current.thumbnailDirectory {
             return URL(fileURLWithPath: custom, isDirectory: true)
         }
+        // A test run writes thumbnails too; not into the real cache.
+        if AppSettingsStore.isUnderTest {
+            return AppSettingsStore.testScratch.appendingPathComponent("Thumbnails", isDirectory: true)
+        }
         return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("SightsAndSounds/Thumbnails", isDirectory: true)
     }
