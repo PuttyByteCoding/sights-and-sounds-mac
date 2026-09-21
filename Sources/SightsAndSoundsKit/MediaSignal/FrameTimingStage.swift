@@ -87,22 +87,29 @@ public struct FrameTimingStage: SignalStage {
         }
         var samples: [FrameSample] = []
         var first: Data?
-        while let buffer = output.copyNextSampleBuffer() {
-            if samples.count.isMultiple(of: 2_000), await file.isCancelled() {
+        var polls = 0
+        var more = true
+        while more {
+            if polls.isMultiple(of: 2_000), await file.isCancelled() {
                 reader.cancelReading()
                 throw CancellationError()
             }
-            let shown = buffer.presentationTimeStamp.seconds
-            guard shown.isFinite, buffer.numSamples > 0 else { continue }
-            if first == nil { first = try? buffer.dataBuffer?.dataBytes().prefix(65_536) }
-            let decoded = buffer.decodeTimeStamp.seconds
-            let attachments = buffer.sampleAttachments.first
-            let notSync = attachments?[.notSync] as? Bool ?? false
-            samples.append(FrameSample(
-                presentationSeconds: shown,
-                decodeSeconds: decoded.isFinite ? decoded : shown,
-                byteCount: buffer.totalSampleSize,
-                isKeyframe: !notSync))
+            polls += 1
+            // A pool per sample: see FrameSampler.sequence.
+            more = autoreleasepool {
+                guard let buffer = output.copyNextSampleBuffer() else { return false }
+                let shown = buffer.presentationTimeStamp.seconds
+                guard shown.isFinite, buffer.numSamples > 0 else { return true }
+                if first == nil { first = try? buffer.dataBuffer?.dataBytes().prefix(65_536) }
+                let decoded = buffer.decodeTimeStamp.seconds
+                let notSync = buffer.sampleAttachments.first?[.notSync] as? Bool ?? false
+                samples.append(FrameSample(
+                    presentationSeconds: shown,
+                    decodeSeconds: decoded.isFinite ? decoded : shown,
+                    byteCount: buffer.totalSampleSize,
+                    isKeyframe: !notSync))
+                return true
+            }
         }
         return (samples, first)
     }

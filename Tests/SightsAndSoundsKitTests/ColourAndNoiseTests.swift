@@ -101,6 +101,22 @@ import Testing
     }
 }
 
+extension ChromaReadingTests {
+    @Test func anOddWidthPictureIsReadWithoutRunningOffItsRows() {
+        // 853 luma samples a row over 427 chroma samples: not a clean two.
+        let luma = SyntheticPicture.frame(width: 853, height: 480) { x, _ in (x / 40).isMultiple(of: 2) ? 180 : 70 }
+        let chroma = SyntheticPicture.frame(width: 427, height: 240) { x, _ in (x / 20).isMultiple(of: 2) ? 180 : 70 }
+        let frame = PictureFrame(
+            width: 853, height: 480, luma: luma.luma, chromaWidth: 427, chromaHeight: 240,
+            cb: chroma.luma, cr: chroma.luma)
+        let whole = PictureGeometry.ActiveArea(left: 0, top: 0, width: 853, height: 480)
+        let findings = ChromaReading.measure([frame, frame, frame], in: whole)
+        let offset = findings.value("chroma.horizontalOffsetSamples")
+        #expect(offset != nil)
+        #expect(abs(offset ?? 9) < 0.5)
+    }
+}
+
 @Suite struct NoiseReadingTests {
     private let whole = PictureGeometry.ActiveArea(left: 0, top: 0, width: 320, height: 192)
 
