@@ -51,6 +51,46 @@ extension LibraryDatabase {
         }
     }
 
+    /// SQLite's sidecar files for a database at `url`.
+    static func sidecars(of url: URL) -> [URL] {
+        ["-wal", "-shm"].map { URL(fileURLWithPath: url.path + $0) }
+    }
+
+    /// Put `backup` in place of the CLOSED library file at `libraryURL`.
+    /// The current file is moved into `archiveDirectory` first (never
+    /// deleted) and its URL returned; nil when there was no current file.
+    ///
+    /// The sidecars travel with the file they belong to. A `-wal` left
+    /// beside the restored file would be read by SQLite as the restored
+    /// database's pending writes, though it belongs to the old one —
+    /// which is how a database gets corrupted by a restore. The backup is
+    /// verified before anything moves, so a bad backup changes nothing.
+    @discardableResult
+    public static func restore(
+        backup: URL, over libraryURL: URL, archivingInto archiveDirectory: URL
+    ) throws -> URL? {
+        _ = try verifyBackup(at: backup)
+        let files = FileManager.default
+        var archived: URL?
+        if files.fileExists(atPath: libraryURL.path) {
+            try files.createDirectory(at: archiveDirectory, withIntermediateDirectories: true)
+            let name = libraryURL.deletingPathExtension().lastPathComponent
+            let archive = archiveDirectory.appendingPathComponent(
+                "\(name) pre-restore \(collisionStamp())-\(UUID().uuidString.prefix(8)).sqlite")
+            try files.moveItem(at: libraryURL, to: archive)
+            archived = archive
+            for (sidecar, destination) in zip(sidecars(of: libraryURL), sidecars(of: archive))
+            where files.fileExists(atPath: sidecar.path) {
+                try files.moveItem(at: sidecar, to: destination)
+            }
+        } else {
+            // No main file, but a stray sidecar would still be adopted.
+            for sidecar in sidecars(of: libraryURL) { try? files.removeItem(at: sidecar) }
+        }
+        try files.copyItem(at: backup, to: libraryURL)
+        return archived
+    }
+
     /// The backups home: the settings-chosen directory, else Application
     /// Support/SightsAndSounds/Backups.
     /// One backup on disk, as the list shows it.
