@@ -289,7 +289,7 @@ import Testing
     @Test func theSubjectComesFromTheLibrary() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Subject")
-        let source = Source(name: "S", rootPath: "/tmp/subject")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("subject"))
         let category = TagCategory(name: "Band")
         let item = MediaItem(sourceID: source.id, kind: .video, relativePath: "shows/a_b.mp4", needsReview: false)
         try await library.writer.write { db in

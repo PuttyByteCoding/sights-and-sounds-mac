@@ -10,7 +10,7 @@ import Testing
     private func makeLibrary() async throws -> (LibraryDatabase, JobRunner, Source) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Dupes")
-        let source = Source(name: "S", rootPath: "/tmp/dupes")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("dupes"))
         try await library.writer.write { try source.insert($0) }
         let runner = JobRunner(library: library)
         await runner.register(HashDuplicateSweepJob.self)

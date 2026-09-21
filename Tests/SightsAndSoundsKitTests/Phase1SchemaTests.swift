@@ -32,7 +32,7 @@ import Testing
         #expect(try upgraded.appliedMigrations() == ExpectedMigrations.all)
         // Phase 1 tables exist and are usable.
         try upgraded.writer.write { db in
-            try Source(name: "S", rootPath: "/tmp/media").insert(db)
+            try Source(name: "S", rootPath: TestRoots.unreachable("media")).insert(db)
         }
     }
 
@@ -61,7 +61,7 @@ import Testing
 
     @Test func disabledSourceLeavesEveryListing() throws {
         let f = try FilterFixture()
-        let extra = Source(name: "External", rootPath: "/Volumes/Ext", kind: .externalDrive)
+        let extra = Source(name: "External", rootPath: TestRoots.unreachable("Ext"), kind: .externalDrive)
         let extraItem = MediaItem(sourceID: extra.id, kind: .video, relativePath: "more/z.mp4", needsReview: false)
         try f.library.writer.write { db in
             try extra.insert(db)
@@ -107,7 +107,7 @@ import Testing
             func moveFile(at url: URL, to destination: URL) throws {}
             func removeFile(at url: URL) throws {}
         }
-        let source = Source(name: "Ext", rootPath: "/Volumes/Gone")
+        let source = Source(name: "Ext", rootPath: TestRoots.unreachable("Gone"))
         #expect(source.isOnline(using: FakeAccess(reachable: true)))
         #expect(!source.isOnline(using: FakeAccess(reachable: false)))
     }

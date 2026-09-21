@@ -8,7 +8,7 @@ struct FilterFixture {
     let library: LibraryDatabase
 
     // Every item hangs off one enabled source.
-    let mainSource = Source(name: "Main", rootPath: "/Volumes/Media/Concerts")
+    let mainSource = Source(name: "Main", rootPath: TestRoots.unreachable("Concerts"))
 
     // Categories
     let band = TagCategory(name: "Band")

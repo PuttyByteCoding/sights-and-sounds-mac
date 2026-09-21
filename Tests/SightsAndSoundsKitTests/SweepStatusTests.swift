@@ -9,7 +9,7 @@ import Testing
     @Test func thumbnailStatusCountsVideoItemsWithoutACacheFile() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Thumbs")
-        let source = Source(name: "S", rootPath: "/tmp/thumbs")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("thumbs"))
         try await library.writer.write { db in
             try source.insert(db)
             try MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false).insert(db)

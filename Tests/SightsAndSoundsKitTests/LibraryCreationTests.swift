@@ -79,7 +79,7 @@ import Testing
         plan.categories[0].name = "Artist"       // renamed in review
         plan.categories[3].include = false       // Year excluded in review
         plan.itemFields[2].include = false       // Setlist Notes excluded
-        let source = Source(name: "Shows", rootPath: "/Volumes/Media/Shows")
+        let source = Source(name: "Shows", rootPath: TestRoots.unreachable("Shows"))
 
         let library = try LibraryCreator.create(
             at: dir.appendingPathComponent("My Concerts.sqlite"),

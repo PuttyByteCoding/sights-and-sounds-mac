@@ -200,7 +200,7 @@ import Testing
     @Test func itemsWithTagAreBoundedWithTrueTotal() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Company")
-        let source = Source(name: "S", rootPath: "/tmp/company")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("company"))
         let category = TagCategory(name: "Taper")
         let tag = Tag(tagCategoryID: category.id, name: "Mike Jones")
         try await library.writer.write { db in

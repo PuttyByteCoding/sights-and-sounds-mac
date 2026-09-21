@@ -41,8 +41,8 @@ import Testing
         // Distinct vocabularies, written while both are open.
         let bandCat = TagCategory(name: "Band")
         let subjectCat = TagCategory(name: "Subject")
-        let concertSource = Source(name: "Shows", rootPath: "/Volumes/Media/Shows")
-        let courseSource = Source(name: "Courses", rootPath: "/Volumes/Media/Courses")
+        let concertSource = Source(name: "Shows", rootPath: TestRoots.unreachable("Shows"))
+        let courseSource = Source(name: "Courses", rootPath: TestRoots.unreachable("Courses"))
         let concert = MediaItem(sourceID: concertSource.id, kind: .video, relativePath: "shows/x.mp4")
         let lesson = MediaItem(sourceID: courseSource.id, kind: .video, relativePath: "swift/lesson-01.mp4")
         try concerts.writer.write { db in

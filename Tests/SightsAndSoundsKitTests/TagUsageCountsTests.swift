@@ -8,7 +8,7 @@ import Testing
     @Test func everyTagIsCountedAcrossCategories() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Usage")
-        let source = Source(name: "S", rootPath: "/tmp/usage")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("usage"))
         let band = TagCategory(name: "Band")
         let venue = TagCategory(name: "Venue")
         let a = MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4", needsReview: false)

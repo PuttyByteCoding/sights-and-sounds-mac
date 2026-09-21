@@ -10,7 +10,7 @@ import Testing
     private func makeLibrary() throws -> (LibraryDatabase, [MediaItem]) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Menu")
-        let source = Source(name: "S", rootPath: "/tmp/sas-menu-facts")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("sas-menu-facts"))
         let items = (0..<3).map {
             MediaItem(sourceID: source.id, kind: .video, relativePath: "v\($0).mp4")
         }

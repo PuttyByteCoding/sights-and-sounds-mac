@@ -9,7 +9,7 @@ import Testing
     private func makeLibrary() async throws -> (LibraryDatabase, Source) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Rules")
-        let source = Source(name: "S", rootPath: "/tmp/rules")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("rules"))
         try await library.writer.write { try source.insert($0) }
         return (library, source)
     }
@@ -193,7 +193,7 @@ import Testing
     private func makeLibrary() async throws -> (LibraryDatabase, Source, TagCategory) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Applying")
-        let source = Source(name: "S", rootPath: "/tmp/applying")
+        let source = Source(name: "S", rootPath: TestRoots.unreachable("applying"))
         let category = TagCategory(name: "Band")
         try await library.writer.write { db in
             try source.insert(db)
