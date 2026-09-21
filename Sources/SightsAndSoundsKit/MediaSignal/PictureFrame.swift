@@ -71,7 +71,7 @@ public struct PictureFrame: Sendable {
 extension PictureFrame {
     /// Copy a bi-planar Y'CbCr pixel buffer (8-bit `420v`/`420f` or 10-bit
     /// `x420`/`xf20`) into planes. Nil for any other layout.
-    init?(_ buffer: CVPixelBuffer, positionSeconds: Double) {
+    init?(_ buffer: CVPixelBuffer, positionSeconds: Double, lumaOnly: Bool = false) {
         let format = CVPixelBufferGetPixelFormatType(buffer)
         let tenBit: Bool
         switch format {
@@ -89,8 +89,10 @@ extension PictureFrame {
 
         let width = CVPixelBufferGetWidthOfPlane(buffer, 0)
         let height = CVPixelBufferGetHeightOfPlane(buffer, 0)
-        let chromaWidth = CVPixelBufferGetWidthOfPlane(buffer, 1)
-        let chromaHeight = CVPixelBufferGetHeightOfPlane(buffer, 1)
+        // Sequences are measured on luma alone, a few hundred frames at a
+        // time; skipping the chroma copy is most of the cost of a frame.
+        let chromaWidth = lumaOnly ? 0 : CVPixelBufferGetWidthOfPlane(buffer, 1)
+        let chromaHeight = lumaOnly ? 0 : CVPixelBufferGetHeightOfPlane(buffer, 1)
         guard width > 0, height > 0,
               let lumaBase = CVPixelBufferGetBaseAddressOfPlane(buffer, 0),
               let chromaBase = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)
@@ -149,6 +151,37 @@ extension PictureFrame {
             width: width, height: height, luma: luma, chromaWidth: chromaWidth,
             chromaHeight: chromaHeight, cb: cb, cr: cr, positionSeconds: positionSeconds,
             bitDepth: tenBit ? 10 : 8)
+    }
+}
+
+extension PictureFrame {
+    /// The luma of `area`, averaged across in whole-pixel groups until it
+    /// is no wider than `maxWidth`. Rows are left alone: interlacing and
+    /// line doubling live in the rows, and averaging them away would
+    /// remove what the sequence measures are looking for.
+    public func working(in area: PictureGeometry.ActiveArea? = nil, maxWidth: Int = 960) -> PictureFrame {
+        let area = area ?? .init(left: 0, top: 0, width: width, height: height)
+        let factor = max((area.width + maxWidth - 1) / maxWidth, 1)
+        let outWidth = area.width / factor
+        guard outWidth > 0, area.height > 0,
+              area.left + area.width <= width, area.top + area.height <= height
+        else { return self }
+        if factor == 1, area.width == width, area.height == height { return self }
+
+        var out = [Float](repeating: 0, count: outWidth * area.height)
+        let box = [Float](repeating: 1 / Float(factor), count: factor)
+        luma.withUnsafeBufferPointer { plane in
+            out.withUnsafeMutableBufferPointer { target in
+                for row in 0..<area.height {
+                    vDSP_desamp(
+                        plane.baseAddress! + (area.top + row) * width + area.left, vDSP_Stride(factor), box,
+                        target.baseAddress! + row * outWidth, vDSP_Length(outWidth), vDSP_Length(factor))
+                }
+            }
+        }
+        return PictureFrame(
+            width: outWidth, height: area.height, luma: out, positionSeconds: positionSeconds,
+            bitDepth: bitDepth)
     }
 }
 

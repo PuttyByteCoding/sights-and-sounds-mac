@@ -158,4 +158,62 @@ public enum FrameSampler {
         else { return 1 }
         return horizontal / vertical
     }
+
+    // MARK: - Sequences
+
+    /// Where the decoded windows start, as fractions of the running time.
+    public static let windowFractions = [0.2, 0.4, 0.6, 0.8]
+    static let windowSeconds = 10.0
+
+    /// The windows to decode for a file of this length: four of ten
+    /// seconds, or for a short file one window of as much as there is.
+    public static func windows(durationSeconds: Double) -> [(start: Double, seconds: Double)] {
+        guard durationSeconds > 0 else { return [] }
+        if durationSeconds < windowSeconds * 6 {
+            let length = min(durationSeconds * 0.8, windowSeconds * 2)
+            return [(durationSeconds * 0.1, length)]
+        }
+        return windowFractions.map { (durationSeconds * $0, windowSeconds) }
+    }
+
+    /// Decode every frame from `start` for `seconds`, in order, handing
+    /// each to `each` as luma cropped to `area`. Returns the frame count.
+    @discardableResult
+    public static func sequence(
+        of url: URL, from start: Double, seconds: Double, area: PictureGeometry.ActiveArea? = nil,
+        isCancelled: @Sendable () async -> Bool = { false },
+        each: (PictureFrame) -> Void
+    ) async throws -> Int {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first else {
+            throw SignalStageError("no video track AVFoundation can read")
+        }
+        let description = (try? await track.load(.formatDescriptions))?.first
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(
+            track: track,
+            outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: pixelFormat(for: description)])
+        output.alwaysCopiesSampleData = false
+        reader.add(output)
+        reader.timeRange = CMTimeRange(
+            start: CMTime(seconds: start, preferredTimescale: 600),
+            duration: CMTime(seconds: seconds, preferredTimescale: 600))
+        guard reader.startReading() else {
+            throw SignalStageError("cannot decode frames: \(reader.error?.localizedDescription ?? "unknown")")
+        }
+        var count = 0
+        while let buffer = output.copyNextSampleBuffer() {
+            if count.isMultiple(of: 60), await isCancelled() {
+                reader.cancelReading()
+                throw CancellationError()
+            }
+            let shown = buffer.presentationTimeStamp.seconds
+            guard shown.isFinite, let pixels = buffer.imageBuffer,
+                  let frame = PictureFrame(pixels, positionSeconds: shown, lumaOnly: true)
+            else { continue }
+            each(frame.working(in: area))
+            count += 1
+        }
+        return count
+    }
 }
