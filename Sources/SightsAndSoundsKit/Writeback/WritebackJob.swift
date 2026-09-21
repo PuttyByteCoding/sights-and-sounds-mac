@@ -129,7 +129,11 @@ public struct WritebackJob: Job {
             let result = TagWriters.write(fields: fields, to: url)
             if result.success {
                 written += 1
-                try await record(.written, fallback: result.usedRemuxFallback)
+                // A write that took the slow path keeps the reason with it.
+                try await record(
+                    .written,
+                    error: result.nativeToolError.map { "written by remux after \($0)" },
+                    fallback: result.usedRemuxFallback)
                 if result.usedRemuxFallback {
                     // Bytes changed: hash is stale, size may differ.
                     let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
