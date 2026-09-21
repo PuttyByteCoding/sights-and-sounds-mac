@@ -36,11 +36,46 @@ public protocol FileAccess: Sendable {
 
     /// Permanently remove a file. The caller owns confirmation.
     func removeFile(at url: URL) throws
+
+    /// Get rid of a file the user asked to delete, recoverably where the
+    /// volume allows: to the Trash, else for good. Says which happened.
+    func discardFile(at url: URL) throws -> FileDiscard
+}
+
+/// Where a discarded file went.
+public enum FileDiscard: Sendable, Equatable {
+    case trashed
+    /// The volume has no Trash (many network shares do not).
+    case deletedPermanently
+}
+
+extension FileAccess {
+    /// A boundary that knows nothing about a Trash deletes.
+    public func discardFile(at url: URL) throws -> FileDiscard {
+        try removeFile(at: url)
+        return .deletedPermanently
+    }
 }
 
 /// The real implementation over `FileManager`.
 public struct LiveFileAccess: FileAccess {
-    public init() {}
+    public enum Discarding: Sendable { case toTrash, permanently }
+
+    private let discarding: Discarding
+    private let trash: @Sendable (URL) throws -> Void
+
+    /// `discarding` is `.toTrash` for the app. `trash` is how a file gets
+    /// there — the system's by default; a test hands in its own so a test
+    /// run never fills the real Trash.
+    public init(
+        discarding: Discarding = .toTrash,
+        trash: @escaping @Sendable (URL) throws -> Void = { url in
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        }
+    ) {
+        self.discarding = discarding
+        self.trash = trash
+    }
 
     public func isReachable(_ url: URL) -> Bool {
         FileManager.default.fileExists(atPath: url.path)
@@ -85,5 +120,22 @@ public struct LiveFileAccess: FileAccess {
 
     public func removeFile(at url: URL) throws {
         try FileManager.default.removeItem(at: url)
+    }
+
+    public func discardFile(at url: URL) throws -> FileDiscard {
+        if discarding == .toTrash {
+            do {
+                try trash(url)
+                return .trashed
+            } catch {
+                // No Trash on this volume, or no permission to use it. The
+                // user confirmed a delete; it still happens, and the
+                // caller is told it was for good.
+                AppLog.shared.warning(
+                    "files", "could not move \(url.lastPathComponent) to the Trash, deleting it instead: \(error)")
+            }
+        }
+        try removeFile(at: url)
+        return .deletedPermanently
     }
 }

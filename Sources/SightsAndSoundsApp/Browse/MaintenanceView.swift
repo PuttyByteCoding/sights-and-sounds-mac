@@ -507,7 +507,7 @@ struct MaintenanceView: View {
                     saveSegments: { model.saveSegmentsAsFiles($0) },
                     deleteTheOthers: { purge() })
                 .confirmationDialog(
-                    "Permanently delete \(stagedCount) marked items and their staged files? This cannot be undone.",
+                    "Remove \(stagedCount) marked items and move their staged files to the Trash? On a volume that has no Trash the files are deleted for good.",
                     isPresented: $confirmPurge
                 ) {
                     Button("Delete \(stagedCount) Items", role: .destructive) { purge() }
@@ -607,7 +607,11 @@ struct MaintenanceView: View {
     private func purge() {
         do {
             let outcome = try model.library.purgeDeleted()
-            var text = "\(outcome.rowsDeleted) items removed, \(outcome.filesDeleted) files deleted."
+            var text = "\(outcome.rowsDeleted) items removed, \(outcome.filesTrashed) files moved to the Trash."
+            let permanent = outcome.filesDeleted - outcome.filesTrashed
+            if permanent > 0 {
+                text += " \(permanent) deleted for good: their volume has no Trash."
+            }
             if !outcome.fileFailures.isEmpty {
                 text += " \(outcome.fileFailures.count) files could not be deleted and their items were kept."
             }

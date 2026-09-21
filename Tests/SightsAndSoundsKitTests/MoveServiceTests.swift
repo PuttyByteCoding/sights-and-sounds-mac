@@ -47,6 +47,10 @@ import Testing
             try await library.writer.read { try MediaItem.fetchOne($0, key: id)! }
         }
 
+        /// Purge in tests deletes outright: the default moves files to
+        /// the Trash, and a test run must not fill the real one.
+        static let deleting = LiveFileAccess(discarding: .permanently)
+
         func exists(_ path: String) -> Bool {
             FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
         }
@@ -229,7 +233,7 @@ import Testing
         try f.library.stage(.toDelete, itemID: doomed.id)
         try f.library.stage(.toDelete, itemID: doomedClip.id)
 
-        let outcome = try f.library.purgeDeleted()
+        let outcome = try f.library.purgeDeleted(fileAccess: MoveFixture.deleting)
         #expect(outcome.rowsDeleted == 2)
         #expect(outcome.filesDeleted == 1)  // the clip has no file of its own
         #expect(outcome.fileFailures.isEmpty)
@@ -241,6 +245,48 @@ import Testing
         // The move log survives the purge, labeled by snapshot.
         let logs = try f.library.moveLogs()
         #expect(logs.contains { $0.fileName == "doomed.mp4" })
+    }
+
+    // MARK: Purge goes to the Trash
+
+    /// A stand-in Trash: a folder the test owns.
+    private func trashingAccess(into trash: URL) -> LiveFileAccess {
+        LiveFileAccess(discarding: .toTrash) { url in
+            try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: url, to: trash.appendingPathComponent(url.lastPathComponent))
+        }
+    }
+
+    @Test func purgedFilesGoToTheTrashNotIntoThinAir() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let item = try await f.addItem(path: "shows/doomed.mp4")
+        try f.library.stage(.toDelete, itemID: item.id)
+        let trash = f.root.appendingPathComponent(".test-trash", isDirectory: true)
+
+        let outcome = try f.library.purgeDeleted(fileAccess: trashingAccess(into: trash))
+
+        #expect(outcome.filesDeleted == 1)
+        #expect(outcome.filesTrashed == 1)
+        #expect(!f.exists("_ToDelete/shows/doomed.mp4"))
+        #expect(FileManager.default.fileExists(atPath: trash.appendingPathComponent("doomed.mp4").path))
+    }
+
+    /// Some volumes have no Trash (many network shares). The file still
+    /// goes, and the outcome says it went for good.
+    @Test func aVolumeWithNoTrashDeletesAndSaysSo() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let item = try await f.addItem(path: "shows/doomed.mp4")
+        try f.library.stage(.toDelete, itemID: item.id)
+        struct NoTrashHere: Error {}
+        let noTrash = LiveFileAccess(discarding: .toTrash) { _ in throw NoTrashHere() }
+
+        let outcome = try f.library.purgeDeleted(fileAccess: noTrash)
+
+        #expect(outcome.filesDeleted == 1)
+        #expect(outcome.filesTrashed == 0)
+        #expect(!f.exists("_ToDelete/shows/doomed.mp4"))
     }
 
     // MARK: A show with segments
@@ -260,7 +306,7 @@ import Testing
         try f.library.stage(.toDelete, itemID: show.id)
         try f.library.stage(.toDelete, itemID: plain.id)
 
-        let outcome = try f.library.purgeDeleted()
+        let outcome = try f.library.purgeDeleted(fileAccess: MoveFixture.deleting)
 
         #expect(outcome.keptForSegments == ["show.mp4: 2 segments are not saved as files"])
         #expect(outcome.filesDeleted == 1)  // the plain one
@@ -282,7 +328,7 @@ import Testing
             parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
         try f.library.stage(.toDelete, itemID: show.id)
 
-        let outcome = try f.library.purgeDeleted()
+        let outcome = try f.library.purgeDeleted(fileAccess: MoveFixture.deleting)
 
         #expect(outcome.rowsDeleted == 0)
         #expect(outcome.keptForSegments.count == 1)
@@ -322,7 +368,7 @@ import Testing
         }
         try f.library.stage(.toDelete, itemID: show.id)
 
-        let outcome = try f.library.purgeDeleted()
+        let outcome = try f.library.purgeDeleted(fileAccess: MoveFixture.deleting)
 
         #expect(outcome.keptForSegments.isEmpty)
         #expect(outcome.filesDeleted == 1)
@@ -343,7 +389,7 @@ import Testing
         try f.library.stage(.toDelete, itemID: show.id)
         try f.library.stage(.toDelete, itemID: song.id)
 
-        let outcome = try f.library.purgeDeleted()
+        let outcome = try f.library.purgeDeleted(fileAccess: MoveFixture.deleting)
 
         #expect(outcome.keptForSegments.isEmpty)
         #expect(outcome.rowsDeleted == 2)
@@ -360,7 +406,7 @@ import Testing
         try f.library.stage(.toDelete, itemID: song.id)
 
         // Only the show was ticked.
-        let outcome = try f.library.purgeDeleted(itemIDs: [show.id])
+        let outcome = try f.library.purgeDeleted(itemIDs: [show.id], fileAccess: MoveFixture.deleting)
 
         #expect(outcome.rowFailures.isEmpty)
         #expect(outcome.filesDeleted == 1)
