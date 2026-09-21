@@ -80,9 +80,14 @@ public struct RepairJob: Job {
             try Source.fetchOne($0, key: item.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-        let archiveRelative = try LibraryDatabase.replaceFile(
-            under: root, currentRelative: item.relativePath, newRelative: item.relativePath,
-            with: tempURL, fileAccess: fileAccess)
+        let swap = try library.journaledReplace(
+            item: item, under: root, newRelative: item.relativePath, with: tempURL,
+            fileAccess: fileAccess)
+        let archiveRelative = swap.archiveRelative
+        // Cleared now, not with the row update below: the repaired file
+        // keeps its name, so the swap is complete here, and the unstage
+        // that follows is a journaled move of its own.
+        try await library.writer.write { try swap.clear($0) }
         await context.reportProgress(current: 2, total: 3)
 
         // The file plays: clear the flag and the staging that came with

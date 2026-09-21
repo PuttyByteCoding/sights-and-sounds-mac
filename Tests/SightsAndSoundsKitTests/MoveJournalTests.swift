@@ -156,4 +156,129 @@ import Testing
         #expect(try f.pending == 1)
         #expect(try f.path(of: item) == "inbox/a.mp4")
     }
+
+    // MARK: Reverts
+
+    /// A revert is a move too, with the same gap between disk and row.
+    @Test func aRevertThatReachedTheDiskIsFinishedOnTheNextOpen() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let item = try f.addItem("inbox/a.mp4")
+        let log = try f.library.moveFile(itemID: item.id, to: "shows/a.mp4")
+        // The app died mid-revert: intent written, file back, row not.
+        try f.library.writer.write { [source = f.source] db in
+            try PendingMove(
+                mediaItemID: item.id, sourceID: source.id, fileName: "a.mp4",
+                fromPath: "shows/a.mp4", toPath: "inbox/a.mp4", sessionID: nil,
+                revertsLogID: log.id).insert(db)
+        }
+        try f.moveOnDisk("shows/a.mp4", "inbox/a.mp4")
+
+        let outcome = try f.library.reconcileInterruptedMoves()
+
+        #expect(outcome.finished == 1)
+        #expect(try f.path(of: item) == "inbox/a.mp4")
+        let logs = try f.library.moveLogs()
+        #expect(logs.count == 1)  // the revert marks the move; it is not a second move
+        #expect(logs.first?.revertedAt != nil)
+        #expect(try f.pending == 0)
+    }
+
+    @Test func anOrdinaryRevertLeavesNothingPending() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let item = try f.addItem("inbox/a.mp4")
+        let log = try f.library.moveFile(itemID: item.id, to: "shows/a.mp4")
+
+        try f.library.revertMove(log.id)
+
+        #expect(try f.pending == 0)
+        #expect(try f.path(of: item) == "inbox/a.mp4")
+    }
+
+    // MARK: Swaps (Remux, Repair)
+
+    /// A swap archives the original and then lands the new file. Stopped
+    /// between the two, the item has NO file where its row says — the one
+    /// case where settling means putting a file back.
+    @Test func aSwapStoppedAfterArchivingPutsTheOriginalBack() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let item = try f.addItem("shows/a.mkv")
+        try f.library.writer.write { [source = f.source] db in
+            try PendingMove(
+                mediaItemID: item.id, sourceID: source.id, fileName: "a.mkv",
+                fromPath: "shows/a.mkv", toPath: "shows/a.mp4", sessionID: nil,
+                archivePath: "_Replaced/shows/a.mkv").insert(db)
+        }
+        try f.moveOnDisk("shows/a.mkv", "_Replaced/shows/a.mkv")
+
+        let outcome = try f.library.reconcileInterruptedMoves()
+
+        #expect(outcome.restored == 1)
+        #expect(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("shows/a.mkv").path))
+        #expect(!FileManager.default.fileExists(atPath: f.root.appendingPathComponent("_Replaced/shows/a.mkv").path))
+        #expect(try f.path(of: item) == "shows/a.mkv")
+        #expect(try f.pending == 0)
+    }
+
+    @Test func aSwapThatLandedGetsItsRow() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let item = try f.addItem("shows/a.mkv")
+        try f.library.writer.write { [source = f.source] db in
+            try PendingMove(
+                mediaItemID: item.id, sourceID: source.id, fileName: "a.mkv",
+                fromPath: "shows/a.mkv", toPath: "shows/a.mp4", sessionID: nil,
+                archivePath: "_Replaced/shows/a.mkv").insert(db)
+        }
+        try f.moveOnDisk("shows/a.mkv", "_Replaced/shows/a.mkv")
+        try Data("remuxed, and longer".utf8).write(to: f.root.appendingPathComponent("shows/a.mp4"))
+
+        let outcome = try f.library.reconcileInterruptedMoves()
+
+        #expect(outcome.finished == 1)
+        #expect(try f.path(of: item) == "shows/a.mp4")
+        let size = try f.library.writer.read { try MediaItem.fetchOne($0, key: item.id)!.fileSize }
+        #expect(size == 19)  // the new file's, not the original's
+        #expect(try f.library.moveLogs().isEmpty)  // a swap is not a move in the history
+        #expect(try f.pending == 0)
+    }
+
+    @Test func aSwapThatNeverStartedIsForgotten() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let item = try f.addItem("shows/a.mkv")
+        try f.library.writer.write { [source = f.source] db in
+            try PendingMove(
+                mediaItemID: item.id, sourceID: source.id, fileName: "a.mkv",
+                fromPath: "shows/a.mkv", toPath: "shows/a.mp4", sessionID: nil,
+                archivePath: "_Replaced/shows/a.mkv").insert(db)
+        }
+
+        let outcome = try f.library.reconcileInterruptedMoves()
+
+        #expect(outcome.forgotten == 1)
+        #expect(try f.path(of: item) == "shows/a.mkv")
+        #expect(try f.pending == 0)
+    }
+
+    @Test func aJournaledSwapThatSucceedsLeavesNothingPending() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let item = try f.addItem("shows/a.mkv")
+        let result = f.root.appendingPathComponent("work/result.mp4")
+        try FileManager.default.createDirectory(
+            at: result.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("remuxed".utf8).write(to: result)
+
+        let swap = try f.library.journaledReplace(
+            item: item, under: f.root, newRelative: "shows/a.mp4", with: result,
+            fileAccess: LiveFileAccess())
+        #expect(try f.pending == 1)  // until the job's own row update clears it
+        try f.library.writer.write { db in try swap.clear(db) }
+
+        #expect(swap.archiveRelative == "_Replaced/shows/a.mkv")
+        #expect(try f.pending == 0)
+    }
 }

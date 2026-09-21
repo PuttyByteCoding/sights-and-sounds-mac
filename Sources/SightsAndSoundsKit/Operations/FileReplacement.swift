@@ -46,10 +46,20 @@ extension LibraryDatabase {
 
     /// Archive `currentRelative` under the archive folder and move
     /// `replacement` to `newRelative`. Returns the archive's relative path.
+    /// Where `currentRelative` would be archived: under the archive
+    /// folder, stamped if that name is already taken there.
+    static func archivePath(for currentRelative: String, under root: URL, fileAccess: any FileAccess) -> String {
+        let plain = "\(MediaPath.archiveFolder)/\(currentRelative)"
+        guard fileAccess.isReachable(root.appendingPathComponent(plain)) else { return plain }
+        let ext = (plain as NSString).pathExtension
+        let base = (plain as NSString).deletingPathExtension
+        return ext.isEmpty ? "\(base)-\(collisionStamp())" : "\(base)-\(collisionStamp()).\(ext)"
+    }
+
     @discardableResult
     static func replaceFile(
         under root: URL, currentRelative: String, newRelative: String,
-        with replacement: URL, fileAccess: any FileAccess
+        with replacement: URL, archiveRelative: String? = nil, fileAccess: any FileAccess
     ) throws -> String {
         let currentURL = root.appendingPathComponent(currentRelative)
         let newURL = root.appendingPathComponent(newRelative)
@@ -61,13 +71,8 @@ extension LibraryDatabase {
             throw FileReplacementError.targetExists(newRelative)
         }
 
-        var archiveRelative = "\(MediaPath.archiveFolder)/\(currentRelative)"
-        if fileAccess.isReachable(root.appendingPathComponent(archiveRelative)) {
-            let ext = (archiveRelative as NSString).pathExtension
-            let base = (archiveRelative as NSString).deletingPathExtension
-            archiveRelative = ext.isEmpty
-                ? "\(base)-\(collisionStamp())" : "\(base)-\(collisionStamp()).\(ext)"
-        }
+        let archiveRelative = archiveRelative
+            ?? archivePath(for: currentRelative, under: root, fileAccess: fileAccess)
         let archiveURL = root.appendingPathComponent(archiveRelative)
 
         try moveWithRetries(fileAccess: fileAccess, from: currentURL, to: archiveURL)

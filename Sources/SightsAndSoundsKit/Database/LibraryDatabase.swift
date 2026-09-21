@@ -835,6 +835,14 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // The journal also covers reverts and file swaps; see PendingMove.
+        migrator.registerMigration("moveJournalRevertsAndSwaps") { db in
+            try db.alter(table: "pendingMove") { t in
+                t.add(column: "revertsLogID", .blob)
+                t.add(column: "archivePath", .text)
+            }
+        }
+
         return migrator
     }
 

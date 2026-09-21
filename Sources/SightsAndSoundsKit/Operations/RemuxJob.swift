@@ -90,9 +90,9 @@ public struct RemuxJob: Job {
         if (newRelative as NSString).pathExtension.lowercased() != "mp4" {
             newRelative = ((newRelative as NSString).deletingPathExtension) + ".mp4"
         }
-        let archiveRelative = try LibraryDatabase.replaceFile(
-            under: root, currentRelative: item.relativePath, newRelative: newRelative,
-            with: tempURL, fileAccess: fileAccess)
+        let swap = try library.journaledReplace(
+            item: item, under: root, newRelative: newRelative, with: tempURL, fileAccess: fileAccess)
+        let archiveRelative = swap.archiveRelative
         await context.reportProgress(current: 2, total: 3)
 
         let newSize = (try? fileAccess.fileSize(at: root.appendingPathComponent(newRelative))) ?? 0
@@ -104,6 +104,7 @@ public struct RemuxJob: Job {
             updated.fileSize = newSize
             updated.bitrate = finalBitrate ?? updated.bitrate
             try updated.updateWithSegmentPaths(db)
+            try swap.clear(db)
         }
         await context.reportProgress(current: 3, total: 3)
         await context.setSummary(
