@@ -108,23 +108,14 @@ enum ProbeOutput {
         guard let ffprobe = TagWriters.ffprobePath() else {
             return "ffprobe not found — brew install ffmpeg to capture playback evidence"
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ffprobe)
-        // `-v error` keeps the banner out and the complaints in, which is
-        // the half worth reading.
-        process.arguments = ["-v", "error", "-show_format", "-show_streams", url.path]
-        let out = Pipe(), err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
         do {
-            try process.run()
-            let output = out.fileHandleForReading.readDataToEndOfFile()
-            let errors = err.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            let text = [
-                String(data: errors, encoding: .utf8) ?? "",
-                String(data: output, encoding: .utf8) ?? "",
-            ].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            // `-v error` keeps the banner out and the complaints in, which
+            // is the half worth reading. A damaged file can complain at
+            // length, which is why both streams are read as it runs.
+            let output = try ProcessRunner.run(
+                ffprobe, ["-v", "error", "-show_format", "-show_streams", url.path])
+            let text = [output.stderrText, output.stdoutText]
+                .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? "ffprobe reported nothing — the file opened cleanly." : text
         } catch {
             return "ffprobe could not run: \(error)"
