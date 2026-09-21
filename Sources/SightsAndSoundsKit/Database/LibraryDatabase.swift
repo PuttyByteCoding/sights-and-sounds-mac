@@ -917,6 +917,75 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // What a file says about itself, what decoding it shows, what
+        // that is evidence of, and what is concluded from the evidence:
+        // four tables, because the four are wrong in different ways and
+        // must never be read as one another. A re-encoded file declares
+        // its transcoder's output; only the measurements speak about
+        // where the picture came from.
+        //
+        // Declared and measured rows are key/value so a later stage adds
+        // properties without a migration. `mediaSignalStage` is the sweep
+        // marker, one row per item per stage, carrying the stage's
+        // version: a stage whose version has moved on is simply missing
+        // again, and a stopped job loses one stage rather than a file.
+        migrator.registerMigration("mediaSignal") { db in
+            try db.execute(sql: """
+                CREATE TABLE mediaSignalStage (
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    stage TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    completedAt DATETIME NOT NULL,
+                    failureMessage TEXT,
+                    PRIMARY KEY (mediaItemID, stage)
+                ) WITHOUT ROWID;
+
+                CREATE TABLE mediaSignalDeclared (
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    PRIMARY KEY (mediaItemID, key)
+                ) WITHOUT ROWID;
+
+                CREATE TABLE mediaSignalMeasurement (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    stage TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    positionSeconds DOUBLE,
+                    value DOUBLE NOT NULL
+                );
+                CREATE INDEX mediaSignalMeasurement_item ON mediaSignalMeasurement(mediaItemID, key, scope);
+
+                CREATE TABLE mediaSignalEvidence (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    key TEXT NOT NULL,
+                    about TEXT NOT NULL,
+                    strength DOUBLE NOT NULL,
+                    detail TEXT NOT NULL,
+                    UNIQUE (mediaItemID, key)
+                );
+
+                CREATE TABLE mediaSignalInference (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    confidence DOUBLE NOT NULL,
+                    UNIQUE (mediaItemID, kind, category)
+                );
+
+                CREATE TABLE mediaSignalInferenceEvidence (
+                    inferenceID INTEGER NOT NULL REFERENCES mediaSignalInference(id) ON DELETE CASCADE,
+                    evidenceID INTEGER NOT NULL REFERENCES mediaSignalEvidence(id) ON DELETE CASCADE,
+                    PRIMARY KEY (inferenceID, evidenceID)
+                ) WITHOUT ROWID;
+                """)
+        }
+
         return migrator
     }
 

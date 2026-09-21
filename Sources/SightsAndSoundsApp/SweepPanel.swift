@@ -3,7 +3,7 @@ import SightsAndSoundsKit
 
 /// The derived-data ledger inside Background Tasks: one row per data
 /// kind — content hashes, audio fingerprints, embedded metadata,
-/// thumbnails, duplicate check — with the three moves that exist for
+/// media signal, thumbnails, duplicate check — with the three moves that exist for
 /// every sweep in the app:
 ///
 /// **Verify** runs the sweep as-is, which fills MISSING data only.
@@ -20,7 +20,7 @@ struct SweepPanel: View {
     @State private var errorText: String?
 
     enum SweepKind: String, CaseIterable, Identifiable {
-        case contentHash, fingerprint, metadata, thumbnails, duplicates
+        case contentHash, fingerprint, metadata, signal, thumbnails, duplicates
         var id: String { rawValue }
 
         var title: String {
@@ -28,6 +28,7 @@ struct SweepPanel: View {
             case .contentHash: "Content Hashes (MD5)"
             case .fingerprint: "Audio Fingerprints"
             case .metadata: "Embedded Metadata"
+            case .signal: "Media Signal"
             case .thumbnails: "Thumbnails"
             case .duplicates: "Duplicate Check"
             }
@@ -38,13 +39,14 @@ struct SweepPanel: View {
             case .contentHash: "Identity hash per file — duplicates and the migration boundary key off it."
             case .fingerprint: "Acoustic fingerprints for near-duplicate matching."
             case .metadata: "The ffprobe pairs Tag Analysis mines."
+            case .signal: "What each file declares about its encoding, and how its frames are really timed."
             case .thumbnails: "The grid's stills. Failures self-heal from disk state."
             case .duplicates: "Pairs flagged from hashes and fingerprints. Rejected pairs stay rejected, so there is nothing to recalculate."
             }
         }
 
         var canRecalculate: Bool { self != .duplicates }
-        var canRetry: Bool { self == .contentHash || self == .fingerprint || self == .metadata }
+        var canRetry: Bool { [.contentHash, .fingerprint, .metadata, .signal].contains(self) }
     }
 
     var body: some View {
@@ -164,6 +166,7 @@ struct SweepPanel: View {
             next[.contentHash] = try? library.contentHashStatus()
             next[.fingerprint] = try? library.fingerprintStatus()
             next[.metadata] = try? library.metadataSweepStatus()
+            next[.signal] = try? library.signalStatus()
             next[.thumbnails] = try? library.thumbnailStatus(libraryID: libraryID)
             await MainActor.run { statuses = next }
         }
@@ -186,6 +189,8 @@ struct SweepPanel: View {
                     _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
                 case .metadata:
                     _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                case .signal:
+                    _ = try await runner.enqueueUnlessPending(MediaSignalJob.self)
                 case .thumbnails:
                     _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
                 case .duplicates:
@@ -209,6 +214,7 @@ struct SweepPanel: View {
             case .contentHash: try library.retryContentHashFailures()
             case .fingerprint: try library.retryFingerprintFailures()
             case .metadata: try library.retryMetadataSweepFailures()
+            case .signal: try library.retrySignalFailures()
             case .thumbnails, .duplicates: break
             }
         }
@@ -221,6 +227,7 @@ struct SweepPanel: View {
             case .contentHash: try library.resetContentHashes()
             case .fingerprint: try library.resetFingerprints()
             case .metadata: try library.resetMetadataSweepAll()
+            case .signal: try library.resetSignalFindings()
             case .thumbnails: try library.resetThumbnails(libraryID: libraryID)
             case .duplicates: break
             }
