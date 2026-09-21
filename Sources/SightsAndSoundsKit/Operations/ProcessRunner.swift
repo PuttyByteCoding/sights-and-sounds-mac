@@ -22,7 +22,10 @@ enum ProcessRunner {
 
     /// Run `tool` to completion. Throws only when it cannot be launched;
     /// a non-zero exit is the caller's to interpret.
-    static func run(_ tool: String, _ arguments: [String], captureStdout: Bool = true) throws -> Output {
+    static func run(
+        _ tool: String, _ arguments: [String], captureStdout: Bool = true,
+        canceller: Canceller? = nil
+    ) throws -> Output {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tool)
         process.arguments = arguments
@@ -44,6 +47,7 @@ enum ProcessRunner {
         process.terminationHandler = { _ in exited.signal() }
 
         try process.run()
+        canceller?.attach(process)
 
         let collected = OSAllocatedUnfairLock(initialState: (out: Data(), err: Data()))
         let drained = DispatchSemaphore(value: 0)
@@ -69,5 +73,65 @@ enum ProcessRunner {
         for _ in 0..<readers { drained.wait() }
         let (out, err) = collected.withLock { ($0.out, $0.err) }
         return Output(status: process.terminationStatus, stdout: out, stderr: err)
+    }
+
+    /// The way to stop a tool that is already running. `Process` is not
+    /// Sendable, so the one reference lives behind a lock and only
+    /// `terminate()` — which is safe from any thread — is ever called on
+    /// it from outside.
+    final class Canceller: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+        private var cancelled = false
+
+        var wasCancelled: Bool { lock.withLock { cancelled } }
+
+        fileprivate func attach(_ process: Process) {
+            let alreadyCancelled = lock.withLock { () -> Bool in
+                self.process = process
+                return cancelled
+            }
+            if alreadyCancelled { process.terminate() }
+        }
+
+        func cancel() {
+            let running = lock.withLock { () -> Process? in
+                cancelled = true
+                return process
+            }
+            running?.terminate()
+        }
+    }
+
+    /// Run `tool`, asking `isCancelled` four times a second and
+    /// terminating the tool when it says yes; that throws
+    /// `CancellationError`. The blocking wait happens on a thread of its
+    /// own, so an hour-long encode does not hold one of the few threads
+    /// every other task in the app shares.
+    static func run(
+        _ tool: String, _ arguments: [String], captureStdout: Bool = true,
+        isCancelled: @escaping @Sendable () async -> Bool
+    ) async throws -> Output {
+        let canceller = Canceller()
+        let watcher = Task {
+            while !Task.isCancelled {
+                if await isCancelled() {
+                    canceller.cancel()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+        defer { watcher.cancel() }
+
+        let output: Output = try await withCheckedThrowingContinuation { continuation in
+            Thread.detachNewThread {
+                continuation.resume(with: Result {
+                    try run(tool, arguments, captureStdout: captureStdout, canceller: canceller)
+                })
+            }
+        }
+        if canceller.wasCancelled { throw CancellationError() }
+        return output
     }
 }

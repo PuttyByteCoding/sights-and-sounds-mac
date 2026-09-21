@@ -90,11 +90,12 @@ public struct EncodeJob: Job {
 
         await context.reportProgress(current: 0, total: 1)
         // Ported audio/container line: aac 192k, faststart.
-        try FfmpegTool.run(
-            ["-i", fileURL.path]
+        try await FfmpegTool.produce(
+            outputURL,
+            arguments: ["-i", fileURL.path]
                 + payload.preset.videoArguments
-                + ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", outputURL.path],
-            tool: tool)
+                + ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"],
+            tool: tool, fileAccess: fileAccess, isCancelled: { await context.isCancelled })
 
         let probe = await MediaProbe.probe(url: outputURL)
         let size = (try? fileAccess.fileSize(at: outputURL)) ?? 0
