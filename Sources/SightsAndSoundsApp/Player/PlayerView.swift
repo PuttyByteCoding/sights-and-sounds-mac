@@ -1945,7 +1945,8 @@ private struct QueueCell: View {
                     itemID: item.id, libraryID: model.libraryID,
                     durationSeconds: item.durationSeconds,
                     resolveFile: model.queueFileResolver(for: item))
-                thumbnail = data.flatMap(NSImage.init(data:))
+                thumbnail = await ThumbnailImages.shared.image(
+                    libraryID: model.libraryID, itemID: item.id, data: data, points: cellWidth)
             }
     }
 }

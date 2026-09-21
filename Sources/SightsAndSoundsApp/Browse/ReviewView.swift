@@ -696,7 +696,8 @@ private struct IssueDetail: View {
             let data = await ThumbnailProvider.shared.thumbnailData(
                 itemID: item.id, libraryID: model.libraryID,
                 durationSeconds: item.durationSeconds, resolveFile: model.fileResolver(for: item))
-            thumbnail = data.flatMap(NSImage.init(data:))
+            thumbnail = await ThumbnailImages.shared.image(
+                libraryID: model.libraryID, itemID: item.id, data: data, points: nil)
         }
     }
 
@@ -1081,7 +1082,8 @@ private struct ComparePane: View {
             let data = await ThumbnailProvider.shared.thumbnailData(
                 itemID: item.id, libraryID: model.libraryID,
                 durationSeconds: item.durationSeconds, resolveFile: model.fileResolver(for: item))
-            thumbnail = data.flatMap(NSImage.init(data:))
+            thumbnail = await ThumbnailImages.shared.image(
+                libraryID: model.libraryID, itemID: item.id, data: data, points: nil)
         }
     }
 
