@@ -80,20 +80,25 @@ extension LibraryDatabase {
             toURL = root.appendingPathComponent(toPath)
         }
 
-        try Self.moveWithRetries(fileAccess: fileAccess, from: fromURL, to: toURL)
+        // The disk and the database cannot change together, so the intent
+        // is written down first. If the app stops between the two steps
+        // below, the next launch finds this row and finishes or forgets
+        // the move by where the file is (`reconcileInterruptedMoves`).
+        let intent = PendingMove(
+            mediaItemID: item.id, sourceID: source.id, fileName: item.fileName,
+            fromPath: fromPath, toPath: toPath, sessionID: sessionID)
+        try writer.write { try intent.insert($0) }
+
+        do {
+            try Self.moveWithRetries(fileAccess: fileAccess, from: fromURL, to: toURL)
+        } catch {
+            // Nothing moved: there is nothing to recover.
+            _ = try? writer.write { try PendingMove.deleteOne($0, key: intent.id) }
+            throw error
+        }
 
         AppLog.shared.info("moves", "moved \(fromPath) → \(toPath)")
-        let log = FileMoveLog(
-            mediaItemID: item.id, sourceID: source.id,
-            fileName: item.fileName, fromPath: fromPath, toPath: toPath,
-            sessionID: sessionID)
-        try writer.write { db in
-            var updated = item
-            updated.setRelativePath(toPath)
-            try updated.updateWithSegmentPaths(db)
-            try log.insert(db)
-        }
-        return log
+        return try writer.write { db in try Self.finish(intent, db) }
     }
 
     /// Undo a logged move: file back where it was, path restored, entry

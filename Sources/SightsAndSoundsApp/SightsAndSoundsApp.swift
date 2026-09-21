@@ -277,6 +277,16 @@ final class AppModel {
         let library = try LibraryDatabase.open(at: URL(fileURLWithPath: ref.filePath))
         openHandles[id] = library
         try? appDatabase?.touchLastOpened(id)
+        // Settle any move the app was in the middle of when it last
+        // stopped. Normally there are none and this is one small read; when
+        // there are, it looks at the disk, so it stays off the main actor.
+        Task.detached(priority: .utility) {
+            do {
+                try library.reconcileInterruptedMoves()
+            } catch {
+                AppLog.shared.error("moves", "could not settle interrupted moves: \(error)")
+            }
+        }
         return library
     }
 
