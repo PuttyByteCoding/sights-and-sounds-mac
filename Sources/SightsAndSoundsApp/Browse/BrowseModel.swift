@@ -845,6 +845,14 @@ final class BrowseModel {
 
     // MARK: - Operations
 
+    /// Save segments as files of their own — what the delete list offers
+    /// before it will purge the video they play from.
+    func saveSegmentsAsFiles(_ segmentIDs: [UUID]) {
+        runOperation { runner in
+            for id in segmentIDs { _ = try await ClipExportJob.enqueue(on: runner, clipID: id) }
+        }
+    }
+
     func exportClip(_ item: MediaItem) {
         runOperation { runner in
             _ = try await ClipExportJob.enqueue(on: runner, clipID: item.id)

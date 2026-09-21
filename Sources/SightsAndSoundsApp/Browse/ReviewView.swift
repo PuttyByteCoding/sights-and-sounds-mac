@@ -54,6 +54,9 @@ struct ReviewView: View {
     @State private var errorText: String?
     @State private var resolvedThisPass: [Mode: Int] = [:]
     @State private var confirmDelete = false
+    /// Ticked videos whose segments are not saved yet — asked about in
+    /// place of the ordinary confirmation.
+    @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -387,9 +390,14 @@ struct ReviewView: View {
                 Button("Restore selected") { restoreSelected() }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                     .disabled(deleteTicked.isEmpty)
-                Button("Delete \(deleteTicked.count) files") { confirmDelete = true }
+                Button("Delete \(deleteTicked.count) files") { askBeforePurging() }
                     .buttonStyle(DestructiveButtonStyle())
                     .disabled(deleteTicked.isEmpty)
+                    .unsavedSegmentsPrompt(
+                        $unsavedSegments,
+                        deletableCount: deleteTicked.count - (unsavedSegments?.count ?? 0),
+                        saveSegments: { model.saveSegmentsAsFiles($0) },
+                        deleteTheOthers: { purge() })
                     .confirmationDialog(
                         "Delete \(deleteTicked.count) files?", isPresented: $confirmDelete
                     ) {
@@ -456,12 +464,22 @@ struct ReviewView: View {
         reload()
     }
 
+    /// A ticked video that still has unsaved segments changes the
+    /// question: the user hears about the segments before anything is
+    /// deleted, not afterwards in an outcome line.
+    private func askBeforePurging() {
+        do {
+            let unsaved = try model.library.unsavedSegments(ofFlagged: Array(deleteTicked))
+            if unsaved.isEmpty { confirmDelete = true } else { unsavedSegments = unsaved }
+        } catch { errorText = "\(error)" }
+    }
+
     private func purge() {
         do {
             let outcome = try model.library.purgeDeleted(itemIDs: Array(deleteTicked))
             resolvedThisPass[.deleteList, default: 0] += outcome.rowsDeleted
-            errorText = outcome.fileFailures.isEmpty
-                ? nil : outcome.fileFailures.joined(separator: "; ")
+            let failures = outcome.fileFailures + outcome.rowFailures + outcome.keptForSegments
+            errorText = failures.isEmpty ? nil : failures.joined(separator: "; ")
             deleteTicked = []
             reload()
             model.refreshAll()

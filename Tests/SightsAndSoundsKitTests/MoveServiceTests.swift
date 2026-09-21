@@ -171,6 +171,131 @@ import Testing
         #expect(logs.contains { $0.fileName == "doomed.mp4" })
     }
 
+    // MARK: A show with segments
+
+    /// A segment plays from its show's file. Until it has been saved as
+    /// a file of its own, deleting the show would take it too — so the
+    /// purge leaves that show alone and says why.
+    @Test func aShowWithUnsavedSegmentsIsKeptAndThePurgeCarriesOn() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "shows/1995/show.mp4")
+        for start in [0.0, 10.0] {
+            try f.library.createEmbeddedClip(
+                parentID: show.id, name: "Song", startSeconds: start, endSeconds: start + 5, role: .song)
+        }
+        let plain = try await f.addItem(path: "shows/plain.mp4")
+        try f.library.stage(.toDelete, itemID: show.id)
+        try f.library.stage(.toDelete, itemID: plain.id)
+
+        let outcome = try f.library.purgeDeleted()
+
+        #expect(outcome.keptForSegments == ["show.mp4: 2 segments are not saved as files"])
+        #expect(outcome.filesDeleted == 1)  // the plain one
+        #expect(outcome.rowsDeleted == 1)
+        #expect(f.exists("_ToDelete/shows/1995/show.mp4"))
+        #expect(!f.exists("_ToDelete/shows/plain.mp4"))
+        let remaining = try await f.library.writer.read { try MediaItem.fetchCount($0) }
+        #expect(remaining == 3)  // the show and both songs
+    }
+
+    @Test func aFlagOnlyShowWithOneSegmentIsKeptToo() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        // The file is already gone, so staging flags without moving and
+        // the segment still shares the show's exact path — the case that
+        // used to fail on the path-unique index.
+        let show = try await f.addItem(path: "gone/show.mp4", withFile: false)
+        try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+        try f.library.stage(.toDelete, itemID: show.id)
+
+        let outcome = try f.library.purgeDeleted()
+
+        #expect(outcome.rowsDeleted == 0)
+        #expect(outcome.keptForSegments.count == 1)
+    }
+
+    @Test func theDeleteListSaysWhichShowsStillHaveUnsavedSegments() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "shows/show.mp4")
+        let song = try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+        let unflagged = try await f.addItem(path: "shows/other.mp4")
+        try f.library.createEmbeddedClip(
+            parentID: unflagged.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+        try f.library.stage(.toDelete, itemID: show.id)
+
+        let unsaved = try f.library.unsavedSegments(ofFlagged: nil)
+        #expect(unsaved.map(\.parentID) == [show.id])
+        #expect(unsaved.first?.segmentIDs == [song.id])
+        // Narrowed to a reviewed subset, like the purge itself.
+        #expect(try f.library.unsavedSegments(ofFlagged: [unflagged.id]).isEmpty)
+    }
+
+    @Test func onceItsSegmentsAreSavedTheShowPurges() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "shows/show.mp4")
+        let song = try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+        // What the export job leaves: a file of its own, and the segment
+        // marked as the breadcrumb that points at it.
+        let saved = try await f.addItem(path: "shows/show - Song.mp4")
+        try await f.library.writer.write { db in
+            try db.execute(
+                sql: "UPDATE mediaItem SET clipExported = 1, exportedToMediaItemID = ? WHERE id = ?",
+                arguments: [saved.id, song.id])
+        }
+        try f.library.stage(.toDelete, itemID: show.id)
+
+        let outcome = try f.library.purgeDeleted()
+
+        #expect(outcome.keptForSegments.isEmpty)
+        #expect(outcome.filesDeleted == 1)
+        #expect(!f.exists("_ToDelete/shows/show.mp4"))
+        // The saved song stays; the breadcrumb left with the timeline it marked.
+        let remaining = try await f.library.writer.read { try MediaItem.fetchAll($0) }
+        #expect(remaining.map(\.id) == [saved.id])
+        #expect(f.exists("shows/show - Song.mp4"))
+    }
+
+    @Test func segmentsTheUserMarkedGoWithTheirShow() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "shows/show.mp4")
+        let song = try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+        // Marking the segment itself is the user saying it can go.
+        try f.library.stage(.toDelete, itemID: show.id)
+        try f.library.stage(.toDelete, itemID: song.id)
+
+        let outcome = try f.library.purgeDeleted()
+
+        #expect(outcome.keptForSegments.isEmpty)
+        #expect(outcome.rowsDeleted == 2)
+        #expect(outcome.filesDeleted == 1)
+    }
+
+    @Test func aMarkedSegmentLeftOutOfTheReviewedSubsetStillLeavesCleanly() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let show = try await f.addItem(path: "shows/show.mp4")
+        let song = try f.library.createEmbeddedClip(
+            parentID: show.id, name: "Song", startSeconds: 0, endSeconds: 5, role: .song)
+        try f.library.stage(.toDelete, itemID: show.id)
+        try f.library.stage(.toDelete, itemID: song.id)
+
+        // Only the show was ticked.
+        let outcome = try f.library.purgeDeleted(itemIDs: [show.id])
+
+        #expect(outcome.rowFailures.isEmpty)
+        #expect(outcome.filesDeleted == 1)
+        let remaining = try await f.library.writer.read { try MediaItem.fetchCount($0) }
+        #expect(remaining == 0)
+    }
+
     @Test func movedFilesDoNotReimportAsDuplicates() async throws {
         let f = try await MoveFixture()
         defer { f.tearDown() }

@@ -277,6 +277,58 @@ extension LibraryDatabase {
         public var rowsDeleted = 0
         public var filesDeleted = 0
         public var fileFailures: [String] = []
+        /// Items whose file left but whose row could not be removed —
+        /// one line each. The purge carries on past them.
+        public var rowFailures: [String] = []
+        /// Shows left untouched — file and row — because they still have
+        /// segments nobody has saved as files. One line each.
+        public var keptForSegments: [String] = []
+    }
+
+    /// A flagged show and the segments that would be lost with its file.
+    public struct UnsavedSegments: Sendable, Equatable {
+        public let parentID: UUID
+        public let parentFileName: String
+        public let segmentIDs: [UUID]
+    }
+
+    /// Which flagged shows still have unsaved segments — what the delete
+    /// list asks about before it purges. A segment counts as saved once
+    /// it has been exported to a file of its own; one the user marked for
+    /// deletion themselves is theirs to lose and is not counted.
+    /// `itemIDs` narrows it exactly as it narrows `purgeDeleted`.
+    public func unsavedSegments(ofFlagged itemIDs: [UUID]?) throws -> [UnsavedSegments] {
+        try writer.read { db in
+            var sql = """
+                SELECT segment.id AS segmentID, parent.id AS parentID, parent.fileName AS fileName \
+                FROM mediaItem segment \
+                JOIN mediaItem parent ON parent.id = segment.parentMediaItemID \
+                WHERE parent.markedForDeletion = 1 \
+                AND segment.clipExported = 0 AND segment.markedForDeletion = 0
+                """
+            var arguments = StatementArguments()
+            if let itemIDs {
+                guard !itemIDs.isEmpty else { return [] }
+                let placeholders = Array(repeating: "?", count: itemIDs.count).joined(separator: ", ")
+                sql += " AND parent.id IN (\(placeholders))"
+                arguments = StatementArguments(itemIDs)
+            }
+            sql += " ORDER BY parent.relativePath, segment.clipStartSeconds"
+            var order: [UUID] = []
+            var grouped: [UUID: (name: String, segments: [UUID])] = [:]
+            for row in try Row.fetchAll(db, sql: sql, arguments: arguments) {
+                let parentID: UUID = row["parentID"]
+                if grouped[parentID] == nil {
+                    order.append(parentID)
+                    grouped[parentID] = (row["fileName"], [])
+                }
+                grouped[parentID]?.segments.append(row["segmentID"])
+            }
+            return order.map {
+                UnsavedSegments(
+                    parentID: $0, parentFileName: grouped[$0]!.name, segmentIDs: grouped[$0]!.segments)
+            }
+        }
     }
 
     /// The size of everything currently flagged for deletion — the
@@ -293,6 +345,14 @@ extension LibraryDatabase {
     /// (through the boundary; offline sources' items are skipped
     /// entirely), then rows — cascades sweep tags, values, feature state
     /// and candidates. The caller owns the confirmation.
+    ///
+    /// A show that still has unsaved segments is left alone, file and
+    /// row: a segment plays from its show's file, so deleting the show
+    /// would silently take the segments too. The caller asks about them
+    /// first (`unsavedSegments(ofFlagged:)`) and the outcome names any
+    /// show kept for this reason. Segments the user marked themselves go
+    /// first, and an exported segment's breadcrumb row leaves with the
+    /// timeline it marked — the saved file is its own item and stays.
     ///
     /// `itemIDs` narrows it to a reviewed subset; nil means everything
     /// flagged. **The flag check stays the guard either way** — a passed
@@ -317,8 +377,19 @@ extension LibraryDatabase {
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
 
+        let unsaved = Dictionary(
+            uniqueKeysWithValues: try unsavedSegments(ofFlagged: itemIDs).map { ($0.parentID, $0) })
+
         var outcome = PurgeOutcome()
-        for item in flagged {
+        // Segments first, so a show whose segments were all marked with
+        // it has none left by the time its turn comes.
+        for item in flagged.sorted(by: { ($0.parentMediaItemID != nil) && ($1.parentMediaItemID == nil) }) {
+            if let kept = unsaved[item.id] {
+                let count = kept.segmentIDs.count
+                outcome.keptForSegments.append(
+                    "\(item.fileName): \(count) segment\(count == 1 ? " is" : "s are") not saved as files")
+                continue
+            }
             guard let source = sources[item.sourceID] else { continue }
             // An offline source's staged files can't be deleted — skip the
             // whole item so file and row leave together, later.
@@ -338,14 +409,27 @@ extension LibraryDatabase {
                 }
             }
             // Embedded clip rows are pure metadata — always removable.
-            let removed = try writer.write { db -> Bool in
-                // Re-point children (their parent is leaving), then delete.
-                try db.execute(
-                    sql: "UPDATE mediaItem SET parentMediaItemID = NULL WHERE parentMediaItemID = ?",
-                    arguments: [item.id])
-                return try MediaItem.deleteOne(db, key: item.id)
+            // One item's database error must not strand the rest of the
+            // list: its file is already gone, so say so and carry on.
+            do {
+                let removed = try writer.write { db -> Bool in
+                    // What can still be parented here is a breadcrumb of
+                    // an exported segment, or a segment the user marked
+                    // but left out of this pass. Un-parenting them instead
+                    // would put them on the show's path under the
+                    // path-unique index.
+                    try db.execute(
+                        sql: """
+                        DELETE FROM mediaItem WHERE parentMediaItemID = ? \
+                        AND (clipExported = 1 OR markedForDeletion = 1)
+                        """,
+                        arguments: [item.id])
+                    return try MediaItem.deleteOne(db, key: item.id)
+                }
+                if removed { outcome.rowsDeleted += 1 }
+            } catch {
+                outcome.rowFailures.append("\(item.fileName): \(error)")
             }
-            if removed { outcome.rowsDeleted += 1 }
         }
         return outcome
     }
