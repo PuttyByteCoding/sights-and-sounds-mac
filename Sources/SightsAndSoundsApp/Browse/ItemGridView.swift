@@ -185,8 +185,8 @@ private struct ItemCell: View {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id,
                     libraryID: model.libraryID,
-                    fileURL: model.fileURL(for: item),
-                    durationSeconds: item.durationSeconds)
+                    durationSeconds: item.durationSeconds,
+                    resolveFile: model.fileResolver(for: item))
                 thumbnail = data.flatMap(NSImage.init(data:))
             }
     }

@@ -1938,8 +1938,8 @@ private struct QueueCell: View {
             .task(id: item.id) {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id, libraryID: model.libraryID,
-                    fileURL: model.queueFileURL(for: item),
-                    durationSeconds: item.durationSeconds)
+                    durationSeconds: item.durationSeconds,
+                    resolveFile: model.queueFileResolver(for: item))
                 thumbnail = data.flatMap(NSImage.init(data:))
             }
     }
