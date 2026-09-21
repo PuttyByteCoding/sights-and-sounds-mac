@@ -67,6 +67,51 @@ import Testing
 
     // MARK: End to end (ffmpeg-suite gated)
 
+    /// The content hash is an MD5 of the whole file. A native tag write
+    /// rewrites the tag block in place — the audio is untouched, but the
+    /// bytes are not, so the stored hash no longer describes the file.
+    /// Only the remux fallback used to clear it.
+    @Test(.enabled(if: FfmpegTool.path() != nil && TagWriters.metaflacPath() != nil
+        && TagWriters.ffprobePath() != nil))
+    func aNativeTagWriteClearsTheStaleHashToo() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-writeback-flac-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("t.flac")
+        try FfmpegTool.run(
+            ["-f", "lavfi", "-i", "sine=frequency=440:duration=1", file.path],
+            tool: try #require(FfmpegTool.path()))
+
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "W")
+        let source = Source(name: "S", rootPath: root.path)
+        let band = TagCategory(name: "Band", writebackField: "ARTIST")
+        let larks = Tag(tagCategoryID: band.id, name: "Meadow Larks")
+        let item = MediaItem(
+            sourceID: source.id, kind: .audio, relativePath: "t.flac", fileSize: 1,
+            contentHash: "stalehash", needsReview: false)
+        try await library.writer.write { db in
+            try source.insert(db)
+            try band.insert(db)
+            try larks.insert(db)
+            try item.insert(db)
+            try MediaItemTag(mediaItemID: item.id, tagID: larks.id).insert(db)
+        }
+        let runner = JobRunner(library: library)
+        await runner.register(WritebackJob.self)
+        _ = try await WritebackJob.enqueue(on: runner, itemIDs: [item.id], scopeDescription: "test")
+        try await runner.runPending()
+
+        let fileRow = try await library.writer.read { try TagWriteRunFile.fetchOne($0)! }
+        #expect(fileRow.status == .written)
+        #expect(!fileRow.usedRemuxFallback)  // metaflac did it
+        let refreshed = try await library.writer.read { try MediaItem.fetchOne($0, key: item.id)! }
+        #expect(refreshed.contentHash == nil)
+        let onDisk = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64
+        #expect(refreshed.fileSize == onDisk)
+    }
+
     @Test func writeSnapshotAndRestoreRoundTrip() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-writeback-\(UUID().uuidString)", isDirectory: true)

@@ -134,19 +134,19 @@ public struct WritebackJob: Job {
                     .written,
                     error: result.nativeToolError.map { "written by remux after \($0)" },
                     fallback: result.usedRemuxFallback)
-                if result.usedRemuxFallback {
-                    // Bytes changed: hash is stale, size may differ.
-                    let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
-                    try await library.writer.write { db in
-                        try db.execute(
-                            sql: """
-                            UPDATE mediaItem SET contentHash = NULL, fileSize = ? WHERE id = ?
-                            """,
-                            arguments: [newSize, itemID])
-                        try db.execute(
-                            sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
-                            arguments: [itemID])
-                    }
+                // Bytes changed, whichever tool wrote them: the hash is of
+                // the whole file, so an in-place tag rewrite stales it as
+                // surely as a remux does, and the size may differ.
+                let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
+                try await library.writer.write { db in
+                    try db.execute(
+                        sql: """
+                        UPDATE mediaItem SET contentHash = NULL, fileSize = ? WHERE id = ?
+                        """,
+                        arguments: [newSize, itemID])
+                    try db.execute(
+                        sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
+                        arguments: [itemID])
                 }
             } else {
                 failed += 1
@@ -233,16 +233,15 @@ public struct RestoreTagsJob: Job {
         guard result.success else {
             throw FfmpegTool.FfmpegError(exitCode: -1, stderrTail: result.error ?? "write failed")
         }
-        if result.usedRemuxFallback {
-            let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
-            try await library.writer.write { db in
-                try db.execute(
-                    sql: "UPDATE mediaItem SET contentHash = NULL, fileSize = ? WHERE id = ?",
-                    arguments: [newSize, item.id])
-                try db.execute(
-                    sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
-                    arguments: [item.id])
-            }
+        // A restore rewrites the file's bytes too, native tool or remux.
+        let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
+        try await library.writer.write { db in
+            try db.execute(
+                sql: "UPDATE mediaItem SET contentHash = NULL, fileSize = ? WHERE id = ?",
+                arguments: [newSize, item.id])
+            try db.execute(
+                sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
+                arguments: [item.id])
         }
         await context.setSummary(
             "restored \(fields.count) fields from \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
