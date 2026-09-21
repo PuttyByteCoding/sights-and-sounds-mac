@@ -21,7 +21,7 @@ struct ItemGridView: View {
 
     var body: some View {
         Group {
-            if let error = model.errorMessage {
+            if let error = model.listingError {
                 EmptyGridState(
                     title: "Query Failed", detail: error, symbol: "exclamationmark.triangle")
             } else if model.visibleItems.isEmpty {
@@ -56,6 +56,14 @@ struct ItemGridView: View {
         .focused($focused)
         .onKeyPress { press in handle(press) ? .handled : .ignored }
         .onAppear { focused = true }
+        .overlay(alignment: .top) {
+            if let message = model.errorMessage {
+                ErrorBanner(message: message) { model.errorMessage = nil }
+                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
+                    .transition(.opacity)
+            }
+        }
         .overlay(alignment: .top) {
             if let viewToast {
                 Text(viewToast)
@@ -111,6 +119,41 @@ struct ItemGridView: View {
             if viewToast == "View · \(next.name)" { viewToast = nil }
         }
         return true
+    }
+}
+
+/// Something the user asked for did not happen. Over the grid, not
+/// instead of it, and it stays until it is dismissed.
+private struct ErrorBanner: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Status.red)
+            Text(message)
+                .font(Theme.ui(11.5))
+                .foregroundStyle(Theme.Text.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Spacer(minLength: 8)
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(Theme.ui(9, .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityLabel("Dismiss")
+            .help("Dismiss")
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: 560, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.button)
+                .fill(Theme.Surface.iconTile)
+                .stroke(Theme.Status.red.opacity(0.5), lineWidth: 1))
     }
 }
 

@@ -46,5 +46,8 @@ import Testing
         try await Task.sleep(for: .milliseconds(400))
         #expect(model.items.count == 1)
         #expect(model.errorMessage == "Could not restore a.mp4: the disk said no")
+        // …and it is not the grid's problem: the listing is fine, so the
+        // grid stays on screen under the banner.
+        #expect(model.listingError == nil)
     }
 }
