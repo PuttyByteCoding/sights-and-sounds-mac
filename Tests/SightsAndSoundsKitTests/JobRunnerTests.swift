@@ -31,6 +31,40 @@ import Testing
         func run(_ context: JobContext) async throws { throw Boom() }
     }
 
+    /// How many OverlapJobs are inside `run` at once, and the most there
+    /// ever were.
+    private actor Gauge {
+        static let shared = Gauge()
+        private var inside = 0
+        private(set) var peak = 0
+        func enter() { inside += 1; peak = max(peak, inside) }
+        func leave() { inside -= 1 }
+        func reset() { inside = 0; peak = 0 }
+    }
+
+    /// Suspends mid-run and touches no shared state, so it can run in a
+    /// test that executes beside the gauge's.
+    private struct PausingJob: Job {
+        static let kind = "test.pausing"
+        init(payload: Data?) throws {}
+        func run(_ context: JobContext) async throws {
+            try await Task.sleep(for: .milliseconds(30))
+        }
+    }
+
+    /// Suspends mid-run, which is where a second drain used to slip in.
+    /// Only `concurrentDrainsStillRunOneJobAtATime` may run it: the gauge
+    /// is shared, and tests run in parallel.
+    private struct OverlapJob: Job {
+        static let kind = "test.overlap"
+        init(payload: Data?) throws {}
+        func run(_ context: JobContext) async throws {
+            await Gauge.shared.enter()
+            try await Task.sleep(for: .milliseconds(30))
+            await Gauge.shared.leave()
+        }
+    }
+
     private func makeRunner() throws -> (LibraryDatabase, JobRunner) {
         let library = try LibraryDatabase.openInMemory()
         return (library, JobRunner(library: library))
@@ -68,6 +102,62 @@ import Testing
         #expect(failed.state == .failed)
         #expect(failed.error?.contains("boom") == true)
         #expect(failed.finishedAt != nil)
+    }
+
+    @Test func concurrentDrainsStillRunOneJobAtATime() async throws {
+        let (library, runner) = try makeRunner()
+        await runner.register(OverlapJob.self)
+        await Gauge.shared.reset()
+        var ids: [UUID] = []
+        for _ in 0..<4 { ids.append(try await runner.enqueue(OverlapJob.self).id) }
+
+        // Every window and panel calls runPending; they arrive together.
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<4 { group.addTask { try await runner.runPending() } }
+            try await group.waitForAll()
+        }
+
+        #expect(await Gauge.shared.peak == 1)
+        for id in ids { #expect(try record(library, id).state == .succeeded) }
+    }
+
+    @Test func aCallerThatJoinsADrainReturnsAfterItsOwnJobRan() async throws {
+        let (library, runner) = try makeRunner()
+        await runner.register(PausingJob.self)
+        await runner.register(CountingJob.self)
+        _ = try await runner.enqueue(PausingJob.self)
+        let first = Task { try await runner.runPending() }
+        // Let the first drain get inside its job.
+        try await Task.sleep(for: .milliseconds(10))
+
+        let mine = try await runner.enqueue(CountingJob.self)
+        try await runner.runPending()
+
+        #expect(try record(library, mine.id).state == .succeeded)
+        _ = try await first.value
+    }
+
+    @Test func aRunnerBornWithItsJobTypesRunsThemAtOnce() async throws {
+        // The app used to register kinds in a task it did not wait for,
+        // so the first drain could meet a job before its kind existed.
+        let library = try LibraryDatabase.openInMemory()
+        let runner = JobRunner(library: library, jobTypes: [CountingJob.self])
+        let queued = try await runner.enqueue(CountingJob.self)
+
+        try await runner.runPending()
+
+        #expect(try record(library, queued.id).state == .succeeded)
+    }
+
+    @Test func aRunnerBornPausedHoldsItsQueue() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        let runner = JobRunner(library: library, jobTypes: [CountingJob.self], paused: true)
+        let queued = try await runner.enqueue(CountingJob.self)
+
+        let settled = try await runner.runPending()
+
+        #expect(settled.isEmpty)
+        #expect(try record(library, queued.id).state == .queued)
     }
 
     @Test func unknownKindFailsCleanly() async throws {
