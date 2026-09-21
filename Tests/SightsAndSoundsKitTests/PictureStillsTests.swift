@@ -43,7 +43,7 @@ enum SyntheticPicture {
         while scale <= 32 {
             let columns = width / scale + 2, rows = height / scale + 2
             let layer = (0..<columns * rows).map { _ in noise.signedUnit() }
-            let weight = pow(Float(scale), 1.5) * 0.35
+            let weight: Float = pow(Float(scale), 1.5) * 0.35
             for y in 0..<height {
                 for x in 0..<width { out[y * width + x] += layer[(y / scale) * columns + x / scale] * weight }
             }
@@ -57,7 +57,8 @@ enum SyntheticPicture {
                 let position = step == 1 ? index % width : index / width
                 let before = position > 0 ? plane[index - step] : plane[index]
                 let after = position < limit - 1 ? plane[index + step] : plane[index]
-                return (before + 2 * plane[index] + after) / 4
+                let sum: Float = before + 2 * plane[index] + after
+                return sum / 4
             }
         }
         return softened(softened(out, step: 1, limit: width), step: width, limit: height)

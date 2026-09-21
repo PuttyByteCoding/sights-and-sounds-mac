@@ -11,7 +11,8 @@ import Testing
     ) -> [PictureFrame] {
         (0..<4).map { index in
             let luma = (0..<128 * 96).map { pixel -> Float in
-                let value = low + (high - low) * Float(pixel % 128) / 127
+                let along: Float = Float(pixel % 128) / 127
+                let value: Float = low + (high - low) * along
                 return (value / step).rounded() * step
             }
             return PictureFrame(
@@ -124,8 +125,10 @@ import Testing
 
     @Test func noiseSmearedAlongTheLinesIsAnisotropic() {
         let values = field(amplitude: 12)
-        let frame = noisy(level: { _, _ in 120 }) { x, y in
-            (0..<4).reduce(Float(0)) { $0 + values[y * 320 + min(x + $1, 319)] } / 2
+        let frame = noisy(level: { _, _ in 120 }) { x, y -> Float in
+            var sum: Float = 0
+            for step in 0..<4 { sum += values[y * 320 + min(x + step, 319)] }
+            return sum / 2
         }
         let findings = NoiseReading.measure([frame], in: whole)
         #expect(findings.value("noise.horizontalCorrelation")! > 0.5)
@@ -151,7 +154,11 @@ import Testing
     }
 
     @Test func aSmoothGradientIsNotNoise() {
-        let frame = noisy(level: { x, y in 60 + Float(x) * 0.4 + Float(y) * 0.2 }) { _, _ in 0 }
+        let frame = noisy(level: { x, y -> Float in
+            let across: Float = Float(x) * 0.4
+            let down: Float = Float(y) * 0.2
+            return 60 + across + down
+        }) { _, _ in 0 }
         #expect(NoiseReading.measure([frame], in: whole).value("noise.sigma", .median)! < 0.05)
     }
 

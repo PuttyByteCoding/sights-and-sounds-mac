@@ -130,17 +130,22 @@ public enum NoiseReading {
         var slopeX: Float = 0, slopeY: Float = 0, spread: Float = 0
         for row in 0..<size {
             for column in 0..<size {
-                let value = pixels[row * size + column] - mean
-                slopeX += value * (Float(column) - centre)
-                slopeY += value * (Float(row) - centre)
-                spread += (Float(column) - centre) * (Float(column) - centre)
+                let value: Float = pixels[row * size + column] - mean
+                let across: Float = Float(column) - centre
+                let down: Float = Float(row) - centre
+                slopeX += value * across
+                slopeY += value * down
+                spread += across * across
             }
         }
         guard spread > 0 else { return pixels.map { $0 - mean } }
         slopeX /= spread
         slopeY /= spread
-        return (0..<size * size).map { index in
-            pixels[index] - mean - slopeX * (Float(index % size) - centre) - slopeY * (Float(index / size) - centre)
+        return (0..<size * size).map { index -> Float in
+            let across: Float = Float(index % size) - centre
+            let down: Float = Float(index / size) - centre
+            let plane: Float = mean + slopeX * across + slopeY * down
+            return pixels[index] - plane
         }
     }
 }
