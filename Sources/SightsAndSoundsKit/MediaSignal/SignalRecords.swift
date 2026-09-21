@@ -124,9 +124,14 @@ public struct SignalFindings: Equatable, Sendable {
         measured.append(Measured(key, value))
     }
 
-    /// The first file-scope value for `key`.
-    public func value(_ key: String) -> Double? {
-        measured.first { $0.key == key && $0.scope == .file }?.value
+    /// The first value for `key` at `scope`.
+    public func value(_ key: String, _ scope: SignalMeasurement.Scope = .file) -> Double? {
+        measured.first { $0.key == key && $0.scope == scope }?.value
+    }
+
+    public mutating func merge(_ other: SignalFindings) {
+        declared.merge(other.declared) { _, new in new }
+        measured += other.measured
     }
 }
 
