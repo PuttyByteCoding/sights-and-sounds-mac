@@ -57,6 +57,7 @@ public enum SignalStages {
         ProbeToolsStage(),
         AudioSignalStage(),
         PictureStillsStage(),
+        PictureSequenceStage(),
     ]
 }
 
