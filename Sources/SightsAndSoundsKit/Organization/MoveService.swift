@@ -66,6 +66,11 @@ extension LibraryDatabase {
 
         var toPath = MediaPath.normalize(requestedPath)
         var toURL = root.appendingPathComponent(toPath)
+        // The API's own promise, not its callers': a move lands inside
+        // the source it started in.
+        guard !toPath.isEmpty,
+              toURL.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/")
+        else { throw MoveError.moveFailed("the destination is outside the source") }
         // Never overwrite: collision → timestamp suffix, old behavior.
         if FileManager.default.fileExists(atPath: toURL.path) {
             let stamp = Self.collisionStamp()

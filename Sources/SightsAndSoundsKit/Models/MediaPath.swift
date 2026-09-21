@@ -9,11 +9,16 @@ import Foundation
 public enum MediaPath {
     /// Canonicalize a relative path: backslashes → `/`, collapse duplicate
     /// separators, strip leading/trailing separators and `./` segments.
+    ///
+    /// `..` segments are dropped, not followed. A stored path is always
+    /// inside its source; one that climbs out of it is never something to
+    /// honour, wherever the text came from (a template, a segment's name,
+    /// an imported list).
     public static func normalize(_ path: String) -> String {
         let unified = path.replacingOccurrences(of: "\\", with: "/")
         let segments = unified
             .split(separator: "/", omittingEmptySubsequences: true)
-            .filter { $0 != "." }
+            .filter { $0 != "." && $0 != ".." }
         return segments.joined(separator: "/")
     }
 
