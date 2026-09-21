@@ -102,6 +102,8 @@ extension View {
 }
 
 private struct TagActionHost: ViewModifier {
+    /// A write that failed; this host has no error line of its own.
+    @State private var failure: String?
     @Binding var pending: TagAction?
     let library: LibraryDatabase
     let libraryID: UUID
@@ -147,7 +149,9 @@ private struct TagActionHost: ViewModifier {
             // asked for, then cleared so the next right-click starts clean.
             .onChange(of: pending?.id) { _, _ in
                 guard case .toggleFavorite(let tag) = pending else { return }
-                try? library.setTagFavorite(tag.id, !tag.isFavorite)
+                Writes.attempt("change the favourite", report: $failure) {
+                    try library.setTagFavorite(tag.id, !tag.isFavorite)
+                }
                 pending = nil
                 onChange()
             }
@@ -195,12 +199,15 @@ private struct TagActionHost: ViewModifier {
                 isPresented: confirmingDelete, presenting: deleting
             ) { tag in
                 Button("Delete", role: .destructive) {
-                    try? library.deleteTag(tag.id)
+                    Writes.attempt("delete the tag", report: $failure) {
+                        try library.deleteTag(tag.id)
+                    }
                     onChange()
                 }
             } message: { tag in
                 Text(TagActionCopy.deleteMessage(uses: uses(of: tag)))
             }
+            .failureAlert($failure)
     }
 
     private func uses(of tag: Tag) -> Int {

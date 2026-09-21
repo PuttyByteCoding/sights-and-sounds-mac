@@ -51,6 +51,10 @@ struct ImportView: View {
     @State private var running: JobRecord?
     @State private var progress: (current: Int, total: Int)?
     @State private var finished: String?
+    /// The item-scope fields, read once per reload. They were read from
+    /// the database inside `body`, once per staging box per render, and
+    /// this view re-renders on every keystroke in any of its fields.
+    @State private var itemFields: [FieldDefinition] = []
 
     // Source step data (carried over unchanged)
     @State private var itemCounts: [UUID: Int] = [:]
@@ -90,7 +94,7 @@ struct ImportView: View {
             ConfigureBoxesSheet(
                 boxes: $boxes,
                 categories: model.vocabulary.map(\.category),
-                fields: (try? model.library.fields(scope: .mediaItem)) ?? [],
+                fields: itemFields,
                 onSave: { saved in
                     try? model.library.setImportBoxes(saved)
                 })
@@ -437,7 +441,7 @@ struct ImportView: View {
                         StagingBoxView(
                             box: box,
                             vocabulary: model.vocabulary,
-                            fields: (try? model.library.fields(scope: .mediaItem)) ?? [],
+                            fields: itemFields,
                             folderWords: folderWords,
                             draft: draftBinding,
                             onSticky: { sticky in
@@ -797,6 +801,7 @@ struct ImportView: View {
     /// Counts, reachability, history and the effective extension lists —
     /// gathered off the main actor, published behind a generation guard.
     private func reload() async {
+        itemFields = (try? model.library.fields(scope: .mediaItem)) ?? []
         loadGeneration += 1
         let generation = loadGeneration
         let library = model.library

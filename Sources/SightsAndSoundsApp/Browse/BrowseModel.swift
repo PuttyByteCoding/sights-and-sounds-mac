@@ -136,9 +136,36 @@ final class BrowseModel {
     /// refreshAll, never a query per row (#96).
     private(set) var counts = BrowseCounts()
     private(set) var onlineSourceIDs: Set<UUID> = []
+    /// Something the user asked for did not happen. Shown as a banner over
+    /// the grid until dismissed or replaced — never in place of the grid,
+    /// and never cleared by a refresh. It used to share one property with
+    /// the listing's own failure: the grid was replaced by "Query Failed"
+    /// for things that were not queries, and the message vanished on the
+    /// next successful listing, a fraction of a second after every write.
     var errorMessage: String? {
         didSet {
             if let errorMessage { AppLog.shared.error("browse", errorMessage) }
+        }
+    }
+
+    /// The listing (or the sidebar's data) could not be loaded. This one
+    /// does replace the grid, and clears itself when a load succeeds.
+    private(set) var listingError: String? {
+        didSet {
+            if let listingError { AppLog.shared.error("browse", listingError) }
+        }
+    }
+
+    /// Run a write the user asked for from a view. A failure is said on
+    /// the error line and stays there; it is never swallowed.
+    @discardableResult
+    func attempt(_ what: String, _ body: () throws -> Void) -> Bool {
+        do {
+            try body()
+            return true
+        } catch {
+            errorMessage = "Could not \(what): \(error)"
+            return false
         }
     }
 
@@ -338,7 +365,7 @@ final class BrowseModel {
             } catch {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
-                    self.errorMessage = "\(error)"
+                    self.listingError = "\(error)"
                 }
             }
         }
@@ -559,9 +586,9 @@ final class BrowseModel {
                     self.filteredMissingCounts = payload.filteredMissingCounts
                     self.hideBlockItemIDs = payload.hideBlockItemIDs
                     self.snapshotRefs = payload.snapshotRefs
-                    self.errorMessage = nil
+                    self.listingError = nil
                 case .failure(let error):
-                    self.errorMessage = "\(error)"
+                    self.listingError = "\(error)"
                 }
             }
         }

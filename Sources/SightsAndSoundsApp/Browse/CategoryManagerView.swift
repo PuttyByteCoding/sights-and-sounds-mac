@@ -355,11 +355,15 @@ struct CategoryManagerView: View {
                         },
                         onOpen: { tag in editingTag = tag },
                         onToggleFavorite: { tag in
-                            try? model.library.setTagFavorite(tag.id, !tag.isFavorite)
+                            Writes.attempt("change the favourite", report: $errorText) {
+                                try model.library.setTagFavorite(tag.id, !tag.isFavorite)
+                            }
                             reloadTags()
                         },
                         onHide: { tag in
-                            try? model.library.setTagHidden(tag.id, !tag.hiddenByDefault)
+                            Writes.attempt("change whether the tag is hidden", report: $errorText) {
+                                try model.library.setTagHidden(tag.id, !tag.hiddenByDefault)
+                            }
                             reloadTags()
                         },
                         pending: $pending,
@@ -489,7 +493,9 @@ struct CategoryManagerView: View {
                         onChange: { save($0) },
                         onFieldsChange: { reloadTagFields() },
                         onDelete: {
-                            try? model.library.deleteCategory(category.id)
+                            Writes.attempt("delete the category", report: $errorText) {
+                                try model.library.deleteCategory(category.id)
+                            }
                             selection = nil
                             reload()
                         })

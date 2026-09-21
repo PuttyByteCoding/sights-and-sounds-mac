@@ -133,7 +133,9 @@ struct WatchedView: View {
                 item.isFavorite ? "Remove from Favourites" : "Add to Favourites",
                 systemImage: item.isFavorite ? "star.slash" : "star"
             ) {
-                _ = try? model.library.toggleFlag(.favorite, itemID: item.id)
+                model.attempt("change the favourite") {
+                    _ = try model.library.toggleFlag(.favorite, itemID: item.id)
+                }
                 reload()
             }
             Button("Reveal in Finder") { reveal(item) }
