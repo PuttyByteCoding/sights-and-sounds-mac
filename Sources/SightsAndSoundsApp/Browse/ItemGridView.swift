@@ -282,13 +282,18 @@ private struct ItemCell: View {
                 $pending, library: model.library, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
                 onChange: {})
-            .task(id: item.id) {
+            // Keyed on the size as well: a tile enlarged with the slider
+            // is decoded again at its new size rather than stretched.
+            .task(id: "\(item.id)@\(ThumbnailImages.bucket(GridDisplaySettings.shared.grid.thumbnailSize))") {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id,
                     libraryID: model.libraryID,
                     durationSeconds: item.durationSeconds,
                     resolveFile: model.fileResolver(for: item))
-                thumbnail = data.flatMap(NSImage.init(data:))
+                // An adaptive column is at most 1.4× the chosen size.
+                thumbnail = await ThumbnailImages.shared.image(
+                    libraryID: model.libraryID, itemID: item.id, data: data,
+                    points: GridDisplaySettings.shared.grid.thumbnailSize * 1.4)
             }
     }
 
