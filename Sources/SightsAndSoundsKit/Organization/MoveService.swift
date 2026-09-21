@@ -98,7 +98,8 @@ extension LibraryDatabase {
         }
 
         AppLog.shared.info("moves", "moved \(fromPath) → \(toPath)")
-        return try writer.write { db in try Self.finish(intent, db) }
+        // A plain move always logs; only a revert's finish returns nil.
+        return try writer.write { db in try Self.finish(intent, db)! }
     }
 
     /// Undo a logged move: file back where it was, path restored, entry
@@ -115,21 +116,24 @@ extension LibraryDatabase {
         else { throw MoveError.sourceUnavailable }
 
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-        try Self.moveWithRetries(
-            fileAccess: fileAccess,
-            from: root.appendingPathComponent(log.toPath),
-            to: root.appendingPathComponent(log.fromPath))
+        // Journaled like the move it undoes; see `moveFile`.
+        let intent = PendingMove(
+            mediaItemID: log.mediaItemID, sourceID: log.sourceID, fileName: log.fileName,
+            fromPath: log.toPath, toPath: log.fromPath, sessionID: log.sessionID,
+            revertsLogID: log.id)
+        try writer.write { try intent.insert($0) }
+        do {
+            try Self.moveWithRetries(
+                fileAccess: fileAccess,
+                from: root.appendingPathComponent(log.toPath),
+                to: root.appendingPathComponent(log.fromPath))
+        } catch {
+            _ = try? writer.write { try PendingMove.deleteOne($0, key: intent.id) }
+            throw error
+        }
 
         AppLog.shared.info("moves", "reverted \(log.toPath) → \(log.fromPath)")
-        try writer.write { db in
-            try db.execute(
-                sql: "UPDATE fileMoveLog SET revertedAt = ? WHERE id = ?",
-                arguments: [Date(), logID])
-            if var item = try MediaItem.fetchOne(db, key: log.mediaItemID) {
-                item.setRelativePath(log.fromPath)
-                try item.updateWithSegmentPaths(db)
-            }
-        }
+        _ = try writer.write { db in try Self.finish(intent, db) }
     }
 
     /// The move log. `limit` is a DISPLAY default — the rows themselves
