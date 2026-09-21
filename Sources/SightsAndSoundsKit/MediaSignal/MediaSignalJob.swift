@@ -26,6 +26,12 @@ public struct MediaSignalJob: Job {
     /// return with the same scope.
     let payload: Data?
 
+    /// Files examined at the same time. On local disk a file costs a few
+    /// seconds of mostly single-threaded work; on a network share or a
+    /// spinning disk it costs mostly waiting. Both leave room for a second
+    /// and a third, and three 1080p files in hand is under a gigabyte.
+    var filesAtOnce = 3
+
     /// Seconds a stage may take on one item before the sweep gives up on
     /// it and moves on.
     var stageTimeout: @Sendable (MediaItem) -> Double = { item in 600 + (item.durationSeconds ?? 0) / 4 }
@@ -82,83 +88,66 @@ public struct MediaSignalJob: Job {
 
         // A visit is one item in one pass: the file is opened once for
         // every stage of that pass it still lacks. Passes run in order
-        // across the whole library.
-        struct Visit {
-            var item: MediaItem
-            var stages: [any SignalStage]
-        }
-        var visits: [Visit] = []
-        for pass in Set(stages.map(\.pass)).sorted() {
-            for entry in work {
+        // across the whole library, and never overlap.
+        let passes = Set(stages.map(\.pass)).sorted().map { pass in
+            work.compactMap { entry -> Visit? in
                 let due = entry.stages.compactMap { byName[$0] }.filter { $0.pass == pass }
-                if !due.isEmpty { visits.append(Visit(item: entry.item, stages: due)) }
+                return due.isEmpty ? nil : Visit(item: entry.item, stages: due)
             }
         }
+        let total = passes.reduce(0) { $0 + $1.count }
 
         var examined = 0
+        var launched = 0
         var failedItems: Set<UUID> = []
-        await context.reportProgress(current: 0, total: visits.count)
+        var spent: [String: Double] = [:]
+        await context.reportProgress(current: 0, total: total)
 
-        for (index, visit) in visits.enumerated() {
-            try await context.checkCancellation()
-            // One lane runs a library's jobs, so a sweep that takes days
-            // would make an import or an export wait days. Between visits
-            // it looks for anything queued, and if there is, queues its own
-            // return behind it and ends. What it had open is finished first.
-            if index > 0, try Self.anotherJobIsWaiting(in: library, forScopedSweep: scope != nil) {
+        for visits in passes where !visits.isEmpty {
+            let started = Date()
+            var waiting = visits.makeIterator()
+            var steppedAside = false
+            try await withThrowingTaskGroup(of: VisitOutcome.self) { group in
+                // Start the next visit, unless the sweep should be stopping.
+                // One lane runs a library's jobs, so a sweep that takes days
+                // would make an import or an export wait days: before each
+                // new visit it looks for anything queued, and if there is,
+                // starts nothing more. What is in hand is finished first.
+                func startNext() async throws -> Bool {
+                    try await context.checkCancellation()
+                    if launched > 0, try Self.anotherJobIsWaiting(in: library, forScopedSweep: scope != nil) {
+                        steppedAside = true
+                        return false
+                    }
+                    guard let visit = waiting.next() else { return false }
+                    guard let source = sources[visit.item.sourceID] else { return true }
+                    let job = self
+                    launched += 1
+                    group.addTask { try await job.perform(visit, from: source, context: context) }
+                    return true
+                }
+                var running = 0
+                while running < max(filesAtOnce, 1), try await startNext() { running += 1 }
+                while let outcome = try await group.next() {
+                    examined += 1
+                    if outcome.failed { failedItems.insert(outcome.itemID) }
+                    for (stage, seconds) in outcome.seconds { spent[stage, default: 0] += seconds }
+                    await context.reportProgress(current: examined, total: total)
+                    if !steppedAside { _ = try await startNext() }
+                }
+            }
+            AppLog.shared.info(
+                "signal",
+                "pass \(visits[0].stages[0].pass): \(visits.count) visits in \(Int(Date().timeIntervalSince(started))) s")
+            if steppedAside {
                 try await library.writer.write { db in
                     try JobRecord(kind: Self.kind, payload: payload).insert(db)
                 }
                 await context.setSummary(
-                    "\(examined) of \(visits.count) visits done; stepped aside for other work and continues after it")
+                    "\(examined) of \(total) visits done; stepped aside for other work and continues after it. "
+                        + Self.account(of: spent))
                 return
             }
-            guard let source = sources[visit.item.sourceID] else { continue }
-            let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
-                .appendingPathComponent(visit.item.relativePath)
-            let input = SignalStageInput(url: url, kind: visit.item.kind) {
-                await context.isCancelled
-            }
-
-            for stage in visit.stages {
-                // Written before the stage starts, so it is what a crash
-                // leaves behind. A file that takes the app down is then a
-                // reported failure on the next launch instead of the first
-                // thing the sweep opens again, every time.
-                try library.recordSignalStage(
-                    itemID: visit.item.id, stage: stage.name, version: stage.version,
-                    findings: SignalFindings(), failure: Self.interruptedMessage)
-                do {
-                    let findings = try await Self.examine(
-                        input, with: stage, givingUpAfter: stageTimeout(visit.item))
-                    try library.recordSignalStage(
-                        itemID: visit.item.id, stage: stage.name, version: stage.version,
-                        findings: findings)
-                } catch is CancellationError {
-                    // Stopped by hand: the file did nothing wrong.
-                    try library.forgetSignalStage(itemID: visit.item.id, stage: stage.name)
-                    throw CancellationError()
-                } catch {
-                    // A drive that stopped answering fails every file on it
-                    // the same way. Marking them would bury the real
-                    // failures under thousands of false ones, so the sweep
-                    // stops and leaves them unmarked for when it is back.
-                    if !source.isOnline(using: fileAccess) {
-                        try library.forgetSignalStage(itemID: visit.item.id, stage: stage.name)
-                        throw SourceWentOffline(sourceName: source.name)
-                    }
-                    try library.recordSignalStage(
-                        itemID: visit.item.id, stage: stage.name, version: stage.version,
-                        findings: SignalFindings(), failure: "\(error)")
-                    failedItems.insert(visit.item.id)
-                }
-                try await context.checkCancellation()
-            }
-            // After every visit, so what is known so far is already read:
-            // the cheap pass alone says "re-encoded by HandBrake".
-            try Self.drawConclusions(for: visit.item.id, in: library)
-            examined += 1
-            await context.reportProgress(current: index + 1, total: visits.count)
         }
 
         // Items whose findings are complete but whose conclusions were
@@ -177,10 +166,82 @@ public struct MediaSignalJob: Job {
             return
         }
 
-        await context.setSummary(
-            failedItems.isEmpty
-                ? "\(examined) visits to \(work.count) items"
-                : "\(examined) visits to \(work.count) items, \(failedItems.count) with a stage that failed")
+        let outcome = failedItems.isEmpty
+            ? "\(examined) visits to \(work.count) items"
+            : "\(examined) visits to \(work.count) items, \(failedItems.count) with a stage that failed"
+        await context.setSummary(spent.isEmpty ? outcome : outcome + ". " + Self.account(of: spent))
+    }
+
+    /// One item in one pass.
+    struct Visit: Sendable {
+        var item: MediaItem
+        var stages: [any SignalStage]
+    }
+
+    struct VisitOutcome: Sendable {
+        var itemID: UUID
+        var failed = false
+        var seconds: [String: Double] = [:]
+    }
+
+    /// Where the time went, largest first: "Time: sequences 58 %, sound 31 %".
+    /// A sweep that is slower than expected says why on its own row.
+    static func account(of spent: [String: Double]) -> String {
+        let total = spent.values.reduce(0, +)
+        guard total > 0 else { return "" }
+        let shares = spent.sorted { $0.value > $1.value }.prefix(4).map { stage, seconds in
+            "\(stage) \(Int((seconds / total * 100).rounded())) %"
+        }
+        return "Time: " + shares.joined(separator: ", ")
+    }
+
+    /// Take one item through the stages of one pass.
+    func perform(_ visit: Visit, from source: Source, context: JobContext) async throws -> VisitOutcome {
+        let library = context.library
+        var outcome = VisitOutcome(itemID: visit.item.id)
+        let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
+            .appendingPathComponent(visit.item.relativePath)
+        let input = SignalStageInput(url: url, kind: visit.item.kind) { await context.isCancelled }
+
+        for stage in visit.stages {
+            let started = Date()
+            // Written before the stage starts, so it is what a crash
+            // leaves behind. A file that takes the app down is then a
+            // reported failure on the next launch instead of the first
+            // thing the sweep opens again, every time.
+            try library.recordSignalStage(
+                itemID: visit.item.id, stage: stage.name, version: stage.version,
+                findings: SignalFindings(), failure: Self.interruptedMessage)
+            do {
+                let findings = try await Self.examine(
+                    input, with: stage, givingUpAfter: stageTimeout(visit.item))
+                try library.recordSignalStage(
+                    itemID: visit.item.id, stage: stage.name, version: stage.version, findings: findings)
+            } catch is CancellationError {
+                // Stopped by hand: the file did nothing wrong.
+                try library.forgetSignalStage(itemID: visit.item.id, stage: stage.name)
+                throw CancellationError()
+            } catch {
+                // A drive that stopped answering fails every file on it
+                // the same way. Marking them would bury the real failures
+                // under thousands of false ones, so the sweep stops and
+                // leaves them unmarked for when it is back.
+                if !source.isOnline(using: fileAccess) {
+                    try library.forgetSignalStage(itemID: visit.item.id, stage: stage.name)
+                    throw SourceWentOffline(sourceName: source.name)
+                }
+                try library.recordSignalStage(
+                    itemID: visit.item.id, stage: stage.name, version: stage.version,
+                    findings: SignalFindings(), failure: "\(error)")
+                outcome.failed = true
+            }
+            outcome.seconds[stage.name, default: 0] += Date().timeIntervalSince(started)
+            try await context.checkCancellation()
+        }
+        // After every visit, so what is known so far is already read: the
+        // cheap pass alone says "re-encoded by HandBrake".
+        try Self.drawConclusions(for: visit.item.id, in: library)
+        return outcome
     }
 
     /// A sweep of the whole library steps aside for anything. A scoped
