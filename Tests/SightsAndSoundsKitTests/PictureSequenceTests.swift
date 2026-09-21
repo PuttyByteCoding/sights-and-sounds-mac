@@ -5,7 +5,13 @@ import Testing
 @Suite struct CadenceReadingTests {
     /// Motion of varying size, so nothing but the inserted beat repeats.
     private func motion(_ count: Int) -> [Double] {
-        (0..<count).map { 4 + 2 * sin(Double($0) * 0.37) + Double(($0 * 7919) % 13) / 10 }
+        // Spelled out a step at a time: CI's older compiler gives up on
+        // the one-line version.
+        (0..<count).map { index -> Double in
+            let swell: Double = 2 * sin(Double(index) * 0.37)
+            let scatter: Double = Double((index * 7919) % 13) / 10
+            return 4 + swell + scatter
+        }
     }
 
     @Test func oneRepeatInFiveIsFilmCarriedAtVideoRate() {
@@ -51,7 +57,11 @@ import Testing
 
     @Test func blendedPulldownLeavesABeatInTheMotionAndNoRepeats() {
         // Big, big, big, small, small: no step is zero.
-        let differences = (0..<150).map { [6.0, 6.2, 5.9, 2.9, 3.1][$0 % 5] + Double($0 % 3) / 10 }
+        let steps: [Double] = [6.0, 6.2, 5.9, 2.9, 3.1]
+        let differences = (0..<150).map { index -> Double in
+            let wobble: Double = Double(index % 3) / 10
+            return steps[index % 5] + wobble
+        }
         let reading = CadenceReading.read(differences)
         #expect(reading.duplicateFraction == 0)
         #expect(reading.motionPeriod == 5)
