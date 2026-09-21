@@ -27,6 +27,56 @@ import Testing
         #expect(try f.library.writer.read { try Tag.fetchOne($0, key: f.bandB.id) } == nil)
     }
 
+    /// A merge deletes the discarded tag's row, and two things pointed at
+    /// it that no foreign key could re-point: the key bound to it (the
+    /// cascade just deleted the binding) and saved filters, which name
+    /// tags inside JSON. After "merge B into A" the key did nothing, a
+    /// filter requiring B matched nothing, and one excluding B stopped
+    /// excluding — none of it with an error.
+    @Test func mergingCarriesKeyBindingsAndSavedFiltersToTheKeeper() throws {
+        let f = try FilterFixture()
+        try f.library.writer.write { db in
+            try TagKeyBinding(key: "F2", tagID: f.bandB.id, advance: true).insert(db)
+        }
+        let requires = try f.library.saveFilter(
+            named: "Band B shows", MediaFilter(required: [.tag(f.bandB.id)], searchText: "live"))
+        let excludes = try f.library.saveFilter(
+            named: "Not B", MediaFilter(required: [.tag(f.bandA.id)], excluded: [.tag(f.bandB.id)]))
+
+        try f.library.mergeTags([f.bandB.id], into: .existing(f.bandA.id))
+
+        let binding = try f.library.writer.read { try TagKeyBinding.fetchOne($0, key: "F2") }
+        #expect(binding?.tagID == f.bandA.id)
+        #expect(binding?.advance == true)
+
+        let saved = try f.library.savedFilters()
+        let required = saved.first { $0.id == requires.id }?.filter
+        #expect(required?.required == [.tag(f.bandA.id)])
+        #expect(required?.searchText == "live")  // the rest of the filter is untouched
+        // Requiring A while excluding what is now A would match nothing:
+        // the excluded term goes, the filter keeps meaning "A".
+        let excluded = saved.first { $0.id == excludes.id }?.filter
+        #expect(excluded?.required == [.tag(f.bandA.id)])
+        #expect(excluded?.excluded == [])
+    }
+
+    @Test func mergingLeavesASavedFilterItCannotReadAlone() throws {
+        let f = try FilterFixture()
+        let saved = try f.library.saveFilter(named: "Odd", MediaFilter())
+        try f.library.writer.write { db in
+            try db.execute(
+                sql: "UPDATE savedFilter SET filterJSON = '{\"from\": \"a newer build\"}' WHERE id = ?",
+                arguments: [saved.id])
+        }
+
+        try f.library.mergeTags([f.bandB.id], into: .existing(f.bandA.id))
+
+        let json = try f.library.writer.read {
+            try String.fetchOne($0, sql: "SELECT filterJSON FROM savedFilter WHERE id = ?", arguments: [saved.id])
+        }
+        #expect(json == "{\"from\": \"a newer build\"}")
+    }
+
     // MARK: - Replacing
 
     /// Replace on one item: the pick goes on, the tag comes off, the
