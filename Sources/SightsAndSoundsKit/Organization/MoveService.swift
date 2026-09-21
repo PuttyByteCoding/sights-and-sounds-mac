@@ -460,6 +460,11 @@ extension LibraryDatabase {
 
     /// Six attempts for transient IO, ported pacing. A missing source file
     /// surfaces immediately — retrying can't conjure it back.
+    static let neverSucceedsOnRetry: Set<CocoaError.Code> = [
+        .fileWriteFileExists, .fileWriteNoPermission, .fileWriteVolumeReadOnly,
+        .fileWriteInvalidFileName, .fileReadNoPermission,
+    ]
+
     static func moveWithRetries(fileAccess: any FileAccess, from: URL, to: URL) throws {
         var lastError: (any Error)?
         for attempt in 1...6 {
@@ -468,6 +473,10 @@ extension LibraryDatabase {
                 return
             } catch let error as CocoaError where error.code == .fileNoSuchFile {
                 throw MoveError.moveFailed("source file is missing")
+            } catch let error as CocoaError where Self.neverSucceedsOnRetry.contains(error.code) {
+                // Just as true in a tenth of a second, and every retry
+                // sleeps: say so now.
+                throw MoveError.moveFailed("\(error.localizedDescription)")
             } catch {
                 lastError = error
                 if attempt < 6 { usleep(useconds_t(100_000 * attempt)) }

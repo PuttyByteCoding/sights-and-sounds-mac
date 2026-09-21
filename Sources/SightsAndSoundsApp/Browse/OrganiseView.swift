@@ -453,9 +453,22 @@ struct OrganiseView: View {
         } catch { errorText = "\(error)" }
     }
 
+    /// Off the main actor: putting a run back is a file move per entry,
+    /// and a run can be thousands.
     private func revert(_ session: LibraryDatabase.MoveSession) {
+        let library = model.library
+        status = "Putting \(session.revertibleCount) moves back…"
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try library.revertSession(session.id) }
+            }.value
+            finishRevert(result)
+        }
+    }
+
+    private func finishRevert(_ result: Result<(reverted: Int, failures: [String]), any Error>) {
         do {
-            let outcome = try model.library.revertSession(session.id)
+            let outcome = try result.get()
             errorText = outcome.failures.isEmpty
                 ? nil : outcome.failures.joined(separator: "; ")
             status = "\(outcome.reverted) moves put back"

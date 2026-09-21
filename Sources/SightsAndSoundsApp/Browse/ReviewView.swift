@@ -54,6 +54,7 @@ struct ReviewView: View {
     @State private var errorText: String?
     @State private var resolvedThisPass: [Mode: Int] = [:]
     @State private var confirmDelete = false
+    @State private var isPurging = false
     /// Ticked videos whose segments are not saved yet — asked about in
     /// place of the ordinary confirmation.
     @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
@@ -390,9 +391,9 @@ struct ReviewView: View {
                 Button("Restore selected") { restoreSelected() }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                     .disabled(deleteTicked.isEmpty)
-                Button("Delete \(deleteTicked.count) files") { askBeforePurging() }
+                Button(isPurging ? "Deleting…" : "Delete \(deleteTicked.count) files") { askBeforePurging() }
                     .buttonStyle(DestructiveButtonStyle())
-                    .disabled(deleteTicked.isEmpty)
+                    .disabled(deleteTicked.isEmpty || isPurging)
                     .unsavedSegmentsPrompt(
                         $unsavedSegments,
                         deletableCount: deleteTicked.count - (unsavedSegments?.count ?? 0),
@@ -456,12 +457,27 @@ struct ReviewView: View {
         } catch { errorText = "\(error)" }
     }
 
+    /// A file move per item, so off the main actor; and a restore that
+    /// could not happen says so instead of looking like it did.
     private func restoreSelected() {
-        for id in deleteTicked {
-            try? model.library.unstage(.toDelete, itemID: id)
-        }
+        let library = model.library, ids = Array(deleteTicked)
         deleteTicked = []
-        reload()
+        Task {
+            let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
+                ids.compactMap { id in
+                    do {
+                        try library.unstage(.toDelete, itemID: id)
+                        return nil
+                    } catch { return "\(error)" }
+                }
+            }.value
+            if let first = failures.first {
+                errorText = failures.count == 1
+                    ? "Could not restore: \(first)"
+                    : "\(failures.count) of \(ids.count) could not be restored. First: \(first)"
+            }
+            reload()
+        }
     }
 
     /// A ticked video that still has unsaved segments changes the
@@ -474,9 +490,24 @@ struct ReviewView: View {
         } catch { errorText = "\(error)" }
     }
 
+    /// Off the main actor: a purge moves a file per item, and a delete
+    /// list on a sleeping or networked drive used to beachball the window
+    /// for as long as that took.
     private func purge() {
+        let library = model.library, ids = Array(deleteTicked)
+        isPurging = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try library.purgeDeleted(itemIDs: ids) }
+            }.value
+            isPurging = false
+            finishPurge(result)
+        }
+    }
+
+    private func finishPurge(_ result: Result<LibraryDatabase.PurgeOutcome, any Error>) {
         do {
-            let outcome = try model.library.purgeDeleted(itemIDs: Array(deleteTicked))
+            let outcome = try result.get()
             resolvedThisPass[.deleteList, default: 0] += outcome.rowsDeleted
             var failures = outcome.fileFailures + outcome.rowFailures + outcome.keptForSegments
             let permanent = outcome.filesDeleted - outcome.filesTrashed
