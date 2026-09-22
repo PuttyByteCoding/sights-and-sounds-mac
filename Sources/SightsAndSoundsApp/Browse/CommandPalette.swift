@@ -460,7 +460,11 @@ struct CommandPalette: View {
     /// Operation names come from the one list the grid's context menu and
     /// the Operations window already share.
     private var operations: [PaletteCommand] {
-        Operation.allCases.map { operation in
+        [PaletteCommand(
+            group: .do, title: "Examine selected files (Media Signal)", symbol: "waveform.badge.magnifyingglass",
+            requiresSelection: 1
+        ) { model.examineSelection() }]
+        + Operation.allCases.map { operation in
             PaletteCommand(
                 group: .do, title: operation.title, symbol: "bolt",
                 requiresSelection: operation == .join ? 2 : 1
