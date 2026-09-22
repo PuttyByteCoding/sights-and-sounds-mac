@@ -406,6 +406,7 @@ private struct PlayerContent: View {
     @State private var showBindingsEditor = false
     /// The stage's rendered width, feeding `stageHeightCap`.
     @State private var stageWidth: CGFloat = 0
+    @State private var tagStripHeight: CGFloat = 0
 
     /// Panel sizes: draggable, clamped so the video always keeps a
     /// floor, persisted so they survive item switches (the .id(request)
@@ -440,7 +441,7 @@ private struct PlayerContent: View {
     }
 
     private var verticalCeiling: CGFloat {
-        max(0, contentSize.height - Self.videoFloor - chromeHeight - nameStripHeight)
+        max(0, contentSize.height - Self.videoFloor - chromeHeight - nameStripHeight - tagStripHeight)
     }
 
     /// Drawers share what is left under the video floor; whichever one is
@@ -585,6 +586,10 @@ private struct PlayerContent: View {
                 // budget before the video floor is measured.
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
                     chromeHeight = $0
+                }
+            AppliedTagsStrip()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+                    tagStripHeight = $0
                 }
             if model.panels.text {
                 HorizontalResizeHandle(
