@@ -670,21 +670,26 @@ private struct SidebarRow<Content: View>: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) { content }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 5).fill(background))
-            .contentShape(Rectangle())
-            .onTapGesture(perform: action)
-            .onHover { hovering = $0 }
-            // A tap gesture is invisible to assistive technology: it has
-            // no role, no state and nothing to press. Say what this is.
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-            .accessibilityValue(accessibilityState ?? "")
-            .accessibilityAction(.default, action)
+        // A button, not a tap gesture. The rows used to take their clicks
+        // through `onTapGesture`, and in the sidebar column, which draws
+        // its content up under the toolbar, a click landed on the row two
+        // below the one under the pointer: the gesture was hit-tested
+        // without the toolbar's inset. A button is hit-tested where it is
+        // drawn, and is what the row is anyway.
+        Button(action: action) {
+            HStack(spacing: 8) { content }
+                .padding(.vertical, 5)
+                .padding(.horizontal, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 5).fill(background))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(accessibilityState ?? "")
     }
 
     private var background: Color {
@@ -890,15 +895,20 @@ private struct FolderRows: View {
                 if node.children.isEmpty {
                     Color.clear.frame(width: 9)
                 } else {
-                    Chevron(expanded: expanded.contains(key(node)))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if expanded.contains(key(node)) {
-                                expanded.remove(key(node))
-                            } else {
-                                expanded.insert(key(node))
-                            }
+                    // Its own button inside the row's, so the disclosure
+                    // and the selection stay two different clicks.
+                    Button {
+                        if expanded.contains(key(node)) {
+                            expanded.remove(key(node))
+                        } else {
+                            expanded.insert(key(node))
                         }
+                    } label: {
+                        Chevron(expanded: expanded.contains(key(node)))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(expanded.contains(key(node)) ? "Collapse" : "Expand")
                 }
                 Text(node.name)
                     .font(Theme.ui(12))
