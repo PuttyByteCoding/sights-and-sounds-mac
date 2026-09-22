@@ -23,6 +23,9 @@ struct SidebarView: View {
     // Per-category tag-narrowing queries (view-only — never the media
     // filter). Keyed by category id, same lifetime as the sets above.
     @State private var tagQueries: [UUID: String] = [:]
+    // One query across every category, typed at the top. View-only like
+    // the per-category ones: it narrows what is listed, never the media.
+    @State private var tagSearch = ""
     // What the sidebar said back when it refused a click.
     @State private var refusal: String?
     @State private var showSaveFilter = false
@@ -55,14 +58,27 @@ struct SidebarView: View {
                     .padding(.horizontal, 8)
                     .padding(.top, 9)
             }
+            // Pinned above the scroll with the filter block: a search box
+            // that scrolls away with the categories is one you have to
+            // scroll back to in order to clear.
+            TagQueryField(text: $tagSearch, placeholder: "Search all tags", clearsOnEscape: true)
+                .padding(.horizontal, 1)
+                .padding(.top, 9)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    savedFiltersSection
-                    mediaTypeSection
-                    sourcesSection
-                    categorySections
-                    statusSection
-                    legend
+                    if tagSearch.trimmingCharacters(in: .whitespaces).isEmpty {
+                        savedFiltersSection
+                        mediaTypeSection
+                        sourcesSection
+                        categorySections
+                        statusSection
+                        legend
+                    } else {
+                        // While a search is typed the sidebar is the
+                        // answer to it and nothing else; the rest comes
+                        // back the moment the field is cleared.
+                        searchResults
+                    }
                 }
                 .padding(.horizontal, 8)
                 .padding(.top, 9)
@@ -388,6 +404,41 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    // MARK: - Search
+
+    /// Every tag the typed query finds, grouped under its category. The
+    /// rows are the same filter rows as in the categories, so clicking a
+    /// result cycles its slot exactly as it would there.
+    private var searchResults: some View {
+        let found = SidebarTagSearch.matches(
+            tagSearch, in: model.vocabulary, aliases: model.tagAliases,
+            isSlotted: { model.filter.slot(of: $0) != nil })
+        let count = found.reduce(0) { $0 + $1.tags.count }
+        return VStack(alignment: .leading, spacing: 0) {
+            SidebarSectionLabel(
+                count == 0 ? "No tags match"
+                    : count >= SidebarTagSearch.limit ? "First \(count) matching tags"
+                    : "\(count) matching tag\(count == 1 ? "" : "s")")
+            ForEach(found) { entry in
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.categoryHue(entry.category.colorIndex))
+                        .frame(width: 6, height: 6)
+                    Text(entry.category.name)
+                        .font(Theme.ui(10.5, .medium))
+                        .foregroundStyle(Theme.Text.quaternary)
+                }
+                .padding(.horizontal, 7)
+                .padding(.top, 9)
+                .padding(.bottom, 2)
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(entry.tags) { TagFilterRow(tag: $0) }
+                }
+            }
+        }
+        .padding(.top, 11)
     }
 
     // MARK: - Categories
@@ -767,10 +818,14 @@ private struct KindRow: View {
 /// which tag rows are SHOWN, never the media query itself.
 private struct TagQueryField: View {
     @Binding var text: String
+    var placeholder = "Filter tags"
     /// Expanding a category is a statement of intent to find one tag in
     /// it. Taking the keyboard here means the next keystroke narrows the
     /// list instead of falling through to the grid's single-key map.
     var focusOnAppear = false
+    /// Esc empties the field, which for the search at the top of the
+    /// sidebar is also what brings the sidebar back.
+    var clearsOnEscape = false
 
     @FocusState private var focused: Bool
 
@@ -779,12 +834,17 @@ private struct TagQueryField: View {
             Image(systemName: "magnifyingglass")
                 .font(Theme.ui(9))
                 .foregroundStyle(Theme.Text.disabled)
-            TextField("Filter tags", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.secondary)
                 .focused($focused)
                 .onAppear { if focusOnAppear { focused = true } }
+                .onKeyPress(.escape) {
+                    guard clearsOnEscape, !text.isEmpty else { return .ignored }
+                    text = ""
+                    return .handled
+                }
             if !text.isEmpty {
                 Button {
                     text = ""
