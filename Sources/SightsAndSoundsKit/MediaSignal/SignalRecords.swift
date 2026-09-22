@@ -109,6 +109,8 @@ public struct SignalFindings: Equatable, Sendable {
 
     public var declared: [String: String] = [:]
     public var measured: [Measured] = []
+    /// Curves the numbers were read from; see `SignalSeries`.
+    public var series: [Curve] = []
 
     public init() {}
 
@@ -132,6 +134,7 @@ public struct SignalFindings: Equatable, Sendable {
     public mutating func merge(_ other: SignalFindings) {
         declared.merge(other.declared) { _, new in new }
         measured += other.measured
+        series += other.series
     }
 }
 
@@ -150,6 +153,15 @@ extension LibraryDatabase {
             try db.execute(
                 sql: "DELETE FROM mediaSignalMeasurement WHERE mediaItemID = ? AND stage = ?",
                 arguments: [itemID, stage])
+            try db.execute(
+                sql: "DELETE FROM mediaSignalSeries WHERE mediaItemID = ? AND stage = ?",
+                arguments: [itemID, stage])
+            for curve in findings.series {
+                try SignalSeries(
+                    mediaItemID: itemID, stage: stage, key: curve.key, positionSeconds: curve.positionSeconds,
+                    length: curve.length, points: curve.points
+                ).insert(db)
+            }
             for (key, value) in findings.declared {
                 // Two stages may read the same fact from different tools.
                 // The first to say it keeps it; the supplementary tools
@@ -172,7 +184,7 @@ extension LibraryDatabase {
     /// Remove a stage's marker and rows, as if it had never looked.
     public func forgetSignalStage(itemID: UUID, stage: String) throws {
         try writer.write { db in
-            for table in ["mediaSignalDeclared", "mediaSignalMeasurement", "mediaSignalStage"] {
+            for table in ["mediaSignalDeclared", "mediaSignalMeasurement", "mediaSignalSeries", "mediaSignalStage"] {
                 try db.execute(
                     sql: "DELETE FROM \(table) WHERE mediaItemID = ? AND stage = ?", arguments: [itemID, stage])
             }
