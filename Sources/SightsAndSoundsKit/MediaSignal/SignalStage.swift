@@ -145,6 +145,7 @@ extension LibraryDatabase {
                 DELETE FROM mediaSignalInference;
                 DELETE FROM mediaSignalEvidence;
                 DELETE FROM mediaSignalMeasurement;
+                DELETE FROM mediaSignalSeries;
                 DELETE FROM mediaSignalDeclared;
                 DELETE FROM mediaSignalStage;
                 """)

@@ -986,6 +986,26 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // The curves the stills stage read its numbers from, kept so a
+        // change to how they are read (where detail "runs out", what
+        // counts as noise) can be applied to every examined file without
+        // decoding one. Compressed to a few hundred bytes each.
+        migrator.registerMigration("mediaSignalSeries") { db in
+            try db.execute(sql: """
+                CREATE TABLE mediaSignalSeries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mediaItemID BLOB NOT NULL REFERENCES mediaItem(id) ON DELETE CASCADE,
+                    stage TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    positionSeconds DOUBLE,
+                    length INTEGER NOT NULL,
+                    encoding TEXT NOT NULL,
+                    points BLOB NOT NULL
+                );
+                CREATE INDEX mediaSignalSeries_item ON mediaSignalSeries(mediaItemID, key);
+                """)
+        }
+
         return migrator
     }
 

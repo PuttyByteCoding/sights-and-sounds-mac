@@ -39,6 +39,8 @@ public enum DetailSpectrum {
         public var noiseMeetsFraction: Double
         /// The cutoffs lie above that point, and so describe the noise.
         public var noiseLimited: Bool
+        /// The averaged spectrum the readings were taken from.
+        public var power: [Float] = []
 
         /// The smaller of the two readings.
         public var effectiveFraction: Double { min(fraction, cliffFraction) }
@@ -110,7 +112,9 @@ public enum DetailSpectrum {
             }
             vDSP_vadd(power, 1, magnitudes, 1, &power, 1, vDSP_Length(n / 2))
         }
-        return cutoff(ofPower: power)
+        guard var found = cutoff(ofPower: power) else { return nil }
+        found.power = power
+        return found
     }
 
     /// Reads the cutoffs, and says whether they can be believed.
@@ -240,6 +244,7 @@ public enum DetailSpectrum {
         for frame in frames {
             let at = frame.positionSeconds
             if let cutoff = horizontal(frame, in: area) {
+                findings.keep("detail.spectrumAcross", spectrum: cutoff.power, at: at)
                 read += 1
                 if cutoff.noiseLimited { limited += 1 }
                 across.append((at, cutoff.fraction * Double(area.width)))
@@ -250,6 +255,7 @@ public enum DetailSpectrum {
                 }
             }
             if let cutoff = vertical(frame, in: area) {
+                findings.keep("detail.spectrumDown", spectrum: cutoff.power, at: at)
                 down.append((at, cutoff.fraction * Double(area.height)))
                 downBulk.append((at, cutoff.bulkFraction * Double(area.height)))
                 downCliff.append((at, cutoff.cliffFraction * Double(area.height)))

@@ -11,7 +11,7 @@ import Foundation
 /// worth having when the container can only describe the last encoder.
 public struct PictureStillsStage: SignalStage {
     public let name = "pictureStills"
-    public let version = 2
+    public let version = 3
     public let kinds: Set<MediaKind> = [.video]
     public let pass = 2
 
