@@ -452,6 +452,9 @@ private struct BulkBar: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             Button("Mark for deletion") { model.markSelectionForDeletion() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
+            Button("Examine") { model.examineSelection() }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .help("Run the Media Signal analysis on these files now, ahead of the library sweep")
             // The context menu still handles one item; a SELECTION goes
             // to the window that says what an operation will cost.
             Button("Operations…") {

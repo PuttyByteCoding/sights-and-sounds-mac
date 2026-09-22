@@ -1159,6 +1159,31 @@ final class BrowseModel {
         }
     }
 
+    /// Examine the selection's files now: what they declare, how their
+    /// frames are timed, what their picture and sound measure, and what
+    /// that is evidence of. A scoped sweep, so it runs ahead of the
+    /// library-wide one and steps aside for nothing but another sweep.
+    /// Like every sweep it fills in what is missing: an item examined
+    /// already is not decoded again.
+    ///
+    /// A segment is a range of its parent's file, so it is the parent
+    /// that is examined; selecting three clips of one video costs one
+    /// visit.
+    func examineSelection() {
+        let ids = Set(selectedItems.map { $0.parentMediaItemID ?? $0.id })
+        guard !ids.isEmpty else { return }
+        let runner = jobRunner
+        clearSelection()
+        Task {
+            do {
+                _ = try await MediaSignalJob.enqueue(on: runner, itemIDs: Array(ids))
+                try await runner.runPending()
+            } catch {
+                errorMessage = "\(error)"
+            }
+        }
+    }
+
     private func runOperation(_ enqueue: @escaping @Sendable (JobRunner) async throws -> Void) {
         let runner = jobRunner
         Task {
