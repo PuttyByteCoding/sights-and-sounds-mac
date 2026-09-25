@@ -117,4 +117,32 @@ import Testing
         try await waitUntil { model.item?.id == b.id }
         #expect(model.triageCount == 1)
     }
+
+    /// The setting: the ordinary mark (D, the ⌫ key, the toolbar button)
+    /// moves on as ⇧⌫ always has. Off, it toggles and stays put.
+    @Test func withTheSettingOnTheOrdinaryMarkMovesOnToo() async throws {
+        let (library, source, root) = try await makeLibrary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try await insert(library, source, root, "a.mp4", variant: 0)
+        let b = try await insert(library, source, root, "b.mp4", variant: 1)
+        let model = PlayerModel(
+            request: PlayerRequest(
+                libraryID: UUID(), itemID: a.id, playlist: [a.id, b.id], name: "Two"),
+            library: library, appDatabase: nil)
+        defer { model.shutdown() }
+        try await waitUntil { model.item?.id == a.id && model.fileURL != nil }
+
+        AppSettingsStore.shared.update { $0.deletionMarkAdvances = false }
+        defer { AppSettingsStore.shared.update { $0.deletionMarkAdvances = false } }
+        model.markForDeletion()
+        try await waitUntil { model.item?.markedForDeletion == true }
+        #expect(model.item?.id == a.id)  // stayed put, as before
+        model.markForDeletion()  // unmark, so the next mark is a mark
+        try await waitUntil { model.item?.markedForDeletion == false }
+
+        AppSettingsStore.shared.update { $0.deletionMarkAdvances = true }
+        model.markForDeletion()
+        try await waitUntil { model.item?.id == b.id }
+        #expect(try stored(library, a.id)?.markedForDeletion == true)
+    }
 }

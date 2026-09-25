@@ -267,6 +267,7 @@ private struct PlaybackSettingsPane: View {
     @State private var skip = AppSettingsStore.shared.current.skip
     @State private var startVideosMuted = AppSettingsStore.shared.current.startVideosMuted
     @State private var loopVideos = AppSettingsStore.shared.current.loopVideos
+    @State private var deletionMarkAdvances = AppSettingsStore.shared.current.deletionMarkAdvances
     @State private var infoBar = AppSettingsStore.shared.current.infoBar
     @State private var keyMap = AppSettingsStore.shared.current.keyMap
     @State private var digitsStamp = AppSettingsStore.shared.current.digitKeysStampTags
@@ -295,6 +296,12 @@ private struct PlaybackSettingsPane: View {
             Section("Looping") {
                 Toggle("Loop videos", isOn: $loopVideos)
                 Text("Restart from the beginning at the end of the item. Applies to the next item you play; L or the repeat button toggles it during playback.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Marking for deletion") {
+                Toggle("Move to the next item after marking", isOn: $deletionMarkAdvances)
+                Text("D, the Delete key and the toolbar button mark the item and move on, as Shift-Delete always does. Unmarking stays put. Applies immediately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -346,6 +353,9 @@ private struct PlaybackSettingsPane: View {
         }
         .onChange(of: startVideosMuted) {
             AppSettingsStore.shared.update { $0.startVideosMuted = startVideosMuted }
+        }
+        .onChange(of: deletionMarkAdvances) {
+            AppSettingsStore.shared.update { $0.deletionMarkAdvances = deletionMarkAdvances }
         }
         .onChange(of: loopVideos) {
             AppSettingsStore.shared.update { $0.loopVideos = loopVideos }

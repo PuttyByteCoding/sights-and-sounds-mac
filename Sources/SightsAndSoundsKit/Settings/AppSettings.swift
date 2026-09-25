@@ -24,6 +24,11 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// Playback restarts from the beginning at the end of the item.
     public var loopVideos: Bool
 
+    /// Marking the item for deletion (D, the ⌫ key, the toolbar button)
+    /// moves on to the next item, as ⇧⌫ always does. Unmarking never
+    /// moves: what was just restored stays in front of you.
+    public var deletionMarkAdvances: Bool
+
     /// Which elements the player's info bar shows.
     public var infoBar: InfoBarSettings
 
@@ -136,6 +141,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         skip: SkipSettings = SkipSettings(),
         startVideosMuted: Bool = true,
         loopVideos: Bool = true,
+        deletionMarkAdvances: Bool = false,
         infoBar: InfoBarSettings = InfoBarSettings(),
         keyMap: KeyMapStyle = .mac,
         grid: GridSettings = GridSettings(),
@@ -167,6 +173,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.skip = skip
         self.startVideosMuted = startVideosMuted
         self.loopVideos = loopVideos
+        self.deletionMarkAdvances = deletionMarkAdvances
         self.infoBar = infoBar
         self.keyMap = keyMap
         self.grid = grid
@@ -206,6 +213,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.startVideosMuted
         loopVideos = try container.decodeIfPresent(Bool.self, forKey: .loopVideos)
             ?? defaults.loopVideos
+        deletionMarkAdvances = try container.decodeIfPresent(Bool.self, forKey: .deletionMarkAdvances)
+            ?? defaults.deletionMarkAdvances
         infoBar = try container.decodeIfPresent(InfoBarSettings.self, forKey: .infoBar)
             ?? defaults.infoBar
         keyMap = try container.decodeIfPresent(KeyMapStyle.self, forKey: .keyMap)

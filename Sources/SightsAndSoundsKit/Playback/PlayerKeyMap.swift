@@ -135,7 +135,8 @@ extension KeyMapStyle {
         KeyMapRow(
             label: "Flag favorite / review / issue / delete",
             web: "F  R  W  D", mac: "F  R  W  D"),
-        KeyMapRow(label: "Delete and move on, in a tag field too", web: "⇧⌫", mac: "⇧⌫"),
+        KeyMapRow(label: "Mark for deletion (moves on if the setting says so)", web: "⌫ · D", mac: "⌫ · D"),
+        KeyMapRow(label: "Mark and move on, in a tag field too", web: "⇧⌫", mac: "⇧⌫"),
         KeyMapRow(label: "Mute / loop", web: "M · L", mac: "M · L"),
         KeyMapRow(label: "Toggle tag panel", web: "T", mac: "T"),
         KeyMapRow(label: "Toggle checkbox tag 1…9", web: "⌥1 … ⌥9", mac: "⌥1 … ⌥9"),

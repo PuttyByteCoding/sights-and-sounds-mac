@@ -165,6 +165,14 @@ struct PlayerView: View {
             model.toggleDeletionAndAdvance()
             return true
         }
+        // The bare ⌫ key is the ordinary mark, when no text field has
+        // it: same as D, and moves on when the setting says so.
+        if press.modifiers.isDisjoint(with: [.shift, .command, .control, .option]),
+           press.key == .delete || press.key == .deleteForward,
+           !(NSApp.keyWindow?.firstResponder is NSTextView) {
+            model.markForDeletion()
+            return true
+        }
 
         // A tag field with a list open takes Esc itself: the list closes
         // and the field stays, empty and focused. The next Esc unwinds.
@@ -1006,7 +1014,7 @@ private struct FlagButtons: View {
             flag(.favorite, on: item.isFavorite, "★", "Favorite (F)")
             flag(.needsReview, on: item.needsReview, "⟳", "Needs review (R)")
             flag(.playbackIssue, on: item.playbackIssue, "⚠", "Playback issue (W)")
-            flag(.markedForDeletion, on: item.markedForDeletion, "⌫", "Marked for deletion (D · ⇧⌫ marks and moves on)")
+            flag(.markedForDeletion, on: item.markedForDeletion, "⌫", "Marked for deletion (D or ⌫ · ⇧⌫ always marks and moves on)")
         }
     }
 
@@ -1014,7 +1022,11 @@ private struct FlagButtons: View {
         _ flag: PlayerToggleFlag, on: Bool, _ glyph: String, _ help: String
     ) -> some View {
         Button {
-            model.perform(action(for: flag))
+            if flag == .markedForDeletion {
+                model.markForDeletion()
+            } else {
+                model.perform(action(for: flag))
+            }
         } label: {
             Text(glyph)
                 .font(Theme.ui(12))
