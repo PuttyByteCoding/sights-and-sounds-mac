@@ -36,6 +36,16 @@ import Testing
         #expect(found.flatMap(\.tags).map(\.name) == ["Blue Orchestra", "Bluebird Hall"])
     }
 
+    @Test func caseAccentsAndPunctuationDoNotMatter() {
+        for query in ["BLUE", "bLuE", "blue", "Blüe", "b.l.u.e"] {
+            let found = SidebarTagSearch.matches(query, in: vocabulary, aliases: [:], isSlotted: { _ in false })
+            #expect(found.flatMap(\.tags).map(\.name) == ["Blue Orchestra", "Bluebird Hall"], "query \(query) found \(found.flatMap(\.tags).map(\.name))")
+        }
+        // Upper-case in the tag, lower in the query.
+        let found = SidebarTagSearch.matches("the barn", in: vocabulary, aliases: [:], isSlotted: { _ in false })
+        #expect(found.flatMap(\.tags).map(\.name) == ["The Barn"])
+    }
+
     @Test func anAliasFindsItsTag() {
         let barn = vocabulary[1].tags[1]
         let found = SidebarTagSearch.matches("shed", in: vocabulary, aliases: [barn.id: ["The Shed"]], isSlotted: { _ in false })

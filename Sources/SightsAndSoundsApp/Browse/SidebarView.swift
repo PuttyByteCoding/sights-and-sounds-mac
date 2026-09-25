@@ -632,10 +632,11 @@ struct SidebarView: View {
     }
 
     /// The category's tags under its narrowing query. Name and alias
-    /// match case-insensitively; a tag with an ACTIVE filter slot always
+    /// match under the one fold every tag search uses (case, accents and
+    /// punctuation set aside); a tag with an ACTIVE filter slot always
     /// stays visible, so a selection can never hide behind the query.
     private func visibleTags(of entry: CategoryTags) -> [Tag] {
-        let query = tagQueries[entry.category.id, default: ""]
+        let query = TagSearchEntry.fold(tagQueries[entry.category.id, default: ""])
             .trimmingCharacters(in: .whitespaces)
         let matching: [Tag]
         if query.isEmpty {
@@ -643,9 +644,9 @@ struct SidebarView: View {
         } else {
             matching = entry.tags.filter { tag in
                 model.filter.slot(of: tag.id) != nil
-                    || tag.name.localizedCaseInsensitiveContains(query)
+                    || TagSearchEntry.fold(tag.name).contains(query)
                     || (model.tagAliases[tag.id] ?? [])
-                        .contains { $0.localizedCaseInsensitiveContains(query) }
+                        .contains { TagSearchEntry.fold($0).contains(query) }
             }
         }
         return sorted(matching, by: tagSorts[entry.category.id] ?? .alphabetical)
