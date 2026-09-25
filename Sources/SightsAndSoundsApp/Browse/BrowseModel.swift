@@ -805,9 +805,15 @@ final class BrowseModel {
     /// Where a shift-click measures from.
     private var selectionAnchor: UUID?
 
-    /// A click on a tile. ⌘ or ⇧ starts a selection; once one exists,
-    /// plain clicks extend it — the modifier is for getting in, not for
-    /// staying in.
+    /// A click on a tile ticks it, and a second click unticks it: the
+    /// grid selects like a photo picker, not like a list, because what a
+    /// selection is for here is doing one thing to many. ⇧-click ticks
+    /// the run from the last tick to this one. ⌘ is accepted and means
+    /// the same as a plain click, for hands that reach for it. Double-
+    /// click plays; Esc clears.
+    ///
+    /// It used to take ⌘ or ⇧ to start a selection, with plain clicks
+    /// extending one already begun. Nobody found the way in.
     func click(_ itemID: UUID, extend: Bool, range: Bool) {
         let listing = visibleItems.map(\.id)
         if range, let anchor = selectionAnchor,
@@ -816,7 +822,6 @@ final class BrowseModel {
             selection.formUnion(listing[min(from, to)...max(from, to)])
             return
         }
-        guard extend || !selection.isEmpty else { return }
         if selection.contains(itemID) {
             selection.remove(itemID)
         } else {
@@ -899,21 +904,45 @@ final class BrowseModel {
     /// Stage the selection for deletion. This MOVES each file into the
     /// staging folder, exactly as the single-item action does — nothing
     /// is deleted, and Review is where it is undone.
-    func markSelectionForDeletion() {
-        let items = selectedItems
-        // Each item is a file move, so this cannot be one transaction.
-        // What it can be is honest: carry on past a failure, always
-        // refresh so the grid shows what did happen, and say what did not.
-        // And off the main actor: a selection of a few hundred on a
-        // networked drive is a few hundred file moves.
+    func markSelectionForDeletion() { stageSelection(.toDelete, on: true) }
+
+    /// Clear the mark and put each file back where it was.
+    func unmarkSelectionForDeletion() { stageSelection(.toDelete, on: false) }
+
+    /// Flag the selection as not playing and stage the files, as the
+    /// player's W key does one at a time.
+    func markSelectionWontPlay() { stageSelection(.playbackIssue, on: true) }
+
+    func unmarkSelectionWontPlay() { stageSelection(.playbackIssue, on: false) }
+
+    /// One routine for the four marks. Each item is a file move, so this
+    /// cannot be one transaction. What it can be is honest: carry on past
+    /// a failure, let the change hub refresh the grid to what did happen,
+    /// and say what did not. And off the main actor: a selection of a
+    /// few hundred on a networked drive is a few hundred file moves.
+    /// Items already in the asked-for state are left alone, so marking a
+    /// mixed selection marks the rest and moves nothing twice.
+    private func stageSelection(_ folder: StagingFolder, on: Bool) {
+        let items = selectedItems.filter { item in
+            switch folder {
+            case .toDelete: item.markedForDeletion != on
+            case .playbackIssue: item.playbackIssue != on
+            }
+        }
+        guard !items.isEmpty else { return }
         let library = library
+        let verb = on ? "mark" : "restore"
         clearSelection()
         Task {
             let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
                 var failures: [String] = []
                 for item in items {
                     do {
-                        try library.stage(.toDelete, itemID: item.id)
+                        if on {
+                            try library.stage(folder, itemID: item.id)
+                        } else {
+                            try library.unstage(folder, itemID: item.id)
+                        }
                     } catch {
                         failures.append("\(item.fileName): \(error)")
                     }
@@ -922,8 +951,8 @@ final class BrowseModel {
             }.value
             if let first = failures.first {
                 errorMessage = failures.count == 1
-                    ? "Could not mark \(first)"
-                    : "\(failures.count) of \(items.count) could not be marked. First: \(first)"
+                    ? "Could not \(verb) \(first)"
+                    : "\(failures.count) of \(items.count) could not be \(verb)d. First: \(first)"
             }
         }
     }
@@ -950,6 +979,33 @@ final class BrowseModel {
             try library.assignTag(tagID, to: selectedItems.map(\.id))
         } catch {
             errorMessage = "\(error)"
+        }
+    }
+
+    /// Take one tag off everything selected that carries it.
+    func removeTagFromSelection(_ tagID: UUID) {
+        do {
+            try library.removeTag(tagID, from: selectedItems.map(\.id))
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
+    /// The tags any selected item carries, in category order, for the
+    /// bulk bar's Remove picker. Only what the grid already knows: when
+    /// the tile view draws no tags this is empty, and the picker says so.
+    var tagsOnSelection: [TagPill] {
+        var seen: Set<UUID> = []
+        var pills: [TagPill] = []
+        for item in selectedItems {
+            for pill in itemTags[item.id] ?? [] where seen.insert(pill.id).inserted {
+                pills.append(pill)
+            }
+        }
+        let order = Dictionary(uniqueKeysWithValues: vocabulary.enumerated().map { ($1.category.id, $0) })
+        return pills.sorted {
+            let (a, b) = (order[$0.categoryID] ?? .max, order[$1.categoryID] ?? .max)
+            return a == b ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : a < b
         }
     }
 
