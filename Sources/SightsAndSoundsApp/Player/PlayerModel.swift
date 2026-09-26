@@ -640,7 +640,12 @@ final class PlayerModel {
         guard let action = PlayerKeyMap.action(
             character: character, shift: shift, numpad: numpad, settings: skipSettings)
         else { return false }
-        perform(action)
+        // The D key is the ordinary mark, which may move on.
+        if action == .toggleMarkedForDeletion {
+            markForDeletion()
+        } else {
+            perform(action)
+        }
         return true
     }
 
@@ -1124,6 +1129,17 @@ final class PlayerModel {
         guard marking, self.item?.markedForDeletion == true else { return }
         if triageMode { triageCount += 1 }
         goNext()
+    }
+
+    /// D, the ⌫ key and the toolbar button: the ordinary toggle, which
+    /// moves on after a mark when the setting says so, and otherwise
+    /// stays put.
+    func markForDeletion() {
+        if AppSettingsStore.shared.current.deletionMarkAdvances {
+            toggleDeletionAndAdvance()
+        } else {
+            perform(.toggleMarkedForDeletion)
+        }
     }
 
     // MARK: - Blocks
