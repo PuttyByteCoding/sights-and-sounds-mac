@@ -434,6 +434,7 @@ private struct BulkBar: View {
     @Environment(BrowseModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @State private var showTagPicker = false
+    @State private var showTagRemover = false
 
     var body: some View {
         HStack(spacing: 9) {
@@ -441,17 +442,39 @@ private struct BulkBar: View {
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.Accent.amber)
             divider
+            Button("Play these") { model.queueSelection() }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .help("Open the player with the selection as its queue, in this order")
+            divider
             Button("Add tags") { showTagPicker = true }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .popover(isPresented: $showTagPicker, arrowEdge: .top) {
                     BulkTagPicker()
                 }
+            Button("Remove tags") { showTagRemover = true }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .popover(isPresented: $showTagRemover, arrowEdge: .top) {
+                    BulkTagRemover()
+                }
             Button("Mark reviewed") { model.markSelectionReviewed() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-            Button("Add to queue") { model.queueSelection() }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-            Button("Mark for deletion") { model.markSelectionForDeletion() }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
+            divider
+            // Mark and unmark as a pair, so a mixed selection can be
+            // brought to either state in one click.
+            Menu("Deletion") {
+                Button("Mark for deletion") { model.markSelectionForDeletion() }
+                Button("Restore from deletion") { model.unmarkSelectionForDeletion() }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Stage these files for deletion, or put staged ones back")
+            Menu("Won't play") {
+                Button("Mark as won't play") { model.markSelectionWontPlay() }
+                Button("Clear won't play") { model.unmarkSelectionWontPlay() }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Flag these as having a playback issue, or clear the flag")
             Button("Examine") { model.examineSelection() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Run the Media Signal analysis on these files now, ahead of the library sweep")
@@ -485,6 +508,59 @@ private struct BulkBar: View {
         Rectangle()
             .fill(Theme.Border.raised)
             .frame(width: 1, height: 17)
+    }
+}
+
+/// Untagging a selection: only the tags something selected carries, one
+/// click per tag. Removing a tag an item does not have is a no-op, so a
+/// mixed selection is safe.
+private struct BulkTagRemover: View {
+    @Environment(BrowseModel.self) private var model
+
+    var body: some View {
+        let pills = model.tagsOnSelection
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Remove tags from \(model.selection.count) items")
+                .modifier(Theme.sectionLabel())
+            if pills.isEmpty {
+                Text(GridDisplaySettings.shared.grid.needsTagData
+                    ? "The selected items carry no tags."
+                    : "The tile view shows no tags, so there is nothing to pick from here. Choose a view that shows tags.")
+                    .font(Theme.ui(11.5))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    FlowRow(spacing: 5) {
+                        ForEach(pills) { pill in
+                            let hue = Theme.categoryHue(pill.colorIndex)
+                            Button {
+                                model.removeTagFromSelection(pill.id)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(pill.name)
+                                    Image(systemName: "xmark")
+                                        .font(Theme.ui(8, .bold))
+                                }
+                                .font(Theme.ui(11.5))
+                                .foregroundStyle(Theme.Text.secondary)
+                                .padding(.vertical, 3)
+                                .padding(.horizontal, 9)
+                                .background {
+                                    Capsule().fill(hue.opacity(0.12)).stroke(hue.opacity(0.35), lineWidth: 1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(pill.categoryName): \(pill.name). Remove from every selected item that has it.")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 320)
+        .frame(maxHeight: 340)
+        .background(Theme.Surface.dialog)
     }
 }
 

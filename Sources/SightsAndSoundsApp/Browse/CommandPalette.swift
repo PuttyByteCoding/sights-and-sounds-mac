@@ -438,9 +438,31 @@ struct CommandPalette: View {
                 keyEquivalent: "D", requiresSelection: 1
             ) { model.markSelectionForDeletion() },
             PaletteCommand(
-                group: .tag, title: "Add to queue", symbol: "play.rectangle",
+                group: .tag, title: "Restore from deletion", symbol: "arrow.uturn.backward",
+                requiresSelection: 1
+            ) { model.unmarkSelectionForDeletion() },
+            PaletteCommand(
+                group: .tag, title: "Mark as won't play", symbol: "wrench",
+                requiresSelection: 1
+            ) { model.markSelectionWontPlay() },
+            PaletteCommand(
+                group: .tag, title: "Clear won't play", symbol: "play.circle",
+                requiresSelection: 1
+            ) { model.unmarkSelectionWontPlay() },
+            PaletteCommand(
+                group: .tag, title: "Play the selection", symbol: "play.rectangle",
                 requiresSelection: 1
             ) { model.queueSelection() },
+            PaletteCommand(
+                group: .tag, title: "Remove a tag…", symbol: "minus.circle",
+                requiresSelection: 1,
+                arguments: {
+                    model.tagsOnSelection.map { pill in
+                        PaletteCommand(group: .tag, title: "\(pill.name) (\(pill.categoryName))", symbol: "tag") {
+                            model.removeTagFromSelection(pill.id)
+                        }
+                    }
+                }),
         ]
         for entry in model.vocabulary {
             commands.append(PaletteCommand(

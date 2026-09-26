@@ -213,10 +213,18 @@ extension LibraryDatabase {
     }
 
     public func removeTag(_ tagID: UUID, from itemID: UUID) throws {
+        try removeTag(tagID, from: [itemID])
+    }
+
+    /// Take a tag off many items in one transaction; items without it
+    /// are untouched.
+    public func removeTag(_ tagID: UUID, from itemIDs: [UUID]) throws {
         try writer.write { db in
-            try db.execute(
-                sql: "DELETE FROM mediaItemTag WHERE mediaItemID = ? AND tagID = ?",
-                arguments: [itemID, tagID])
+            for itemID in itemIDs {
+                try db.execute(
+                    sql: "DELETE FROM mediaItemTag WHERE mediaItemID = ? AND tagID = ?",
+                    arguments: [itemID, tagID])
+            }
         }
     }
 
