@@ -573,6 +573,17 @@ extension LibraryDatabase {
     /// Mark items reviewed (or send them back to the queue). The browse
     /// grid's bulk bar is the only caller today; it lives here because a
     /// flag every surface reads should have one write path.
+    /// Favourite, or not, for many items in one transaction.
+    public func setFavorite(_ itemIDs: [UUID], _ isFavorite: Bool) throws {
+        guard !itemIDs.isEmpty else { return }
+        try writer.write { db in
+            let placeholders = Array(repeating: "?", count: itemIDs.count).joined(separator: ", ")
+            try db.execute(
+                sql: "UPDATE mediaItem SET isFavorite = ? WHERE id IN (\(placeholders))",
+                arguments: StatementArguments([isFavorite] + itemIDs.map { $0 as any DatabaseValueConvertible }))
+        }
+    }
+
     public func setNeedsReview(_ itemIDs: [UUID], _ needsReview: Bool) throws {
         guard !itemIDs.isEmpty else { return }
         try writer.write { db in

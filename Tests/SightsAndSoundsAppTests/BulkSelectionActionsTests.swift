@@ -123,4 +123,25 @@ import Testing
         #expect(request.playlist == [items[0].id, items[2].id])
         #expect(model.selection.isEmpty)
     }
+
+    @Test func theFavouriteGoesOnForAMixedSelectionAndOffForAnAllFavouriteOne() async throws {
+        let (model, library, items, _) = try await makeModel()
+        try library.setFavorite([items[0].id], true)
+        try await waitUntil { model.items.first { $0.id == items[0].id }?.isFavorite == true }
+        model.click(items[0].id, extend: false, range: false)
+        model.click(items[1].id, extend: false, range: false)
+
+        model.toggleSelectionFavorite()  // one is not yet: both become favourites
+        try await waitUntil {
+            (try? self.stored(library, items[1].id)?.isFavorite) == true
+                && (try? self.stored(library, items[0].id)?.isFavorite) == true
+        }
+        try await waitUntil { model.selectedItems.allSatisfy(\.isFavorite) }
+        model.toggleSelectionFavorite()  // all are: both stop being
+        try await waitUntil {
+            (try? self.stored(library, items[0].id)?.isFavorite) == false
+                && (try? self.stored(library, items[1].id)?.isFavorite) == false
+        }
+        #expect(try stored(library, items[2].id)?.isFavorite == false)
+    }
 }
