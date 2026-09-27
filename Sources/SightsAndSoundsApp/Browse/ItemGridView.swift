@@ -297,7 +297,52 @@ private struct ItemCell: View {
             }
     }
 
+    /// Right-clicking a tile that is part of a selection of several asks
+    /// about the selection, as it does in the Finder; the actions that
+    /// only make sense for one file are a submenu at the bottom. A tile
+    /// outside the selection, or alone in it, gets its own menu.
     @ViewBuilder private var menu: some View {
+        let selected = model.selectedItems
+        if selected.count > 1, model.selection.contains(item.id) {
+            selectionMenu(selected)
+            Divider()
+            Menu("This File Only") { itemMenu }
+        } else {
+            itemMenu
+        }
+    }
+
+    @ViewBuilder private func selectionMenu(_ selected: [MediaItem]) -> some View {
+        let count = selected.count
+        Button("Play \(count) Selected", systemImage: "play") { model.queueSelection() }
+        Button(
+            selected.contains { !$0.isFavorite } ? "Add \(count) to Favourites" : "Remove \(count) from Favourites",
+            systemImage: selected.contains { !$0.isFavorite } ? "star" : "star.slash"
+        ) { model.toggleSelectionFavorite() }
+        Divider()
+        if selected.contains(where: { !$0.markedForDeletion }) {
+            Button("Mark \(count) for Deletion", systemImage: "trash") { model.markSelectionForDeletion() }
+        }
+        if selected.contains(where: \.markedForDeletion) {
+            Button("Restore \(count) from Deletion Staging", systemImage: "arrow.uturn.backward") {
+                model.unmarkSelectionForDeletion()
+            }
+        }
+        if selected.contains(where: { !$0.playbackIssue }) {
+            Button("Mark \(count) as Won't Play", systemImage: "wrench") { model.markSelectionWontPlay() }
+        }
+        if selected.contains(where: \.playbackIssue) {
+            Button("Clear Playback Issue on \(count)", systemImage: "play.circle") { model.unmarkSelectionWontPlay() }
+        }
+        Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") { model.markSelectionReviewed() }
+        Divider()
+        Button("Write Tags to \(count) Files", systemImage: "square.and.pencil") {
+            model.writeTags(itemIDs: selected.map(\.id), scope: "\(count) selected items")
+        }
+        Button("Examine \(count)", systemImage: "waveform.badge.magnifyingglass") { model.examineSelection() }
+    }
+
+    @ViewBuilder private var itemMenu: some View {
         Button("Play", systemImage: "play") { play() }
             .disabled(!model.isOnline(item))
         Button(

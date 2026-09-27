@@ -982,6 +982,18 @@ final class BrowseModel {
         }
     }
 
+    /// Favourite the selection, or unfavourite it: on when any selected
+    /// item is not yet a favourite, off when they all are.
+    func toggleSelectionFavorite() {
+        let items = selectedItems
+        let on = items.contains { !$0.isFavorite }
+        do {
+            try library.setFavorite(items.map(\.id), on)
+        } catch {
+            errorMessage = "\(error)"
+        }
+    }
+
     /// Take one tag off everything selected that carries it.
     func removeTagFromSelection(_ tagID: UUID) {
         do {
