@@ -263,46 +263,10 @@ struct CommandPalette: View {
         ["↑↓ move", "⏎ run", drilled == nil ? "esc clear" : "esc back", "⌃K close"]
     }
 
-    // MARK: - Matching
-
-    /// Fuzzy enough to be forgiving, strict enough to rank: an exact
-    /// prefix beats a word start beats a subsequence.
-    private func score(_ title: String, _ query: String) -> Int? {
-        let title = title.lowercased(), query = query.lowercased()
-        guard !query.isEmpty else { return 0 }
-        if title.hasPrefix(query) { return 3 }
-        if title.split(separator: " ").contains(where: { $0.hasPrefix(query) }) { return 2 }
-        if title.contains(query) { return 1 }
-        // Subsequence: "eoc" finds "Export Copy…".
-        var remaining = Substring(query)
-        for character in title where character == remaining.first {
-            remaining = remaining.dropFirst()
-            if remaining.isEmpty { return 0 }
-        }
-        return nil
-    }
-
     private var visible: [PaletteCommand] {
-        let commands = drilled?.arguments?() ?? allCommands
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
-            // Empty means RECENT — the palette should reward the second
-            // use of a command more than the first.
-            guard drilled == nil else { return commands }
-            let recents = model.paletteRecents
-            let byID = Dictionary(uniqueKeysWithValues: commands.map { ($0.id, $0) })
-            let recent = recents.compactMap { byID[$0] }
-            return recent.isEmpty ? commands : recent + commands.filter { !recents.contains($0.id) }
-        }
-        // Typing a group name narrows to it.
-        if let group = PaletteCommand.Group.allCases.first(
-            where: { $0.searchWord == trimmed.lowercased() }) {
-            return commands.filter { $0.group == group }
-        }
-        return commands
-            .compactMap { command in score(command.title, trimmed).map { ($0, command) } }
-            .sorted { $0.0 > $1.0 }
-            .map(\.1)
+        PaletteCommand.ordered(
+            drilled?.arguments?() ?? allCommands,
+            query: query, recents: drilled == nil ? model.paletteRecents : [])
     }
 
     private func unmetRequirement(_ command: PaletteCommand) -> String? {
@@ -517,5 +481,54 @@ struct CommandPalette: View {
                 display.persist()
             }))
         return commands
+    }
+}
+
+// MARK: - Matching
+
+extension PaletteCommand {
+    /// The rows in the order the keyboard walks them — which is the
+    /// order they are drawn: grouped by section, and ranked (or recent
+    /// first) within each. Walking the plain ranking let ⏎ run a row
+    /// that was not the top one on screen.
+    static func ordered(_ commands: [PaletteCommand], query: String, recents: [String]) -> [PaletteCommand] {
+        let ranked = ranked(commands, query: query, recents: recents)
+        return Group.allCases.flatMap { group in ranked.filter { $0.group == group } }
+    }
+
+    private static func ranked(_ commands: [PaletteCommand], query: String, recents: [String]) -> [PaletteCommand] {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            // Empty means RECENT — the palette should reward the second
+            // use of a command more than the first.
+            let byID = Dictionary(uniqueKeysWithValues: commands.map { ($0.id, $0) })
+            let recent = recents.compactMap { byID[$0] }
+            return recent.isEmpty ? commands : recent + commands.filter { !recents.contains($0.id) }
+        }
+        // Typing a group name narrows to it.
+        if let group = Group.allCases.first(where: { $0.searchWord == trimmed.lowercased() }) {
+            return commands.filter { $0.group == group }
+        }
+        return commands
+            .compactMap { command in score(command.title, trimmed).map { ($0, command) } }
+            .sorted { $0.0 > $1.0 }
+            .map(\.1)
+    }
+
+    /// Fuzzy enough to be forgiving, strict enough to rank: an exact
+    /// prefix beats a word start beats a subsequence.
+    static func score(_ title: String, _ query: String) -> Int? {
+        let title = title.lowercased(), query = query.lowercased()
+        guard !query.isEmpty else { return 0 }
+        if title.hasPrefix(query) { return 3 }
+        if title.split(separator: " ").contains(where: { $0.hasPrefix(query) }) { return 2 }
+        if title.contains(query) { return 1 }
+        // Subsequence: "eoc" finds "Export Copy…".
+        var remaining = Substring(query)
+        for character in title where character == remaining.first {
+            remaining = remaining.dropFirst()
+            if remaining.isEmpty { return 0 }
+        }
+        return nil
     }
 }
