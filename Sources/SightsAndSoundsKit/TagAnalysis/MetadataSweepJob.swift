@@ -79,7 +79,7 @@ public struct MetadataSweepJob: Job {
                 .appendingPathComponent(item.relativePath)
 
             do {
-                let json = try TagWriters.readTagsJSON(url: url)
+                let json = try await Blocking.run { try TagWriters.readTagsJSON(url: url) }
                 let pairs = TagWriters.tagPairs(fromSnapshotJSON: json)
                 try library.recordMetadataPairs(itemID: item.id, pairs: pairs)
                 pairsFound += pairs.count

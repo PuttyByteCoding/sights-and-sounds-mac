@@ -105,7 +105,7 @@ public struct FingerprintCaptureJob: Job {
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
             do {
-                let result = try Self.runFpcalc(tool: tool, file: url)
+                let result = try await Blocking.run { try Self.runFpcalc(tool: tool, file: url) }
                 try await library.writer.write { db in
                     try AudioFingerprintRecord(
                         mediaItemID: item.id,
