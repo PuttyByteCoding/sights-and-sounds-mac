@@ -699,6 +699,9 @@ public final class AppSettingsStore: @unchecked Sendable {
         .appendingPathComponent("sas-test-run-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
 
     private let lock = NSLock()
+    /// One save at a time, each writing the NEWEST value — so the file
+    /// always ends on what is in memory, whatever order saves finish in.
+    private let saveLock = NSLock()
     private var settings: AppSettings
     let fileURL: URL
 
@@ -762,10 +765,15 @@ public final class AppSettingsStore: @unchecked Sendable {
         settings = updated
         lock.unlock()
 
+        // Saves used to run unordered after the lock was released: two
+        // quick updates could write A after B, leaving the file behind
+        // memory and losing B at the next launch.
+        saveLock.lock()
+        defer { saveLock.unlock() }
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(updated)
+            let data = try encoder.encode(current)
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
