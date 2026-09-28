@@ -1462,10 +1462,15 @@ private struct ScrubberView: View {
             }
             .contentShape(Rectangle())
             .gesture(
+                // Chased, not fired per event: see `PlayerModel.scrub`.
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         let fraction = Double((value.location.x / width).clamped01)
-                        model.seek(to: fraction * model.durationSeconds)
+                        model.scrub(to: fraction * model.durationSeconds)
+                    }
+                    .onEnded { value in
+                        let fraction = Double((value.location.x / width).clamped01)
+                        model.endScrub(at: fraction * model.durationSeconds)
                     }
             )
             .onContinuousHover { phase in
