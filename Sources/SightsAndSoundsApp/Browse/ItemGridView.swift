@@ -68,7 +68,7 @@ struct ItemGridView: View {
         .overlay(alignment: .bottom) {
             if !model.selection.isEmpty { BulkBar() }
         }
-        .animation(.easeOut(duration: 0.15), value: viewToast)
+        .motion(.easeOut(duration: 0.15), value: viewToast)
     }
 
     /// The grid itself, out of `body`: the older CI compiler gives up
@@ -88,7 +88,7 @@ struct ItemGridView: View {
             // ids, so a re-query returning the same items animates
             // nothing — and a rapid cycle interrupts cleanly instead
             // of stacking fades.
-            .animation(
+            .motion(
                 .easeInOut(duration: Theme.Motion.listingSettle),
                 value: model.visibleItems.map(\.id))
         }

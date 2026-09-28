@@ -359,7 +359,7 @@ struct SidebarView: View {
             }
         }
         .padding(.bottom, 11)
-        .animation(.easeOut(duration: 0.15), value: refusal)
+        .motion(.easeOut(duration: 0.15), value: refusal)
     }
 
     // MARK: - Sources
@@ -998,7 +998,7 @@ private struct Chevron: View {
             .foregroundStyle(Theme.Text.disabled)
             .rotationEffect(.degrees(expanded ? 90 : 0))
             .frame(width: 9)
-            .animation(.easeOut(duration: 0.12), value: expanded)
+            .motion(.easeOut(duration: 0.12), value: expanded)
     }
 }
 
