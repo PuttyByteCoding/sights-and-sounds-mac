@@ -44,6 +44,7 @@ struct SightsAndSoundsApp: App {
             LibraryPickerView()
                 .environment(model)
                 .uiZoomed()
+                .appWindowAppearance()
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -81,6 +82,7 @@ struct SightsAndSoundsApp: App {
                 LibraryWindowView(libraryID: libraryID)
                     .environment(model)
                     .uiZoomed()
+                    .appWindowAppearance()
                     // The picker's OPEN badge, its Bring Forward, and the
                     // summary cache all key off this.
                     .onAppear { model.libraryWindowAppeared(libraryID) }
@@ -98,6 +100,7 @@ struct SightsAndSoundsApp: App {
                 AuxiliaryWindowView(request: request)
                     .environment(model)
                     .uiZoomed()
+                    .appWindowAppearance()
                     // Holds the handle: Restore and Remove wait for it.
                     .onAppear { model.holdLibrary(request.libraryID) }
                     .onDisappear { model.releaseLibrary(request.libraryID) }
@@ -110,6 +113,7 @@ struct SightsAndSoundsApp: App {
                 LibraryPropertiesView(libraryID: libraryID)
                     .environment(model)
                     .uiZoomed()
+                    .appWindowAppearance()
                     // Holds the handle: Restore and Remove wait for it.
                     .onAppear { model.holdLibrary(libraryID) }
                     .onDisappear { model.releaseLibrary(libraryID) }
@@ -122,11 +126,13 @@ struct SightsAndSoundsApp: App {
             BackgroundTasksView()
                 .environment(model)
                 .uiZoomed()
+                .appWindowAppearance()
         }
 
         Window("Log", id: "log") {
             LogView()
                 .uiZoomed()
+                .appWindowAppearance()
         }
 
         Settings {
@@ -768,5 +774,16 @@ struct AddExistingLibraryButton: View {
                 model.loadError = "Could not add library: \(error)"
             }
         }
+    }
+}
+
+extension View {
+    /// Every window but Settings is dark. The content paints fixed
+    /// charcoal surfaces, while the title bar, menus, alerts, pickers and
+    /// other native controls follow the window's appearance — so on a Mac
+    /// in Light mode they came out light on dark. Settings keeps the
+    /// system's appearance, like the rest of the system's settings.
+    func appWindowAppearance() -> some View {
+        preferredColorScheme(.dark)
     }
 }
