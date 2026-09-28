@@ -839,6 +839,13 @@ final class BrowseModel {
         selectionAnchor = nil
     }
 
+    /// ⌘A: everything the grid shows. Items hidden by the offline toggle
+    /// are not shown, so they are not selected behind the user's back.
+    func selectAll() {
+        selection = Set(visibleItems.map(\.id))
+        selectionAnchor = visibleItems.first?.id
+    }
+
     /// The selection is what is ticked AND on screen. Called whenever the
     /// listing changes, so "N selected" and every bulk action agree: a
     /// selection that outlived its listing had the bar counting items the
