@@ -249,8 +249,7 @@ struct TagTable: View {
         .padding(.vertical, 7)
         .background(selected ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { onOpen(tag) }
-        .onTapGesture { onSelect(tag) }
+        .onClicks(single: { onSelect(tag) }, double: { onOpen(tag) })
         // Right-click anywhere on the row is the ellipsis menu without
         // the reach to the far column — the same commands, one place.
         .contextMenu { rowMenu(tag) }

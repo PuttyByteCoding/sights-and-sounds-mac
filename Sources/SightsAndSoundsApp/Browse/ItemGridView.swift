@@ -258,16 +258,17 @@ private struct ItemCell: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { play() }
-            .onTapGesture {
-                let flags = NSEvent.modifierFlags
-                model.click(
-                    item.id,
-                    extend: flags.contains(.command),
-                    range: flags.contains(.shift))
-            }
+            .onClicks(
+                single: {
+                    let flags = NSEvent.modifierFlags
+                    model.click(
+                        item.id,
+                        extend: flags.contains(.command),
+                        range: flags.contains(.shift))
+                },
+                double: { play() })
             .contextMenu { menu }
-            // Two tap gestures give a tile no role and no way to be
+            // A tap gesture gives a tile no role and no way to be
             // pressed. It is a button that plays, that can also be
             // selected.
             .accessibilityElement(children: .combine)

@@ -1356,15 +1356,16 @@ private struct SegmentRowView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            model.selectedSegmentID = row.id
-            model.zone = .segments
-        }
-        .onTapGesture(count: 2) {
-            guard row.isRenameable else { return }
-            draftName = row.name
-            renaming = row.id
-        }
+        .onClicks(
+            single: {
+                model.selectedSegmentID = row.id
+                model.zone = .segments
+            },
+            double: {
+                guard row.isRenameable else { return }
+                draftName = row.name
+                renaming = row.id
+            })
     }
 
     private var hue: Color {
