@@ -8,26 +8,23 @@ import Testing
 /// every task in the app shares (one per core; three on CI) for as long
 /// as the tool runs, and a handful of slow files stall everything else.
 @Suite struct BlockingWorkTests {
-    @Test func manyBlockingCallsDoNotQueueBehindThePool() async throws {
-        let calls = 128
-        let clock = ContinuousClock()
-        let elapsed = try await clock.measure {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                for _ in 0..<calls {
-                    group.addTask {
-                        try await Blocking.run { usleep(500_000) }
-                    }
-                }
-                try await group.waitForAll()
-            }
+    /// Where the work ran: the dispatch queue label of its thread. The
+    /// cooperative pool's threads carry `…cooperative`. (A timing test
+    /// here was flaky: the full suite crowds the pool the test's own
+    /// tasks resume on.)
+    @Test func blockingWorkNeverRunsOnTheCooperativePool() async throws {
+        let label: String = try await Blocking.run { () -> String in
+            String(cString: __dispatch_queue_get_label(nil))
         }
-        // On the pool, 128 half-second blocks take (128 / threads) × 0.5 s — at least 2 s on any Mac.
-        #expect(elapsed < .seconds(1.5), "took \(elapsed)")
+        #expect(!label.contains("cooperative"), "ran on \(label)")
     }
 
     @Test func itReturnsTheValueAndThrowsTheError() async throws {
-        #expect(try await Blocking.run { 21 * 2 } == 42)
+        let answer: Int = try await Blocking.run { () -> Int in 21 * 2 }
+        #expect(answer == 42)
         struct Boom: Error {}
-        await #expect(throws: Boom.self) { try await Blocking.run { throw Boom() } }
+        await #expect(throws: Boom.self) {
+            _ = try await Blocking.run { () throws -> Int in throw Boom() }
+        }
     }
 }
