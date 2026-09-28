@@ -103,7 +103,11 @@ public struct RemuxJob: Job {
             updated.setRelativePath(finalRelative)
             updated.fileSize = newSize
             updated.bitrate = finalBitrate ?? updated.bitrate
+            // New bytes: the old hash would pair this file with its old
+            // twin as byte-identical. The next sweep hashes it afresh.
+            updated.contentHash = nil
             try updated.updateWithSegmentPaths(db)
+            try ContentHashFailure.filter(sql: "mediaItemID = ?", arguments: [item.id]).deleteAll(db)
             try swap.clear(db)
         }
         await context.reportProgress(current: 3, total: 3)
