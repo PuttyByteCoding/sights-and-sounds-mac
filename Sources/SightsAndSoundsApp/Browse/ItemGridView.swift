@@ -119,10 +119,15 @@ struct ItemGridView: View {
         .leftArrow: .left, .rightArrow: .right, .upArrow: .up, .downArrow: .down,
     ]
 
-    /// Arrows move the focus, Return plays it, Space selects it.
-    /// `V` cycles the saved views; Esc unwinds exactly one layer — the
-    /// selection here, since a popover takes the key press itself.
+    /// Arrows move the focus, Return plays it, Space selects it, ⌘A
+    /// selects everything shown. `V` cycles the saved views; Esc unwinds
+    /// exactly one layer — the selection here, since a popover takes the
+    /// key press itself.
     private func handle(_ press: KeyPress) -> Bool {
+        if press.characters.lowercased() == "a", press.modifiers == .command {
+            model.selectAll()
+            return true
+        }
         if press.key == .escape, !model.selection.isEmpty {
             model.clearSelection()
             return true
