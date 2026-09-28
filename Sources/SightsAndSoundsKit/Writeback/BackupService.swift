@@ -22,6 +22,16 @@ extension LibraryDatabase {
     /// Copy the live library into `directory` as a dated file. Returns
     /// the backup's URL.
     @discardableResult
+    /// `backup(into:)` off the caller's actor. A full backup of a large
+    /// library is a noticeable wait, and "Back Up Now" ran it on the main
+    /// thread. Detached explicitly, so it stays off the caller's actor
+    /// whatever the language's default for non-isolated async becomes.
+    public func backUp(into directory: URL) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try backup(into: directory)
+        }.value
+    }
+
     public func backup(into directory: URL) throws -> URL {
         guard fileURL != nil else { throw BackupError.libraryHasNoFile }
         let name = (try? info()?.name) ?? "Library"
