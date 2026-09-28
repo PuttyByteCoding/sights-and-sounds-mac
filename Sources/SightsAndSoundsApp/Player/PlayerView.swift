@@ -1922,13 +1922,13 @@ private struct QueuePanel: View {
                 // the jarring part. Same constant as the grid — two
                 // surfaces resettling at different speeds off one click
                 // reads as a bug.
-                .animation(
+                .motion(
                     .easeInOut(duration: Theme.Motion.listingSettle),
                     value: model.queueItems.map(\.id))
             }
             .onChange(of: model.item?.id) { _, current in
                 if let current {
-                    withAnimation { proxy.scrollTo(current, anchor: .center) }
+                    Motion.perform { proxy.scrollTo(current, anchor: .center) }
                 }
             }
             .onAppear {
