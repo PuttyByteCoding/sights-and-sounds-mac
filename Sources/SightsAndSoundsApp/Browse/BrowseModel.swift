@@ -679,6 +679,10 @@ final class BrowseModel {
             errorMessage = "This saved filter could not be read."
             return
         }
+        // The field shows the saved filter's text, and a keystroke still
+        // inside its pause must not land on top of it afterwards.
+        searchDebounce?.cancel()
+        searchDisplayText = decoded.searchText
         filter = decoded
     }
 
