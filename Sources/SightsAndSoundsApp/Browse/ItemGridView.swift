@@ -381,16 +381,12 @@ private struct ItemCell: View {
         }
         if item.markedForDeletion {
             Button("Restore from Deletion Staging", systemImage: "arrow.uturn.backward") {
-                model.attempt("restore \(item.fileName)") {
-                    try model.library.unstage(.toDelete, itemID: item.id)
-                }
+                model.setStaging(.toDelete, on: false, for: [item])
             }
         }
         if item.playbackIssue {
             Button("Clear Playback Issue", systemImage: "play.circle") {
-                model.attempt("clear the playback issue") {
-                    try model.library.unstage(.playbackIssue, itemID: item.id)
-                }
+                model.setStaging(.playbackIssue, on: false, for: [item])
             }
         }
         if item.parentMediaItemID == nil {
