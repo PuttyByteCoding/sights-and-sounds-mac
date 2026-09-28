@@ -525,16 +525,28 @@ struct ReviewView: View {
         } catch { errorText = "\(error)" }
     }
 
+    /// The evidence and the recipes are reads, so off the main actor; the
+    /// row being picked shows at once, and a pick superseded by the next
+    /// one while it read is dropped.
     private func select(issue item: MediaItem) {
         selectedIssueID = item.id
         pickedRecipeID = nil
-        evidence = try? model.library.playbackIssueEvidence(of: item.id)
-        // Recipes are data: what is offered follows the failure kind,
-        // cheapest first, and anything unmatched still offers the
-        // last-resort ones.
-        recipes = (try? app.appDatabase?.repairRecipes(
-            forFailureKind: evidence?.failureKind,
-            probeOutput: evidence?.probeOutput)) ?? []
+        let library = model.library, appDatabase = app.appDatabase, id = item.id
+        Task {
+            let (evidence, recipes) = await Task.detached(priority: .userInitiated) {
+                let evidence = try? library.playbackIssueEvidence(of: id)
+                // Recipes are data: what is offered follows the failure
+                // kind, cheapest first, and anything unmatched still
+                // offers the last-resort ones.
+                let recipes = (try? appDatabase?.repairRecipes(
+                    forFailureKind: evidence?.failureKind,
+                    probeOutput: evidence?.probeOutput)) ?? []
+                return (evidence, recipes)
+            }.value
+            guard selectedIssueID == id else { return }
+            self.evidence = evidence
+            self.recipes = recipes
+        }
     }
 
     private func runFix() {
@@ -591,8 +603,13 @@ struct ReviewView: View {
                 if selectedIssueID == nil || !issues.contains(where: { $0.id == selectedIssueID }) {
                     if let first = issues.first { select(issue: first) } else { selectedIssueID = nil }
                 }
-                reclaimable = (try? library.reclaimableBytes()) ?? 0
-                try? app.appDatabase?.seedRepairRecipes()
+                // A stat of every staged file, and a write: off the main
+                // actor too.
+                let appDatabase = app.appDatabase
+                reclaimable = await Task.detached(priority: .userInitiated) {
+                    try? appDatabase?.seedRepairRecipes()
+                    return (try? library.reclaimableBytes()) ?? 0
+                }.value
             } catch {
                 errorText = "\(error)"
             }
