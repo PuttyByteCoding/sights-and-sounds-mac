@@ -230,15 +230,11 @@ private struct ImportSettingsPane: View {
             ScopeHeader(scope: .app)
             Section("File types imported into libraries") {
                 TextField("Video extensions", text: $video)
-                    .onSubmit { save() }
                 TextField("Audio extensions", text: $audio)
-                    .onSubmit { save() }
                 HStack {
-                    Button("Save") { save() }
                     Button("Reset to Defaults") {
                         video = AppSettings.defaultVideoExtensions.joined(separator: ", ")
                         audio = AppSettings.defaultAudioExtensions.joined(separator: ", ")
-                        save()
                     }
                     Spacer()
                 }
@@ -248,18 +244,30 @@ private struct ImportSettingsPane: View {
             }
         }
         .formStyle(.grouped)
+        // Saved as you type, like every other pane: this one saved only on
+        // Return or a Save button, so an edit made and closed was lost.
+        .onChange(of: video) {
+            guard let list = ImportExtensionsField.listToSave(video) else { return }
+            AppSettingsStore.shared.update { $0.videoExtensions = list }
+        }
+        .onChange(of: audio) {
+            guard let list = ImportExtensionsField.listToSave(audio) else { return }
+            AppSettingsStore.shared.update { $0.audioExtensions = list }
+        }
     }
+}
 
-    private func save() {
-        func parse(_ raw: String) -> [String] {
-            raw.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-                .filter { !$0.isEmpty }
-        }
-        AppSettingsStore.shared.update {
-            $0.videoExtensions = parse(video)
-            $0.audioExtensions = parse(audio)
-        }
+/// What an extensions field saves.
+enum ImportExtensionsField {
+    /// The typed list, lowercased and trimmed — or nil for a field with
+    /// nothing in it, which keeps the saved list: an empty list would stop
+    /// every import of that kind, and an emptied field is usually one
+    /// being retyped.
+    static func listToSave(_ raw: String) -> [String]? {
+        let list = raw.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty }
+        return list.isEmpty ? nil : list
     }
 }
 
