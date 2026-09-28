@@ -300,6 +300,9 @@ private struct ItemCell: View {
             // selected.
             .accessibilityElement(children: .combine)
             .accessibilityLabel(item.fileName)
+            .accessibilityValue(TileAccessibility.value(
+                for: item, online: model.isOnline(item),
+                duplicate: model.duplicateFlaggedIDs.contains(item.id)))
             .accessibilityAddTraits(
                 model.selection.contains(item.id) ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction(.default) { play() }
