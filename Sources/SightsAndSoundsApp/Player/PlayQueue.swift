@@ -68,24 +68,30 @@ enum QueueSort: Hashable, Sendable {
 final class PlayQueue {
     private(set) var definition: QueueDefinition
     /// The snapshot, in the order the definition produced.
-    private(set) var items: [MediaItem]
+    private(set) var items: [MediaItem] { didSet { reorder() } }
     /// The order on screen. Sorting never re-runs the definition.
-    var sort: QueueSort = .definition
+    var sort: QueueSort = .definition { didSet { reorder() } }
     /// The rail's narrowing: every required tag must be on an item for it
     /// to show. View state over the snapshot, never the snapshot.
-    var requiredTagIDs: Set<UUID> = []
+    var requiredTagIDs: Set<UUID> = [] { didSet { reorder() } }
     /// Which tags each snapshot item wears — from the Kit, applied by the
     /// player after a load, a refresh, or a tag change anywhere.
-    private(set) var tagIDsByItem: [UUID: Set<UUID>] = [:]
+    private(set) var tagIDsByItem: [UUID: Set<UUID>] = [:] { didSet { reorder() } }
 
     var title: String { definition.title }
     /// The snapshot narrowed, then sorted — what the strip shows and ←/→
-    /// walk.
-    var visible: [MediaItem] {
-        Self.sorted(
+    /// walk. Stored, and redone only when something it depends on
+    /// changes: the transport reads it several times per playhead tick,
+    /// and re-sorting on every read meant localized sorts of the whole
+    /// listing four times a second.
+    private(set) var visible: [MediaItem] = []
+    private(set) var ids: [UUID] = []
+
+    private func reorder() {
+        visible = Self.sorted(
             Self.narrowed(items, requiring: requiredTagIDs, membership: tagIDsByItem), by: sort)
+        ids = visible.map(\.id)
     }
-    var ids: [UUID] { visible.map(\.id) }
 
     /// How many snapshot items wear each tag — the rail's numbers. Tags
     /// with nothing are absent, not zero: a tag not on the queue is not a
@@ -162,6 +168,7 @@ final class PlayQueue {
     init(definition: QueueDefinition, items: [MediaItem]) {
         self.definition = definition
         self.items = items
+        reorder()  // didSet does not run in an initializer
     }
 
     /// Run the definition once and hold the result.

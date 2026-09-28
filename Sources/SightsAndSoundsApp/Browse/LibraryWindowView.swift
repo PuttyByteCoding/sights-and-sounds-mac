@@ -209,13 +209,17 @@ struct BrowseView: View {
                             openAux(.tagAnalysis)
                         }
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
-                            do {
-                                let url = try model.library.backup(
-                                    into: LibraryDatabase.defaultBackupDirectory())
-                                model.errorMessage = nil
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
-                            } catch {
-                                model.errorMessage = "Backup failed: \(error)"
+                            // Off the main actor: a full backup of a large
+                            // library used to beachball the window.
+                            Task {
+                                do {
+                                    let url = try await model.library.backUp(
+                                        into: LibraryDatabase.defaultBackupDirectory())
+                                    model.errorMessage = nil
+                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                } catch {
+                                    model.errorMessage = "Backup failed: \(error)"
+                                }
                             }
                         }
                         Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {

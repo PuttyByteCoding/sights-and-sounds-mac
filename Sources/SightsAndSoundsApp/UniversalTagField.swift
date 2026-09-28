@@ -44,18 +44,34 @@ struct TagSearchEntry: Identifiable {
     /// it, 3 contains every term; nil when a term is missing. The one
     /// rule every tag search ranks by.
     static func score(_ folded: String, query: String) -> Int? {
-        let whole = fold(query.trimmingCharacters(in: .whitespaces))
-        let terms = query.split(separator: " ").map { fold(String($0)) }
-        guard !whole.isEmpty, terms.allSatisfy({ folded.contains($0) }) else { return nil }
-        if folded == whole { return 0 }
-        if folded.hasPrefix(whole) { return 1 }
-        if folded.split(separator: " ").contains(where: { $0.hasPrefix(whole) }) { return 2 }
+        score(folded, query: FoldedQuery(query))
+    }
+
+    /// A typed query, folded once. Folding is the expensive half of
+    /// matching, and scoring used to fold the query again for every tag
+    /// and alias it was compared with, on every keystroke.
+    struct FoldedQuery {
+        let whole: String
+        let terms: [String]
+
+        init(_ query: String) {
+            whole = TagSearchEntry.fold(query.trimmingCharacters(in: .whitespaces))
+            terms = query.split(separator: " ").map { TagSearchEntry.fold(String($0)) }
+        }
+    }
+
+    static func score(_ folded: String, query: FoldedQuery) -> Int? {
+        guard !query.whole.isEmpty, query.terms.allSatisfy({ folded.contains($0) }) else { return nil }
+        if folded == query.whole { return 0 }
+        if folded.hasPrefix(query.whole) { return 1 }
+        if folded.split(separator: " ").contains(where: { $0.hasPrefix(query.whole) }) { return 2 }
         return 3
     }
 
     static func ranked(_ entries: [TagSearchEntry], query: String, limit: Int) -> [Match] {
         guard !fold(query).trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
-        func score(_ folded: String) -> Int? { Self.score(folded, query: query) }
+        let folded = FoldedQuery(query)
+        func score(_ text: String) -> Int? { Self.score(text, query: folded) }
         var scored: [(score: Int, match: Match)] = []
         scored.reserveCapacity(entries.count)
         for entry in entries {

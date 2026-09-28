@@ -921,9 +921,7 @@ private struct TransportBlock: View {
                 on: model.isLooping
             ) { model.toggleLoop() }
 
-            Text(timeText)
-                .font(Theme.mono(12))
-                .foregroundStyle(Theme.Text.quaternary)
+            TransportClock()
 
             // Where you are in the queue — every surface that walks one
             // says so (the analysis rail already does).
@@ -974,9 +972,20 @@ private struct TransportBlock: View {
         .help(help)
     }
 
-    private var timeText: String {
-        TransportBarTime.format(model.currentSeconds)
-            + " / " + TransportBarTime.format(model.durationSeconds)
+}
+
+/// The one part of the transport that changes on every playhead tick.
+/// Its own view, so that only it re-renders four times a second: when
+/// the label sat in the transport's body, every tick re-evaluated the
+/// whole control row — buttons, speed menu and the queue position.
+private struct TransportClock: View {
+    @Environment(PlayerModel.self) private var model
+
+    var body: some View {
+        Text(TransportBarTime.format(model.currentSeconds)
+            + " / " + TransportBarTime.format(model.durationSeconds))
+            .font(Theme.mono(12))
+            .foregroundStyle(Theme.Text.quaternary)
     }
 }
 
@@ -1356,15 +1365,16 @@ private struct SegmentRowView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            model.selectedSegmentID = row.id
-            model.zone = .segments
-        }
-        .onTapGesture(count: 2) {
-            guard row.isRenameable else { return }
-            draftName = row.name
-            renaming = row.id
-        }
+        .onClicks(
+            single: {
+                model.selectedSegmentID = row.id
+                model.zone = .segments
+            },
+            double: {
+                guard row.isRenameable else { return }
+                draftName = row.name
+                renaming = row.id
+            })
     }
 
     private var hue: Color {
@@ -1461,10 +1471,15 @@ private struct ScrubberView: View {
             }
             .contentShape(Rectangle())
             .gesture(
+                // Chased, not fired per event: see `PlayerModel.scrub`.
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         let fraction = Double((value.location.x / width).clamped01)
-                        model.seek(to: fraction * model.durationSeconds)
+                        model.scrub(to: fraction * model.durationSeconds)
+                    }
+                    .onEnded { value in
+                        let fraction = Double((value.location.x / width).clamped01)
+                        model.endScrub(at: fraction * model.durationSeconds)
                     }
             )
             .onContinuousHover { phase in

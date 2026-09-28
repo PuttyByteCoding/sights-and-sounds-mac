@@ -871,7 +871,7 @@ private struct RepairSettingsPane: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { reload() }
+        .onAppear { reload(detecting: true) }
     }
 
     private func recipeCount(using tool: String) -> Int {
@@ -882,12 +882,24 @@ private struct RepairSettingsPane: View {
         tools.first { $0.name == tool }?.isAvailable ?? false
     }
 
-    private func reload() {
+    /// The lists, read off the main actor. Detecting runs each shipped
+    /// tool with `-version` — a process launch apiece, several of them —
+    /// which used to happen on the main thread every time the pane
+    /// appeared and after every change. Now: once on appearing, and a
+    /// change just re-reads the lists.
+    private func reload(detecting: Bool = false) {
         guard let database = app.appDatabase else { return }
-        try? database.seedRepairRecipes()
-        try? database.detectShippedTools()
-        tools = (try? database.externalTools()) ?? []
-        recipes = (try? database.repairRecipes()) ?? []
+        Task {
+            let lists = await Task.detached(priority: .userInitiated) { () -> ([ExternalTool], [RepairRecipe]) in
+                if detecting {
+                    try? database.seedRepairRecipes()
+                    try? database.detectShippedTools()
+                }
+                return ((try? database.externalTools()) ?? [], (try? database.repairRecipes()) ?? [])
+            }.value
+            tools = lists.0
+            recipes = lists.1
+        }
     }
 
     private func save(_ recipe: RepairRecipe) {
@@ -896,9 +908,15 @@ private struct RepairSettingsPane: View {
     }
 
     private func detect(_ name: String) {
-        guard let tool = try? app.appDatabase?.detectTool(named: name) else { return }
-        status = tool.isAvailable ? "\(name) found." : "\(name) not found."
-        reload()
+        guard let database = app.appDatabase else { return }
+        Task {
+            let found = await Task.detached(priority: .userInitiated) {
+                (try? database.detectTool(named: name))?.isAvailable
+            }.value
+            guard let found else { return }
+            status = found ? "\(name) found." : "\(name) not found."
+            reload()
+        }
     }
 
     /// Pointing at a binary by hand — the case where it is installed
@@ -912,9 +930,15 @@ private struct RepairSettingsPane: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         var tool = tools.first { $0.name == name } ?? ExternalTool(name: name)
         tool.path = url.path
-        tool.version = ExternalTool.detectedVersion(ofToolAt: url.path)
-        tool.lastVerifiedAt = Date()
-        try? app.appDatabase?.saveExternalTool(tool)
-        reload()
+        let database = app.appDatabase
+        Task {
+            // A process launch: off the main actor.
+            tool.version = await Task.detached(priority: .userInitiated) {
+                ExternalTool.detectedVersion(ofToolAt: url.path)
+            }.value
+            tool.lastVerifiedAt = Date()
+            try? database?.saveExternalTool(tool)
+            reload()
+        }
     }
 }

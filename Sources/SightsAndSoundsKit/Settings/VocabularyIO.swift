@@ -107,22 +107,32 @@ public enum VocabularyIO {
                 outcome.categoriesCreated += 1
             }
 
-            let existingTags = Set(try library.writer.read { db in
-                try String.fetchAll(
-                    db, sql: "SELECT name FROM tag WHERE tagCategoryID = ?",
-                    arguments: [category.id])
-            }.map { $0.lowercased() })
             for plannedTag in planned.tags {
-                if existingTags.contains(plannedTag.name.lowercased()) {
-                    outcome.skippedExisting += 1
-                    continue
-                }
-                let tag = try library.ensureTag(named: plannedTag.name, inCategory: category.id)
+                // "Already there" is decided the way tagging decides it —
+                // the category's formatted name, then aliases — not by the
+                // file's raw spelling. Matching the raw spelling let "SBD"
+                // (an alias of Soundboard) through as new, and the file's
+                // flags then reconfigured the tag the user already had.
+                let (tag, created) = try library.ensureTagReportingCreation(
+                    named: plannedTag.name, inCategory: category.id)
+                // Aliases are additive either way: that is also what lets
+                // a re-run finish an import that stopped partway.
                 for alias in plannedTag.aliases {
                     try library.addAlias(alias, toTag: tag.id)
                 }
-                if plannedTag.hiddenByDefault {
-                    try library.setTagHidden(tag.id, true)
+                guard created else {
+                    outcome.skippedExisting += 1
+                    continue
+                }
+                // Everything the file says about a tag it created — export
+                // writes favourite, order and notes, so import keeps them.
+                try library.writer.write { db in
+                    guard var fresh = try Tag.fetchOne(db, key: tag.id) else { return }
+                    fresh.isFavorite = plannedTag.isFavorite
+                    fresh.sortOrder = plannedTag.sortOrder
+                    fresh.notes = plannedTag.notes
+                    fresh.hiddenByDefault = plannedTag.hiddenByDefault
+                    try fresh.update(db)
                 }
                 outcome.tagsCreated += 1
             }
