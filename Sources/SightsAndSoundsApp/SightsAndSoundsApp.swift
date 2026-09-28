@@ -369,11 +369,14 @@ final class AppModel {
     func runningJobCount() -> Int {
         runners.keys.reduce(0) { total, id in
             guard let open = openHandles[id] else { return total }
-            let running = (try? open.writer.read { db in
+            // The read returns a plain Int, so `try?` adds exactly one
+            // optional on every compiler: CI's older Swift flagged a
+            // second `??` here as coalescing a non-optional.
+            let running: Int? = try? open.writer.read { db -> Int in
                 try Int.fetchOne(
                     db, sql: "SELECT COUNT(*) FROM job WHERE state = ?",
-                    arguments: [JobState.running.rawValue])
-            }) ?? 0
+                    arguments: [JobState.running.rawValue]) ?? 0
+            }
             return total + (running ?? 0)
         }
     }
