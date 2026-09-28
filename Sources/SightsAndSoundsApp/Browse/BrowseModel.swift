@@ -1145,6 +1145,14 @@ final class BrowseModel {
         return sources.filter { ids.contains($0.id) }.map(\.name)
     }
 
+    /// The file a tile drags out as: its own, reachable file. An
+    /// embedded clip has none of its own, and an offline item's cannot
+    /// be reached.
+    func dragFileURL(for item: MediaItem) -> URL? {
+        guard item.parentMediaItemID == nil else { return nil }
+        return fileURL(for: item)
+    }
+
     /// Absolute file URL (an embedded clip resolves to its parent's
     /// file), or nil while the item's source is offline.
     func fileURL(for item: MediaItem) -> URL? {

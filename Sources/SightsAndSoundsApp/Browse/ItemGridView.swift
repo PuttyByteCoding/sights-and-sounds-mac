@@ -289,6 +289,12 @@ private struct ItemCell: View {
                 },
                 double: { play() })
             .contextMenu { menu }
+            // Out to the Finder or another app, as the file itself. A clip
+            // or an offline item hands over nothing.
+            .onDrag {
+                model.dragFileURL(for: item).flatMap { NSItemProvider(contentsOf: $0) }
+                    ?? NSItemProvider()
+            }
             // A tap gesture gives a tile no role and no way to be
             // pressed. It is a button that plays, that can also be
             // selected.
