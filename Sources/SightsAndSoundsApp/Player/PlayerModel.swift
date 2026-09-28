@@ -662,6 +662,64 @@ final class PlayerModel {
 
     func seek(by delta: Double) { seek(to: currentSeconds + delta) }
 
+    // MARK: - Scrubbing
+
+    /// Scrubbing, the chase way (Technical Q&A QA1820). A drag sends a
+    /// position per mouse event; each used to start an exact seek that
+    /// cancelled the one before, so the decoder thrashed and the picture
+    /// lagged the thumb. Now: the playhead shows the thumb at once, one
+    /// loose seek is in flight, and only the latest position waits for
+    /// it; where the drag ends gets an exact seek.
+    private var scrubTarget: Double?
+    private var scrubSeekInFlight = false
+    /// Whether playback was running when the drag began — it pauses for
+    /// the drag and picks up again after.
+    private var playingBeforeScrub: Bool?
+    /// Loose seeks started for drags — what the tests watch.
+    private(set) var scrubSeeksIssued = 0
+
+    func scrub(to seconds: Double) {
+        let clamped = max(0, durationSeconds > 0 ? min(seconds, durationSeconds) : seconds)
+        if playingBeforeScrub == nil {
+            playingBeforeScrub = isPlaying
+            if isPlaying { player.pause() }
+        }
+        reachedEnd = false
+        currentSeconds = clamped
+        // Holds the time observer off the display while the player
+        // catches up, as a keyboard seek does.
+        pendingSeekTarget = clamped
+        scrubTarget = clamped
+        if !scrubSeekInFlight { chaseScrub() }
+    }
+
+    private func chaseScrub() {
+        guard let target = scrubTarget else {
+            scrubSeekInFlight = false
+            return
+        }
+        scrubTarget = nil
+        scrubSeekInFlight = true
+        scrubSeeksIssued += 1
+        let slack = CMTime(seconds: 0.5, preferredTimescale: 600)
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: slack, toleranceAfter: slack
+        ) { [weak self] _ in
+            Task { @MainActor in self?.chaseScrub() }
+        }
+    }
+
+    func endScrub(at seconds: Double) {
+        scrubTarget = nil
+        seek(to: seconds)  // exact, where the drag let go
+        if playingBeforeScrub == true {
+            player.play()
+            player.rate = playbackRate
+        }
+        playingBeforeScrub = nil
+    }
+
     // MARK: - Keyboard dispatch
 
     /// Returns true when the key was consumed.
