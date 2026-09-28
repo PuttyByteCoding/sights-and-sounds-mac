@@ -49,6 +49,19 @@ extension LibraryDatabase {
     /// is migrated when the app next opens it as the library, with the
     /// pre-restore archive still there if that goes wrong.
     public static func verifyBackup(at url: URL) throws -> LibraryInfo? {
+        try readBackup(at: url, checkingIntegrity: true)
+    }
+
+    /// Which library a backup belongs to, without the integrity check:
+    /// what the backup list shows. `quick_check` reads the whole file,
+    /// and the list ran it for every backup on every reload — ten backups
+    /// of a large library was gigabytes read to draw a list. Restore
+    /// still checks, through `verifyBackup`.
+    static func backupIdentity(at url: URL) throws -> LibraryInfo? {
+        try readBackup(at: url, checkingIntegrity: false)
+    }
+
+    private static func readBackup(at url: URL, checkingIntegrity: Bool) throws -> LibraryInfo? {
         do {
             var config = Configuration()
             config.readonly = true
@@ -68,8 +81,10 @@ extension LibraryDatabase {
                 guard try db.tableExists("grdb_migrations"), try db.tableExists("libraryInfo") else {
                     throw BackupError.backupUnreadable("not a library file")
                 }
-                guard try String.fetchOne(db, sql: "PRAGMA quick_check") == "ok" else {
-                    throw BackupError.backupUnreadable("the file is damaged")
+                if checkingIntegrity {
+                    guard try String.fetchOne(db, sql: "PRAGMA quick_check") == "ok" else {
+                        throw BackupError.backupUnreadable("the file is damaged")
+                    }
                 }
                 // Only the columns every schema version has: a newer
                 // column the backup predates must not make it unreadable.
@@ -168,10 +183,9 @@ extension LibraryDatabase {
                     url: url,
                     createdAt: values?.creationDate ?? Date.distantPast,
                     bytes: Int64(values?.fileSize ?? 0))
-                // Opening each backup to count items would be slow and
-                // pointless for a list; the identity read is cheap and
-                // is the part worth verifying.
-                if let info = try? verifyBackup(at: url) {
+                // Identity only: the integrity check reads the whole file,
+                // and belongs to Restore.
+                if let info = try? backupIdentity(at: url) {
                     file.libraryName = info.name
                 }
                 return file
