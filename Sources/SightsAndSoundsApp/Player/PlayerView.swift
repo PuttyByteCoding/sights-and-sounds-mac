@@ -788,11 +788,9 @@ private struct PlayerContent: View {
         let model = model
         Task.detached(priority: .userInitiated) {
             do {
-                // The panel already confirmed replacement.
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                try FileManager.default.copyItem(at: sourceURL, to: destination)
+                // The panel already confirmed replacement; the old file
+                // goes only once the copy is complete.
+                try SafeCopy.copy(from: sourceURL, to: destination)
             } catch {
                 await MainActor.run { model.loadError = "Save failed: \(error)" }
             }
