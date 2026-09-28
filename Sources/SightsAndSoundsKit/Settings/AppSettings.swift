@@ -201,69 +201,69 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = AppSettings()
-        backupDirectory = try container.decodeIfPresent(String.self, forKey: .backupDirectory)
-        logDirectory = try container.decodeIfPresent(String.self, forKey: .logDirectory)
-        thumbnailDirectory = try container.decodeIfPresent(String.self, forKey: .thumbnailDirectory)
-        videoExtensions = try container.decodeIfPresent([String].self, forKey: .videoExtensions)
+        backupDirectory = container.lenient(String.self, forKey: .backupDirectory)
+        logDirectory = container.lenient(String.self, forKey: .logDirectory)
+        thumbnailDirectory = container.lenient(String.self, forKey: .thumbnailDirectory)
+        videoExtensions = container.lenient([String].self, forKey: .videoExtensions)
             ?? defaults.videoExtensions
-        audioExtensions = try container.decodeIfPresent([String].self, forKey: .audioExtensions)
+        audioExtensions = container.lenient([String].self, forKey: .audioExtensions)
             ?? defaults.audioExtensions
-        skip = try container.decodeIfPresent(SkipSettings.self, forKey: .skip) ?? defaults.skip
-        startVideosMuted = try container.decodeIfPresent(Bool.self, forKey: .startVideosMuted)
+        skip = container.lenient(SkipSettings.self, forKey: .skip) ?? defaults.skip
+        startVideosMuted = container.lenient(Bool.self, forKey: .startVideosMuted)
             ?? defaults.startVideosMuted
-        loopVideos = try container.decodeIfPresent(Bool.self, forKey: .loopVideos)
+        loopVideos = container.lenient(Bool.self, forKey: .loopVideos)
             ?? defaults.loopVideos
-        deletionMarkAdvances = try container.decodeIfPresent(Bool.self, forKey: .deletionMarkAdvances)
+        deletionMarkAdvances = container.lenient(Bool.self, forKey: .deletionMarkAdvances)
             ?? defaults.deletionMarkAdvances
-        infoBar = try container.decodeIfPresent(InfoBarSettings.self, forKey: .infoBar)
+        infoBar = container.lenient(InfoBarSettings.self, forKey: .infoBar)
             ?? defaults.infoBar
-        keyMap = try container.decodeIfPresent(KeyMapStyle.self, forKey: .keyMap)
+        keyMap = container.lenient(KeyMapStyle.self, forKey: .keyMap)
             ?? defaults.keyMap
-        grid = try container.decodeIfPresent(GridSettings.self, forKey: .grid)
+        grid = container.lenient(GridSettings.self, forKey: .grid)
             ?? defaults.grid
         // decodeIfPresent like every field here: a settings.json written
         // before this setting existed still has to load.
-        defaultOrdering = try container.decodeIfPresent(
+        defaultOrdering = container.lenient(
             DefaultOrdering.self, forKey: .defaultOrdering) ?? defaults.defaultOrdering
         // Clamped on the way in: a hand-edited settings.json saying 0 or
         // 5000 should not make the field useless or unscrollable.
-        tagSuggestionLimit = min(50, max(3, try container.decodeIfPresent(
+        tagSuggestionLimit = min(50, max(3, container.lenient(
             Int.self, forKey: .tagSuggestionLimit) ?? defaults.tagSuggestionLimit))
-        tagHistoryLimit = min(30, max(1, try container.decodeIfPresent(
+        tagHistoryLimit = min(30, max(1, container.lenient(
             Int.self, forKey: .tagHistoryLimit) ?? defaults.tagHistoryLimit))
-        digitKeysStampTags = try container.decodeIfPresent(
+        digitKeysStampTags = container.lenient(
             Bool.self, forKey: .digitKeysStampTags) ?? defaults.digitKeysStampTags
-        laptopNumpad = try container.decodeIfPresent(
+        laptopNumpad = container.lenient(
             Bool.self, forKey: .laptopNumpad) ?? defaults.laptopNumpad
-        pasteSplitsTitleCase = try container.decodeIfPresent(
+        pasteSplitsTitleCase = container.lenient(
             Bool.self, forKey: .pasteSplitsTitleCase) ?? defaults.pasteSplitsTitleCase
-        playerLayout = try container.decodeIfPresent(
+        playerLayout = container.lenient(
             PlayerLayoutSettings.self, forKey: .playerLayout) ?? defaults.playerLayout
-        videoAnchor = try container.decodeIfPresent(VideoAnchor.self, forKey: .videoAnchor)
+        videoAnchor = container.lenient(VideoAnchor.self, forKey: .videoAnchor)
             ?? defaults.videoAnchor
         // Clamped to what the window can honour — the rail's floor and
         // the cap that keeps the table on screen.
-        tagAnalysisRailWidth = min(900, max(210, try container.decodeIfPresent(
+        tagAnalysisRailWidth = min(900, max(210, container.lenient(
             Double.self, forKey: .tagAnalysisRailWidth) ?? defaults.tagAnalysisRailWidth))
-        tagAnalysisColumns = try container.decodeIfPresent(
+        tagAnalysisColumns = container.lenient(
             TagAnalysisColumnWidths.self, forKey: .tagAnalysisColumns) ?? defaults.tagAnalysisColumns
-        ocrSampleIntervalSeconds = try container.decodeIfPresent(
+        ocrSampleIntervalSeconds = container.lenient(
             Double.self, forKey: .ocrSampleIntervalSeconds) ?? defaults.ocrSampleIntervalSeconds
-        ocrBudgetSecondsPerRun = try container.decodeIfPresent(
+        ocrBudgetSecondsPerRun = container.lenient(
             Double.self, forKey: .ocrBudgetSecondsPerRun) ?? defaults.ocrBudgetSecondsPerRun
-        ocr = try container.decodeIfPresent(OcrSettings.self, forKey: .ocr) ?? defaults.ocr
-        uiScale = min(1.8, max(0.7, try container.decodeIfPresent(
+        ocr = container.lenient(OcrSettings.self, forKey: .ocr) ?? defaults.ocr
+        uiScale = min(1.8, max(0.7, container.lenient(
             Double.self, forKey: .uiScale) ?? defaults.uiScale))
-        universalTagFieldPosition = max(0, try container.decodeIfPresent(
+        universalTagFieldPosition = max(0, container.lenient(
             Int.self, forKey: .universalTagFieldPosition)
             ?? defaults.universalTagFieldPosition)
-        analysisResultsFieldPosition = max(0, try container.decodeIfPresent(
+        analysisResultsFieldPosition = max(0, container.lenient(
             Int.self, forKey: .analysisResultsFieldPosition)
             ?? defaults.analysisResultsFieldPosition)
-        tagPanelRowOrder = try container.decodeIfPresent(
+        tagPanelRowOrder = container.lenient(
             [String].self, forKey: .tagPanelRowOrder) ?? defaults.tagPanelRowOrder
-        firefoxProfilePath = try container.decodeIfPresent(String.self, forKey: .firefoxProfilePath)
-        webSearchURL = try container.decodeIfPresent(String.self, forKey: .webSearchURL)
+        firefoxProfilePath = container.lenient(String.self, forKey: .firefoxProfilePath)
+        webSearchURL = container.lenient(String.self, forKey: .webSearchURL)
             ?? defaults.webSearchURL
     }
 }
@@ -822,5 +822,28 @@ public struct TagAnalysisColumnWidths: Codable, Equatable, Sendable {
         seen = Self.clamped(try container.decodeIfPresent(Double.self, forKey: .seen) ?? defaults.seen)
         suggestion = Self.clamped(
             try container.decodeIfPresent(Double.self, forKey: .suggestion) ?? defaults.suggestion)
+    }
+}
+
+/// A value this build cannot read costs that one setting, not the file.
+/// `decodeIfPresent` tolerates a MISSING key but throws on a value it
+/// does not recognise — a case a newer build added, a hand-edit typo —
+/// and one throw here used to reset every setting to its default.
+struct LenientDecodable<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
+    }
+}
+
+extension KeyedDecodingContainer {
+    func lenient<T: Decodable>(_ type: T.Type, forKey key: Key) -> T? {
+        do {
+            return try decodeIfPresent(type, forKey: key)
+        } catch {
+            AppLog.shared.warning(
+                "settings", "settings.json: \(key.stringValue) could not be read, using its default: \(error)")
+            return nil
+        }
     }
 }
