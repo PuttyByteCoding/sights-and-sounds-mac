@@ -33,7 +33,12 @@ public struct LogEntry: Identifiable, Sendable, Equatable {
 /// entitlement quirks involved.
 ///
 /// Entries may contain real file and tag names: the window is local-only
-/// by nature, and copied log text is private data like any other.
+/// by nature, and copied log text is private data like any other. For
+/// the same reason the message goes to the SYSTEM log as private: the
+/// unified log persists and travels in sysdiagnoses, and `.public` put
+/// every path it was given in there readable by anyone running
+/// `log show`. Console shows it redacted unless a debugger is attached;
+/// the Log window and the optional log file keep the full text.
 public final class AppLog: @unchecked Sendable {
     public static let shared = AppLog()
 
@@ -59,10 +64,10 @@ public final class AppLog: @unchecked Sendable {
         lock.unlock()
 
         switch level {
-        case .debug: logger.debug("\(message, privacy: .public)")
-        case .info: logger.info("\(message, privacy: .public)")
-        case .warning: logger.warning("\(message, privacy: .public)")
-        case .error: logger.error("\(message, privacy: .public)")
+        case .debug: logger.debug("\(message, privacy: .private)")
+        case .info: logger.info("\(message, privacy: .private)")
+        case .warning: logger.warning("\(message, privacy: .private)")
+        case .error: logger.error("\(message, privacy: .private)")
         }
         appendToFileIfConfigured(entry)
     }
@@ -70,15 +75,33 @@ public final class AppLog: @unchecked Sendable {
     /// Daily file (`sas-YYYY-MM-DD.log`) in the settings-chosen log
     /// directory, when one is set. Best-effort; the ring buffer and
     /// os.Logger remain the primary record.
+    ///
+    /// Written on a serial queue of its own: it used to open and close a
+    /// file handle for every line, under the buffer's lock, on whichever
+    /// thread logged — often the main one.
     private func appendToFileIfConfigured(_ entry: LogEntry) {
         guard let directory = AppSettingsStore.shared.current.logDirectory else { return }
+        fileQueue.async { [dayFormatter] in
+            Self.append(entry, to: directory, dayFormatter: dayFormatter)
+        }
+    }
+
+    private let fileQueue = DispatchQueue(label: "com.puttybyte.sightsandsounds.log-file", qos: .utility)
+    private let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    /// Wait for queued file writes — for tests that read the file.
+    func flushFileForTesting() { fileQueue.sync {} }
+
+    /// Only ever called on `fileQueue`, one line at a time.
+    private static func append(_ entry: LogEntry, to directory: String, dayFormatter: DateFormatter) {
         let url = URL(fileURLWithPath: directory, isDirectory: true)
-            .appendingPathComponent("sas-\(formatter.string(from: entry.date)).log")
+            .appendingPathComponent("sas-\(dayFormatter.string(from: entry.date)).log")
         let line = "\(entry.date.ISO8601Format()) [\(entry.level.label)] \(entry.category): \(entry.message)\n"
-        lock.lock()
-        defer { lock.unlock() }
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
