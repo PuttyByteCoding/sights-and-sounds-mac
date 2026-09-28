@@ -97,11 +97,12 @@ public struct FingerprintCaptureJob: Job {
 
         var computed = 0
         var failed = 0
+        var lostSources: Set<UUID> = []
         await context.reportProgress(current: 0, total: pending.count)
 
         for (index, item) in pending.enumerated() {
             try await context.checkCancellation()
-            guard let source = sources[item.sourceID] else { continue }
+            guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
             do {
@@ -115,6 +116,11 @@ public struct FingerprintCaptureJob: Job {
                 }
                 computed += 1
             } catch {
+                switch try await library.sweepMiss(for: item, source: source, fileAccess: fileAccess) {
+                case .sourceGone: lostSources.insert(source.id); continue
+                case .fileMoved: continue
+                case .fileFailed: break
+                }
                 try await library.writer.write { db in
                     try FingerprintFailure(mediaItemID: item.id, message: "\(error)").upsert(db)
                 }
