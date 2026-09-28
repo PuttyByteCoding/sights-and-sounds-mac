@@ -82,7 +82,7 @@ final class PlayerModel {
     private var endObserver: (any NSObjectProtocol)?
     private var statusObserver: NSKeyValueObservation?
     private var completionRecorded = false
-    private let fileAccess: any FileAccess = LiveFileAccess()
+    private let fileAccess: any FileAccess
 
     var title: String { item?.fileName ?? "Player" }
     var isAudio: Bool { item?.kind == .audio }
@@ -290,8 +290,12 @@ final class PlayerModel {
         panelVocabulary.first { !$0.category.hiddenFromBrowse }?.id
     }
 
-    init(request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?) {
+    init(
+        request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?,
+        fileAccess: any FileAccess = LiveFileAccess()
+    ) {
         self.library = library
+        self.fileAccess = fileAccess
         self.libraryID = request.libraryID
         self.queue = PlayQueue(definition: request.definition, items: [])
         _ = appDatabase  // legacy pref migrates into settings.json at launch
@@ -735,26 +739,74 @@ final class PlayerModel {
         tagFieldCategoryID = Self.universalFieldFocusID
     }
 
+    /// The flag work still running, in press order: each toggle waits for
+    /// the one before, so a quick mark-then-unmark stages and unstages in
+    /// that order.
+    private var flagWork: Task<Void, Never>?
+    /// Presses whose write has not finished. A finished write shows the
+    /// row only when it was the last one — an earlier write must not
+    /// overwrite a later press already on screen.
+    private var flagWritesInFlight = 0
+
+    /// The mark shows at once; the write, and for the two staging marks
+    /// the file move, follow off the main actor. The move (with retries
+    /// on a busy or network volume) used to run here, on the main thread,
+    /// so a triage key press could freeze the window for as long as the
+    /// move took.
     private func toggle(_ flag: PlayerToggleFlag) {
-        guard let item else { return }
-        do {
-            // Deletion and playback-issue marks stage the file physically
-            // (and unstage on the way back); the other flags are plain.
-            switch flag {
-            case .markedForDeletion:
-                item.markedForDeletion
-                    ? try library.unstage(.toDelete, itemID: item.id)
-                    : try library.stage(.toDelete, itemID: item.id)
-            case .playbackIssue:
-                item.playbackIssue
-                    ? try library.unstage(.playbackIssue, itemID: item.id)
-                    : try library.stage(.playbackIssue, itemID: item.id)
-            case .favorite, .needsReview:
-                _ = try library.toggleFlag(flag, itemID: item.id)
+        guard var shown = item else { return }
+        let itemID = shown.id
+        let on: Bool
+        switch flag {
+        case .markedForDeletion: on = !shown.markedForDeletion; shown.markedForDeletion = on
+        case .playbackIssue: on = !shown.playbackIssue; shown.playbackIssue = on
+        case .favorite: on = !shown.isFavorite; shown.isFavorite = on
+        case .needsReview: on = !shown.needsReview; shown.needsReview = on
+        }
+        item = shown
+
+        let library = library, fileAccess = fileAccess, previous = flagWork
+        flagWritesInFlight += 1
+        flagWork = Task { [weak self] in
+            await previous?.value
+            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<MediaItem?, Error> in
+                Result {
+                    // Deletion and playback-issue marks stage the file
+                    // physically (and unstage on the way back); the other
+                    // flags are plain. Decided from the press, not from
+                    // whatever the row says by the time this runs.
+                    switch flag {
+                    case .markedForDeletion:
+                        on ? try library.stage(.toDelete, itemID: itemID, fileAccess: fileAccess)
+                            : try library.unstage(.toDelete, itemID: itemID, fileAccess: fileAccess)
+                    case .playbackIssue:
+                        on ? try library.stage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
+                            : try library.unstage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
+                    case .favorite, .needsReview:
+                        try library.writer.write { db in
+                            try db.execute(
+                                sql: "UPDATE mediaItem SET \(flag == .favorite ? "isFavorite" : "needsReview") = ? WHERE id = ?",
+                                arguments: [on, itemID])
+                        }
+                    }
+                    return try library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                }
+            }.value
+            guard let self else { return }
+            self.flagWritesInFlight -= 1
+            switch outcome {
+            case .success(let fresh):
+                // The row as it now is (a staged file has a new path) —
+                // for the item still showing, once no later press waits.
+                if self.item?.id == itemID, self.flagWritesInFlight == 0 {
+                    self.item = fresh
+                }
+            case .failure(let error):
+                self.loadError = "\(error)"
+                if self.item?.id == itemID {
+                    self.item = try? await self.library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                }
             }
-            self.item = try library.writer.read { try MediaItem.fetchOne($0, key: item.id) }
-        } catch {
-            loadError = "\(error)"
         }
     }
 
