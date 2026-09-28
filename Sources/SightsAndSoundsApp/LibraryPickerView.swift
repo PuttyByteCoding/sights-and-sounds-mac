@@ -339,8 +339,7 @@ private struct LibraryPickerRow: View {
                 .fill(isSelected ? Theme.Surface.selectedRow : .clear))
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: open)
-        .onTapGesture(perform: select)
+        .onClicks(single: select, double: open)
         .contextMenu { contextMenu }
         .confirmationDialog(
             "Remove “\(library.name)” from this list? The library file on disk is NOT deleted — Add Existing… brings it back, never as a duplicate. Close this library's windows before removing.",
