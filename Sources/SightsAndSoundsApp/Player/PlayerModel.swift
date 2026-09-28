@@ -343,7 +343,11 @@ final class PlayerModel {
 
     private func libraryChanged(_ change: LibraryChange) {
         if !change.domains.isDisjoint(with: [.vocabulary, .tagging]) {
-            if lastTaggingRefreshBegan < change.lastCommitAt { refreshTagging() }
+            if lastTaggingRefreshBegan < change.lastCommitAt {
+                // Tags on items moved: re-read this item's. The vocabulary
+                // itself changed: everything.
+                change.domains.contains(.vocabulary) ? refreshTagging() : refreshItemTags()
+            }
             recountQueue()
         }
         if change.domains.contains(.itemDetails) { refreshBlocks() }
@@ -933,6 +937,24 @@ final class PlayerModel {
         movePanelRow(.category(id), before: targetID.map { .category($0) })
     }
 
+    /// Only this item's tags: what a tag key, a toggle or an apply of an
+    /// existing tag changes. Re-reading the whole vocabulary, every alias
+    /// and the key bindings, and rebuilding the search index, on every
+    /// press made tagging slow with the size of the library's vocabulary.
+    func refreshItemTags() {
+        lastTaggingRefreshBegan = .now
+        guard let item else { return }
+        do {
+            itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
+        } catch {
+            loadError = "\(error)"
+        }
+        if panels.search { refreshSearch() }
+    }
+
+    /// Everything the panel shows: the item's tags, the vocabulary, the
+    /// aliases, the key bindings and the search index. For a load, and
+    /// for a change to the vocabulary itself.
     func refreshTagging() {
         lastTaggingRefreshBegan = .now
         guard let item else { return }
@@ -981,7 +1003,7 @@ final class PlayerModel {
                     recentlyAppliedTagIDs.removeLast()
                 }
             }
-            refreshTagging()
+            refreshItemTags()
             recountQueue()
         } catch {
             loadError = "\(error)"
@@ -1001,7 +1023,7 @@ final class PlayerModel {
             if recentlyAppliedTagIDs.count > 30 {
                 recentlyAppliedTagIDs.removeLast()
             }
-            refreshTagging()
+            refreshItemTags()
             recountQueue()
         } catch {
             loadError = "\(error)"
@@ -1060,7 +1082,7 @@ final class PlayerModel {
         guard let binding = boundKeys[canonical], let item else { return false }
         do {
             let applied = try library.toggleTag(binding.tagID, on: item.id)
-            refreshTagging()
+            refreshItemTags()
             if binding.advance && applied { goNext() }
         } catch {
             loadError = "\(error)"
