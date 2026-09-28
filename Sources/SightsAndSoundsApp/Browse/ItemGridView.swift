@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import SightsAndSoundsKit
 
@@ -9,6 +10,9 @@ struct ItemGridView: View {
     /// The view name, shown for a moment after `V` cycles — otherwise
     /// the whole grid changes and nothing says why.
     @State private var viewToast: String?
+    /// Quick Look: the file showing, and the files it pages through.
+    @State private var quickLookURL: URL?
+    @State private var quickLookItems: [URL] = []
     /// The grid's width, for working out how many columns an up or down
     /// arrow should cross.
     @State private var gridWidth: CGFloat = 0
@@ -41,6 +45,7 @@ struct ItemGridView: View {
         .focusEffectDisabled()
         .focused($focused)
         .onKeyPress { press in handle(press) ? .handled : .ignored }
+        .quickLookPreview($quickLookURL, in: quickLookItems)
         .onAppear { focused = true }
         .overlay(alignment: .top) {
             if let message = model.errorMessage {
@@ -119,10 +124,11 @@ struct ItemGridView: View {
         .leftArrow: .left, .rightArrow: .right, .upArrow: .up, .downArrow: .down,
     ]
 
-    /// Arrows move the focus, Return plays it, Space selects it, ⌘A
-    /// selects everything shown. `V` cycles the saved views; Esc unwinds
-    /// exactly one layer — the selection here, since a popover takes the
-    /// key press itself.
+    /// Arrows move the focus, Return plays it, Space shows it in Quick
+    /// Look (the selection, when there is one), X selects it and ⌘A
+    /// selects everything shown — Space is Quick Look everywhere else on
+    /// the Mac. `V` cycles the saved views; Esc unwinds exactly one layer
+    /// — the selection here, since a popover takes the key press itself.
     private func handle(_ press: KeyPress) -> Bool {
         if press.characters.lowercased() == "a", press.modifiers == .command {
             model.selectAll()
@@ -141,7 +147,17 @@ struct ItemGridView: View {
             model.playFocusedItem()
             return true
         }
-        if press.key == .space, model.focusedItemID != nil {
+        if press.key == .space, press.modifiers.isEmpty {
+            // Space again closes it, as in Finder.
+            if quickLookURL != nil {
+                quickLookURL = nil
+            } else if let target = model.quickLookTarget() {
+                quickLookItems = target.all
+                quickLookURL = target.current
+            }
+            return true
+        }
+        if press.characters.lowercased() == "x", press.modifiers.isEmpty, model.focusedItemID != nil {
             model.toggleSelectionOfFocusedItem()
             return true
         }

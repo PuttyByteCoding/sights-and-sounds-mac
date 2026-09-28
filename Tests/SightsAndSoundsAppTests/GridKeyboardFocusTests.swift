@@ -5,7 +5,7 @@ import Testing
 @testable import SightsAndSoundsApp
 
 /// The grid could only be driven with a pointer: its key handler knew
-/// `V` and Esc. Arrows move a focus, Return plays it, Space selects it.
+/// `V` and Esc. Arrows move a focus, Return plays it, X selects it.
 @Suite @MainActor struct GridKeyboardFocusTests {
 
     @Test func theFirstArrowLandsOnTheFirstTile() {
