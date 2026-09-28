@@ -494,6 +494,11 @@ final class PlayerModel {
         guard let url else {
             stopForFailedLoad()
             item = loaded
+            // The panel and the rail answer for the item on screen, even
+            // one that cannot play: they kept the last item's tags and
+            // segments, so a click here edited the wrong file.
+            refreshTagging()
+            refreshBlocks()
             publishToSession()
             loadError = "The item's source is offline."
             return
