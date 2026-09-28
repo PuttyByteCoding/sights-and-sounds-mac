@@ -289,8 +289,11 @@ public struct MediaSignalJob: Job {
                     if once.claim() { continuation.resume(throwing: error) }
                 }
             }
-            Task.detached(priority: .utility) {
-                try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0.05) * 1_000_000_000))
+            // The give-up is a dispatch timer, not a task: a busy pool
+            // must not be able to delay the one thing that frees a lane
+            // from a stuck stage. User-initiated so a loaded machine does
+            // not starve it; it does almost nothing when it fires.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + max(seconds, 0.05)) {
                 guard once.claim() else { return }
                 work.cancel()
                 continuation.resume(throwing: StageGaveUp(seconds: seconds))

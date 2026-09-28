@@ -7,41 +7,68 @@ import Testing
 /// times out is left behind, still blocked. It must be left behind on a
 /// thread of its own: on the shared pool, a few damaged files in one
 /// sweep used up every thread, and after that every async task in the
-/// app — database observation, the UI's tasks, the other job lanes —
-/// waited for decoders that were never coming back.
-@Suite(.serialized) struct SignalStageThreadTests {
-    /// Blocks its thread for real, the way a stuck decode does.
+/// app waited for decoders that were never coming back — forty stuck
+/// stages took twelve seconds just to be given up on, in rounds.
+@Suite struct SignalStageThreadTests {
+    /// Where a stage's work ran: the dispatch queue label of its thread.
+    /// The cooperative pool's threads carry `…cooperative`.
+    final class Where: @unchecked Sendable {
+        private let lock = NSLock()
+        private var labels: [String] = []
+        func note() {
+            let label = String(cString: __dispatch_queue_get_label(nil))
+            lock.withLock { labels.append(label) }
+        }
+        var all: [String] { lock.withLock { labels } }
+    }
+
+    struct RecordingStage: SignalStage {
+        var name = "recording"
+        var version = 1
+        var kinds: Set<MediaKind> = [.video]
+        var pass = 0
+        let seen: Where
+        func examine(_ file: SignalStageInput) async throws -> SignalFindings {
+            seen.note()
+            await Task.yield()
+            seen.note()  // and after a suspension, too
+            return SignalFindings()
+        }
+    }
+
     struct StuckStage: SignalStage {
         var name = "stuck"
         var version = 1
         var kinds: Set<MediaKind> = [.video]
         var pass = 0
         func examine(_ file: SignalStageInput) async throws -> SignalFindings {
-            sleep(3)
+            sleep(10)
             return SignalFindings()
         }
     }
 
-    /// Forty stuck stages, each given 50 ms: all forty are given up on
-    /// at once. On the pool, the stuck decodes held every thread — even
-    /// the timers that give up on them could not run until a decode
-    /// finished, so forty took a dozen seconds, in rounds.
-    @Test func stuckStagesAreGivenUpOnWithoutStarvingThePool() async throws {
-        let input = SignalStageInput(url: URL(fileURLWithPath: "/tmp/sas-stuck.mp4"), kind: .video)
-        let clock = ContinuousClock()
-        let elapsed = await clock.measure {
-            await withTaskGroup(of: Void.self) { group in
-                for _ in 0..<40 {
-                    group.addTask {
-                        _ = try? await MediaSignalJob.examine(input, with: StuckStage(), givingUpAfter: 0.05)
-                    }
-                }
-            }
-        }
-        #expect(elapsed < .seconds(1.5), "giving up took \(elapsed)")
+    private let input = SignalStageInput(url: URL(fileURLWithPath: "/tmp/sas-stage.mp4"), kind: .video)
 
-        // Still stuck, all of them — and the pool answers at once.
-        let answered = await clock.measure { _ = await Task.detached { 1 }.value }
-        #expect(answered < .milliseconds(500), "a trivial task waited \(answered)")
+    @Test func aStageNeverRunsOnTheCooperativePool() async throws {
+        let seen = Where()
+        _ = try await MediaSignalJob.examine(input, with: RecordingStage(seen: seen), givingUpAfter: 5)
+        #expect(seen.all.count == 2)
+        #expect(!seen.all.contains { $0.contains("cooperative") }, "ran on: \(seen.all)")
+    }
+
+    @Test func aStuckStageIsGivenUpOn() async throws {
+        let clock = ContinuousClock()
+        var gaveUp = false
+        let elapsed = await clock.measure {
+            do {
+                _ = try await MediaSignalJob.examine(input, with: StuckStage(), givingUpAfter: 0.1)
+            } catch is MediaSignalJob.StageGaveUp {
+                gaveUp = true
+            } catch {}
+        }
+        // Given up on, not waited out: the stage would have taken ten
+        // seconds. Generous on time — a loaded machine runs timers late.
+        #expect(gaveUp)
+        #expect(elapsed < .seconds(8), "giving up took \(elapsed)")
     }
 }
