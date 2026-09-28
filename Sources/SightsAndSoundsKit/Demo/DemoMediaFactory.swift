@@ -128,9 +128,13 @@ public enum DemoMediaFactory {
                     | CGBitmapInfo.byteOrder32Little.rawValue)
         else { return }
 
+        // CoreText's own keys: `.font` and `.foregroundColor` are AppKit's
+        // (and UIKit's), which the Kit does not import.
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: CTFontCreateWithName("Helvetica-Bold" as CFString, 36, nil),
-            .foregroundColor: CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+            NSAttributedString.Key(kCTFontAttributeName as String):
+                CTFontCreateWithName("Helvetica-Bold" as CFString, 36, nil),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String):
+                CGColor(red: 1, green: 1, blue: 1, alpha: 1),
         ]
         let line = CTLineCreateWithAttributedString(
             NSAttributedString(string: text, attributes: attributes))
