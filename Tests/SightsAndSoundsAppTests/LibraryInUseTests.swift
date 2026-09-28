@@ -23,17 +23,17 @@ import Testing
         return (ref, backup)
     }
 
-    @Test func anAuxiliaryOrPropertiesWindowBlocksARestore() throws {
+    @Test func anAuxiliaryOrPropertiesWindowBlocksARestore() async throws {
         let app = AppModel()
         let (ref, backup) = try registered(app)
         app.holdLibrary(ref.id)
 
-        #expect(throws: AppModel.LibraryInUse.self) {
-            try app.restoreLibrary(id: ref.id, from: backup)
+        await #expect(throws: AppModel.LibraryInUse.self) {
+            try await app.restoreLibrary(id: ref.id, from: backup)
         }
 
         app.releaseLibrary(ref.id)
-        try app.restoreLibrary(id: ref.id, from: backup)
+        try await app.restoreLibrary(id: ref.id, from: backup)
     }
 
     @Test func anAuxiliaryWindowBlocksARemove() throws {
@@ -47,27 +47,27 @@ import Testing
         #expect(app.loadError != nil)
     }
 
-    @Test func twoWindowsHoldUntilBothClose() throws {
+    @Test func twoWindowsHoldUntilBothClose() async throws {
         let app = AppModel()
         let (ref, backup) = try registered(app)
         app.holdLibrary(ref.id)
         app.holdLibrary(ref.id)
         app.releaseLibrary(ref.id)
 
-        #expect(throws: AppModel.LibraryInUse.self) {
-            try app.restoreLibrary(id: ref.id, from: backup)
+        await #expect(throws: AppModel.LibraryInUse.self) {
+            try await app.restoreLibrary(id: ref.id, from: backup)
         }
     }
 
     /// Restoring a library nobody has open must not "open" it on the
     /// way: that stamped it as last opened and started a background
     /// settle of interrupted moves on a handle about to be closed.
-    @Test func restoringAClosedLibraryDoesNotCountAsOpeningIt() throws {
+    @Test func restoringAClosedLibraryDoesNotCountAsOpeningIt() async throws {
         let app = AppModel()
         let (ref, backup) = try registered(app)
         let before = app.libraries.first { $0.id == ref.id }?.lastOpenedAt
 
-        try app.restoreLibrary(id: ref.id, from: backup)
+        try await app.restoreLibrary(id: ref.id, from: backup)
 
         #expect(app.libraries.first { $0.id == ref.id }?.lastOpenedAt == before)
     }
