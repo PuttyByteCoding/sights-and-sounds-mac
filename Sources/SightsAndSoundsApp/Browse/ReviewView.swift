@@ -44,7 +44,8 @@ struct ReviewView: View {
     @State private var itemsByID: [UUID: MediaItem] = [:]
     @State private var selectedCandidateID: UUID?
     @State private var deleteList: [MediaItem] = []
-    @State private var deleteTicked: Set<UUID> = []
+    @State private var ticks = DeleteListTicks()
+    private var deleteTicked: Set<UUID> { ticks.ticked }
     @State private var issues: [MediaItem] = []
     @State private var selectedIssueID: UUID?
     @State private var evidence: PlaybackIssueEvidence?
@@ -442,17 +443,13 @@ struct ReviewView: View {
     /// stays flagged and unticked would be a lie in the confirmation
     /// count if the view merely filtered.
     private func toggleDelete(_ item: MediaItem) {
-        if deleteTicked.contains(item.id) {
-            deleteTicked.remove(item.id)
-        } else {
-            deleteTicked.insert(item.id)
-        }
+        ticks.toggle(item.id)
     }
 
     private func restore(_ item: MediaItem) {
         do {
             try model.library.unstage(.toDelete, itemID: item.id)
-            deleteTicked.remove(item.id)
+            ticks.untick(item.id)
             reload()
         } catch { errorText = "\(error)" }
     }
@@ -461,7 +458,7 @@ struct ReviewView: View {
     /// could not happen says so instead of looking like it did.
     private func restoreSelected() {
         let library = model.library, ids = Array(deleteTicked)
-        deleteTicked = []
+        ticks.clear()
         Task {
             let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
                 ids.compactMap { id in
@@ -515,7 +512,7 @@ struct ReviewView: View {
                 failures.append("\(permanent) deleted for good: their volume has no Trash")
             }
             errorText = failures.isEmpty ? nil : failures.joined(separator: "; ")
-            deleteTicked = []
+            ticks.clear()
             reload()
         } catch { errorText = "\(error)" }
     }
@@ -575,11 +572,9 @@ struct ReviewView: View {
                         .filter(sql: "markedForDeletion = 1")
                         .order(sql: "relativePath").fetchAll(db)
                 }
-                // Everything on the list is ticked to start with: the
-                // list exists because you already marked these.
-                deleteTicked = deleteTicked.isEmpty
-                    ? Set(deleteList.map(\.id))
-                    : deleteTicked.intersection(deleteList.map(\.id))
+                // A file arrives ticked — the list exists because you
+                // already marked it — and keeps whatever you set after.
+                ticks.listLoaded(deleteList.map(\.id))
                 issues = try await library.writer.read { db in
                     try MediaItem
                         .filter(sql: "playbackIssue = 1")
