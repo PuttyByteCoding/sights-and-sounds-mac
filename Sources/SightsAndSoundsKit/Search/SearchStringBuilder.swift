@@ -226,10 +226,6 @@ public enum SearchStringBuilder {
         }
     }
 
-    private static func fold(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
     private static func cased(_ value: String, _ letterCase: SearchLetterCase) -> String {
         switch letterCase {
         case .asIs: value

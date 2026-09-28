@@ -489,16 +489,6 @@ extension LibraryDatabase {
         }
     }
 
-    public func setTagOrder(_ ids: [UUID]) throws {
-        try writer.write { db in
-            for (index, id) in ids.enumerated() {
-                try db.execute(
-                    sql: "UPDATE tag SET sortOrder = ? WHERE id = ?",
-                    arguments: [index * 10, id])
-            }
-        }
-    }
-
     // MARK: - Fields
 
     /// Field definitions for one scope. Tag fields belong to a category;
@@ -530,15 +520,6 @@ extension LibraryDatabase {
             field.name = name
             try field.insert(db)
             return field
-        }
-    }
-
-    public func updateField(_ field: FieldDefinition) throws {
-        try writer.write { db in
-            var field = field
-            field.name = field.name.trimmingCharacters(in: .whitespaces)
-            guard !field.name.isEmpty else { throw DatabaseError(message: "empty field name") }
-            try field.update(db)
         }
     }
 

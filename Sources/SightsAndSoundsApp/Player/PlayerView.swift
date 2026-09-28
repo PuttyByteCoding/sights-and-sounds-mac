@@ -871,9 +871,6 @@ private struct TransportBlock: View {
             if let start = model.pendingSegmentStart {
                 MarkingIndicator(start: start)
             }
-            if model.pendingClipStart != nil || model.pendingClipEnd != nil {
-                ClipAuthoringBar()
-            }
             ScrubberView()
             controlRow
         }
@@ -1660,50 +1657,6 @@ extension CGFloat {
     var clamped01: CGFloat { Swift.min(1, Swift.max(0, self)) }
     func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
         Swift.min(range.upperBound, Swift.max(range.lowerBound, self))
-    }
-}
-
-/// The in-progress clip range from the older two-point authoring path:
-/// shown while either point is set, saved once both are.
-private struct ClipAuthoringBar: View {
-    @Environment(PlayerModel.self) private var model
-    @State private var name = ""
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "scissors").foregroundStyle(Theme.Segment.clip)
-            Text(rangeText)
-                .font(Theme.mono(11))
-                .foregroundStyle(Theme.Text.secondary)
-            if model.pendingClipReady {
-                TextField("Clip name", text: $name)
-                    .textFieldStyle(.plain)
-                    .font(Theme.ui(12))
-                    .frame(width: 180)
-                Button("Save Clip") {
-                    model.savePendingClip(named: name)
-                    name = ""
-                }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-                .keyboardShortcut(.return, modifiers: .command)
-            } else {
-                Text("set the other point")
-                    .font(Theme.ui(11))
-                    .foregroundStyle(Theme.Text.disabled)
-            }
-            Spacer()
-            Button("Cancel") { model.cancelPendingClip() }
-                .buttonStyle(.plain)
-                .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.quaternary)
-        }
-        .padding(.horizontal, 4)
-    }
-
-    private var rangeText: String {
-        let start = model.pendingClipStart.map(TransportBarTime.format) ?? "—"
-        let end = model.pendingClipEnd.map(TransportBarTime.format) ?? "—"
-        return "\(start) → \(end)"
     }
 }
 

@@ -101,19 +101,6 @@ struct ScopeHeader: View {
     }
 }
 
-/// Reads once, writes through the store on change.
-@MainActor
-private func bindSetting<T>(
-    _ keyPath: WritableKeyPath<AppSettings, T>, refresh: @escaping () -> Void
-) -> Binding<T> {
-    Binding(
-        get: { AppSettingsStore.shared.current[keyPath: keyPath] },
-        set: { newValue in
-            AppSettingsStore.shared.update { $0[keyPath: keyPath] = newValue }
-            refresh()
-        })
-}
-
 private struct PathSettingRow: View {
     let title: String
     let help: String

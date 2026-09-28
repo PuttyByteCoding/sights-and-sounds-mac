@@ -576,16 +576,6 @@ private struct PillCategoryView: View {
         ).map { Suggestion(tag: $0.entry.tag, matchedAlias: $0.alias) }
     }
 
-    /// Every term must appear somewhere in the text — case-, diacritic-
-    /// AND punctuation-insensitively: "oneil" hits "O'Neil", "acdc" hits
-    /// "AC/DC", "motorhead" hits "Motörhead". All-must-match rather than
-    /// any: adding a second term is how the operator NARROWS a long
-    /// list, so it must never widen one.
-    static func matchesAllTerms(_ text: String, terms: [String]) -> Bool {
-        let folded = searchFold(text)
-        return terms.allSatisfy { folded.contains(searchFold($0)) }
-    }
-
     /// The one fold both sides of every comparison go through — the
     /// contains match above and the exact-equality that pre-selects a
     /// row for Enter. Two folds is how "Tim oneil" ends up matching for

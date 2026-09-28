@@ -183,8 +183,4 @@ extension AppDatabase {
     public func saveRepairRecipe(_ recipe: RepairRecipe) throws {
         try writer.write { try recipe.upsert($0) }
     }
-
-    public func deleteRepairRecipe(_ id: UUID) throws {
-        _ = try writer.write { try RepairRecipe.deleteOne($0, key: id) }
-    }
 }

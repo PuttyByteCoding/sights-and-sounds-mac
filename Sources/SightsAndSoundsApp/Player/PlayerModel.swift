@@ -418,12 +418,6 @@ final class PlayerModel {
         }
     }
 
-    /// Resolved file URL for a QUEUE row (nil while its source is
-    /// offline) — cached thumbnails render regardless.
-    func queueFileURL(for item: MediaItem) -> URL? {
-        (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil
-    }
-
     /// The same lookup, to be run later and off the main actor; see
     /// `BrowseModel.fileResolver(for:)`.
     func queueFileResolver(for item: MediaItem) -> @Sendable () -> URL? {
@@ -873,14 +867,6 @@ final class PlayerModel {
         return true
     }
 
-    /// Reorder the tag categories — the panel's drag handle. The write
-    /// goes through the kit's single order write, panelVocabulary is the
-    /// FULL vocabulary so no category's order is left behind, and every
-    /// other window follows through the ordinary refresh broadcast.
-    func moveCategory(_ id: UUID, before targetID: UUID?) {
-        movePanelRow(.category(id), before: targetID.map { .category($0) })
-    }
-
     func refreshTagging() {
         lastTaggingRefreshBegan = .now
         guard let item else { return }
@@ -1201,39 +1187,6 @@ final class PlayerModel {
     func deleteBlock(_ blockID: UUID) {
         try? library.deleteBlock(blockID)
         refreshBlocks()
-    }
-
-    // MARK: - Clip authoring
-
-    var pendingClipStart: Double?
-    var pendingClipEnd: Double?
-
-    func setClipIn() { pendingClipStart = currentSeconds }
-    func setClipOut() { pendingClipEnd = currentSeconds }
-    func cancelPendingClip() {
-        pendingClipStart = nil
-        pendingClipEnd = nil
-    }
-
-    var pendingClipReady: Bool {
-        if let start = pendingClipStart, let end = pendingClipEnd { return end > start }
-        return false
-    }
-
-    /// Save the pending range as a segment on the current item
-    /// (authoring on a clip targets its parent).
-    func savePendingClip(named name: String, role: SegmentRole = .clip) {
-        guard let item, let start = pendingClipStart, let end = pendingClipEnd else { return }
-        do {
-            let parentID = item.parentMediaItemID ?? item.id
-            _ = try library.createEmbeddedClip(
-                parentID: parentID, name: name,
-                startSeconds: start, endSeconds: end, role: role)
-            cancelPendingClip()
-            refreshSegments()
-        } catch {
-            loadError = "\(error)"
-        }
     }
 
     // MARK: - Playlist walking
