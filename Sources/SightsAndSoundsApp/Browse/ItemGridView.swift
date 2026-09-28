@@ -90,7 +90,7 @@ struct ItemGridView: View {
             // of stacking fades.
             .animation(
                 .easeInOut(duration: Theme.Motion.listingSettle),
-                value: model.visibleItems.map(\.id))
+                value: model.listingGeneration)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
         // The focus can be moved off screen by the keyboard;
@@ -258,16 +258,17 @@ private struct ItemCell: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { play() }
-            .onTapGesture {
-                let flags = NSEvent.modifierFlags
-                model.click(
-                    item.id,
-                    extend: flags.contains(.command),
-                    range: flags.contains(.shift))
-            }
+            .onClicks(
+                single: {
+                    let flags = NSEvent.modifierFlags
+                    model.click(
+                        item.id,
+                        extend: flags.contains(.command),
+                        range: flags.contains(.shift))
+                },
+                double: { play() })
             .contextMenu { menu }
-            // Two tap gestures give a tile no role and no way to be
+            // A tap gesture gives a tile no role and no way to be
             // pressed. It is a button that plays, that can also be
             // selected.
             .accessibilityElement(children: .combine)
@@ -381,16 +382,12 @@ private struct ItemCell: View {
         }
         if item.markedForDeletion {
             Button("Restore from Deletion Staging", systemImage: "arrow.uturn.backward") {
-                model.attempt("restore \(item.fileName)") {
-                    try model.library.unstage(.toDelete, itemID: item.id)
-                }
+                model.setStaging(.toDelete, on: false, for: [item])
             }
         }
         if item.playbackIssue {
             Button("Clear Playback Issue", systemImage: "play.circle") {
-                model.attempt("clear the playback issue") {
-                    try model.library.unstage(.playbackIssue, itemID: item.id)
-                }
+                model.setStaging(.playbackIssue, on: false, for: [item])
             }
         }
         if item.parentMediaItemID == nil {

@@ -23,6 +23,18 @@ public enum ThumbnailStore {
         root.appendingPathComponent(libraryID.uuidString, isDirectory: true)
             .appendingPathComponent(itemID.uuidString + ".jpg")
     }
+
+    /// A cached thumbnail counts as made only when it is a whole JPEG —
+    /// non-empty and ending in the end-of-image marker. A file cut off
+    /// by a crash mid-write used to count as done forever. Two bytes
+    /// read, not a decode.
+    static func isWhole(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let end = try? handle.seekToEnd(), end >= 4 else { return false }
+        try? handle.seek(toOffset: end - 2)
+        return (try? handle.read(upToCount: 2)) == Data([0xFF, 0xD9])
+    }
 }
 
 /// Pregenerates missing grid thumbnails for video items. Work is decided
@@ -82,17 +94,18 @@ public struct ThumbnailBatchJob: Job {
                 """)
         }.filter { item in
             onlineSources.contains(item.sourceID)
-                && !FileManager.default.fileExists(
-                    atPath: ThumbnailStore.url(libraryID: payload.libraryID, itemID: item.id).path)
+                && !ThumbnailStore.isWhole(
+                    at: ThumbnailStore.url(libraryID: payload.libraryID, itemID: item.id))
         }
 
         var generated = 0
         var failed = 0
+        var lostSources: Set<UUID> = []
         await context.reportProgress(current: 0, total: candidates.count)
 
         for (index, item) in candidates.enumerated() {
             try await context.checkCancellation()
-            guard let source = sources[item.sourceID] else { continue }
+            guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let fileURL = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
             let thumbURL = ThumbnailStore.url(libraryID: payload.libraryID, itemID: item.id)
@@ -101,7 +114,9 @@ public struct ThumbnailBatchJob: Job {
                 do {
                     try FileManager.default.createDirectory(
                         at: thumbURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try jpeg.write(to: thumbURL)
+                    // Whole or not at all: a crash mid-write must not
+                    // leave a cut-off file in the cache.
+                    try jpeg.write(to: thumbURL, options: .atomic)
                     try await library.writer.write { db in
                         try ThumbnailState(mediaItemID: item.id, generated: true).upsert(db)
                     }
@@ -111,6 +126,11 @@ public struct ThumbnailBatchJob: Job {
                     failed += 1
                 }
             } else {
+                switch try await library.sweepMiss(for: item, source: source, fileAccess: fileAccess) {
+                case .sourceGone: lostSources.insert(source.id); continue
+                case .fileMoved: continue
+                case .fileFailed: break
+                }
                 try await recordFailure(library, item.id, "no frame could be decoded")
                 failed += 1
             }

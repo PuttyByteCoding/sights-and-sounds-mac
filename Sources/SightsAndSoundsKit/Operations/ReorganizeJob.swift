@@ -117,6 +117,12 @@ public struct ReorganizeJob: Job {
             payload: JSONEncoder().encode(Payload(template: template, itemIDs: itemIDs)))
     }
 
+    /// The words that say what went wrong, not a type dump.
+    private static func describe(_ error: Error) -> String {
+        if let moveError = error as? MoveError { return "\(moveError)" }
+        return (error as NSError).localizedDescription
+    }
+
     public func run(_ context: JobContext) async throws {
         let library = context.library
         let plan = try library.previewReorganize(
@@ -125,6 +131,9 @@ public struct ReorganizeJob: Job {
         var moved = 0
         var skipped = 0
         var failed = 0
+        // Why moves failed: every one to the log, the first few into the
+        // summary — "3 failed" alone left no way to find out why.
+        var reasons: [String] = []
         // Every move in this run shares one session id: the run is the
         // unit anyone puts back.
         let sessionID = UUID()
@@ -148,10 +157,16 @@ public struct ReorganizeJob: Job {
                 moved += 1
             } catch {
                 failed += 1
+                let reason = "\(entry.fileName): \(Self.describe(error))"
+                AppLog.shared.warning("moves", "reorganize could not move \(reason)")
+                if reasons.count < 3 { reasons.append(reason) }
             }
         }
         var summary = "\(moved) moved, \(skipped) skipped"
-        if failed > 0 { summary += ", \(failed) failed" }
+        if failed > 0 {
+            summary += ", \(failed) failed — " + reasons.joined(separator: "; ")
+            if failed > reasons.count { summary += "; …see the Log for the rest" }
+        }
         await context.setSummary(summary)
     }
 }

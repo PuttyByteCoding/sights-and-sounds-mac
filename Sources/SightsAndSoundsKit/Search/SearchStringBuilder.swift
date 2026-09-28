@@ -35,9 +35,25 @@ public enum SearchStringBuilder {
     public static func values(
         for part: SearchPart, subject: SearchSubject, recipe: SearchRecipe
     ) -> [String] {
+        valueStates(for: part, subject: subject, recipe: recipe).last ?? []
+    }
+
+    /// The part's values before any rule, then after each rule in turn —
+    /// `recipe.rules.count + 1` entries. One pass through the rules gives
+    /// every intermediate state, which is what the editor's per-rule
+    /// preview shows.
+    private static func valueStates(
+        for part: SearchPart, subject: SearchSubject, recipe: SearchRecipe
+    ) -> [[String]] {
+        func settled(_ values: [String]) -> [String] {
+            values
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
         // A rule maps one value to one or more — split is the one that
         // multiplies — and the next rule sees whatever the last left.
         var values = rawValues(for: part, subject: subject)
+        var states = [settled(values)]
         for rule in recipe.rules {
             values = values.flatMap { apply(rule, to: $0) }
             // A Split's keep first / keep last chooses across EVERYTHING
@@ -50,10 +66,9 @@ public enum SearchStringBuilder {
                 let filled = values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 values = (keep == .first ? filled.first : filled.last).map { [$0] } ?? []
             }
+            states.append(settled(values))
         }
-        return values
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        return states
     }
 
     private static func apply(_ rule: SearchRule, to value: String) -> [String] {
@@ -63,7 +78,7 @@ public enum SearchStringBuilder {
             if regex {
                 // A pattern that does not compile does nothing — the
                 // row says so — rather than guessing at what was meant.
-                guard let expression = try? NSRegularExpression(pattern: from) else { return [value] }
+                guard let expression = RegexCache.shared.expression(from) else { return [value] }
                 return [expression.stringByReplacingMatches(
                     in: value, range: NSRange(value.startIndex..., in: value), withTemplate: to)]
             }
@@ -77,7 +92,7 @@ public enum SearchStringBuilder {
             guard !needle.isEmpty else { return [value] }
             var ranges: [Range<String.Index>] = []
             if regex {
-                guard let expression = try? NSRegularExpression(pattern: needle, options: [.caseInsensitive])
+                guard let expression = RegexCache.shared.expression(needle, options: [.caseInsensitive])
                 else { return [value] }
                 ranges = expression.matches(in: value, range: NSRange(value.startIndex..., in: value))
                     .compactMap { Range($0.range, in: value) }
@@ -110,13 +125,19 @@ public enum SearchStringBuilder {
     /// The whole string: every part's formatted values, parts joined by
     /// single spaces, a part with nothing to say leaving no gap.
     public static func string(recipe: SearchRecipe, subject: SearchSubject) -> String {
+        assemble(recipe) { values(for: $0, subject: subject, recipe: recipe) }
+    }
+
+    /// The parts, each with the values `partValues` gives it, formatted
+    /// and joined.
+    private static func assemble(_ recipe: SearchRecipe, partValues: (SearchPart) -> [String]) -> String {
         recipe.parts.compactMap { part -> String? in
             switch part.kind {
             case .literal(let text):
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 return trimmed.isEmpty ? nil : trimmed
             case .fileName, .tags:
-                let formatted = values(for: part, subject: subject, recipe: recipe)
+                let formatted = partValues(part)
                     .map { quote(cased($0, part.format.letterCase), part.format.quoting) }
                 guard !formatted.isEmpty else { return nil }
                 let joiner: String
@@ -150,11 +171,19 @@ public enum SearchStringBuilder {
     /// after rule N, for every N, in rule order — so an editor can show
     /// what each rule did. One entry per rule; the last is the whole
     /// recipe's string.
+    ///
+    /// Every part's states come from one pass through the rules. Cutting
+    /// the recipe off after each rule and building it again ran the rules
+    /// once per prefix — the square of the rule count, on every keystroke.
     public static func stringsAfterEachRule(recipe: SearchRecipe, subject: SearchSubject) -> [String] {
-        recipe.rules.indices.map { index in
-            var cut = recipe
-            cut.rules = Array(recipe.rules.prefix(index + 1))
-            return string(recipe: cut, subject: subject)
+        let states = recipe.parts.map { part in
+            part.isLiteral ? [] : valueStates(for: part, subject: subject, recipe: recipe)
+        }
+        return recipe.rules.indices.map { index in
+            assemble(recipe) { part in
+                guard let position = recipe.parts.firstIndex(where: { $0 == part }) else { return [] }
+                return states[position][index + 1]
+            }
         }
     }
 

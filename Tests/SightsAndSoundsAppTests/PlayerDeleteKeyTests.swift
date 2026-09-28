@@ -76,9 +76,9 @@ import Testing
 
         model.toggleDeletionAndAdvance()
 
-        try await Task.sleep(for: .milliseconds(300))
+        // The write follows the key press off the main actor: wait for it.
+        try await waitUntil { (try? stored(library, a.id))??.markedForDeletion == false }
         #expect(model.item?.id == a.id)
-        #expect(try stored(library, a.id)?.markedForDeletion == false)
     }
 
     @Test func theLastItemIsMarkedAndStays() async throws {

@@ -45,12 +45,16 @@ struct SightsAndSoundsApp: App {
             LibraryPickerView()
                 .environment(model)
                 .uiZoomed()
+                .appWindowAppearance()
                 .onAppear { appDelegate.model = model }
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
         .commands {
-            CommandGroup(after: .newItem) {
+            // Replacing, not after: SwiftUI's default New Window (⌘N)
+            // targets the library window group with no library, which
+            // can only open an empty window. Libraries open from here.
+            CommandGroup(replacing: .newItem) {
                 OpenLibraryCommand()
                     .environment(model)
             }
@@ -80,6 +84,7 @@ struct SightsAndSoundsApp: App {
                 LibraryWindowView(libraryID: libraryID)
                     .environment(model)
                     .uiZoomed()
+                    .appWindowAppearance()
                     // Restored windows can come up before the picker.
                     .onAppear { appDelegate.model = model }
                     // The picker's OPEN badge, its Bring Forward, and the
@@ -99,6 +104,7 @@ struct SightsAndSoundsApp: App {
                 AuxiliaryWindowView(request: request)
                     .environment(model)
                     .uiZoomed()
+                    .appWindowAppearance()
                     // Holds the handle: Restore and Remove wait for it.
                     .onAppear { model.holdLibrary(request.libraryID) }
                     .onDisappear { model.releaseLibrary(request.libraryID) }
@@ -111,6 +117,7 @@ struct SightsAndSoundsApp: App {
                 LibraryPropertiesView(libraryID: libraryID)
                     .environment(model)
                     .uiZoomed()
+                    .appWindowAppearance()
                     // Holds the handle: Restore and Remove wait for it.
                     .onAppear { model.holdLibrary(libraryID) }
                     .onDisappear { model.releaseLibrary(libraryID) }
@@ -123,11 +130,13 @@ struct SightsAndSoundsApp: App {
             BackgroundTasksView()
                 .environment(model)
                 .uiZoomed()
+                .appWindowAppearance()
         }
 
         Window("Log", id: "log") {
             LogView()
                 .uiZoomed()
+                .appWindowAppearance()
         }
 
         Settings {
@@ -305,6 +314,7 @@ final class AppModel {
 
     func library(for id: UUID) throws -> LibraryDatabase {
         if let open = openHandles[id] { return open }
+        guard !restoringIDs.contains(id) else { throw LibraryIsBeingRestored() }
         guard let ref = libraries.first(where: { $0.id == id }) else {
             throw CocoaError(.fileNoSuchFile)
         }
@@ -419,11 +429,21 @@ final class AppModel {
     /// archive the current file with its sidecars beside the backups
     /// (never destroyed) and copy the backup into place. Caches are
     /// dropped so the next open is fresh.
-    func restoreLibrary(id: UUID, from backupURL: URL) throws {
+    ///
+    /// The slow halves — reading the whole backup to verify it, and
+    /// copying it into place — run off the main actor; they used to
+    /// beachball the picker on a large library. While the copy runs the
+    /// library is marked restoring, and nothing may open it.
+    func restoreLibrary(id: UUID, from backupURL: URL) async throws {
         guard let ref = libraries.first(where: { $0.id == id }) else {
             throw CocoaError(.fileNoSuchFile)
         }
-        _ = try LibraryDatabase.verifyBackup(at: backupURL)
+        _ = try await Task.detached(priority: .userInitiated) {
+            try LibraryDatabase.verifyBackup(at: backupURL)
+        }.value
+        // Checked after the await, and nothing awaits between here and
+        // the handle being dropped: the state it checks cannot change
+        // under it.
         try ensureNotInUse(id)
 
         // Opened if it was not, so the close can fold the WAL into the
@@ -438,11 +458,23 @@ final class AppModel {
         runners[id] = nil
         openHandles[id] = nil
 
-        try LibraryDatabase.restore(
-            backup: backupURL, over: URL(fileURLWithPath: ref.filePath),
-            archivingInto: LibraryDatabase.defaultBackupDirectory()
-                .appendingPathComponent(ref.name, isDirectory: true))
+        restoringIDs.insert(id)
+        defer { restoringIDs.remove(id) }
+        let libraryURL = URL(fileURLWithPath: ref.filePath)
+        let archive = LibraryDatabase.defaultBackupDirectory()
+            .appendingPathComponent(ref.name, isDirectory: true)
+        _ = try await Task.detached(priority: .userInitiated) {
+            try LibraryDatabase.restore(backup: backupURL, over: libraryURL, archivingInto: archive)
+        }.value
         refresh()
+    }
+
+    /// Libraries whose file is being replaced right now. `library(for:)`
+    /// refuses them: a handle opened mid-copy would read half a file.
+    private var restoringIDs: Set<UUID> = []
+
+    struct LibraryIsBeingRestored: Error, CustomStringConvertible {
+        var description: String { "this library is being restored from a backup — try again in a moment" }
     }
 
     /// Forget a library: close its open handle, drop its runner, delete
@@ -562,11 +594,14 @@ struct ViewMenuCommands: View {
             aux("Maintenance", .maintenance, key: "5")
             aux("Tag Analysis", .tagAnalysis, key: "6")
             aux("History", .watched, key: "7")
+            // ⌘I, the Mac's Get Info key. It was ⌥⌘8, which macOS keeps
+            // for Accessibility Zoom on/off — it never reached the app for
+            // anyone with that shortcut enabled.
             Button("Library Properties") {
                 guard let focusedLibraryID else { return }
                 openWindow(id: "properties", value: focusedLibraryID)
             }
-            .keyboardShortcut("8", modifiers: [.command, .option])
+            .keyboardShortcut("i", modifiers: .command)
         }
         .disabled(focusedLibraryID == nil)
         Divider()
@@ -740,16 +775,37 @@ struct AddExistingLibraryButton: View {
         panel.title = "Add Existing Library"
         panel.allowedContentTypes = [.init(filenameExtension: "sqlite")].compactMap { $0 }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let library = try LibraryDatabase.open(at: url)
-            // A migrated/created library is already named; a bare file gets
-            // its filename as identity.
-            try library.ensureInfo(name: url.deletingPathExtension().lastPathComponent)
-            guard let appDatabase = model.appDatabase else { return }
-            try appDatabase.register(library)
-            model.refresh()
-        } catch {
-            model.loadError = "Could not add library: \(error)"
+        guard let appDatabase = model.appDatabase else { return }
+        Task {
+            do {
+                // Opening migrates the file to the current schema — on an
+                // old or large library, a wait that used to be on the main
+                // thread. A migrated/created library is already named; a
+                // bare file gets its filename as identity.
+                let library = try await Task.detached(priority: .userInitiated) {
+                    let library = try LibraryDatabase.open(at: url)
+                    try library.ensureInfo(name: url.deletingPathExtension().lastPathComponent)
+                    return library
+                }.value
+                try appDatabase.register(library)
+                // Registered; the app opens its own handle when a window
+                // asks for one, so this one is not left open beside it.
+                try? library.close()
+                model.refresh()
+            } catch {
+                model.loadError = "Could not add library: \(error)"
+            }
         }
+    }
+}
+
+extension View {
+    /// Every window but Settings is dark. The content paints fixed
+    /// charcoal surfaces, while the title bar, menus, alerts, pickers and
+    /// other native controls follow the window's appearance — so on a Mac
+    /// in Light mode they came out light on dark. Settings keeps the
+    /// system's appearance, like the rest of the system's settings.
+    func appWindowAppearance() -> some View {
+        preferredColorScheme(.dark)
     }
 }

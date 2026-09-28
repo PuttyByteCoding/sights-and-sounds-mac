@@ -593,8 +593,13 @@ struct CategoryManagerView: View {
                         .order(sql: "sortOrder, name").fetchAll($0)
                 }
                 let aliasRows = try await library.writer.read { try TagAlias.fetchAll($0) }
-                // One grouped query, never a count per row.
-                let counts = try library.tagUsageCounts(inCategory: categoryID)
+                // One grouped query, never a count per row — and off the
+                // main actor like the reads above it: a synchronous call
+                // here ran on the main thread, since this task is the
+                // view's.
+                let counts = try await Task.detached(priority: .userInitiated) {
+                    try library.tagUsageCounts(inCategory: categoryID)
+                }.value
                 guard generation == tagGeneration else { return }
                 tags = fetched
                 aliases = Dictionary(grouping: aliasRows, by: \.tagID)
