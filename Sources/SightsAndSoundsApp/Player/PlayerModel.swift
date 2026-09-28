@@ -441,6 +441,7 @@ final class PlayerModel {
 
     func load(itemID: UUID) {
         persistProgress()
+        queuePositionID = itemID
         removeObserver()
         completionRecorded = false
         loadError = nil
@@ -466,6 +467,7 @@ final class PlayerModel {
                 case .success(let (loaded, url)): self.apply(loaded: loaded, url: url)
                 case .failure(let error):
                     self.stopForFailedLoad()
+                    self.letGoOfItem()
                     self.loadError = "\(error)"
                 }
             }
@@ -475,6 +477,7 @@ final class PlayerModel {
     private func apply(loaded: MediaItem?, url: URL?) {
         guard let loaded else {
             stopForFailedLoad()
+            letGoOfItem()
             loadError = "The item no longer exists."
             return
         }
@@ -544,6 +547,22 @@ final class PlayerModel {
     /// under the new item's title — playhead frozen, `isPlaying` still
     /// true, and `fileURL` still answering for a file that is no longer
     /// the one on screen.
+    /// Where the queue stands: the id last asked for, loaded or not.
+    /// Separate from `item` so a failed load can let go of the item
+    /// without losing its place for Next and Previous.
+    private var queuePositionID: UUID?
+
+    /// A load that found no item must not leave the LAST one behind:
+    /// every key acts on `item`, so ⇧⌫ unmarked the previous file and
+    /// tag keys wrote to it while the title said something else.
+    private func letGoOfItem() {
+        item = nil
+        itemTags = []
+        segments = []
+        hideBlocks = []
+        publishToSession()
+    }
+
     private func stopForFailedLoad() {
         player.pause()
         player.replaceCurrentItem(with: nil)
@@ -1213,8 +1232,8 @@ final class PlayerModel {
     func goPrevious() { step(-1) }
 
     private func step(_ delta: Int) {
-        guard let item else { return }
-        if let index = playlist.firstIndex(of: item.id) {
+        guard let current = queuePositionID ?? item?.id else { return }
+        if let index = playlist.firstIndex(of: current) {
             let next = index + delta
             guard playlist.indices.contains(next) else { return }
             load(itemID: playlist[next])
