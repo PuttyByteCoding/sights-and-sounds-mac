@@ -7,19 +7,18 @@ public struct FolderNode: Identifiable, Sendable, Equatable {
     public var id: String { path }
     public let path: String
     public let name: String
-    public var directCount: Int
-    public var children: [FolderNode]
-
-    /// Items in this folder and everything below it.
-    public var subtreeCount: Int {
-        directCount + children.reduce(0) { $0 + $1.subtreeCount }
-    }
+    public let directCount: Int
+    public let children: [FolderNode]
+    /// Items in this folder and everything below it. Stored, not summed
+    /// on each read: the sidebar reads it for every row it draws.
+    public let subtreeCount: Int
 
     public init(path: String, name: String, directCount: Int = 0, children: [FolderNode] = []) {
         self.path = path
         self.name = name
         self.directCount = directCount
         self.children = children
+        self.subtreeCount = directCount + children.reduce(0) { $0 + $1.subtreeCount }
     }
 }
 
@@ -38,14 +37,16 @@ public enum FolderTreeBuilder {
             }
         }
 
+        // Each folder filed under its parent in one pass. Finding a
+        // node's children by scanning every path made the build
+        // quadratic: 20,000 folders took over twenty seconds.
+        var childrenByParent: [String: [String]] = [:]
+        for path in counts.keys where !path.isEmpty {
+            childrenByParent[MediaPath.folder(of: path), default: []].append(path)
+        }
+
         func children(of parent: String) -> [FolderNode] {
-            let prefix = parent.isEmpty ? "" : parent + "/"
-            return counts.keys
-                .filter { path in
-                    !path.isEmpty
-                        && path.hasPrefix(prefix)
-                        && !path.dropFirst(prefix.count).contains("/")
-                }
+            (childrenByParent[parent] ?? [])
                 .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
                 .map { path in
                     FolderNode(
