@@ -254,6 +254,21 @@ extension LibraryDatabase {
         _ = try moveFile(
             itemID: itemID, to: "\(folder.rawValue)/\(item.relativePath)",
             fileAccess: fileAccess)
+        if folder == .playbackIssue { capturePlaybackIssueEvidenceLater(itemID: itemID, fileAccess: fileAccess) }
+    }
+
+    /// What the file says NOW is the evidence — Review matches repair
+    /// recipes on it. ffprobe can take seconds on a damaged or sleeping
+    /// file, so it runs on a utility queue rather than the caller's
+    /// thread (often main) or the cooperative pool.
+    private func capturePlaybackIssueEvidenceLater(itemID: UUID, fileAccess: any FileAccess) {
+        DispatchQueue.global(qos: .utility).async { [self] in
+            do {
+                try capturePlaybackIssueEvidence(itemID: itemID, fileAccess: fileAccess)
+            } catch {
+                AppLog.shared.warning("review", "could not capture playback evidence: \(error)")
+            }
+        }
     }
 
     /// Clear the flag and, when the latest staging move is still
