@@ -859,6 +859,26 @@ final class BrowseModel {
     /// through the grid must not tick everything it passes.
     private(set) var focusedItemID: UUID?
 
+    /// Put the keyboard's focus on one tile.
+    func moveFocus(to itemID: UUID) {
+        guard visibleItems.contains(where: { $0.id == itemID }) else { return }
+        focusedItemID = itemID
+    }
+
+    /// Space: what Quick Look shows — the selection in listing order,
+    /// opened at the focused tile when that is part of it; with nothing
+    /// selected, the focused tile. Offline files cannot be shown and are
+    /// left out. Nil when there is nothing to show.
+    func quickLookTarget() -> (current: URL, all: [URL])? {
+        let chosen = selectedItems.isEmpty
+            ? visibleItems.filter { $0.id == focusedItemID }
+            : selectedItems
+        let shown = chosen.compactMap { item in fileURL(for: item).map { (item.id, $0) } }
+        guard !shown.isEmpty else { return nil }
+        let current = shown.first { $0.0 == focusedItemID }?.1 ?? shown[0].1
+        return (current, shown.map(\.1))
+    }
+
     func moveFocus(_ move: GridFocusMove, columns: Int) {
         let ids = visibleItems.map(\.id)
         let current = focusedItemID.flatMap { ids.firstIndex(of: $0) }
