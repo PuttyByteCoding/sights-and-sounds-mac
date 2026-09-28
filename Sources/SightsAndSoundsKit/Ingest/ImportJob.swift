@@ -110,10 +110,13 @@ public struct ImportJob: Job {
             candidates.filter { wanted.contains($0.relative.lowercased()) }
         } ?? candidates
 
+        // Folded once, looked up per file. Scanning every known path for
+        // every candidate made a full rescan quadratic: 40,000 items was
+        // over a billion string comparisons.
         let existing = try await library.writer.read { db in
             Set(try String.fetchAll(
                 db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?",
-                arguments: [source.id]))
+                arguments: [source.id]).map { $0.lowercased() })
         }
 
         var inserted = 0
@@ -125,7 +128,7 @@ public struct ImportJob: Job {
             defer { Task { await context.reportProgress(current: index + 1, total: selected.count) } }
 
             // NOCASE-unique paths: compare case-insensitively like the schema.
-            if existing.contains(where: { $0.caseInsensitiveCompare(candidate.relative) == .orderedSame }) {
+            if existing.contains(candidate.relative.lowercased()) {
                 skipped += 1
                 continue
             }
