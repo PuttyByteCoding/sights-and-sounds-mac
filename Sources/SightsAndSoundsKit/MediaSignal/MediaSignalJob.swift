@@ -272,14 +272,16 @@ public struct MediaSignalJob: Job {
     /// file never returns and cannot be interrupted, and a structured task
     /// would wait for it; so the stage runs on a task of its own and
     /// whichever of "it finished" and "time is up" comes first is the
-    /// answer. A stage that is given up on is left behind, still blocked.
-    /// That costs a thread; the alternative costs the rest of the sweep.
+    /// answer. A stage that is given up on is left behind, still blocked
+    /// — on a thread of its own (`OwnThreadExecutor`), never one of the
+    /// cooperative pool's. That costs a thread; the alternative costs the
+    /// rest of the sweep, or on the pool, the rest of the app.
     static func examine(
         _ input: SignalStageInput, with stage: any SignalStage, givingUpAfter seconds: Double
     ) async throws -> SignalFindings {
         let once = OnceOnly()
         return try await withCheckedThrowingContinuation { continuation in
-            let work = Task.detached(priority: .utility) {
+            let work = Task.detached(executorPreference: OwnThreadExecutor.shared, priority: .utility) {
                 do {
                     let findings = try await stage.examine(input)
                     if once.claim() { continuation.resume(returning: findings) }
