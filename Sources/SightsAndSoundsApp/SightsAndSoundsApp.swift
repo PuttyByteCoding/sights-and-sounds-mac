@@ -6,6 +6,7 @@ import SightsAndSoundsKit
 @main
 struct SightsAndSoundsApp: App {
     @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     static let pickerWindowID = "picker"
 
@@ -45,6 +46,7 @@ struct SightsAndSoundsApp: App {
                 .environment(model)
                 .uiZoomed()
                 .appWindowAppearance()
+                .onAppear { appDelegate.model = model }
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -83,6 +85,8 @@ struct SightsAndSoundsApp: App {
                     .environment(model)
                     .uiZoomed()
                     .appWindowAppearance()
+                    // Restored windows can come up before the picker.
+                    .onAppear { appDelegate.model = model }
                     // The picker's OPEN badge, its Bring Forward, and the
                     // summary cache all key off this.
                     .onAppear { model.libraryWindowAppeared(libraryID) }
@@ -367,6 +371,24 @@ final class AppModel {
             paused: tasksPaused)
         runners[libraryID] = runner
         return runner
+    }
+
+    /// Jobs running now, across every library with a runner this session.
+    /// A library without one cannot be running anything; a row it has left
+    /// `running` from a crash is settled when a runner next starts.
+    func runningJobCount() -> Int {
+        runners.keys.reduce(0) { total, id in
+            guard let open = openHandles[id] else { return total }
+            // The read returns a plain Int, so `try?` adds exactly one
+            // optional on every compiler: CI's older Swift flagged a
+            // second `??` here as coalescing a non-optional.
+            let running: Int? = try? open.writer.read { db -> Int in
+                try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM job WHERE state = ?",
+                    arguments: [JobState.running.rawValue]) ?? 0
+            }
+            return total + (running ?? 0)
+        }
     }
 
     /// Why a library's file cannot be swapped or let go of right now.
