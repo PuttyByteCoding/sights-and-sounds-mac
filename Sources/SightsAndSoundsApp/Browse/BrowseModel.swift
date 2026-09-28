@@ -927,25 +927,34 @@ final class BrowseModel {
     /// Items already in the asked-for state are left alone, so marking a
     /// mixed selection marks the rest and moves nothing twice.
     private func stageSelection(_ folder: StagingFolder, on: Bool) {
-        let items = selectedItems.filter { item in
+        let items = selectedItems
+        clearSelection()
+        setStaging(folder, on: on, for: items)
+    }
+
+    /// Mark or clear, stage or unstage, any items — one tile's menu or a
+    /// whole selection. Off the main actor, always: each item is a file
+    /// move, and a tile's Restore used to run its move on the main
+    /// thread, freezing the window over a slow volume.
+    func setStaging(_ folder: StagingFolder, on: Bool, for chosen: [MediaItem]) {
+        let items = chosen.filter { item in
             switch folder {
             case .toDelete: item.markedForDeletion != on
             case .playbackIssue: item.playbackIssue != on
             }
         }
         guard !items.isEmpty else { return }
-        let library = library
+        let library = library, fileAccess = fileAccess
         let verb = on ? "mark" : "restore"
-        clearSelection()
         Task {
             let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
                 var failures: [String] = []
                 for item in items {
                     do {
                         if on {
-                            try library.stage(folder, itemID: item.id)
+                            try library.stage(folder, itemID: item.id, fileAccess: fileAccess)
                         } else {
-                            try library.unstage(folder, itemID: item.id)
+                            try library.unstage(folder, itemID: item.id, fileAccess: fileAccess)
                         }
                     } catch {
                         failures.append("\(item.fileName): \(error)")

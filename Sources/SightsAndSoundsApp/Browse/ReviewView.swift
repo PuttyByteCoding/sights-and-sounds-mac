@@ -446,12 +446,20 @@ struct ReviewView: View {
         ticks.toggle(item.id)
     }
 
+    /// A file move, so off the main actor like Restore Selected.
     private func restore(_ item: MediaItem) {
-        do {
-            try model.library.unstage(.toDelete, itemID: item.id)
-            ticks.untick(item.id)
+        let library = model.library, id = item.id
+        ticks.untick(id)
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try library.unstage(.toDelete, itemID: id)
+                    return nil
+                } catch { return "\(error)" }
+            }.value
+            if let failure { errorText = failure }
             reload()
-        } catch { errorText = "\(error)" }
+        }
     }
 
     /// A file move per item, so off the main actor; and a restore that
