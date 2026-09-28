@@ -72,7 +72,10 @@ extension LibraryDatabase {
               toURL.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/")
         else { throw MoveError.moveFailed("the destination is outside the source") }
         // Never overwrite: collision → timestamp suffix, old behavior.
-        if FileManager.default.fileExists(atPath: toURL.path) {
+        // A path that differs only in case is not a collision: on a
+        // case-insensitive volume it IS the file being moved.
+        let caseOnly = fromPath.caseInsensitiveCompare(toPath) == .orderedSame
+        if !caseOnly, FileManager.default.fileExists(atPath: toURL.path) {
             let stamp = Self.collisionStamp()
             let ext = (toPath as NSString).pathExtension
             let stem = (toPath as NSString).deletingPathExtension
