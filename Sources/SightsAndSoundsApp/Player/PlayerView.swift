@@ -970,6 +970,9 @@ private struct TransportBlock: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        // An icon alone says nothing to VoiceOver; a toggle says its state.
+        .accessibilityLabel(TransportAccessibility.label(fromHelp: help))
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
 }
@@ -1047,6 +1050,9 @@ private struct FlagButtons: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        // An icon alone says nothing to VoiceOver; a toggle says its state.
+        .accessibilityLabel(TransportAccessibility.label(fromHelp: help))
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func action(for flag: PlayerToggleFlag) -> PlayerAction {
@@ -1494,6 +1500,19 @@ private struct ScrubberView: View {
             }
         }
         .frame(height: height)
+        // One adjustable element: where the playhead is, and VoiceOver's
+        // increment/decrement to move it.
+        .accessibilityElement()
+        .accessibilityLabel("Playback position")
+        .accessibilityValue(TransportAccessibility.position(
+            current: model.currentSeconds, duration: model.durationSeconds))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: model.seek(by: TransportAccessibility.adjustSeconds)
+            case .decrement: model.seek(by: -TransportAccessibility.adjustSeconds)
+            @unknown default: break
+            }
+        }
         .task(id: model.item?.id) {
             peaks = nil
             previewImage = nil
