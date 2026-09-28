@@ -879,8 +879,9 @@ private struct SourceRow: View {
 
     var body: some View {
         // Sidebar convention: clicking a collapsible header's name
-        // toggles it — the whole row, not just the chevron.
-        SidebarRow(action: toggle) {
+        // toggles it — the whole row, not just the chevron. The chevron is
+        // drawn; VoiceOver hears the state.
+        SidebarRow(accessibilityState: expanded ? "expanded" : "collapsed", action: toggle) {
             Chevron(expanded: expanded)
             Circle()
                 .fill(statusColor)
@@ -1009,7 +1010,8 @@ private struct CategoryHeader: View {
     let toggle: () -> Void
 
     var body: some View {
-        SidebarRow(action: toggle) {
+        // The chevron is drawn; VoiceOver hears the state.
+        SidebarRow(accessibilityState: expanded ? "expanded" : "collapsed", action: toggle) {
             Chevron(expanded: expanded)
             // The category's stored hue, not one invented here.
             RoundedRectangle(cornerRadius: 2)
