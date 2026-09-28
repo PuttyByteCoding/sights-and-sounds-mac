@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import SightsAndSoundsKit
 
@@ -9,6 +10,9 @@ struct ItemGridView: View {
     /// The view name, shown for a moment after `V` cycles — otherwise
     /// the whole grid changes and nothing says why.
     @State private var viewToast: String?
+    /// Quick Look: the file showing, and the files it pages through.
+    @State private var quickLookURL: URL?
+    @State private var quickLookItems: [URL] = []
     /// The grid's width, for working out how many columns an up or down
     /// arrow should cross.
     @State private var gridWidth: CGFloat = 0
@@ -41,6 +45,7 @@ struct ItemGridView: View {
         .focusEffectDisabled()
         .focused($focused)
         .onKeyPress { press in handle(press) ? .handled : .ignored }
+        .quickLookPreview($quickLookURL, in: quickLookItems)
         .onAppear { focused = true }
         .overlay(alignment: .top) {
             if let message = model.errorMessage {
@@ -90,7 +95,7 @@ struct ItemGridView: View {
             // of stacking fades.
             .animation(
                 .easeInOut(duration: Theme.Motion.listingSettle),
-                value: model.visibleItems.map(\.id))
+                value: model.listingGeneration)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
         // The focus can be moved off screen by the keyboard;
@@ -119,10 +124,16 @@ struct ItemGridView: View {
         .leftArrow: .left, .rightArrow: .right, .upArrow: .up, .downArrow: .down,
     ]
 
-    /// Arrows move the focus, Return plays it, Space selects it.
-    /// `V` cycles the saved views; Esc unwinds exactly one layer — the
-    /// selection here, since a popover takes the key press itself.
+    /// Arrows move the focus, Return plays it, Space shows it in Quick
+    /// Look (the selection, when there is one), X selects it and ⌘A
+    /// selects everything shown — Space is Quick Look everywhere else on
+    /// the Mac. `V` cycles the saved views; Esc unwinds exactly one layer
+    /// — the selection here, since a popover takes the key press itself.
     private func handle(_ press: KeyPress) -> Bool {
+        if press.characters.lowercased() == "a", press.modifiers == .command {
+            model.selectAll()
+            return true
+        }
         if press.key == .escape, !model.selection.isEmpty {
             model.clearSelection()
             return true
@@ -136,7 +147,17 @@ struct ItemGridView: View {
             model.playFocusedItem()
             return true
         }
-        if press.key == .space, model.focusedItemID != nil {
+        if press.key == .space, press.modifiers.isEmpty {
+            // Space again closes it, as in Finder.
+            if quickLookURL != nil {
+                quickLookURL = nil
+            } else if let target = model.quickLookTarget() {
+                quickLookItems = target.all
+                quickLookURL = target.current
+            }
+            return true
+        }
+        if press.characters.lowercased() == "x", press.modifiers.isEmpty, model.focusedItemID != nil {
             model.toggleSelectionOfFocusedItem()
             return true
         }
@@ -258,14 +279,15 @@ private struct ItemCell: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { play() }
-            .onTapGesture {
-                let flags = NSEvent.modifierFlags
-                model.click(
-                    item.id,
-                    extend: flags.contains(.command),
-                    range: flags.contains(.shift))
-            }
+            .onClicks(
+                single: {
+                    let flags = NSEvent.modifierFlags
+                    model.click(
+                        item.id,
+                        extend: flags.contains(.command),
+                        range: flags.contains(.shift))
+                },
+                double: { play() })
             .contextMenu { menu }
             // Out to the Finder or another app, as the file itself. A clip
             // or an offline item hands over nothing.
@@ -273,7 +295,7 @@ private struct ItemCell: View {
                 model.dragFileURL(for: item).flatMap { NSItemProvider(contentsOf: $0) }
                     ?? NSItemProvider()
             }
-            // Two tap gestures give a tile no role and no way to be
+            // A tap gesture gives a tile no role and no way to be
             // pressed. It is a button that plays, that can also be
             // selected.
             .accessibilityElement(children: .combine)
@@ -387,16 +409,12 @@ private struct ItemCell: View {
         }
         if item.markedForDeletion {
             Button("Restore from Deletion Staging", systemImage: "arrow.uturn.backward") {
-                model.attempt("restore \(item.fileName)") {
-                    try model.library.unstage(.toDelete, itemID: item.id)
-                }
+                model.setStaging(.toDelete, on: false, for: [item])
             }
         }
         if item.playbackIssue {
             Button("Clear Playback Issue", systemImage: "play.circle") {
-                model.attempt("clear the playback issue") {
-                    try model.library.unstage(.playbackIssue, itemID: item.id)
-                }
+                model.setStaging(.playbackIssue, on: false, for: [item])
             }
         }
         if item.parentMediaItemID == nil {

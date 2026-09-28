@@ -179,10 +179,16 @@ public enum TagWriters {
                 success: false, usedRemuxFallback: true,
                 error: FfmpegTool.installHint)
         }
-        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sas-tags-\(UUID().uuidString).\(ext)")
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let temp: URL
+        do { temp = try remuxScratchURL(for: url) } catch {
+            return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
+        }
+        // The scratch file, then its folder only if that is now empty —
+        // rmdir refuses anything else, so a shared folder is never touched.
+        defer {
+            try? FileManager.default.removeItem(at: temp)
+            rmdir(temp.deletingLastPathComponent().path)
+        }
 
         var arguments = ["-i", url.path, "-map", "0", "-c", "copy", "-map_metadata", "-1"]
         for field in fields {
@@ -199,6 +205,15 @@ public enum TagWriters {
         } catch {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }
+    }
+
+    /// Where the remux writes before the swap: on the file's own
+    /// volume. The system temp folder is on the boot volume, so a library
+    /// on an external drive needed the whole video's size free there, and
+    /// the swap back became a cross-volume copy.
+    static func remuxScratchURL(for url: URL) throws -> URL {
+        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
+        return try LibraryDatabase.workingURL(toReplace: url, fileExtension: ext)
     }
 
     private static func parsleyFlag(for atom: String) -> String {

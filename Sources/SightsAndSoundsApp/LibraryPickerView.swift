@@ -193,7 +193,11 @@ struct LibraryPickerView: View {
 
             Button(fromMenu ? "Cancel" : "Quit") { cancel() }
                 .buttonStyle(SecondaryButtonStyle())
-                .keyboardShortcut(.cancelAction)
+                // Esc dismisses; it never quits. From the menu this is
+                // Cancel and Esc is its key. At launch it is Quit, and Esc
+                // quitting the whole app is not what anyone reaches for
+                // Esc to do — ⌘Q still quits.
+                .keyboardShortcut(fromMenu ? .cancelAction : nil)
 
             Button(primaryLabel) {
                 if let selected { open(selected) }
@@ -339,8 +343,7 @@ private struct LibraryPickerRow: View {
                 .fill(isSelected ? Theme.Surface.selectedRow : .clear))
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: open)
-        .onTapGesture(perform: select)
+        .onClicks(single: select, double: open)
         .contextMenu { contextMenu }
         .confirmationDialog(
             "Remove “\(library.name)” from this list? The library file on disk is NOT deleted — Add Existing… brings it back, never as a duplicate. Close this library's windows before removing.",
@@ -357,11 +360,14 @@ private struct LibraryPickerRow: View {
         ) {
             Button("Restore", role: .destructive) {
                 guard let url = confirmRestore else { return }
-                do {
-                    try model.restoreLibrary(id: library.id, from: url)
-                    statusText = "Restored from \(url.lastPathComponent)"
-                } catch {
-                    statusText = "Restore failed: \(error)"
+                statusText = "Restoring from \(url.lastPathComponent)…"
+                Task {
+                    do {
+                        try await model.restoreLibrary(id: library.id, from: url)
+                        statusText = "Restored from \(url.lastPathComponent)"
+                    } catch {
+                        statusText = "Restore failed: \(error)"
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { confirmRestore = nil }
@@ -434,13 +440,18 @@ private struct LibraryPickerRow: View {
         openWindow(id: "properties", value: library.id)
     }
 
+    /// The copy runs off the main actor: a full backup of a large
+    /// library used to beachball the picker.
     private func backUp() {
-        do {
-            let open = try model.library(for: library.id)
-            let url = try open.backup(into: LibraryDatabase.defaultBackupDirectory())
-            statusText = "Backed up to \(url.path)"
-        } catch {
-            statusText = "Backup failed: \(error)"
+        statusText = "Backing up…"
+        Task {
+            do {
+                let open = try model.library(for: library.id)
+                let url = try await open.backUp(into: LibraryDatabase.defaultBackupDirectory())
+                statusText = "Backed up to \(url.path)"
+            } catch {
+                statusText = "Backup failed: \(error)"
+            }
         }
     }
 

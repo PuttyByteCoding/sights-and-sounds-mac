@@ -23,6 +23,7 @@ struct MaintenanceView: View {
         }
     }
 
+    @State private var reloadGeneration = 0
     @State private var tab: Tab = .writeback
     @State private var preview: WritebackPreview?
     @State private var previewing = false
@@ -644,15 +645,47 @@ struct MaintenanceView: View {
         }
     }
 
+    /// Everything the window shows, read off the main actor: the backup
+    /// list opens every backup file, the reclaimable size sums every
+    /// staged file, and this runs after every button press. The last
+    /// reload asked for is the one that lands.
     private func reload() {
-        findings = (try? model.library.validationFindings()) ?? []
-        backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
-        runs = (try? model.library.writer.read { db in
-            try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
-        }) ?? []
-        stagedCount = (try? model.library.writer.read { db in
-            try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
-        }) ?? 0
-        reclaimable = (try? model.library.reclaimableBytes()) ?? 0
+        let library = model.library
+        reloadGeneration += 1
+        let generation = reloadGeneration
+        Task {
+            // One typed statement per read: the CI toolchain cannot
+            // type-check the reads as one tuple expression in time.
+            let read = await Task.detached(priority: .userInitiated) { () -> MaintenanceSnapshot in
+                var snapshot = MaintenanceSnapshot()
+                snapshot.findings = (try? library.validationFindings()) ?? []
+                snapshot.backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
+                let runs: [TagWriteRun]? = try? library.writer.read { db in
+                    try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
+                }
+                snapshot.runs = runs ?? []
+                let staged: Int? = try? library.writer.read { db in
+                    try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
+                }
+                snapshot.staged = staged ?? 0
+                snapshot.reclaimable = (try? library.reclaimableBytes()) ?? 0
+                return snapshot
+            }.value
+            guard generation == reloadGeneration else { return }
+            findings = read.findings
+            backups = read.backups
+            runs = read.runs
+            stagedCount = read.staged
+            reclaimable = read.reclaimable
+        }
     }
+}
+
+/// What the Maintenance window reads in one reload.
+private struct MaintenanceSnapshot: Sendable {
+    var findings: [ValidationFinding] = []
+    var backups: [LibraryDatabase.BackupFile] = []
+    var runs: [TagWriteRun] = []
+    var staged = 0
+    var reclaimable: Int64 = 0
 }

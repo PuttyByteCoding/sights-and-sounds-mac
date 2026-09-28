@@ -22,6 +22,10 @@ public struct ContentHashJob: Job {
         fileAccess = LiveFileAccess()
     }
 
+    init(fileAccess: any FileAccess) {
+        self.fileAccess = fileAccess
+    }
+
     public func run(_ context: JobContext) async throws {
         let library = context.library
 
@@ -51,20 +55,24 @@ public struct ContentHashJob: Job {
 
         var hashed = 0
         var failed = 0
+        var lostSources: Set<UUID> = []
         await context.reportProgress(current: 0, total: pending.count)
 
         for (index, item) in pending.enumerated() {
             try await context.checkCancellation()
-            guard let source = sources[item.sourceID] else { continue }
+            guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
 
             do {
-                var hasher = Insecure.MD5()
-                try fileAccess.readFile(at: url) { chunk in
-                    hasher.update(data: chunk)
+                // A whole file, read on a thread of its own: see Blocking.
+                let digest = try await Blocking.run { [fileAccess] in
+                    var hasher = Insecure.MD5()
+                    try fileAccess.readFile(at: url) { chunk in
+                        hasher.update(data: chunk)
+                    }
+                    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
                 }
-                let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
                 try await library.writer.write { db in
                     try db.execute(
                         sql: "UPDATE mediaItem SET contentHash = ? WHERE id = ?",
@@ -72,6 +80,11 @@ public struct ContentHashJob: Job {
                 }
                 hashed += 1
             } catch {
+                switch try await library.sweepMiss(for: item, source: source, fileAccess: fileAccess) {
+                case .sourceGone: lostSources.insert(source.id); continue
+                case .fileMoved: continue
+                case .fileFailed: break
+                }
                 try await library.writer.write { db in
                     try ContentHashFailure(
                         mediaItemID: item.id, message: "\(error)").insert(db)
