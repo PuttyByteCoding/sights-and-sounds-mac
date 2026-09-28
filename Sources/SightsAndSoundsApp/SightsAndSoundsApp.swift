@@ -48,7 +48,10 @@ struct SightsAndSoundsApp: App {
         .windowResizability(.contentSize)
         .defaultPosition(.center)
         .commands {
-            CommandGroup(after: .newItem) {
+            // Replacing, not after: SwiftUI's default New Window (⌘N)
+            // targets the library window group with no library, which
+            // can only open an empty window. Libraries open from here.
+            CommandGroup(replacing: .newItem) {
                 OpenLibraryCommand()
                     .environment(model)
             }
@@ -563,11 +566,14 @@ struct ViewMenuCommands: View {
             aux("Maintenance", .maintenance, key: "5")
             aux("Tag Analysis", .tagAnalysis, key: "6")
             aux("History", .watched, key: "7")
+            // ⌘I, the Mac's Get Info key. It was ⌥⌘8, which macOS keeps
+            // for Accessibility Zoom on/off — it never reached the app for
+            // anyone with that shortcut enabled.
             Button("Library Properties") {
                 guard let focusedLibraryID else { return }
                 openWindow(id: "properties", value: focusedLibraryID)
             }
-            .keyboardShortcut("8", modifiers: [.command, .option])
+            .keyboardShortcut("i", modifiers: .command)
         }
         .disabled(focusedLibraryID == nil)
         Divider()
