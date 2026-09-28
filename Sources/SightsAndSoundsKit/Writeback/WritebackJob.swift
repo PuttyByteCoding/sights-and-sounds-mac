@@ -216,18 +216,7 @@ public struct RestoreTagsJob: Job {
                 mediaItemID: item.id, source: .preRestore, tagsJSON: currentJSON).insert(db)
         }
 
-        let fields = TagWriters.tagPairs(fromSnapshotJSON: snapshot.tagsJSON).map { pair in
-            if let standard = StandardFields.all.first(where: {
-                $0.vorbisName.caseInsensitiveCompare(pair.name) == .orderedSame
-            }) {
-                return FieldWrite(
-                    vorbisName: standard.vorbisName, mp4Atom: standard.mp4Atom,
-                    mp4Freeform: standard.mp4Freeform, values: [pair.value])
-            }
-            return FieldWrite(
-                vorbisName: pair.name.uppercased(), mp4Atom: pair.name.uppercased(),
-                mp4Freeform: true, values: [pair.value])
-        }
+        let fields = SnapshotRestore.fields(fromSnapshotJSON: snapshot.tagsJSON)
 
         let result = TagWriters.write(fields: fields, to: url)
         guard result.success else {

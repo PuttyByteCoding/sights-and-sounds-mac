@@ -143,7 +143,10 @@ extension WritebackPreview {
                 let values = text.components(separatedBy: ";")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
-                result[key.lowercased()] = values
+                // Read under the standard name, so ffprobe's MP4
+                // spelling (`album_artist`, `track`) finds its field.
+                let name = SnapshotRestore.standardField(named: key)?.vorbisName ?? key
+                result[name.lowercased()] = values
             }
         }
         if let format = root["format"] as? [String: Any],
