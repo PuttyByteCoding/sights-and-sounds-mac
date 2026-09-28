@@ -490,7 +490,7 @@ private struct JobRow: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .onTapAsButton(perform: onSelect)
     }
 
     /// Derived from the clock, never a ticking counter — three separate

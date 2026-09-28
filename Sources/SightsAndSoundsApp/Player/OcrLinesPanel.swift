@@ -162,7 +162,7 @@ private struct LineRow: View {
         .padding(.horizontal, 12)
         .background(hovering ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
-        .onTapGesture { model.seek(to: line.timeSeconds) }
+        .onTapAsButton { model.seek(to: line.timeSeconds) }
         .onHover { hovering = $0 }
         .help("Seek to \(TransportBarTime.format(line.timeSeconds))")
     }

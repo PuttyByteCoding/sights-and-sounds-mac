@@ -211,7 +211,7 @@ struct ReviewView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .onTapAsButton(perform: onSelect)
     }
 
     private func sourceLabel(_ candidate: DuplicateCandidate) -> String {
@@ -310,6 +310,11 @@ struct ReviewView: View {
                     .frame(width: 13, height: 13)
             }
             .buttonStyle(.plain)
+            // A drawn square says nothing to VoiceOver — on the one screen
+            // where what is ticked gets deleted.
+            .accessibilityLabel("Delete \(item.fileName)")
+            .accessibilityValue(deleteTicked.contains(item.id) ? "ticked" : "not ticked")
+            .accessibilityAddTraits(deleteTicked.contains(item.id) ? .isSelected : [])
             .frame(width: 30, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.fileName)

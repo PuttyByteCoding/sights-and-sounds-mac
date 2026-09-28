@@ -172,7 +172,7 @@ private struct BookmarkRow: View {
                 .stroke(Theme.Border.standard, lineWidth: 1))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture {
+        .onTapAsButton {
             if let url = URL(string: bookmark.url) { FirefoxLauncher.open(url) }
         }
         .help("Open in Firefox")
