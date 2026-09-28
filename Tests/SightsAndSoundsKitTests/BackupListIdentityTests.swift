@@ -25,13 +25,21 @@ import Testing
                               needsReview: false).insert(db)
             }
         }
+        // Where the damage goes: the root page of the items table. A
+        // backup keeps page numbers, so that page is live in the copy
+        // too. (Scribbling "near the end" hit unused pages on CI's build,
+        // and the check passed.) libraryInfo lives on another page, so
+        // the identity read still works.
+        let (rootPage, pageSize) = try library.writer.read { db in
+            (try Int.fetchOne(db, sql: "SELECT rootpage FROM sqlite_master WHERE name = 'mediaItem'") ?? 0,
+             try Int.fetchOne(db, sql: "PRAGMA page_size") ?? 4096)
+        }
+        try #require(rootPage > 1)
         let backup = try library.backup(into: directory.appendingPathComponent("Backups"))
         try library.close()
-        // Scribble over a page near the end: mediaItem rows, not libraryInfo.
         let handle = try FileHandle(forUpdating: backup)
-        let size = try handle.seekToEnd()
-        try handle.seek(toOffset: size - 3 * 4096)
-        try handle.write(contentsOf: Data(repeating: 0xA5, count: 4096))
+        try handle.seek(toOffset: UInt64((rootPage - 1) * pageSize))
+        try handle.write(contentsOf: Data(repeating: 0xA5, count: pageSize))
         try handle.close()
         return (directory, backup)
     }
