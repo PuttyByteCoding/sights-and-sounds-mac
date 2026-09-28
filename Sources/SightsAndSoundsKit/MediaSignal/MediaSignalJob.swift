@@ -272,14 +272,16 @@ public struct MediaSignalJob: Job {
     /// file never returns and cannot be interrupted, and a structured task
     /// would wait for it; so the stage runs on a task of its own and
     /// whichever of "it finished" and "time is up" comes first is the
-    /// answer. A stage that is given up on is left behind, still blocked.
-    /// That costs a thread; the alternative costs the rest of the sweep.
+    /// answer. A stage that is given up on is left behind, still blocked
+    /// — on a thread of its own (`OwnThreadExecutor`), never one of the
+    /// cooperative pool's. That costs a thread; the alternative costs the
+    /// rest of the sweep, or on the pool, the rest of the app.
     static func examine(
         _ input: SignalStageInput, with stage: any SignalStage, givingUpAfter seconds: Double
     ) async throws -> SignalFindings {
         let once = OnceOnly()
         return try await withCheckedThrowingContinuation { continuation in
-            let work = Task.detached(priority: .utility) {
+            let work = Task.detached(executorPreference: OwnThreadExecutor.shared, priority: .utility) {
                 do {
                     let findings = try await stage.examine(input)
                     if once.claim() { continuation.resume(returning: findings) }
@@ -287,8 +289,11 @@ public struct MediaSignalJob: Job {
                     if once.claim() { continuation.resume(throwing: error) }
                 }
             }
-            Task.detached(priority: .utility) {
-                try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0.05) * 1_000_000_000))
+            // The give-up is a dispatch timer, not a task: a busy pool
+            // must not be able to delay the one thing that frees a lane
+            // from a stuck stage. User-initiated so a loaded machine does
+            // not starve it; it does almost nothing when it fires.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + max(seconds, 0.05)) {
                 guard once.claim() else { return }
                 work.cancel()
                 continuation.resume(throwing: StageGaveUp(seconds: seconds))
