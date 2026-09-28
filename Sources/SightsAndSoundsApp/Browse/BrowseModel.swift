@@ -48,7 +48,7 @@ final class BrowseModel {
     /// The offline banner's toggle. It hides items from the LISTING;
     /// `items` stays the full listing so the banner can keep counting
     /// what it hid, which is what makes the state recoverable.
-    var hideOfflineItems = false { didSet { pruneSelection() } }
+    var hideOfflineItems = false { didSet { relist(); pruneSelection() } }
 
     /// The listing's sort. One control orders both the grid and the play
     /// queue.
@@ -120,7 +120,7 @@ final class BrowseModel {
             playlist: visibleItems.map(\.id))
     }
 
-    private(set) var items: [MediaItem] = []
+    private(set) var items: [MediaItem] = [] { didSet { relist() } }
     /// One folder tree per enabled source — the sidebar nests each under
     /// its source row.
     private(set) var folderTrees: [UUID: [FolderNode]] = [:]
@@ -135,7 +135,7 @@ final class BrowseModel {
     /// spent clips) but not under the active filter. One batch in
     /// refreshAll, never a query per row (#96).
     private(set) var counts = BrowseCounts()
-    private(set) var onlineSourceIDs: Set<UUID> = []
+    private(set) var onlineSourceIDs: Set<UUID> = [] { didSet { relist() } }
     /// Something the user asked for did not happen. Shown as a banner over
     /// the grid until dismissed or replaced — never in place of the grid,
     /// and never cleared by a refresh. It used to share one property with
@@ -888,8 +888,11 @@ final class BrowseModel {
 
     /// The selected items in listing order — the order a queue plays
     /// them in, and the order any bulk action reports.
+    ///
+    /// Found through the index: the cost is the selection's size, not the
+    /// listing's — a tile's context menu asks on every render.
     var selectedItems: [MediaItem] {
-        visibleItems.filter { selection.contains($0.id) }
+        selection.compactMap { visibleIndexByID[$0] }.sorted().map { visibleItems[$0] }
     }
 
     /// Mark the selection reviewed. The flag is what the Needs Review
@@ -1076,15 +1079,36 @@ final class BrowseModel {
     /// The listing the grid draws: `items`, minus the offline ones while
     /// the banner's toggle is on. Playback queues follow this, not
     /// `items` — the queue is what you can see.
-    var visibleItems: [MediaItem] {
-        hideOfflineItems ? items.filter(isOnline) : items
-    }
+    ///
+    /// Stored, like `offlineItems`, and redone only when the listing, the
+    /// online sources or the toggle change. Every tile reads these on
+    /// every render and a click re-renders every tile; filtering the
+    /// whole listing per read made a click on a large grid lag.
+    private(set) var visibleItems: [MediaItem] = []
 
     /// Items in the full listing whose source is offline. Counted against
     /// the listing BEFORE the toggle, so hiding them does not make the
     /// banner forget how many it hid.
-    var offlineItems: [MediaItem] {
-        items.filter { !isOnline($0) }
+    private(set) var offlineItems: [MediaItem] = []
+
+    /// Where each visible item sits, so the selection is found without a
+    /// pass over the listing.
+    private var visibleIndexByID: [UUID: Int] = [:]
+
+    /// Bumped when the visible ids change — what the grid animates on,
+    /// rather than building and comparing every id on every render. A
+    /// re-query that returns the same items leaves it alone, so it
+    /// animates nothing.
+    private(set) var listingGeneration = 0
+
+    private func relist() {
+        let online = onlineSourceIDs
+        let previous = visibleItems
+        offlineItems = items.filter { !online.contains($0.sourceID) }
+        visibleItems = hideOfflineItems ? items.filter { online.contains($0.sourceID) } : items
+        if !previous.elementsEqual(visibleItems, by: { $0.id == $1.id }) { listingGeneration &+= 1 }
+        visibleIndexByID = Dictionary(
+            visibleItems.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// The offline sources represented in the listing, listed the way the

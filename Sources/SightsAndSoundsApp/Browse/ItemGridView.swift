@@ -90,7 +90,7 @@ struct ItemGridView: View {
             // of stacking fades.
             .animation(
                 .easeInOut(duration: Theme.Motion.listingSettle),
-                value: model.visibleItems.map(\.id))
+                value: model.listingGeneration)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
         // The focus can be moved off screen by the keyboard;
