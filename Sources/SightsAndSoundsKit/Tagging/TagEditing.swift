@@ -13,6 +13,14 @@ extension LibraryDatabase {
     /// identically for typing, pasting and autocomplete-create.
     @discardableResult
     public func ensureTag(named rawName: String, inCategory categoryID: UUID) throws -> Tag {
+        try ensureTagReportingCreation(named: rawName, inCategory: categoryID).tag
+    }
+
+    /// `ensureTag`, also saying whether the tag was made just now — for
+    /// callers (import) that may only configure a tag they created.
+    public func ensureTagReportingCreation(
+        named rawName: String, inCategory categoryID: UUID
+    ) throws -> (tag: Tag, created: Bool) {
         try writer.write { db in
             guard let category = try TagCategory.fetchOne(db, key: categoryID) else {
                 throw DatabaseError(message: "no such category")
@@ -24,7 +32,7 @@ extension LibraryDatabase {
             if let existing = try Tag
                 .filter(sql: "tagCategoryID = ? AND name = ?", arguments: [categoryID, name])
                 .fetchOne(db) {
-                return existing
+                return (existing, false)
             }
             // An alias IS a name. A tag whose name matches an existing
             // alias must resolve to that tag rather than being created
@@ -39,11 +47,11 @@ extension LibraryDatabase {
                 LIMIT 1
                 """,
                 arguments: [categoryID, name]) {
-                return aliased
+                return (aliased, false)
             }
             let tag = Tag(tagCategoryID: categoryID, name: name)
             try tag.insert(db)
-            return tag
+            return (tag, true)
         }
     }
 
