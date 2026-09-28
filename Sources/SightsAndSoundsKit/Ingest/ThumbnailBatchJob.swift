@@ -88,11 +88,12 @@ public struct ThumbnailBatchJob: Job {
 
         var generated = 0
         var failed = 0
+        var lostSources: Set<UUID> = []
         await context.reportProgress(current: 0, total: candidates.count)
 
         for (index, item) in candidates.enumerated() {
             try await context.checkCancellation()
-            guard let source = sources[item.sourceID] else { continue }
+            guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let fileURL = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
             let thumbURL = ThumbnailStore.url(libraryID: payload.libraryID, itemID: item.id)
@@ -111,6 +112,11 @@ public struct ThumbnailBatchJob: Job {
                     failed += 1
                 }
             } else {
+                switch try await library.sweepMiss(for: item, source: source, fileAccess: fileAccess) {
+                case .sourceGone: lostSources.insert(source.id); continue
+                case .fileMoved: continue
+                case .fileFailed: break
+                }
                 try await recordFailure(library, item.id, "no frame could be decoded")
                 failed += 1
             }

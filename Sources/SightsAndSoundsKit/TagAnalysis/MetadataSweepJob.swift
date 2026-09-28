@@ -70,11 +70,12 @@ public struct MetadataSweepJob: Job {
         var swept = 0
         var failed = 0
         var pairsFound = 0
+        var lostSources: Set<UUID> = []
         await context.reportProgress(current: 0, total: pending.count)
 
         for (index, item) in pending.enumerated() {
             try await context.checkCancellation()
-            guard let source = sources[item.sourceID] else { continue }
+            guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
 
@@ -85,6 +86,11 @@ public struct MetadataSweepJob: Job {
                 pairsFound += pairs.count
                 swept += 1
             } catch {
+                switch try await library.sweepMiss(for: item, source: source, fileAccess: fileAccess) {
+                case .sourceGone: lostSources.insert(source.id); continue
+                case .fileMoved: continue
+                case .fileFailed: break
+                }
                 // The marker still goes down, carrying the reason: a file
                 // ffprobe cannot read must not be retried every run.
                 try library.recordMetadataPairs(
