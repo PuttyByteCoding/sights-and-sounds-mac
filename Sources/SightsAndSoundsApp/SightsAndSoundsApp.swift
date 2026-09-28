@@ -273,6 +273,11 @@ final class AppModel {
     // One open handle per library, shared by every window and the player.
     private var openHandles: [UUID: LibraryDatabase] = [:]
 
+    /// The library's handle if something already opened it — never opens
+    /// one. For readers that must not wake a closed library (and its
+    /// drive) just to look at it.
+    func openLibrary(for id: UUID) -> LibraryDatabase? { openHandles[id] }
+
     func library(for id: UUID) throws -> LibraryDatabase {
         if let open = openHandles[id] { return open }
         guard let ref = libraries.first(where: { $0.id == id }) else {
@@ -312,6 +317,9 @@ final class AppModel {
             }
         }
     }
+
+    /// The library's runner if one exists — never creates one.
+    func existingRunner(for libraryID: UUID) -> JobRunner? { runners[libraryID] }
 
     func runner(for libraryID: UUID) throws -> JobRunner {
         if let existing = runners[libraryID] { return existing }
