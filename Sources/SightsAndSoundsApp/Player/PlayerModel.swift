@@ -74,9 +74,14 @@ final class PlayerModel {
     }
 
     var playbackRate: Float = 1.0 {
-        didSet { if isPlaying { player.rate = playbackRate } }
+        didSet {
+            if isPlaying { player.rate = playbackRate }
+            nowPlaying.update(self)
+        }
     }
 
+    /// What the system's Now Playing and media keys talk to.
+    private let nowPlaying: NowPlaying
     private var skipSettings = SkipSettings()
     private var timeObserver: Any?
     private var endObserver: (any NSObjectProtocol)?
@@ -290,7 +295,11 @@ final class PlayerModel {
         panelVocabulary.first { !$0.category.hiddenFromBrowse }?.id
     }
 
-    init(request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?) {
+    init(
+        request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?,
+        nowPlaying: NowPlaying = .shared
+    ) {
+        self.nowPlaying = nowPlaying
         self.library = library
         self.libraryID = request.libraryID
         self.queue = PlayQueue(definition: request.definition, items: [])
@@ -585,12 +594,16 @@ final class PlayerModel {
         player.play()
         player.rate = playbackRate
         isPlaying = true
+        // Playing makes this player what the system's Now Playing and
+        // media keys talk to.
+        nowPlaying.claim(self)
     }
 
     func pause() {
         player.pause()
         isPlaying = false
         persistProgress()
+        nowPlaying.update(self)
     }
 
     func togglePlayPause() { isPlaying ? pause() : play() }
@@ -644,6 +657,7 @@ final class PlayerModel {
         currentSeconds = clamped
         pendingSeekTarget = clamped
         isBuffering = true
+        nowPlaying.update(self)
         player.seek(
             to: CMTime(seconds: clamped, preferredTimescale: 600),
             toleranceBefore: .zero, toleranceAfter: .zero
@@ -1349,6 +1363,7 @@ final class PlayerModel {
         loadObserver = nil
         analysisSession?.playerDidClose()
         pause()
+        nowPlaying.release(self)
         removeObserver()
         if let item {
             Task { await ScrubPreviewProvider.shared.releaseGenerator(for: item.id) }
