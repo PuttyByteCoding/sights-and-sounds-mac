@@ -84,29 +84,44 @@ extension LibraryDatabase {
     /// this they stayed on library-wide numbers while every tag around
     /// them moved, which reads as a row that has stopped working.
     ///
-    /// One query per category, like `missingByCategory`: there are a
-    /// handful of categories, and the predicate is correlated to
-    /// `mediaItem.id`, so it has to run against the outer table rather
-    /// than a derived one.
+    /// One query for every category: the filter runs once.
     public func filteredMissingCategoryCounts(
         kinds: MediaKinds, filter: MediaFilter
     ) throws -> [UUID: Int] {
         guard !filter.isEmpty else { return [:] }
         let compiled = FilterCompiler.compile(filter: filter, kinds: kinds)
         return try writer.read { db in
-            var counts: [UUID: Int] = [:]
-            for id in try UUID.fetchAll(db, sql: "SELECT id FROM tagCategory") {
-                counts[id] = try Int.fetchOne(
-                    db,
-                    sql: """
-                    SELECT COUNT(*) FROM mediaItem \
-                    WHERE mediaItem.id IN (SELECT id FROM (\(compiled.sql))) \
-                    AND \(FilterCompiler.Baseline.missingCategory)
-                    """,
-                    arguments: compiled.arguments + StatementArguments([id])) ?? 0
-            }
-            return counts
+            try Self.missingByCategory(
+                db, matching: "SELECT id FROM (\(compiled.sql))", compiled.arguments)
         }
+    }
+
+    /// Per category, how many of the matched items carry no tag from it —
+    /// in one query. Asking each category separately re-ran the whole
+    /// match (filter, search and all) once per category on every refresh:
+    /// the matched items are counted once here, the ones carrying each
+    /// category are counted in one grouped pass, and the difference is
+    /// the missing count. Every category is present, zero or not.
+    static func missingByCategory(
+        _ db: Database, matching matchedSQL: String, _ arguments: StatementArguments
+    ) throws -> [UUID: Int] {
+        let rows = try Row.fetchAll(
+            db,
+            sql: """
+            WITH matched AS MATERIALIZED (\(matchedSQL)), \
+            carrying AS ( \
+                SELECT tag.tagCategoryID AS categoryID, \
+                       COUNT(DISTINCT mediaItemTag.mediaItemID) AS n \
+                FROM mediaItemTag \
+                JOIN tag ON tag.id = mediaItemTag.tagID \
+                JOIN matched ON matched.id = mediaItemTag.mediaItemID \
+                GROUP BY tag.tagCategoryID) \
+            SELECT tagCategory.id AS id, \
+                   (SELECT COUNT(*) FROM matched) - COALESCE(carrying.n, 0) AS n \
+            FROM tagCategory LEFT JOIN carrying ON carrying.categoryID = tagCategory.id
+            """,
+            arguments: arguments)
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0["id"] as UUID, $0["n"] as Int) })
     }
 
     /// Every sidebar count in one read. One pass rather than a query per
@@ -149,19 +164,10 @@ extension LibraryDatabase {
             counts.byTag = Dictionary(
                 uniqueKeysWithValues: tagRows.map { ($0["id"] as UUID, $0["n"] as Int) })
 
-            // One correlated count per category — there are a handful of
-            // categories, and the alternative (fetch every link and diff
-            // in memory) is the query this file exists to avoid.
-            let categoryIDs = try UUID.fetchAll(db, sql: "SELECT id FROM tagCategory")
-            for id in categoryIDs {
-                counts.missingByCategory[id] = try Int.fetchOne(
-                    db,
-                    sql: """
-                    SELECT COUNT(*) FROM mediaItem \
-                    WHERE \(baseline.sql) AND \(FilterCompiler.Baseline.missingCategory)
-                    """,
-                    arguments: StatementArguments(baseline.args + [id])) ?? 0
-            }
+            // Every category in one query, not a scan per category.
+            counts.missingByCategory = try Self.missingByCategory(
+                db, matching: "SELECT mediaItem.id FROM mediaItem WHERE \(baseline.sql)",
+                StatementArguments(baseline.args))
 
             // Every flag in one row: eight SUMs over the same scan, not
             // eight scans.
