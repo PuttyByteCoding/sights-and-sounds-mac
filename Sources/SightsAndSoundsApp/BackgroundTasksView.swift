@@ -312,21 +312,29 @@ struct BackgroundTasksView: View {
         }
     }
 
-    /// The per-library job reads await off the main actor — polling every
-    /// registered library once a second must not stutter the app when one
-    /// library sits on a sleeping disk. (Opening a not-yet-open handle
-    /// still happens on the main actor; handles are cached after that.)
     private func refresh() async {
+        lanes = await Self.lanes(of: app)
+    }
+
+    /// Lanes for the libraries something already opened. This polls
+    /// once a second, so it never opens a handle or builds a runner
+    /// itself: that used to wake every registered library on each tick,
+    /// on the main actor — retrying a missing drive every second, and
+    /// starting runners (and their queued work) for libraries nobody
+    /// had opened. A closed library has no runner, so nothing of its is
+    /// running; its history shows once it is opened. The job reads
+    /// await off the main actor.
+    static func lanes(of app: AppModel) async -> [Lane] {
         var result: [Lane] = []
         for ref in app.libraries {
-            guard let library = try? app.library(for: ref.id) else { continue }
+            guard let library = app.openLibrary(for: ref.id) else { continue }
             let jobs = (try? await library.writer.read { db in
                 try JobRecord.order(sql: "createdAt DESC").limit(40).fetchAll(db)
             }) ?? []
-            let paused = await (try? app.runner(for: ref.id))?.isPaused ?? app.tasksPaused
+            let paused = await app.existingRunner(for: ref.id)?.isPaused ?? app.tasksPaused
             result.append(Lane(id: ref.id, name: ref.name, jobs: jobs, isPaused: paused))
         }
-        lanes = result
+        return result
     }
 }
 
