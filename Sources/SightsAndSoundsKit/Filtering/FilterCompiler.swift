@@ -304,9 +304,14 @@ public enum FilterCompiler {
             // ESCAPE pinned explicitly: an unescaped `_` in a folder name
             // silently matched nothing in the old stack (the Npgsql ILike
             // regression) — the escaping itself is under test.
+            //
+            // On the indexed NOCASE `folderPath`: the folder itself or any
+            // folder below it. As a LIKE on `relativePath`, whose only
+            // index is a partial unique one that cannot serve it, every
+            // folder click scanned all items.
             return (
-                "mediaItem.relativePath LIKE ? ESCAPE '\\'",
-                [escapeLike(root) + "/%"]
+                "(mediaItem.folderPath = ? OR mediaItem.folderPath LIKE ? ESCAPE '\\')",
+                [root, escapeLike(root) + "/%"]
             )
 
         case .source(let id):

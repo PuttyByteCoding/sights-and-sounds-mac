@@ -17,6 +17,11 @@ actor ScrubPreviewProvider {
 
     private let memory = NSCache<NSString, NSData>()
     private var generators: [UUID: AVAssetImageGenerator] = [:]
+    /// Most recently used last. Each generator holds its asset — and the
+    /// file under it, which can stop a drive ejecting — so only the last
+    /// few hovered items keep one. They used to stay for the life of the
+    /// app, released only for the last item when a player shut down.
+    private var recentItems: [UUID] = []
 
     init() {
         memory.countLimit = 400
@@ -39,6 +44,7 @@ actor ScrubPreviewProvider {
             generators[itemID] = g
             return g
         }()
+        noteUse(of: itemID)
 
         // The callback API, bridged by a continuation: the generator never
         // leaves the actor (its async `image(at:)` would send it), and the
@@ -64,7 +70,20 @@ actor ScrubPreviewProvider {
 
     func releaseGenerator(for itemID: UUID) {
         generators[itemID] = nil
+        recentItems.removeAll { $0 == itemID }
     }
+
+    private func noteUse(of itemID: UUID) {
+        recentItems.removeAll { $0 == itemID }
+        recentItems.append(itemID)
+        while recentItems.count > Self.openGeneratorLimit {
+            generators[recentItems.removeFirst()] = nil
+        }
+    }
+
+    static let openGeneratorLimit = 3
+    var openGeneratorCount: Int { generators.count }
+    func hasGenerator(for itemID: UUID) -> Bool { generators[itemID] != nil }
 }
 
 /// Audio waveforms: streamed PCM decode → coarse peaks → disk cache.

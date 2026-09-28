@@ -288,12 +288,14 @@ struct TagPickerSheet: View {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
             return others.sorted { $0.tag.name.localizedStandardCompare($1.tag.name) == .orderedAscending }
         }
+        // Folded once, not once per tag compared.
+        let folded = TagSearchEntry.FoldedQuery(query)
         return others
             .compactMap { pick -> (Int, TagPick)? in
-                if let byName = TagSearchEntry.score(pick.foldedName, query: query) {
+                if let byName = TagSearchEntry.score(pick.foldedName, query: folded) {
                     return (byName, pick)
                 }
-                return TagSearchEntry.score(pick.foldedWithCategory, query: query).map { ($0 + 4, pick) }
+                return TagSearchEntry.score(pick.foldedWithCategory, query: folded).map { ($0 + 4, pick) }
             }
             .sorted {
                 $0.0 != $1.0
