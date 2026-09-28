@@ -148,6 +148,57 @@ import Testing
         #expect(abs((probe.durationSeconds ?? 0) - (updated.durationSeconds ?? 0)) < 2.0)
     }
 
+    /// A replaced file is new bytes. Keeping the old hash told the
+    /// duplicate sweep the changed file was still byte-identical to its
+    /// old twin — the pair offered for deletion at full confidence.
+    private func stampOldHash(_ f: OpsFixture) async throws {
+        try await f.library.writer.write { db in
+            try db.execute(
+                sql: "UPDATE mediaItem SET contentHash = 'old-bytes' WHERE id = ?",
+                arguments: [f.parent.id])
+            try ContentHashFailure(mediaItemID: f.parent.id, message: "an earlier timeout").insert(db)
+        }
+    }
+
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int) {
+        try await f.library.writer.read { db in
+            let item = try MediaItem.fetchOne(db, key: f.parent.id)!
+            let failures = try ContentHashFailure
+                .filter(sql: "mediaItemID = ?", arguments: [f.parent.id]).fetchCount(db)
+            return (item.contentHash, failures)
+        }
+    }
+
+    @Test func aRemuxedFileForgetsTheOldFilesHash() async throws {
+        let f = try await OpsFixture()
+        defer { f.tearDown() }
+        try await stampOldHash(f)
+
+        let record = try await RemuxJob.enqueue(on: f.runner, itemID: f.parent.id, mode: .optimize)
+        try await f.runner.runPending()
+        #expect(try await f.job(record.id).state == .succeeded)
+
+        let state = try await hashState(f)
+        #expect(state.hash == nil)
+        #expect(state.failures == 0)
+    }
+
+    @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
+        let f = try await OpsFixture()
+        defer { f.tearDown() }
+        await f.runner.register(RepairJob.self)
+        try await stampOldHash(f)
+
+        let record = try await RepairJob.enqueue(
+            on: f.runner, itemID: f.parent.id, recipe: RepairRecipe.shipped[0])
+        try await f.runner.runPending()
+        #expect(try await f.job(record.id).state == .succeeded)
+
+        let state = try await hashState(f)
+        #expect(state.hash == nil)
+        #expect(state.failures == 0)
+    }
+
     @Test func remuxRefusesClipsAndMissingFiles() async throws {
         let f = try await OpsFixture()
         defer { f.tearDown() }
