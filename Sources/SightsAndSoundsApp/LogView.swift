@@ -10,8 +10,12 @@ struct LogView: View {
     @State private var minimumLevel: LogLevel = .info
     @State private var category: String = "all"
     @State private var query = ""
+    /// Whether the list is scrolled to its end. New lines are followed
+    /// only then — jumping to the bottom while someone reads further up
+    /// took the line they were reading away.
+    @State private var atBottom = true
 
-    private var filtered: [LogEntry] {
+    private func filtered() -> [LogEntry] {
         entries.filter { entry in
             entry.level >= minimumLevel
                 && (category == "all" || entry.category == category)
@@ -20,6 +24,9 @@ struct LogView: View {
     }
 
     var body: some View {
+        // Filtered once per render: it was a property read three or four
+        // times, each a substring search over the whole ring buffer.
+        let shown = filtered()
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Picker("Level", selection: $minimumLevel) {
@@ -42,13 +49,13 @@ struct LogView: View {
             .padding(10)
             Divider()
 
-            if filtered.isEmpty {
+            if shown.isEmpty {
                 ContentUnavailableView(
                     "Nothing Logged Yet", systemImage: "text.alignleft",
                     description: Text("Jobs, moves and errors appear here as they happen."))
             } else {
                 ScrollViewReader { proxy in
-                    List(filtered) { entry in
+                    List(shown) { entry in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(entry.date.formatted(date: .omitted, time: .standard))
                                 .font(.caption.monospaced())
@@ -68,8 +75,14 @@ struct LogView: View {
                         .id(entry.id)
                         .listRowSeparator(.hidden)
                     }
-                    .onChange(of: filtered.last?.id) {
-                        if let last = filtered.last?.id {
+                    .onScrollGeometryChange(for: Bool.self) { geometry in
+                        geometry.contentOffset.y + geometry.containerSize.height
+                            >= geometry.contentSize.height - 24
+                    } action: { _, isAtBottom in
+                        atBottom = isAtBottom
+                    }
+                    .onChange(of: shown.last?.id) {
+                        if atBottom, let last = shown.last?.id {
                             proxy.scrollTo(last, anchor: .bottom)
                         }
                     }
@@ -79,8 +92,13 @@ struct LogView: View {
         .frame(minWidth: 700, minHeight: 400)
         .task {
             while !Task.isCancelled {
-                entries = AppLog.shared.snapshot()
-                categories = AppLog.shared.categories()
+                // Only when something was logged: assigning an equal
+                // snapshot every second still re-rendered the whole list.
+                let snapshot = AppLog.shared.snapshot()
+                if snapshot.count != entries.count || snapshot.last?.id != entries.last?.id {
+                    entries = snapshot
+                    categories = AppLog.shared.categories()
+                }
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -96,7 +114,7 @@ struct LogView: View {
     }
 
     private func copyAll() {
-        let text = filtered.map { entry in
+        let text = filtered().map { entry in
             "\(entry.date.formatted(date: .numeric, time: .standard)) [\(entry.level.label)] \(entry.category): \(entry.message)"
         }.joined(separator: "\n")
         NSPasteboard.general.clearContents()

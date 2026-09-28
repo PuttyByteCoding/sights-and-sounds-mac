@@ -82,7 +82,7 @@ final class PlayerModel {
     private var endObserver: (any NSObjectProtocol)?
     private var statusObserver: NSKeyValueObservation?
     private var completionRecorded = false
-    private let fileAccess: any FileAccess = LiveFileAccess()
+    private let fileAccess: any FileAccess
 
     var title: String { item?.fileName ?? "Player" }
     var isAudio: Bool { item?.kind == .audio }
@@ -290,8 +290,12 @@ final class PlayerModel {
         panelVocabulary.first { !$0.category.hiddenFromBrowse }?.id
     }
 
-    init(request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?) {
+    init(
+        request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?,
+        fileAccess: any FileAccess = LiveFileAccess()
+    ) {
         self.library = library
+        self.fileAccess = fileAccess
         self.libraryID = request.libraryID
         self.queue = PlayQueue(definition: request.definition, items: [])
         _ = appDatabase  // legacy pref migrates into settings.json at launch
@@ -339,7 +343,11 @@ final class PlayerModel {
 
     private func libraryChanged(_ change: LibraryChange) {
         if !change.domains.isDisjoint(with: [.vocabulary, .tagging]) {
-            if lastTaggingRefreshBegan < change.lastCommitAt { refreshTagging() }
+            if lastTaggingRefreshBegan < change.lastCommitAt {
+                // Tags on items moved: re-read this item's. The vocabulary
+                // itself changed: everything.
+                change.domains.contains(.vocabulary) ? refreshTagging() : refreshItemTags()
+            }
             recountQueue()
         }
         if change.domains.contains(.itemDetails) { refreshBlocks() }
@@ -656,6 +664,64 @@ final class PlayerModel {
 
     func seek(by delta: Double) { seek(to: currentSeconds + delta) }
 
+    // MARK: - Scrubbing
+
+    /// Scrubbing, the chase way (Technical Q&A QA1820). A drag sends a
+    /// position per mouse event; each used to start an exact seek that
+    /// cancelled the one before, so the decoder thrashed and the picture
+    /// lagged the thumb. Now: the playhead shows the thumb at once, one
+    /// loose seek is in flight, and only the latest position waits for
+    /// it; where the drag ends gets an exact seek.
+    private var scrubTarget: Double?
+    private var scrubSeekInFlight = false
+    /// Whether playback was running when the drag began — it pauses for
+    /// the drag and picks up again after.
+    private var playingBeforeScrub: Bool?
+    /// Loose seeks started for drags — what the tests watch.
+    private(set) var scrubSeeksIssued = 0
+
+    func scrub(to seconds: Double) {
+        let clamped = max(0, durationSeconds > 0 ? min(seconds, durationSeconds) : seconds)
+        if playingBeforeScrub == nil {
+            playingBeforeScrub = isPlaying
+            if isPlaying { player.pause() }
+        }
+        reachedEnd = false
+        currentSeconds = clamped
+        // Holds the time observer off the display while the player
+        // catches up, as a keyboard seek does.
+        pendingSeekTarget = clamped
+        scrubTarget = clamped
+        if !scrubSeekInFlight { chaseScrub() }
+    }
+
+    private func chaseScrub() {
+        guard let target = scrubTarget else {
+            scrubSeekInFlight = false
+            return
+        }
+        scrubTarget = nil
+        scrubSeekInFlight = true
+        scrubSeeksIssued += 1
+        let slack = CMTime(seconds: 0.5, preferredTimescale: 600)
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: slack, toleranceAfter: slack
+        ) { [weak self] _ in
+            Task { @MainActor in self?.chaseScrub() }
+        }
+    }
+
+    func endScrub(at seconds: Double) {
+        scrubTarget = nil
+        seek(to: seconds)  // exact, where the drag let go
+        if playingBeforeScrub == true {
+            player.play()
+            player.rate = playbackRate
+        }
+        playingBeforeScrub = nil
+    }
+
     // MARK: - Keyboard dispatch
 
     /// Returns true when the key was consumed.
@@ -729,26 +795,74 @@ final class PlayerModel {
         tagFieldCategoryID = Self.universalFieldFocusID
     }
 
+    /// The flag work still running, in press order: each toggle waits for
+    /// the one before, so a quick mark-then-unmark stages and unstages in
+    /// that order.
+    private var flagWork: Task<Void, Never>?
+    /// Presses whose write has not finished. A finished write shows the
+    /// row only when it was the last one — an earlier write must not
+    /// overwrite a later press already on screen.
+    private var flagWritesInFlight = 0
+
+    /// The mark shows at once; the write, and for the two staging marks
+    /// the file move, follow off the main actor. The move (with retries
+    /// on a busy or network volume) used to run here, on the main thread,
+    /// so a triage key press could freeze the window for as long as the
+    /// move took.
     private func toggle(_ flag: PlayerToggleFlag) {
-        guard let item else { return }
-        do {
-            // Deletion and playback-issue marks stage the file physically
-            // (and unstage on the way back); the other flags are plain.
-            switch flag {
-            case .markedForDeletion:
-                item.markedForDeletion
-                    ? try library.unstage(.toDelete, itemID: item.id)
-                    : try library.stage(.toDelete, itemID: item.id)
-            case .playbackIssue:
-                item.playbackIssue
-                    ? try library.unstage(.playbackIssue, itemID: item.id)
-                    : try library.stage(.playbackIssue, itemID: item.id)
-            case .favorite, .needsReview:
-                _ = try library.toggleFlag(flag, itemID: item.id)
+        guard var shown = item else { return }
+        let itemID = shown.id
+        let on: Bool
+        switch flag {
+        case .markedForDeletion: on = !shown.markedForDeletion; shown.markedForDeletion = on
+        case .playbackIssue: on = !shown.playbackIssue; shown.playbackIssue = on
+        case .favorite: on = !shown.isFavorite; shown.isFavorite = on
+        case .needsReview: on = !shown.needsReview; shown.needsReview = on
+        }
+        item = shown
+
+        let library = library, fileAccess = fileAccess, previous = flagWork
+        flagWritesInFlight += 1
+        flagWork = Task { [weak self] in
+            await previous?.value
+            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<MediaItem?, Error> in
+                Result {
+                    // Deletion and playback-issue marks stage the file
+                    // physically (and unstage on the way back); the other
+                    // flags are plain. Decided from the press, not from
+                    // whatever the row says by the time this runs.
+                    switch flag {
+                    case .markedForDeletion:
+                        on ? try library.stage(.toDelete, itemID: itemID, fileAccess: fileAccess)
+                            : try library.unstage(.toDelete, itemID: itemID, fileAccess: fileAccess)
+                    case .playbackIssue:
+                        on ? try library.stage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
+                            : try library.unstage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
+                    case .favorite, .needsReview:
+                        try library.writer.write { db in
+                            try db.execute(
+                                sql: "UPDATE mediaItem SET \(flag == .favorite ? "isFavorite" : "needsReview") = ? WHERE id = ?",
+                                arguments: [on, itemID])
+                        }
+                    }
+                    return try library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                }
+            }.value
+            guard let self else { return }
+            self.flagWritesInFlight -= 1
+            switch outcome {
+            case .success(let fresh):
+                // The row as it now is (a staged file has a new path) —
+                // for the item still showing, once no later press waits.
+                if self.item?.id == itemID, self.flagWritesInFlight == 0 {
+                    self.item = fresh
+                }
+            case .failure(let error):
+                self.loadError = "\(error)"
+                if self.item?.id == itemID {
+                    self.item = try? await self.library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                }
             }
-            self.item = try library.writer.read { try MediaItem.fetchOne($0, key: item.id) }
-        } catch {
-            loadError = "\(error)"
         }
     }
 
@@ -867,6 +981,24 @@ final class PlayerModel {
         return true
     }
 
+    /// Only this item's tags: what a tag key, a toggle or an apply of an
+    /// existing tag changes. Re-reading the whole vocabulary, every alias
+    /// and the key bindings, and rebuilding the search index, on every
+    /// press made tagging slow with the size of the library's vocabulary.
+    func refreshItemTags() {
+        lastTaggingRefreshBegan = .now
+        guard let item else { return }
+        do {
+            itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
+        } catch {
+            loadError = "\(error)"
+        }
+        if panels.search { refreshSearch() }
+    }
+
+    /// Everything the panel shows: the item's tags, the vocabulary, the
+    /// aliases, the key bindings and the search index. For a load, and
+    /// for a change to the vocabulary itself.
     func refreshTagging() {
         lastTaggingRefreshBegan = .now
         guard let item else { return }
@@ -915,7 +1047,7 @@ final class PlayerModel {
                     recentlyAppliedTagIDs.removeLast()
                 }
             }
-            refreshTagging()
+            refreshItemTags()
             recountQueue()
         } catch {
             loadError = "\(error)"
@@ -935,7 +1067,7 @@ final class PlayerModel {
             if recentlyAppliedTagIDs.count > 30 {
                 recentlyAppliedTagIDs.removeLast()
             }
-            refreshTagging()
+            refreshItemTags()
             recountQueue()
         } catch {
             loadError = "\(error)"
@@ -994,7 +1126,7 @@ final class PlayerModel {
         guard let binding = boundKeys[canonical], let item else { return false }
         do {
             let applied = try library.toggleTag(binding.tagID, on: item.id)
-            refreshTagging()
+            refreshItemTags()
             if binding.advance && applied { goNext() }
         } catch {
             loadError = "\(error)"

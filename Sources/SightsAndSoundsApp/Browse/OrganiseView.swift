@@ -445,12 +445,19 @@ struct OrganiseView: View {
         }
     }
 
+    /// A file move, so off the main actor like putting back a whole run.
     private func revert(_ log: FileMoveLog) {
-        do {
-            try model.library.revertMove(log.id)
-            errorText = nil
+        let library = model.library, id = log.id
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try library.revertMove(id)
+                    return nil
+                } catch { return "\(error)" }
+            }.value
+            errorText = failure
             reloadHistory()
-        } catch { errorText = "\(error)" }
+        }
     }
 
     /// Off the main actor: putting a run back is a file move per entry,

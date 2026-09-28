@@ -65,11 +65,14 @@ public struct ContentHashJob: Job {
                 .appendingPathComponent(item.relativePath)
 
             do {
-                var hasher = Insecure.MD5()
-                try fileAccess.readFile(at: url) { chunk in
-                    hasher.update(data: chunk)
+                // A whole file, read on a thread of its own: see Blocking.
+                let digest = try await Blocking.run { [fileAccess] in
+                    var hasher = Insecure.MD5()
+                    try fileAccess.readFile(at: url) { chunk in
+                        hasher.update(data: chunk)
+                    }
+                    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
                 }
-                let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
                 try await library.writer.write { db in
                     try db.execute(
                         sql: "UPDATE mediaItem SET contentHash = ? WHERE id = ?",

@@ -39,9 +39,10 @@ import Testing
         try await waitUntil("reached the end") { !model.isPlaying }
 
         model.play()
-        try await Task.sleep(for: .milliseconds(300))
-
+        // Waited for, not slept on: on a loaded machine the seek back to
+        // the top can take longer than any fixed pause. Without the fix
+        // the playhead never leaves the end, so this still fails.
+        try await waitUntil("back at the top") { model.player.currentTime().seconds < 1.0 }
         #expect(model.isPlaying)
-        #expect(model.player.currentTime().seconds < 1.0)
     }
 }
