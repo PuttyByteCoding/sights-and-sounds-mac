@@ -17,6 +17,12 @@ struct SidebarView: View {
     // opens what they filter by. Keyed by category id so vocabulary
     // refreshes don't reset what's open; resets with the window.
     @State private var expandedCategories: Set<UUID> = []
+    /// The category the user just opened — the one whose tag field may
+    /// take the keyboard. Only that one, and only once: every expanded
+    /// field used to grab focus whenever it reappeared (clearing "Search
+    /// all tags" brings them all back), so the last one won and the
+    /// grid's arrow keys and V stopped working.
+    @State private var justExpandedCategory: UUID?
     // Folder trees, nested under their source rows, start collapsed too.
     @State private var expandedSources: Set<UUID> = []
     @State private var expandedFolders: Set<String> = []
@@ -468,7 +474,11 @@ struct SidebarView: View {
                 CategoryHeader(
                     entry: entry,
                     expanded: expandedCategories.contains(entry.category.id),
-                    toggle: { toggle(entry.category.id, in: &expandedCategories) })
+                    toggle: {
+                        let opening = !expandedCategories.contains(entry.category.id)
+                        toggle(entry.category.id, in: &expandedCategories)
+                        justExpandedCategory = opening ? entry.category.id : nil
+                    })
                 if expandedCategories.contains(entry.category.id) {
                     if entry.tags.count > 8 {
                         HStack(spacing: 6) {
@@ -476,9 +486,17 @@ struct SidebarView: View {
                                 text: query(for: entry.category.id),
                                 // With thousands of tags, typing is the
                                 // only realistic way to find one — so the
-                                // field takes the keyboard as it appears.
-                                focusOnAppear: true)
+                                // field takes the keyboard when its
+                                // category is opened, not every time it
+                                // reappears.
+                                focusOnAppear: justExpandedCategory == entry.category.id)
                             sortMenu(for: entry.category.id)
+                        }
+                        .onAppear {
+                            // Spent once the field has taken focus.
+                            if justExpandedCategory == entry.category.id {
+                                DispatchQueue.main.async { justExpandedCategory = nil }
+                            }
                         }
                     }
                     // Missing is a filter value like any other: required
