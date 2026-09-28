@@ -193,7 +193,11 @@ struct LibraryPickerView: View {
 
             Button(fromMenu ? "Cancel" : "Quit") { cancel() }
                 .buttonStyle(SecondaryButtonStyle())
-                .keyboardShortcut(.cancelAction)
+                // Esc dismisses; it never quits. From the menu this is
+                // Cancel and Esc is its key. At launch it is Quit, and Esc
+                // quitting the whole app is not what anyone reaches for
+                // Esc to do — ⌘Q still quits.
+                .keyboardShortcut(fromMenu ? .cancelAction : nil)
 
             Button(primaryLabel) {
                 if let selected { open(selected) }
