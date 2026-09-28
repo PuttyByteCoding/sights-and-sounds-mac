@@ -654,18 +654,22 @@ struct MaintenanceView: View {
         reloadGeneration += 1
         let generation = reloadGeneration
         Task {
-            let read = await Task.detached(priority: .userInitiated) {
-                (
-                    findings: (try? library.validationFindings()) ?? [],
-                    backups: LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory()),
-                    runs: (try? library.writer.read { db in
-                        try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
-                    }) ?? [],
-                    staged: (try? library.writer.read { db in
-                        try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
-                    }) ?? 0,
-                    reclaimable: (try? library.reclaimableBytes()) ?? 0
-                )
+            // One typed statement per read: the CI toolchain cannot
+            // type-check the reads as one tuple expression in time.
+            let read = await Task.detached(priority: .userInitiated) { () -> MaintenanceSnapshot in
+                var snapshot = MaintenanceSnapshot()
+                snapshot.findings = (try? library.validationFindings()) ?? []
+                snapshot.backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
+                let runs: [TagWriteRun]? = try? library.writer.read { db in
+                    try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
+                }
+                snapshot.runs = runs ?? []
+                let staged: Int? = try? library.writer.read { db in
+                    try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
+                }
+                snapshot.staged = staged ?? 0
+                snapshot.reclaimable = (try? library.reclaimableBytes()) ?? 0
+                return snapshot
             }.value
             guard generation == reloadGeneration else { return }
             findings = read.findings
@@ -675,4 +679,13 @@ struct MaintenanceView: View {
             reclaimable = read.reclaimable
         }
     }
+}
+
+/// What the Maintenance window reads in one reload.
+private struct MaintenanceSnapshot: Sendable {
+    var findings: [ValidationFinding] = []
+    var backups: [LibraryDatabase.BackupFile] = []
+    var runs: [TagWriteRun] = []
+    var staged = 0
+    var reclaimable: Int64 = 0
 }
