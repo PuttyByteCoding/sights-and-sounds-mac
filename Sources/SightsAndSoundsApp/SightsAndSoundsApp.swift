@@ -95,6 +95,9 @@ struct SightsAndSoundsApp: App {
                 AuxiliaryWindowView(request: request)
                     .environment(model)
                     .uiZoomed()
+                    // Holds the handle: Restore and Remove wait for it.
+                    .onAppear { model.holdLibrary(request.libraryID) }
+                    .onDisappear { model.releaseLibrary(request.libraryID) }
             }
         }
 
@@ -104,6 +107,9 @@ struct SightsAndSoundsApp: App {
                 LibraryPropertiesView(libraryID: libraryID)
                     .environment(model)
                     .uiZoomed()
+                    // Holds the handle: Restore and Remove wait for it.
+                    .onAppear { model.holdLibrary(libraryID) }
+                    .onDisappear { model.releaseLibrary(libraryID) }
             }
         }
 
@@ -213,6 +219,21 @@ final class AppModel {
     /// it and stat-ing every root — the slow case the cached summary
     /// exists to avoid.
     private(set) var offlineSourceCounts: [UUID: Int] = [:]
+
+    /// Windows other than the library window that hold a library's
+    /// handle — Properties and the auxiliary windows, which stay open
+    /// after the library window closes. Counted, since several can be
+    /// open over one library.
+    private var libraryHolds: [UUID: Int] = [:]
+
+    func holdLibrary(_ libraryID: UUID) {
+        libraryHolds[libraryID, default: 0] += 1
+    }
+
+    func releaseLibrary(_ libraryID: UUID) {
+        guard let held = libraryHolds[libraryID] else { return }
+        libraryHolds[libraryID] = held > 1 ? held - 1 : nil
+    }
 
     func libraryWindowAppeared(_ libraryID: UUID) {
         openLibraryIDs.insert(libraryID)
@@ -356,7 +377,9 @@ final class AppModel {
     /// handle and every read after that fails, and a job mid-write is
     /// writing to a file that is about to be moved.
     private func ensureNotInUse(_ id: UUID) throws {
-        guard !openLibraryIDs.contains(id) else { throw LibraryInUse.windowsOpen }
+        guard !openLibraryIDs.contains(id), libraryHolds[id] == nil else {
+            throw LibraryInUse.windowsOpen
+        }
         // No runner this session means nothing can be running; a row left
         // `running` by a crash is settled when a runner is next created
         // and must not block a restore until then.
@@ -384,8 +407,12 @@ final class AppModel {
         // Opened if it was not, so the close can fold the WAL into the
         // file that is about to be archived. A close that fails stops the
         // restore: swapping the file under a handle that is still open is
-        // the thing this must never do.
-        try library(for: id).close()
+        // the thing this must never do. A closed library is opened bare,
+        // not through `library(for:)`: that stamps it as last opened and
+        // starts settling interrupted moves on a handle about to close.
+        let handle = try openHandles[id]
+            ?? LibraryDatabase.open(at: URL(fileURLWithPath: ref.filePath))
+        try handle.close()
         runners[id] = nil
         openHandles[id] = nil
 
