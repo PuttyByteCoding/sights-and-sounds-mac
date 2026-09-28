@@ -176,7 +176,8 @@ struct UniversalTagField: View {
     @State private var analysisSnapshot: [UUID]?
     /// Empty query + ⇧↓: what is on screen, once read.
     @State private var screen: ScreenRead?
-    @State private var readingScreen = false
+    @State private var screenReads = ScreenReadGate()
+    private var readingScreen: Bool { screenReads.isReading }
     @State private var screenError: String?
 
     private var focused: Bool { focus.wrappedValue == focusID }
@@ -307,7 +308,7 @@ struct UniversalTagField: View {
         analysisSnapshot = nil
         screen = nil
         screenError = nil
-        readingScreen = false
+        screenReads.cancel()
         highlighted = nil
     }
 
@@ -599,7 +600,7 @@ struct UniversalTagField: View {
         highlighted = nil
         screen = nil
         screenError = nil
-        readingScreen = true
+        let ticket = screenReads.begin(for: itemID)
         let settings = AppSettingsStore.shared.current.ocr
         let library = library
         Task {
@@ -613,6 +614,10 @@ struct UniversalTagField: View {
                     return .failure(error)
                 }
             }.value
+            // The item may have changed, or the list closed, while the
+            // frame was read: the result belongs to the frame's item.
+            guard screenReads.accepts(ticket, showing: itemID) else { return }
+            screenReads.settle(ticket)
             switch outcome {
             case .success(let read):
                 screen = read
@@ -621,7 +626,6 @@ struct UniversalTagField: View {
                 screen = ScreenRead(findings: [], lines: [])
                 screenError = "Could not read the frame: \(error)"
             }
-            readingScreen = false
         }
         return .handled
     }
