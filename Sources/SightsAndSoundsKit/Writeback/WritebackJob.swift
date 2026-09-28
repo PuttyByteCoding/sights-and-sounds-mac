@@ -115,7 +115,7 @@ public struct WritebackJob: Job {
 
             // Snapshot BEFORE the wipe-and-rewrite — non-negotiable.
             do {
-                let json = try TagWriters.readTagsJSON(url: url)
+                let json = try await Blocking.run { try TagWriters.readTagsJSON(url: url) }
                 try await library.writer.write { db in
                     try EmbeddedTagSnapshot(
                         mediaItemID: itemID, source: .preWrite, tagsJSON: json).insert(db)
@@ -126,7 +126,7 @@ public struct WritebackJob: Job {
                 continue
             }
 
-            let result = TagWriters.write(fields: fields, to: url)
+            let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
             if result.success {
                 written += 1
                 // A write that took the slow path keeps the reason with it.
@@ -210,7 +210,7 @@ public struct RestoreTagsJob: Job {
         else { throw MoveError.sourceUnavailable }
 
         // Pre-restore snapshot: restoring is itself undoable.
-        let currentJSON = try TagWriters.readTagsJSON(url: url)
+        let currentJSON = try await Blocking.run { try TagWriters.readTagsJSON(url: url) }
         try await library.writer.write { db in
             try EmbeddedTagSnapshot(
                 mediaItemID: item.id, source: .preRestore, tagsJSON: currentJSON).insert(db)
@@ -218,7 +218,7 @@ public struct RestoreTagsJob: Job {
 
         let fields = SnapshotRestore.fields(fromSnapshotJSON: snapshot.tagsJSON)
 
-        let result = TagWriters.write(fields: fields, to: url)
+        let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
         guard result.success else {
             throw FfmpegTool.FfmpegError(exitCode: -1, stderrTail: result.error ?? "write failed")
         }
