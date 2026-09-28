@@ -23,6 +23,8 @@ jobs:
         run: ./scripts/check-terminology.sh
       - name: Private-data check
         run: ./scripts/check-no-private-data.sh
+      - name: Kit portability check
+        run: ./scripts/check-kit-portable.sh
 
   test:
     name: Build & test

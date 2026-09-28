@@ -1,5 +1,4 @@
 import AVFoundation
-import AppKit
 import Foundation
 import GRDB
 
@@ -162,9 +161,7 @@ public struct ThumbnailBatchJob: Job {
                     continuation.resume(returning: nil)
                     return
                 }
-                let rep = NSBitmapImageRep(cgImage: cgImage)
-                continuation.resume(
-                    returning: rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]))
+                continuation.resume(returning: JPEG.data(from: cgImage, quality: 0.8))
             }
         }
     }
