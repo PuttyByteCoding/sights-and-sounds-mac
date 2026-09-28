@@ -26,6 +26,27 @@ import Testing
         #expect(!detail.contains("SCAN mediaItem"))
     }
 
+    /// Clicking a folder in the tree selects its subtree. As a LIKE on
+    /// `relativePath` — whose only index is a partial unique one that
+    /// cannot serve it — every click scanned all items; on the indexed
+    /// NOCASE `folderPath` the index finds them.
+    @Test func aFolderSubtreeUsesTheFolderIndex() throws {
+        let f = try FilterFixture()
+        try f.library.writer.write { db in
+            for n in 0..<3_000 {
+                try MediaItem(
+                    sourceID: f.mainSource.id, kind: .video,
+                    relativePath: "bulk/\(n % 50)/\(n).mp4", needsReview: false).insert(db)
+            }
+            try db.execute(sql: "ANALYZE")
+        }
+        let compiled = FilterCompiler.compile(
+            filter: MediaFilter(required: [.subtree("bulk/7")]), kinds: .all)
+        let detail = try plan(f.library, compiled.sql, compiled.arguments)
+        #expect(detail.contains("folderPath"), "plan: \(detail)")
+        #expect(!detail.contains("SCAN mediaItem"), "plan: \(detail)")
+    }
+
     /// A required tag is usually the most selective thing in a filter.
     /// As a correlated EXISTS it could only be checked per candidate row,
     /// so the query walked the items; as a membership list the tag's own
