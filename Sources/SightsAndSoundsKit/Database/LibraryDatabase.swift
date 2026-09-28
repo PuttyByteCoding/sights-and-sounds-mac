@@ -1006,6 +1006,19 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // Every foreign key's child column leads an index (pinned by
+        // ForeignKeyIndexTests). Without one, deleting a parent row scans
+        // the whole child table for the cascade: re-concluding the
+        // library's signal evidence grew quadratically.
+        migrator.registerMigration("foreignKeyIndexes") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS mediaSignalInferenceEvidence_evidence
+                    ON mediaSignalInferenceEvidence(evidenceID);
+                CREATE INDEX IF NOT EXISTS fieldDefinition_category
+                    ON fieldDefinition(tagCategoryID);
+                """)
+        }
+
         return migrator
     }
 
