@@ -4,8 +4,9 @@
 #   ./scripts/make-app-bundle.sh [output-dir]     (default: ./dist)
 #
 # The bundle gets keyboard focus, a dock presence and a proper name —
-# everything a bare `swift run` executable lacks. Unsigned; on first open
-# right-click → Open (or: xattr -dr com.apple.quarantine dist/SightsAndSounds.app).
+# everything a bare `swift run` executable lacks. Signed ad hoc (no
+# developer identity), so on first open from a download right-click → Open
+# (or: xattr -dr com.apple.quarantine dist/SightsAndSounds.app).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -37,11 +38,22 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key><string>SightsAndSounds</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.8.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- What macOS shows when it asks for access to a library's media. -->
+    <key>NSRemovableVolumesUsageDescription</key><string>Sights and Sounds reads and organises the media files in libraries kept on external drives.</string>
+    <key>NSNetworkVolumesUsageDescription</key><string>Sights and Sounds reads and organises the media files in libraries kept on network shares.</string>
 </dict>
 </plist>
 PLIST
+
+# One ad-hoc signature over the finished bundle. The linker's signature
+# on the binary alone does not cover Info.plist and changes identity on
+# every build, so macOS kept asking again for access it had been given.
+codesign --force --sign - "$APP"
 
 echo "Built $APP"
 echo "Open with:  open '$APP'"
