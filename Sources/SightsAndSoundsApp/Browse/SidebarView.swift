@@ -30,6 +30,9 @@ struct SidebarView: View {
     @State private var refusal: String?
     @State private var showSaveFilter = false
     @State private var renamingFilter: SavedFilter?
+    /// A saved filter waiting on "are you sure": delete acted at once, and
+    /// there is no Undo to take it back.
+    @State private var deletingFilter: SavedFilter?
     // How each category's tags are ordered. Session-scoped like the sets
     // above: which way you want a category sorted is a fact about the
     // hunt you are on, not about the library.
@@ -45,6 +48,16 @@ struct SidebarView: View {
             case .count: "Count"
             }
         }
+    }
+
+    // Built outside the body: the CI toolchain cannot type-check a
+    // confirmation dialog whose title and binding are written inline.
+    private var deleteFilterTitle: String {
+        "Delete the saved filter “\(deletingFilter?.name ?? "")”? This cannot be undone."
+    }
+
+    private var deletingFilterShown: Binding<Bool> {
+        Binding(get: { deletingFilter != nil }, set: { if !$0 { deletingFilter = nil } })
     }
 
     var body: some View {
@@ -92,6 +105,10 @@ struct SidebarView: View {
 
         .sheet(isPresented: $showSaveFilter) {
             SaveFilterSheet { name in model.saveCurrentFilter(named: name) }
+        }
+        .confirmationDialog(deleteFilterTitle, isPresented: deletingFilterShown, presenting: deletingFilter) { saved in
+            Button("Delete", role: .destructive) { model.deleteSavedFilter(saved) }
+            Button("Cancel", role: .cancel) {}
         }
         .sheet(item: $renamingFilter) { saved in
             SaveFilterSheet(
@@ -316,7 +333,7 @@ struct SidebarView: View {
                             .disabled(model.filter.isEmpty || saved.filter == model.filter)
                         Button("Rename…") { renamingFilter = saved }
                         Divider()
-                        Button("Delete Saved Filter") { model.deleteSavedFilter(saved) }
+                        Button("Delete Saved Filter…") { deletingFilter = saved }
                     }
                 }
             }
