@@ -48,8 +48,8 @@ struct ImportView: View {
     @State private var showConfigure = false
 
     // Running
-    @State private var running: JobRecord?
-    @State private var progress: (current: Int, total: Int)?
+    @State private var run: ImportRun?
+    private var progress: (current: Int, total: Int)? { run?.progress }
     @State private var finished: String?
     /// The item-scope fields, read once per reload. They were read from
     /// the database inside `body`, once per staging box per render, and
@@ -702,62 +702,37 @@ struct ImportView: View {
 
     private func beginImport() {
         guard let source = selectedSource else { return }
-        step = .importing
-        progress = nil
-        let runner = try? app.runner(for: model.libraryID)
-        guard let runner else { return }
+        // The step changes only once there is a runner to import with:
+        // it used to switch first and strand the window on Import.
+        guard let runner = try? app.runner(for: model.libraryID) else {
+            scanError = "Could not start the import: the library's task runner is unavailable."
+            return
+        }
         let library = model.library
         // Per-folder staging is several payloads, one per folder — the
         // job does not learn a second shape.
-        let groups: [(paths: [String], staging: ImportStaging)] = perFolderScope
+        let groups: [ImportRun.Group] = perFolderScope
             ? Dictionary(grouping: selectedPaths) { path in MediaPath.folder(of: path) }
                 .map { folder, paths in
-                    (paths.sorted(), (folderStaging[folder] ?? StagingDraft()).staging(in: library))
+                    let staging = (folderStaging[folder] ?? StagingDraft()).staging(in: library)
+                    return ImportRun.Group(paths: paths.sorted(), staging: staging.isEmpty ? nil : staging)
                 }
-            : [(selectedPaths.sorted(), wholeStaging.staging(in: library))]
+            : [{
+                let staging = wholeStaging.staging(in: library)
+                return ImportRun.Group(paths: selectedPaths.sorted(), staging: staging.isEmpty ? nil : staging)
+            }()]
 
-        Task {
-            var inserted = 0
-            var skipped = 0
-            for group in groups where !group.paths.isEmpty {
-                do {
-                    await runner.register(ImportJob.self)
-                    let record = try await ImportJob.enqueue(
-                        on: runner, sourceID: source.id,
-                        relativePaths: group.paths,
-                        staging: group.staging.isEmpty ? nil : group.staging)
-                    running = record
-                    let drain = Task { try await runner.runPending() }
-                    var settled = false
-                    while !settled {
-                        try? await Task.sleep(for: .milliseconds(250))
-                        guard let row = try await library.writer.read({
-                            try JobRecord.fetchOne($0, key: record.id)
-                        }) else { break }
-                        progress = (row.progressCurrent, row.progressTotal ?? group.paths.count)
-                        switch row.state {
-                        case .queued, .running: break
-                        case .succeeded, .failed, .cancelled:
-                            settled = true
-                            if let summary = row.summary {
-                                let numbers = summary.split(separator: " ")
-                                    .compactMap { Int($0) }
-                                inserted += numbers.first ?? 0
-                                skipped += numbers.count > 1 ? numbers[1] : 0
-                            }
-                        }
-                    }
-                    _ = try? await drain.value
-                } catch {
-                    scanError = "\(error)"
-                }
-            }
+        let run = ImportRun(runner: runner, library: library)
+        self.run = run
+        step = .importing
+        run.start(sourceID: source.id, groups: groups) { tally in
+            if let error = run.error { scanError = error }
             // Sticky boxes keep their values for the next import.
             persistSticky()
             let extensionSkips = outcome?.skippedByExtension.values.reduce(0, +) ?? 0
             finished = """
-                \(inserted) media items inserted
-                \(skipped) skipped — already in library
+                \(tally.inserted) media items inserted
+                \(tally.skipped) skipped — already in library
                 \(extensionSkips) skipped — extension not enabled
                 """
             step = .review
@@ -767,14 +742,11 @@ struct ImportView: View {
         }
     }
 
+    /// Stops the whole run — every later folder too — and the job in
+    /// flight between files, so nothing is half-inserted.
     private func cancelImport() {
-        guard let running, let runner = try? app.runner(for: model.libraryID) else { return }
-        Task {
-            // The job's own cooperative cancellation — it stops between
-            // files, so nothing is half-inserted.
-            await runner.requestCancel(running.id)
-            step = .review
-        }
+        run?.cancel()
+        step = .review
     }
 
     private func setSticky(_ box: ImportBox, _ sticky: Bool) {
