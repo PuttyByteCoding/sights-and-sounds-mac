@@ -223,6 +223,15 @@ public struct TileView: Codable, Hashable, Sendable, Identifiable {
             self.slot = slot
             self.entries = entries
         }
+
+        /// An entry this build does not know (a tile value a newer build
+        /// added) is dropped on its own; the rest of the view stays.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            slot = try container.decode(TileSlot.self, forKey: .slot)
+            entries = try container.decode([LenientDecodable<TileEntry>].self, forKey: .entries)
+                .compactMap(\.value)
+        }
     }
 
     public init(id: UUID = UUID(), name: String, placements: [Placement] = []) {
