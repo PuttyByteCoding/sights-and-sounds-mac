@@ -443,6 +443,7 @@ final class PlayerModel {
         persistProgress()
         removeObserver()
         completionRecorded = false
+        reachedEnd = false
         loadError = nil
         loadGeneration += 1
         let generation = loadGeneration
@@ -558,6 +559,10 @@ final class PlayerModel {
     // MARK: - Transport
 
     func play() {
+        // From the natural end, Play means from the top (the in-point
+        // for a clip), as in QuickTime. `player.play()` at the end of the
+        // file moves nothing while the button says Pause.
+        if reachedEnd { seek(to: item?.clipStartSeconds ?? 0) }
         player.play()
         player.rate = playbackRate
         isPlaying = true
@@ -605,11 +610,16 @@ final class PlayerModel {
             play()
         } else {
             isPlaying = false
+            reachedEnd = true
         }
     }
 
+    /// Stopped at the natural end — cleared by any seek or load.
+    private var reachedEnd = false
+
     func seek(to seconds: Double) {
         let clamped = max(0, durationSeconds > 0 ? min(seconds, durationSeconds) : seconds)
+        reachedEnd = false
         // The playhead moves NOW — the display answers to the operator's
         // intent, and the video catches up to it, never the reverse.
         currentSeconds = clamped
