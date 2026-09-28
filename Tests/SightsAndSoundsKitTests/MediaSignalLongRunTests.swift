@@ -184,7 +184,7 @@ import Testing
 
     private func stage(_ name: String, pass: Int, log: OSAllocatedBox<[String]>) -> ScriptedStage {
         var stage = ScriptedStage { file in
-            log.set(log.get() + ["\(name) \(file.url.lastPathComponent)"])
+            log.update { $0.append("\(name) \(file.url.lastPathComponent)") }
             return SignalFindings()
         }
         stage.name = name
@@ -262,10 +262,11 @@ import Testing
         let (library, _) = try await library(items: 9)
         let running = OSAllocatedBox(0), most = OSAllocatedBox(0)
         var slow = ScriptedStage { _ in
-            running.set(running.get() + 1)
-            most.set(max(most.get(), running.get()))
+            running.update { $0 += 1 }
+            let now = running.get()
+            most.update { $0 = max($0, now) }
             try await Task.sleep(nanoseconds: 40_000_000)
-            running.set(running.get() - 1)
+            running.update { $0 -= 1 }
             return SignalFindings()
         }
         slow.name = "slow"
@@ -308,4 +309,7 @@ final class OSAllocatedBox<Value>: @unchecked Sendable {
     init(_ value: Value) { self.value = value }
     func get() -> Value { lock.withLock { value } }
     func set(_ new: Value) { lock.withLock { value = new } }
+    /// Read-modify-write under one lock. `set(get() + …)` takes the lock
+    /// twice, so stages running side by side lost each other's writes.
+    func update(_ change: (inout Value) -> Void) { lock.withLock { change(&value) } }
 }
