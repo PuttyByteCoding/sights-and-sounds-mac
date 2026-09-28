@@ -75,6 +75,34 @@ import Testing
         #expect(model.player.currentItem == nil)
     }
 
+    /// The last item stays the target of every key after a failed load
+    /// unless the model lets go of it: ⇧⌫ in triage used to unmark the
+    /// PREVIOUS file, and tag keys wrote to it.
+    @Test func aVanishedItemLetsGoOfTheLastOneSoKeysCannotReachIt() async throws {
+        let (library, playable, offline, root) = try await makeLibrary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = PlayerModel(
+            request: PlayerRequest(
+                libraryID: UUID(), itemID: playable.id, playlist: [playable.id, offline.id], name: "Two"),
+            library: library, appDatabase: nil)
+        defer { model.shutdown() }
+        try await waitUntil { model.item?.id == playable.id && model.isPlaying }
+        try await library.writer.write { _ = try MediaItem.deleteOne($0, key: offline.id) }
+
+        model.goNext()
+        try await waitUntil { model.loadError != nil }
+
+        #expect(model.item == nil)
+        #expect(model.itemTags.isEmpty)
+        model.perform(.toggleMarkedForDeletion)
+        let last = try await library.writer.read { try MediaItem.fetchOne($0, key: playable.id) }
+        #expect(last?.markedForDeletion == false)
+
+        // The queue position survives the failure: Previous goes back.
+        model.goPrevious()
+        try await waitUntil { model.item?.id == playable.id }
+    }
+
     @Test func aFileThePlayerCannotOpenSaysSoInsteadOfClaimingToPlay() async throws {
         let (library, playable, _, root) = try await makeLibrary()
         defer { try? FileManager.default.removeItem(at: root) }
