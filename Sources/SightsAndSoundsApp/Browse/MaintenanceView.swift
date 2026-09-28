@@ -23,6 +23,7 @@ struct MaintenanceView: View {
         }
     }
 
+    @State private var reloadGeneration = 0
     @State private var tab: Tab = .writeback
     @State private var preview: WritebackPreview?
     @State private var previewing = false
@@ -644,15 +645,34 @@ struct MaintenanceView: View {
         }
     }
 
+    /// Everything the window shows, read off the main actor: the backup
+    /// list opens every backup file, the reclaimable size sums every
+    /// staged file, and this runs after every button press. The last
+    /// reload asked for is the one that lands.
     private func reload() {
-        findings = (try? model.library.validationFindings()) ?? []
-        backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
-        runs = (try? model.library.writer.read { db in
-            try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
-        }) ?? []
-        stagedCount = (try? model.library.writer.read { db in
-            try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
-        }) ?? 0
-        reclaimable = (try? model.library.reclaimableBytes()) ?? 0
+        let library = model.library
+        reloadGeneration += 1
+        let generation = reloadGeneration
+        Task {
+            let read = await Task.detached(priority: .userInitiated) {
+                (
+                    findings: (try? library.validationFindings()) ?? [],
+                    backups: LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory()),
+                    runs: (try? library.writer.read { db in
+                        try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
+                    }) ?? [],
+                    staged: (try? library.writer.read { db in
+                        try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
+                    }) ?? 0,
+                    reclaimable: (try? library.reclaimableBytes()) ?? 0
+                )
+            }.value
+            guard generation == reloadGeneration else { return }
+            findings = read.findings
+            backups = read.backups
+            runs = read.runs
+            stagedCount = read.staged
+            reclaimable = read.reclaimable
+        }
     }
 }
