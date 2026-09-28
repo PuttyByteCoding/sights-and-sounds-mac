@@ -239,7 +239,7 @@ struct CommandPalette: View {
         .opacity(requirement == nil ? 1 : 0.5)
         .background(isHighlighted ? Theme.Accent.amber : Color.clear)
         .contentShape(Rectangle())
-        .onTapGesture { run(command) }
+        .onTapAsButton { run(command) }
     }
 
     private var legend: some View {

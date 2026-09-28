@@ -1876,7 +1876,7 @@ private struct QueuePanel: View {
                             isCurrent: item.id == model.item?.id)
                             .id(item.id)
                             .transition(.opacity)
-                            .onTapGesture {
+                            .onTapAsButton {
                                 model.zone = .queue
                                 model.load(itemID: item.id)
                             }

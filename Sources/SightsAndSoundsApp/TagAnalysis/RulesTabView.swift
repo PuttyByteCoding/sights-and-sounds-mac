@@ -337,7 +337,7 @@ private struct RuleCard: View {
                 .stroke(
                     isSelected ? Theme.Border.activeCard : Theme.Border.standard, lineWidth: 1))
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .onTapAsButton(perform: onSelect)
     }
 
     private func chip(_ text: String, _ color: Color) -> some View {

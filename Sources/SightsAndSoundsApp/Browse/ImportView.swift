@@ -354,7 +354,7 @@ struct ImportView: View {
         .padding(.horizontal, 12)
         .background(focusedFolder == folder.path ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
-        .onTapGesture { focusedFolder = folder.path }
+        .onTapAsButton { focusedFolder = folder.path }
     }
 
     private var fileTable: some View {
@@ -972,7 +972,7 @@ private struct CandidateRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onToggle)
+        .onTapAsButton(perform: onToggle)
         .task(id: candidate.relativePath) {
             guard probe == nil, !sourceRoot.isEmpty else { return }
             let url = URL(fileURLWithPath: sourceRoot, isDirectory: true)
