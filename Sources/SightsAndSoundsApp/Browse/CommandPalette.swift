@@ -48,13 +48,17 @@ struct PaletteCommand: Identifiable {
     var arguments: (() -> [PaletteCommand])?
     var run: () -> Void
 
+    /// `key` names what the command acts on when its title cannot: a
+    /// tag, a category or a saved view, any two of which may share a
+    /// name. Without one, the title is the key.
     init(
-        group: Group, title: String, symbol: String, keyEquivalent: String? = nil,
+        group: Group, title: String, symbol: String, key: String? = nil,
+        keyEquivalent: String? = nil,
         requiresSelection: Int = 0,
         arguments: (() -> [PaletteCommand])? = nil,
         run: @escaping () -> Void
     ) {
-        self.id = "\(group.rawValue):\(title.lowercased())"
+        self.id = "\(group.rawValue):\(key ?? title.lowercased())"
         self.group = group
         self.title = title
         self.symbol = symbol
@@ -66,11 +70,12 @@ struct PaletteCommand: Identifiable {
 
     /// A command that only drills does nothing on its own.
     init(
-        group: Group, title: String, symbol: String, requiresSelection: Int = 0,
+        group: Group, title: String, symbol: String, key: String? = nil,
+        requiresSelection: Int = 0,
         arguments: @escaping () -> [PaletteCommand]
     ) {
         self.init(
-            group: group, title: title, symbol: symbol,
+            group: group, title: title, symbol: symbol, key: key,
             requiresSelection: requiresSelection, arguments: arguments, run: {})
     }
 
@@ -375,14 +380,14 @@ struct CommandPalette: View {
             // The browse filter row's own words, not a paraphrase.
             commands.append(PaletteCommand(
                 group: .filter, title: "Missing — no \(entry.category.name) tag",
-                symbol: "questionmark.circle"
+                symbol: "questionmark.circle", key: "missing:\(entry.category.id)"
             ) { model.filter.cycle(.missingCategory(entry.category.id)) })
             commands.append(PaletteCommand(
                 group: .filter, title: "\(entry.category.name) is…",
-                symbol: "line.3.horizontal.decrease",
+                symbol: "line.3.horizontal.decrease", key: "is:\(entry.category.id)",
                 arguments: {
                     entry.tags.map { tag in
-                        PaletteCommand(group: .filter, title: tag.name, symbol: "tag") {
+                        PaletteCommand(group: .filter, title: tag.name, symbol: "tag", key: "tag:\(tag.id)") {
                             model.filter.cycle(.tag(tag.id))
                         }
                     }
@@ -469,6 +474,7 @@ struct CommandPalette: View {
         var commands = display.grid.views.map { view in
             PaletteCommand(
                 group: .view, title: "Tile view · \(view.name)", symbol: "square.grid.2x2",
+                key: "tile-view:\(view.id)",
                 run: {
                     display.grid.activeViewID = view.id
                     display.persist()
@@ -501,9 +507,16 @@ extension PaletteCommand {
         guard !trimmed.isEmpty else {
             // Empty means RECENT — the palette should reward the second
             // use of a command more than the first.
-            let byID = Dictionary(uniqueKeysWithValues: commands.map { ($0.id, $0) })
-            let recent = recents.compactMap { byID[$0] }
-            return recent.isEmpty ? commands : recent + commands.filter { !recents.contains($0.id) }
+            // Ids are unique by construction, but this used to index them
+            // with a dictionary that trapped on a repeat; ranking by each
+            // command's place in the recents lists every row regardless.
+            var rankByID: [String: Int] = [:]
+            for (rank, id) in recents.enumerated() where rankByID[id] == nil { rankByID[id] = rank }
+            let recent = commands.enumerated()
+                .compactMap { offset, command in rankByID[command.id].map { ($0, offset, command) } }
+                .sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+                .map(\.2)
+            return recent + commands.filter { rankByID[$0.id] == nil }
         }
         // Typing a group name narrows to it.
         if let group = Group.allCases.first(where: { $0.searchWord == trimmed.lowercased() }) {

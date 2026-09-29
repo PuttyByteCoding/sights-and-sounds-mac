@@ -33,4 +33,26 @@ import Testing
         let ordered = PaletteCommand.ordered(commands, query: "", recents: recents)
         #expect(ordered.map(\.title) == ["Tag Manager", "Export Copy", "Shuffle"])
     }
+
+    /// Two views may share a name (Duplicate, then edit the copy's name
+    /// back), and two tags may differ only in a case SQLite's NOCASE does
+    /// not fold ("Ärzte", "ärzte"). With an empty query the palette
+    /// indexed commands by id and trapped on the repeat; both rows now
+    /// list, each with an id of its own.
+    @Test func commandsWithTheSameNameBothListAndKeepTheirOwnIDs() {
+        let commands = [
+            PaletteCommand(group: .view, title: "Default", symbol: "circle", key: "view-a") {},
+            PaletteCommand(group: .view, title: "default", symbol: "circle", key: "view-b") {},
+        ]
+        let ordered = PaletteCommand.ordered(commands, query: "", recents: [commands[1].id])
+        #expect(ordered.map(\.id) == [commands[1].id, commands[0].id])
+        #expect(Set(ordered.map(\.id)).count == 2)
+    }
+
+    /// Belt and braces: commands that do collide still list rather than trap.
+    @Test func collidingIDsDoNotTrap() {
+        let commands = [command(.view, "Default"), command(.view, "default")]
+        let ordered = PaletteCommand.ordered(commands, query: "", recents: [commands[0].id])
+        #expect(ordered.count == 2)
+    }
 }
