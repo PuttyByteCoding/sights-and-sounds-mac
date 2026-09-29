@@ -43,6 +43,10 @@ import Testing
         // reaches the ends either, but does not stop at 16 and 235: that
         // is low contrast, not a range mismatch.
         #expect(strength("full", low: 40, high: 200) == 0)
+        // Grain and encoder overshoot put video-range extremes a few codes
+        // outside 16–235 (here 10 and 243) without reaching what counts as
+        // full range: still video levels, and still said.
+        #expect(strength("full", low: 10, high: 243) > 0.5)
 
         // And it is said: evidence no conclusion takes up never reaches
         // the screen.

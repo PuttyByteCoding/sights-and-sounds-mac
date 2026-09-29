@@ -522,6 +522,19 @@ public enum SignalSamples {
                 .concluded("Range converted wrongly", 0.5...1),
             ]),
         video(
+            "video range tagged full, grainy", .tone,
+            "Video-range levels with grain, declared full range: the extremes overshoot 16–235 a little, "
+                + "short of full range, and it still plays washed out.",
+            input: levels(low: 16, high: 235),
+            filter: "noise=alls=10:allf=t,setparams=range=pc",
+            codec: ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p"],
+            stages: [declaredStage, stillsStage],
+            truths: [
+                .declared("video.range", "full"),
+                .measured("colour.usesFullRange", 0...0),
+                .concluded("Range converted wrongly", 0.5...1),
+            ]),
+        video(
             "lifted and flattened", .tone,
             "Levels squeezed into 40–200: a range conversion applied twice. Never near black or white.",
             input: levels(low: 40, high: 200), filter: "setparams=range=tv",
