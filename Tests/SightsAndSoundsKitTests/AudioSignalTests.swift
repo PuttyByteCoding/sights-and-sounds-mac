@@ -145,6 +145,26 @@ enum SyntheticSound {
         #expect(findings.value("audio.rolloffHz")! < 12_000)
     }
 
+    /// A clean digital tone has nothing around 15.7 kHz or 50–180 Hz but
+    /// its generator's faint spurs, a hundred decibels and more below the
+    /// tone, over a floor lower still. Measured only against their
+    /// surroundings, those spurs "stood out" and read as a line whistle
+    /// and as mains hum. A tone must now also be within a hundred
+    /// decibels of the loudest part of the spectrum to count.
+    @Test func aCleanToneHasNoWhistleAndNoHum() {
+        // A generator's spurs, 120 dB under the tone: nothing anyone could
+        // hear, and no analog chain's whistle or hum.
+        var tone = SyntheticSound.sine(440, amplitude: 0.5, seconds: 20)
+        for hertz in [60.0, 120, 180, 15_734.27] {
+            let spur = SyntheticSound.sine(hertz, amplitude: 0.5e-6, seconds: 20)
+            tone = zip(tone, spur).map { $0 + $1 }
+        }
+        let findings = SyntheticSound.meter(left: tone, right: tone)
+        #expect(findings.value("audio.lineWhistleHz") == nil)
+        #expect((findings.value("audio.hum60Db") ?? 0) < 10)
+        #expect((findings.value("audio.hum50Db") ?? 0) < 10)
+    }
+
     @Test func aLineWhistleIsFoundAndNamesItsStandard() {
         let programme = SyntheticSound.noise(amplitude: 0.2, seconds: 8)
         let whistle = SyntheticSound.sine(15_625, amplitude: 0.01, seconds: 8)

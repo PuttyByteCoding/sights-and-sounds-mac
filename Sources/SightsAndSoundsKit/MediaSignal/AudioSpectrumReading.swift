@@ -66,15 +66,25 @@ public enum AudioSpectrumReading {
         }
     }
 
+    /// How far below the loudest bin a tone may sit and still count: a
+    /// real whistle or hum is within it; a generator's spur or a window's
+    /// leakage, over a floor of rounding, is not.
+    static let audibleDepth: Float = 1e-10  // 100 dB
+
     /// Decibels by which the strongest bin within `toneHz` of `hertz`
-    /// stands above the median of its surroundings out to `floorHz`.
+    /// stands above the median of its surroundings out to `floorHz` — nil
+    /// when the tone is not there to speak of. Relative alone, a spur a
+    /// hundred decibels under a clean tone, over a floor lower still,
+    /// read as a whistle and as mains hum.
     static func prominence(
         _ power: [Float], at hertz: Double, binWidth: Double, toneHz: Double, floorHz: Double
     ) -> Double? {
         let centre = Int((hertz / binWidth).rounded())
         let tone = max(Int(toneHz / binWidth), 1), reach = Int(floorHz / binWidth)
         guard centre - reach >= 1, centre + reach < power.count, reach > tone * 2 else { return nil }
-        guard let peak = power[centre - tone...centre + tone].max() else { return nil }
+        guard let peak = power[centre - tone...centre + tone].max(),
+              let loudest = power.max(), peak >= loudest * audibleDepth
+        else { return nil }
         let around = (Array(power[centre - reach..<centre - tone * 2])
             + Array(power[centre + tone * 2 + 1...centre + reach])).sorted()
         guard !around.isEmpty else { return nil }

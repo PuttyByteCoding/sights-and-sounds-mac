@@ -425,10 +425,8 @@ public enum SignalSamples {
             graph: "sine=f=440:sample_rate=48000:duration=8,volume=4,aformat=channel_layouts=stereo[out]",
             truths: [
                 .measured("audio.clippedFraction", 0...0.0001),
-                .gap(.withheld("audio.lineWhistleHz"),
-                     "prominence is relative only: against near-silence a leakage skirt reads as a whistle"),
-                .gap(.measured("audio.hum60Db", -100...10),
-                     "the same relative measure finds hum in a pure tone's skirt"),
+                .withheld("audio.lineWhistleHz"),
+                .withheld("audio.hum60Db"),
             ]),
     ]
 
