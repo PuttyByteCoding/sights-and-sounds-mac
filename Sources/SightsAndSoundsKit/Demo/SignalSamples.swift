@@ -74,6 +74,17 @@ public enum SignalSamples {
     static func motion(_ size: String, _ rate: String, seconds: Double = 4) -> [String] {
         ["-f", "lavfi", "-t", "\(seconds)", "-i", "testsrc2=size=\(size):rate=\(rate)"]
     }
+    /// A still, detailed backdrop (a grid, rich in vertical detail) with a
+    /// test pattern moving across it — how most footage is: a still scene
+    /// with something moving in it. testsrc2 alone has almost nothing that
+    /// stays still, and a bob's sign lives in the parts that do.
+    static func motionOverStill(_ rate: String, seconds: Double = 4) -> [String] {
+        ["-f", "lavfi", "-t", "\(seconds)", "-i",
+         "testsrc2=size=200x150:rate=\(rate)[moving];"
+            + "color=c=0x404040:size=720x480:rate=\(rate),drawgrid=w=12:h=9:t=2:c=0xd0d0d0[still];"
+            + "[still][moving]overlay=x='mod(n*6,520)':y=160"]
+    }
+
     /// Fractal zoom: detail at every scale, like a real picture has —
     /// rendered at twice the size and brought down with a good filter,
     /// the way a sensor oversamples. Rendered straight at size, every
@@ -209,12 +220,23 @@ public enum SignalSamples {
         video(
             "bob deinterlaced 59.94", .scan,
             "Interlaced, then bob-deinterlaced to 59.94 frames: alternate frames sit half a line apart.",
-            input: motion("720x480", "60000/1001"), filter: "interlace=scan=tff:lowpass=0,yadif=mode=send_field",
+            input: motionOverStill("60000/1001"), filter: "interlace=scan=tff:lowpass=0,yadif=mode=send_field",
             stages: [sequenceStage],
             truths: [
                 .measured("interlace.combedFrameFraction", 0...0.05),
-                .gap(.measured("interlace.bobFlutter", 0.75...1),
-                     "yadif's bob reads a flutter no higher than clean progressive film does"),
+                .gap(.measured("interlace.bobFlutter", 0.3...1),
+                     "yadif's bob is motion-adaptive: it weaves still areas from both fields, so nothing "
+                        + "flutters; it would need another sign (double rate with halved vertical detail in motion)"),
+            ]),
+        video(
+            "naive bob 59.94", .scan,
+            "Interlaced, then each field line-doubled into its own frame: still areas flip half a line, frame to frame.",
+            input: motionOverStill("60000/1001"),
+            filter: "interlace=scan=tff:lowpass=0,separatefields,scale=720:480:flags=bilinear,setsar=1",
+            stages: [sequenceStage],
+            truths: [
+                .measured("interlace.combedFrameFraction", 0...0.05),
+                .measured("interlace.bobFlutter", 0.3...1),
             ]),
         video(
             "field deinterlaced 29.97", .scan,

@@ -5,7 +5,8 @@ public enum SignalRules {
     /// older version are re-drawn from the stored findings; no file is
     /// decoded again.
     /// 2: video levels in a file tagged full range are evidence.
-    public static let version = 2
+    /// 3: bob flutter is a share of flipping blocks (ramp 0.1–0.3).
+    public static let version = 3
 
     /// Below this a category is not worth saying.
     static let reportable = 0.35

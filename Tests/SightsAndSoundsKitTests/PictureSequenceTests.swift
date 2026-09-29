@@ -180,6 +180,36 @@ import Testing
         #expect(self.reading((0..<40).map { Self.scene($0 * 3) }).bobFlutter < 0.7)
     }
 
+    /// The same bob with half the picture moving. The still half still
+    /// flips frame to frame; correlated over the whole frame, the moving
+    /// half's changes (uncorrelated, about zero) drowned it — naive bob of
+    /// ordinary footage read like progressive film. Read on the areas that
+    /// match the frame two back (still) but changed since the last one.
+    @Test func aBobbedSceneFluttersEvenWithMotionInIt() {
+        func moving(_ t: Int) -> [Float] {
+            var luma = Self.scene(30)
+            for y in 0..<Self.height {
+                for x in 0..<(Self.width / 2) {
+                    luma[y * Self.width + x] = 40 + Float(((x + t * 7) * 31 + y * 17) % 97)
+                }
+            }
+            return luma
+        }
+        func field(_ t: Int) -> [Float] {
+            let source = moving(t), parity = t % 2
+            var luma = source
+            for y in 0..<Self.height {
+                let from = min(y - (y + parity) % 2 + parity, Self.height - 1)
+                for x in 0..<Self.width { luma[y * Self.width + x] = source[max(from, 0) * Self.width + x] }
+            }
+            return luma
+        }
+        // Half the changing blocks flip back (the still half); none do when
+        // the same motion is not bobbed.
+        #expect(reading((0..<40).map(field)).bobFlutter > 0.3)
+        #expect(reading((0..<40).map(moving)).bobFlutter < 0.05)
+    }
+
     @Test func brightnessThatJumpsFrameToFrameIsFlicker() {
         let steady = reading((0..<40).map { Self.scene($0 * 3) })
         let flickering = reading((0..<40).map { index in
