@@ -56,6 +56,13 @@ struct ReviewView: View {
     @State private var resolvedThisPass: [Mode: Int] = [:]
     @State private var confirmDelete = false
     @State private var isPurging = false
+    /// What the last resolved pair came to. Held here, not in the compare
+    /// pane: resolving selects the next pair, and the pane holding the
+    /// message is replaced before anyone can read it.
+    @State private var lastOutcome: String?
+    /// Reloads race (two quick restores); only the newest may land, or an
+    /// older list re-ticks what was just restored.
+    @State private var reloadGeneration = 0
     /// Items with a repair this window queued that has not finished.
     @State private var repairing: Set<UUID> = []
     @State private var repairStatus: String?
@@ -244,13 +251,23 @@ struct ReviewView: View {
     @ViewBuilder private var duplicatesCentre: some View {
         if let candidate = candidates.first(where: { $0.id == selectedCandidateID }),
            let a = itemsByID[candidate.itemAID], let b = itemsByID[candidate.itemBID] {
-            CompareView(
-                candidate: candidate, itemA: a, itemB: b,
-                onResolved: {
-                    resolvedThisPass[.duplicates, default: 0] += 1
-                    reload()
-                })
-                .id(candidate.id)
+            VStack(alignment: .leading, spacing: 0) {
+                if let lastOutcome {
+                    Text(lastOutcome)
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+                CompareView(
+                    candidate: candidate, itemA: a, itemB: b,
+                    onResolved: { outcome in
+                        lastOutcome = outcome
+                        resolvedThisPass[.duplicates, default: 0] += 1
+                        reload()
+                    })
+                    .id(candidate.id)
+            }
         } else {
             empty(
                 title: candidates.isEmpty ? "No pending duplicates" : "Pick a pair",
@@ -591,6 +608,8 @@ struct ReviewView: View {
     /// open used to block on it.
     private func reload() {
         let library = model.library
+        reloadGeneration += 1
+        let generation = reloadGeneration
         Task {
             do {
                 let (fetched, items) = try await Task.detached(priority: .userInitiated) {
@@ -603,36 +622,44 @@ struct ReviewView: View {
                     }
                     return (fetched, items)
                 }.value
+                guard generation == reloadGeneration else { return }
                 candidates = fetched
                 itemsByID = items
                 if selectedCandidateID == nil
                     || !candidates.contains(where: { $0.id == selectedCandidateID }) {
                     selectedCandidateID = candidates.first?.id
                 }
-                deleteList = try await library.writer.read { db in
+                let marked = try await library.writer.read { db in
                     try MediaItem
                         .filter(sql: "markedForDeletion = 1")
                         .order(sql: "relativePath").fetchAll(db)
                 }
+                guard generation == reloadGeneration else { return }
+                deleteList = marked
                 // A file arrives ticked — the list exists because you
                 // already marked it — and keeps whatever you set after.
                 ticks.listLoaded(deleteList.map(\.id))
-                issues = try await library.writer.read { db in
+                let flagged = try await library.writer.read { db in
                     try MediaItem
                         .filter(sql: "playbackIssue = 1")
                         .order(sql: "relativePath").fetchAll(db)
                 }
+                guard generation == reloadGeneration else { return }
+                issues = flagged
                 if selectedIssueID == nil || !issues.contains(where: { $0.id == selectedIssueID }) {
                     if let first = issues.first { select(issue: first) } else { selectedIssueID = nil }
                 }
                 // A stat of every staged file, and a write: off the main
                 // actor too.
                 let appDatabase = app.appDatabase
-                reclaimable = await Task.detached(priority: .userInitiated) {
+                let bytes = await Task.detached(priority: .userInitiated) {
                     try? appDatabase?.seedRepairRecipes()
                     return (try? library.reclaimableBytes()) ?? 0
                 }.value
+                guard generation == reloadGeneration else { return }
+                reclaimable = bytes
             } catch {
+                guard generation == reloadGeneration else { return }
                 errorText = "\(error)"
             }
         }
@@ -806,13 +833,15 @@ private struct CompareView: View {
     let candidate: DuplicateCandidate
     let itemA: MediaItem
     let itemB: MediaItem
-    let onResolved: () -> Void
+    /// Called with what the decision came to, for the review window to
+    /// show — this pane goes as soon as the next pair is selected.
+    let onResolved: (String?) -> Void
 
     @State private var keeperID: UUID?
     @State private var mergeSelection: Set<UUID> = []
     @State private var mergeableTags: [Tag] = []
-    @State private var outcomeText: String?
     @State private var errorText: String?
+    @State private var deciding = false
 
     var body: some View {
         ScrollView {
@@ -834,9 +863,6 @@ private struct CompareView: View {
                 if let keeperID { mergePanel(keeperID: keeperID) } else { unresolvedActions }
                 if let errorText {
                     Text(errorText).font(Theme.ui(11.5)).foregroundStyle(Theme.Status.red)
-                }
-                if let outcomeText {
-                    Text(outcomeText).font(Theme.ui(11.5)).foregroundStyle(Theme.Text.tertiary)
                 }
             }
             .padding(16)
@@ -959,6 +985,7 @@ private struct CompareView: View {
                     decide(keeperID: keeperID, loserID: loser.id)
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .disabled(deciding)
             }
         }
         .padding(12)
@@ -980,37 +1007,50 @@ private struct CompareView: View {
         }
     }
 
+    /// The decision stages the loser's file — a physical move, which on
+    /// a slow or network volume used to beachball the window. Off the
+    /// main actor, like every other staging move.
     private func decide(keeperID: UUID, loserID: UUID) {
-        do {
-            let outcome = try model.library.decide(
-                keeper: keeperID, loser: loserID,
-                candidateID: candidate.id, mergeTagIDs: mergeSelection)
-            var text = "Kept. \(outcome.tagsMerged) tags carried over."
-            // The honest failure: a tag that could not carry because the
-            // keeper already holds one in that single-value category.
-            // Kept, and kept per tag.
-            if !outcome.skippedSingleValue.isEmpty {
-                text += " " + outcome.skippedSingleValue.joined(separator: " ")
+        guard !deciding else { return }
+        deciding = true
+        let library = model.library, candidateID = candidate.id, merge = mergeSelection
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result {
+                    try library.decide(
+                        keeper: keeperID, loser: loserID,
+                        candidateID: candidateID, mergeTagIDs: merge)
+                }
+            }.value
+            deciding = false
+            switch result {
+            case .success(let outcome):
+                var text = "Kept. \(outcome.tagsMerged) tags carried over."
+                // The honest failure: a tag that could not carry because the
+                // keeper already holds one in that single-value category.
+                // Kept, and kept per tag.
+                if !outcome.skippedSingleValue.isEmpty {
+                    text += " " + outcome.skippedSingleValue.joined(separator: " ")
+                }
+                errorText = nil
+                onResolved(text)
+            case .failure(let error):
+                errorText = "\(error)"
             }
-            outcomeText = text
-            errorText = nil
-            onResolved()
-        } catch {
-            errorText = "\(error)"
         }
     }
 
     private func reject() {
         do {
             try model.library.rejectCandidate(candidate.id)
-            onResolved()
+            onResolved("Marked as not duplicates.")
         } catch { errorText = "\(error)" }
     }
 
     private func keepBoth() {
         do {
             try model.library.keepBothCandidate(candidate.id)
-            onResolved()
+            onResolved("Kept both.")
         } catch { errorText = "\(error)" }
     }
 }
