@@ -36,6 +36,27 @@ import Testing
         #expect(try existing.vocabulary().isEmpty)
     }
 
+    /// A creation that fails partway — here a template holding the same
+    /// tag twice, which plan validation does not catch — used to leave
+    /// the half-made file behind, and every retry at that name was then
+    /// refused as "already exists". A failed creation leaves nothing.
+    @Test func aFailedCreationLeavesNoFileBehind() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("New.sqlite")
+        var plan = LibraryTemplate.concerts.plan(named: "New")
+        let repeated = try #require(plan.categories[1].tags.first)
+        plan.categories[1].tags.append(repeated)
+
+        #expect(throws: (any Error).self) { try LibraryCreator.create(at: url, plan: plan) }
+
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(left.isEmpty, "left behind: \(left)")
+        // And the name is free again.
+        plan.categories[1].tags.removeLast()
+        _ = try LibraryCreator.create(at: url, plan: plan)
+    }
+
     // MARK: Templates
 
     @Test func templatesMatchTheBriefsSampleTable() {

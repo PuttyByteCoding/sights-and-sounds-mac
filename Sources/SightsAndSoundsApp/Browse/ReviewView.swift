@@ -84,7 +84,7 @@ struct ReviewView: View {
         .background(Theme.Surface.content)
         .onAppear { reload() }
         // Marks, restores and new pairs made anywhere else show here.
-        .followsLibraryChanges(model.changeCount([.items, .duplicates])) { reload() }
+        .followsLibraryChanges(model, [.items, .duplicates]) { reload() }
     }
 
     // MARK: - Header
@@ -563,6 +563,8 @@ struct ReviewView: View {
     private func select(issue item: MediaItem) {
         selectedIssueID = item.id
         pickedRecipeID = nil
+        // "Repair queued" was about the last issue, not this one.
+        repairStatus = nil
         let library = model.library, appDatabase = app.appDatabase, id = item.id
         Task {
             let (evidence, recipes) = await Task.detached(priority: .userInitiated) {
@@ -931,9 +933,11 @@ private struct CompareView: View {
             Button("Keep both") { keepBoth() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Both copies are wanted — the pair leaves the queue and neither file is staged")
+                .disabled(deciding)
             Button("Not Duplicates") { reject() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("The matcher got it wrong — the pair is never re-flagged")
+                .disabled(deciding)
         }
     }
 
@@ -976,13 +980,20 @@ private struct CompareView: View {
                 }
             }
             HStack(spacing: 9) {
+                // While a decision is being carried out every other answer
+                // waits: the decision has already committed, and a "Not
+                // Duplicates" landing mid-move rewrote it while the loser
+                // was still staged.
                 Button("Cancel") { self.keeperID = nil }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
+                    .disabled(deciding)
                 Spacer()
                 Button("Keep both") { keepBoth() }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
+                    .disabled(deciding)
                 Button("Not Duplicates") { reject() }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
+                    .disabled(deciding)
                 Button("Send \u{201C}\(loser.fileName)\u{201D} to the delete list") {
                     decide(keeperID: keeperID, loserID: loser.id)
                 }
@@ -1034,6 +1045,10 @@ private struct CompareView: View {
                 if !outcome.skippedSingleValue.isEmpty {
                     text += " " + outcome.skippedSingleValue.joined(separator: " ")
                 }
+                // The decision is saved even when the file could not be
+                // moved; say so, or "Kept." reads as done while the loser
+                // is still where it was.
+                if let warning = outcome.stagingWarning { text += " " + warning }
                 errorText = nil
                 onResolved(text)
             case .failure(let error):
@@ -1043,6 +1058,7 @@ private struct CompareView: View {
     }
 
     private func reject() {
+        guard !deciding else { return }
         do {
             try model.library.rejectCandidate(candidate.id)
             onResolved("Marked as not duplicates.")
@@ -1050,6 +1066,7 @@ private struct CompareView: View {
     }
 
     private func keepBoth() {
+        guard !deciding else { return }
         do {
             try model.library.keepBothCandidate(candidate.id)
             onResolved("Kept both.")

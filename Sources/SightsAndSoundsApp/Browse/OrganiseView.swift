@@ -60,7 +60,7 @@ struct OrganiseView: View {
         }
         // Moves (a revert from another window, a run finishing) change
         // the history and what the plan would do.
-        .followsLibraryChanges(model.changeCount([.items])) {
+        .followsLibraryChanges(model, [.items]) {
             reloadHistory()
             preview()
         }

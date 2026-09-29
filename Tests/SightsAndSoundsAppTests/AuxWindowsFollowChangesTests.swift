@@ -20,7 +20,15 @@ import Testing
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Follow")
         let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
-        try await Task.sleep(for: .milliseconds(200))
+        // The baseline once deliveries have gone quiet, not after a fixed
+        // wait: on a loaded machine a late startup delivery landing after
+        // the baseline would read as a change.
+        var quiet = 0, last = model.changeCounts
+        while quiet < 8 {
+            try await Task.sleep(for: .milliseconds(50))
+            quiet = model.changeCounts == last ? quiet + 1 : 0
+            last = model.changeCounts
+        }
         let vocabularyBefore = model.changeCount([.vocabulary])
         let itemsBefore = model.changeCount([.items])
 

@@ -110,11 +110,21 @@ public struct RepairJob: Job {
 
         // The file plays: clear the flag and put it back out of the
         // playback-issues folder — last, because it is a move of its own
-        // and can fail without the repair being undone.
-        try library.unstage(.playbackIssue, itemID: item.id, fileAccess: fileAccess)
+        // and can fail without the repair being undone. When it does, the
+        // repair still stands and says where the file was left: a failed
+        // job invited a retry that would repair the repaired file again.
+        var putBack = ""
+        do {
+            try library.unstage(.playbackIssue, itemID: item.id, fileAccess: fileAccess)
+        } catch {
+            let whereLeft = (try? await library.writer.read { try MediaItem.fetchOne($0, key: item.id) })??
+                .relativePath ?? item.relativePath
+            putBack = "; it could not be moved back out of the playback-issues folder and is at \(whereLeft): \(error)"
+            AppLog.shared.warning("repair", "\(item.fileName): repaired, but \(putBack.dropFirst(2))")
+        }
         await context.reportProgress(current: 3, total: 3)
         await context.setSummary(
-            "repaired with \(payload.recipe.name) — original archived at \(archiveRelative)")
+            "repaired with \(payload.recipe.name) — original archived at \(archiveRelative)\(putBack)")
     }
 }
 

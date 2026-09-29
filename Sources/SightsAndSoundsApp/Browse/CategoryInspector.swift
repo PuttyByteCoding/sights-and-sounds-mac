@@ -294,8 +294,13 @@ struct TagInspector: View {
                                 .fill(Theme.Surface.well)
                                 .stroke(Theme.Border.standard, lineWidth: 1))
                         .onChange(of: notes) { _, text in
-                            guard text != tag.notes || notesChanged else { return }
+                            // Cancel first: typing back to the stored text
+                            // must also drop a save of the text in between,
+                            // or the store ends on what the field no
+                            // longer shows.
                             notesSave?.cancel()
+                            notesSave = nil
+                            guard text != tag.notes || notesChanged else { return }
                             notesSave = Task {
                                 try? await Task.sleep(for: .milliseconds(600))
                                 guard !Task.isCancelled else { return }

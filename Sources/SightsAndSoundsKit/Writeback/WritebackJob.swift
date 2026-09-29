@@ -229,7 +229,11 @@ public struct RestoreTagsJob: Job {
                 sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
                 arguments: [item.id])
         }
+        // What the writer could not hold is said, not counted as restored.
+        let restored = fields.count - result.notWritten.count
+        let note = result.writtenNote.map { " — \($0)" } ?? ""
         await context.setSummary(
-            "restored \(fields.count) fields from \(snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened))")
+            "restored \(restored) of \(fields.count) fields from "
+                + snapshot.capturedAt.formatted(date: .abbreviated, time: .shortened) + note)
     }
 }

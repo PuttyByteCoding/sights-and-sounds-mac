@@ -55,6 +55,9 @@ struct OperationsView: View {
         .onChange(of: excluded) { queued = false }
         .onChange(of: preset) { queued = false }
         .onChange(of: remuxMode) { queued = false }
+        .onChange(of: ocr) { queued = false }
+        .onChange(of: ocrInterval) { queued = false }
+        .onChange(of: joinOrder) { queued = false }
     }
 
     // MARK: - Operation list
