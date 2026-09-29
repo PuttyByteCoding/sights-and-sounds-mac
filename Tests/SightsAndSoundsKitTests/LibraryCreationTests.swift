@@ -13,6 +13,29 @@ import Testing
         return dir
     }
 
+    // MARK: Never over an existing file
+
+    /// The save panel asks "Replace?" and creation used to open the file
+    /// that was there and migrate it: the template's categories were
+    /// injected into an existing library (or the insert failed halfway
+    /// on a name it already had), and the old identity was kept. A new
+    /// library is never made over a file.
+    @Test func creatingOverAnExistingLibraryIsRefusedAndLeavesItAlone() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Existing.sqlite")
+        let existing = try LibraryDatabase.open(at: url)
+        try existing.ensureInfo(name: "Existing")
+        let before = try existing.info()?.id
+
+        #expect(throws: LibraryCreationError.fileExists(url.lastPathComponent)) {
+            try LibraryCreator.create(at: url, plan: LibraryTemplate.concerts.plan(named: "New"))
+        }
+        #expect(try existing.info()?.id == before)
+        #expect(try existing.info()?.name == "Existing")
+        #expect(try existing.vocabulary().isEmpty)
+    }
+
     // MARK: Templates
 
     @Test func templatesMatchTheBriefsSampleTable() {

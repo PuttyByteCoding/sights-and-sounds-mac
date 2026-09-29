@@ -73,6 +73,9 @@ struct CategoryManagerView: View {
         .frame(minWidth: 980, minHeight: 560)
         .background(Theme.Surface.content)
         .onAppear { reload() }
+        // A rename in the sidebar, a tag made from the player: whoever
+        // wrote the vocabulary, this list follows.
+        .followsLibraryChanges(model.changeCount([.vocabulary, .tagging])) { reload() }
         .sheet(isPresented: $showPaste) {
             if let category = selectedCategory {
                 PasteTagListSheet(category: category, library: model.library) {
@@ -621,11 +624,19 @@ struct CategoryManagerView: View {
         let library = model.library
         Task {
             do {
-                let vocabulary = try library.vocabulary()
-                let aliasRows = try await library.writer.read { try TagAlias.fetchAll($0) }
-                let aliases = Dictionary(grouping: aliasRows, by: \.tagID).mapValues { $0.map(\.alias) }
-                allIndex = TagSearchEntry.index(vocabulary: vocabulary, aliases: aliases)
-                allUsage = try library.tagUsageCounts()
+                // The whole vocabulary and a library-wide usage count: off
+                // the main actor. This task is the view's, so the
+                // synchronous calls ran on the main thread after every edit.
+                let (index, usage) = try await Task.detached(priority: .userInitiated) {
+                    let vocabulary = try library.vocabulary()
+                    let aliasRows = try library.writer.read { try TagAlias.fetchAll($0) }
+                    let aliases = Dictionary(grouping: aliasRows, by: \.tagID).mapValues { $0.map(\.alias) }
+                    return (
+                        TagSearchEntry.index(vocabulary: vocabulary, aliases: aliases),
+                        try library.tagUsageCounts())
+                }.value
+                allIndex = index
+                allUsage = usage
             } catch { errorText = "\(error)" }
         }
     }

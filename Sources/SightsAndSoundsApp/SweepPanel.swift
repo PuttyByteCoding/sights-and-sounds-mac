@@ -40,13 +40,13 @@ struct SweepPanel: View {
             case .fingerprint: "Acoustic fingerprints for near-duplicate matching."
             case .metadata: "The ffprobe pairs Tag Analysis mines."
             case .signal: "What each file declares about its encoding, and how its frames are really timed."
-            case .thumbnails: "The grid's stills. Failures self-heal from disk state."
+            case .thumbnails: "The grid's stills. A file with no frame to show is skipped until retried."
             case .duplicates: "Pairs flagged from hashes and fingerprints. Rejected pairs stay rejected, so there is nothing to recalculate."
             }
         }
 
         var canRecalculate: Bool { self != .duplicates }
-        var canRetry: Bool { [.contentHash, .fingerprint, .metadata, .signal].contains(self) }
+        var canRetry: Bool { self != .duplicates }
     }
 
     var body: some View {
@@ -215,7 +215,8 @@ struct SweepPanel: View {
             case .fingerprint: try library.retryFingerprintFailures()
             case .metadata: try library.retryMetadataSweepFailures()
             case .signal: try library.retrySignalFailures()
-            case .thumbnails, .duplicates: break
+            case .thumbnails: try library.retryThumbnailFailures()
+            case .duplicates: break
             }
         }
     }

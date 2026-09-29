@@ -51,6 +51,12 @@ public struct ImportJob: Job {
         self.fileAccess = LiveFileAccess()
     }
 
+    /// For tests: a payload over a stand-in volume.
+    init(payload: Payload, fileAccess: any FileAccess) {
+        self.payload = payload
+        self.fileAccess = fileAccess
+    }
+
     /// Enqueue an import for a source. With no list, it imports
     /// everything it finds — the pre-review behaviour, kept for "scan
     /// all sources".
@@ -113,7 +119,7 @@ public struct ImportJob: Job {
         // Folded once, looked up per file. Scanning every known path for
         // every candidate made a full rescan quadratic: 40,000 items was
         // over a billion string comparisons.
-        let existing = try await library.writer.read { db in
+        var existing = try await library.writer.read { db in
             Set(try String.fetchAll(
                 db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?",
                 arguments: [source.id]).map { $0.lowercased() })
@@ -121,6 +127,7 @@ public struct ImportJob: Job {
 
         var inserted = 0
         var skipped = 0
+        var missingStaged = 0
         await context.reportProgress(current: 0, total: selected.count)
 
         for (index, candidate) in selected.enumerated() {
@@ -155,11 +162,15 @@ public struct ImportJob: Job {
                 ingestDate: Date(),
                 needsReview: true)  // auto-set on import; the user clears it
             try await library.writer.write { try item.insert($0) }
+            // A case-sensitive volume can hold `a.mp4` and `A.mp4`; the
+            // library holds one path per spelling-ignoring-case, and the
+            // second insert used to fail the whole run on the index.
+            existing.insert(candidate.relative.lowercased())
             // Staging applies through the ordinary write paths, so a
             // single-select category still replaces rather than
             // accumulating — the rule cannot be skipped by importing.
             if let staging = payload.staging {
-                try staging.apply(to: item.id, in: library)
+                missingStaged += try staging.apply(to: item.id, in: library)
             }
             inserted += 1
         }
@@ -170,7 +181,14 @@ public struct ImportJob: Job {
                 sql: "UPDATE source SET lastSeenAt = ? WHERE id = ?",
                 arguments: [Date(), source.id])
         }
-        await context.setSummary("\(inserted) new, \(skipped) already imported")
+        // The leading "N new, M already imported" is read by the import
+        // window; a note goes after it.
+        var summary = "\(inserted) new, \(skipped) already imported"
+        if missingStaged > 0 {
+            summary += " — \(missingStaged) staged tags or fields no longer exist and were not applied"
+            AppLog.shared.warning("import", summary)
+        }
+        await context.setSummary(summary)
     }
 }
 

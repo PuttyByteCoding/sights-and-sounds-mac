@@ -297,6 +297,16 @@ final class BrowseModel {
     private var refreshGenerations: [Int: Int] = [:]
 
     private var changeSubscription: LibraryChangeHub.Subscription?
+
+    /// How many hub deliveries have touched each domain. The windows that
+    /// keep reads of their own — Tag Manager, Review, Maintenance,
+    /// Organise — reload when the domains they show change, which is how
+    /// a write made anywhere else reaches them.
+    private(set) var changeCounts: [LibraryChangeDomain: Int] = [:]
+
+    func changeCount(_ domains: Set<LibraryChangeDomain>) -> Int {
+        domains.reduce(0) { $0 &+ changeCounts[$1, default: 0] }
+    }
     private var lastRefreshBegan = ContinuousClock.now
 
     /// Whoever wrote, reload what the change touches. A refresh that
@@ -304,6 +314,7 @@ final class BrowseModel {
     /// opening `refreshAll()` racing the first deliveries, say), so that
     /// delivery is skipped.
     private func libraryChanged(_ change: LibraryChange) {
+        for domain in change.domains { changeCounts[domain, default: 0] &+= 1 }
         guard lastRefreshBegan < change.lastCommitAt else { return }
         refresh(BrowseRefresh.parts(for: change.domains))
     }
@@ -1448,6 +1459,35 @@ enum GridFocus {
         let available = width - padding * 2
         guard tileMinimum > 0, available > 0 else { return 1 }
         return max(1, Int((available + spacing) / (tileMinimum + spacing)))
+    }
+}
+
+/// Reload a window's own reads when the library changes in the domains
+/// it shows — once things settle, not per delivery: an import commits up
+/// to ten deliveries a second, and some windows' reloads open every
+/// backup or stat every staged file. The count the window opened with is
+/// not a change.
+struct FollowsLibraryChanges: ViewModifier {
+    let count: Int
+    let reload: () -> Void
+    @State private var seen: Int?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { seen = count }
+            .task(id: count) {
+                guard let seen, count != seen else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                self.seen = count
+                reload()
+            }
+    }
+}
+
+extension View {
+    func followsLibraryChanges(_ count: Int, reload: @escaping () -> Void) -> some View {
+        modifier(FollowsLibraryChanges(count: count, reload: reload))
     }
 }
 

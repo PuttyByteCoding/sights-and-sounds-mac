@@ -489,7 +489,7 @@ private struct OcrControls: View {
         VStack(alignment: .leading, spacing: 10) {
             control("Sample every", note: "How often a frame is read. Text on screen for less than this can be missed entirely.") {
                 HStack(spacing: 8) {
-                    Slider(value: $interval, in: 0.5...30, step: 0.5)
+                    Slider(value: $interval, in: OcrJob.minimumSampleIntervalSeconds...30, step: 0.5)
                         .frame(width: 180)
                     Text(String(format: "%.1fs", interval))
                         .font(Theme.mono(11))
