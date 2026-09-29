@@ -39,14 +39,31 @@ public struct ImportStaging: Codable, Sendable, Equatable {
     }
 
     /// Apply to one freshly inserted item.
-    func apply(to itemID: UUID, in library: LibraryDatabase) throws {
+    /// Apply to one inserted row. A staged tag or field deleted while the
+    /// import waited is skipped, not fatal — it used to fail the job with
+    /// the row already in, and a re-run then skipped that row as imported,
+    /// so its staging never landed. Returns how many staged values no
+    /// longer existed, for the job to say so.
+    @discardableResult
+    func apply(to itemID: UUID, in library: LibraryDatabase) throws -> Int {
+        var missing = 0
+        let existingTagIDs: Set<UUID> = tagIDs.isEmpty ? [] : try library.writer.read { db in
+            Set(try UUID.fetchAll(
+                db, sql: "SELECT id FROM \(Tag.databaseTableName) WHERE id IN (\(tagIDs.map { _ in "?" }.joined(separator: ",")))",
+                arguments: StatementArguments(tagIDs)))
+        }
         for tagID in tagIDs {
+            guard existingTagIDs.contains(tagID) else {
+                missing += 1
+                continue
+            }
             try library.assignTag(tagID, to: itemID)
         }
         if !fieldValues.isEmpty {
             let definitions = try library.fields(scope: .mediaItem)
             for (fieldID, value) in fieldValues {
                 guard let definition = definitions.first(where: { $0.id == fieldID }) else {
+                    missing += 1
                     continue
                 }
                 try library.setFieldValue(value, ofItem: itemID, field: definition)
@@ -58,6 +75,7 @@ public struct ImportStaging: Codable, Sendable, Equatable {
         if marksFavorite {
             _ = try library.toggleFlag(.favorite, itemID: itemID)
         }
+        return missing
     }
 }
 
