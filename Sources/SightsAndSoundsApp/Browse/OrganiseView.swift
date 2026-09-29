@@ -29,6 +29,8 @@ struct OrganiseView: View {
     @State private var sessions: [LibraryDatabase.MoveSession] = []
     @State private var status: String?
     @State private var errorText: String?
+    /// A reorganize this window queued is still running.
+    @State private var applying = false
     /// The ids the plan on screen was made for — Move applies exactly
     /// those, not whatever the listing holds by the time it is pressed.
     @State private var plannedIDs: [UUID] = []
@@ -290,7 +292,7 @@ struct OrganiseView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
-                .disabled(plan.movableCount == 0 || !validationErrors.isEmpty)
+                .disabled(applying || plan.movableCount == 0 || !validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
                     .foregroundStyle(Theme.Text.disabled)
@@ -443,7 +445,8 @@ struct OrganiseView: View {
     }
 
     private func apply() {
-        guard let runner = try? app.runner(for: model.libraryID) else { return }
+        guard !applying, let runner = try? app.runner(for: model.libraryID) else { return }
+        applying = true
         let ids = plannedIDs
         let template = template
         Task {
@@ -451,11 +454,16 @@ struct OrganiseView: View {
                 await runner.register(ReorganizeJob.self)
                 _ = try await ReorganizeJob.enqueue(
                     on: runner, template: template, itemIDs: ids)
-                try await runner.runPending()
+                // Said now, not once the whole queue has drained.
                 status = "\(plan.movableCount) moves queued — each one logged and revertible"
+                try await runner.runPending()
+                applying = false
                 reloadHistory()
                 preview()
-            } catch { errorText = "\(error)" }
+            } catch {
+                applying = false
+                errorText = "\(error)"
+            }
         }
     }
 

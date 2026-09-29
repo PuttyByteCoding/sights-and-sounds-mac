@@ -170,6 +170,14 @@ public actor JobRunner {
 
     private var drain: Task<[UUID], any Error>?
 
+    /// Start the queue draining and return at once — for a caller that
+    /// has only queued work and should say so now, rather than after
+    /// every job ahead of its own has finished. Joins a drain in flight.
+    public func startDraining() {
+        guard drain == nil else { return }
+        drain = Task { try await self.drainQueue() }
+    }
+
     private func drainQueue() async throws -> [UUID] {
         // Cleared in the same actor turn that finds the queue empty, so
         // a caller either joins a loop that will look again or starts

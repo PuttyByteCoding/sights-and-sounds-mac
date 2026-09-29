@@ -56,6 +56,9 @@ struct ReviewView: View {
     @State private var resolvedThisPass: [Mode: Int] = [:]
     @State private var confirmDelete = false
     @State private var isPurging = false
+    /// Items with a repair this window queued that has not finished.
+    @State private var repairing: Set<UUID> = []
+    @State private var repairStatus: String?
     /// Ticked videos whose segments are not saved yet — asked about in
     /// place of the ordinary confirmation.
     @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
@@ -413,9 +416,14 @@ struct ReviewView: View {
                         Text("The files move to the Trash and their items leave the library. On a volume that has no Trash they are deleted for good.")
                     }
             case .issues:
+                if let repairStatus {
+                    Text(repairStatus)
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.Accent.amber)
+                }
                 Button("Run fix") { runFix() }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(pickedRecipeID == nil)
+                    .disabled(pickedRecipeID == nil || selectedIssueID.map(repairing.contains) == true)
             }
         }
         .padding(.horizontal, 14)
@@ -555,18 +563,27 @@ struct ReviewView: View {
     }
 
     private func runFix() {
-        guard let itemID = selectedIssueID,
+        guard let itemID = selectedIssueID, !repairing.contains(itemID),
               let recipe = recipes.first(where: { $0.id == pickedRecipeID }),
               let runner = try? app.runner(for: model.libraryID)
         else { return }
+        repairing.insert(itemID)
         Task {
             do {
                 await runner.register(RepairJob.self)
                 _ = try await RepairJob.enqueue(on: runner, itemID: itemID, recipe: recipe)
+                // Said now: waiting on the drain meant silence (and a Run
+                // fix that queued the same repair again) until every job
+                // ahead had finished.
+                repairStatus = "Repair queued — follow it in Background Tasks"
                 try await runner.runPending()
+                repairing.remove(itemID)
                 resolvedThisPass[.issues, default: 0] += 1
                 reload()
-            } catch { errorText = "\(error)" }
+            } catch {
+                repairing.remove(itemID)
+                errorText = "\(error)"
+            }
         }
     }
 
