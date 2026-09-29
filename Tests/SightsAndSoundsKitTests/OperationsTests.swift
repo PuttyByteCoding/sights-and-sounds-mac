@@ -199,6 +199,31 @@ import Testing
         #expect(state.failures == 0)
     }
 
+    /// The repair swaps the file first, then puts the flagged file back
+    /// out of the playback-issues folder. That put-back can fail — here a
+    /// new file already sits at the original path — and the row used to
+    /// be updated only AFTER it, so a failure left the repaired file
+    /// described by the OLD file's hash, and the duplicate sweep paired
+    /// it with its old twin as byte-identical.
+    @Test func aRepairWhosePutBackFailsStillForgetsTheOldHash() async throws {
+        let f = try await OpsFixture()
+        defer { f.tearDown() }
+        await f.runner.register(RepairJob.self)
+        try f.library.stage(.playbackIssue, itemID: f.parent.id)
+        try await stampOldHash(f)
+        // Something new at the original path blocks the put-back.
+        try Data("squatter".utf8).write(to: f.root.appendingPathComponent("shows/long.mp4"))
+
+        let record = try await RepairJob.enqueue(
+            on: f.runner, itemID: f.parent.id, recipe: RepairRecipe.shipped[0])
+        try await f.runner.runPending()
+        #expect(try await f.job(record.id).state == .failed)
+
+        let state = try await hashState(f)
+        #expect(state.hash == nil)
+        #expect(state.failures == 0)
+    }
+
     @Test func remuxRefusesClipsAndMissingFiles() async throws {
         let f = try await OpsFixture()
         defer { f.tearDown() }

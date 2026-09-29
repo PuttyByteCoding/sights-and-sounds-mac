@@ -84,24 +84,21 @@ public struct RepairJob: Job {
             item: item, under: root, newRelative: item.relativePath, with: tempURL,
             fileAccess: fileAccess)
         let archiveRelative = swap.archiveRelative
-        // Cleared now, not with the row update below: the repaired file
-        // keeps its name, so the swap is complete here, and the unstage
-        // that follows is a journaled move of its own.
-        try await library.writer.write { try swap.clear($0) }
-        await context.reportProgress(current: 2, total: 3)
-
-        // The file plays: clear the flag and the staging that came with
-        // it, and record what the repair produced.
         let newSize = (try? fileAccess.fileSize(
             at: root.appendingPathComponent(item.relativePath))) ?? item.fileSize
-        try library.unstage(.playbackIssue, itemID: item.id, fileAccess: fileAccess)
+        // The row describes the NEW file in the same transaction that
+        // closes the swap: from here nothing can leave the repaired bytes
+        // described by the old file's hash, size and evidence. It used to
+        // be written after the unstage below, so an unstage that threw
+        // (or a quit) left the old hash, and the duplicate sweep paired
+        // the repaired file with its old twin as byte-identical.
         try await library.writer.write { db in
+            try swap.clear(db)
             guard var updated = try MediaItem.fetchOne(db, key: item.id) else { return }
             updated.fileSize = newSize
             updated.durationSeconds = probe.durationSeconds ?? updated.durationSeconds
             updated.bitrate = probe.bitrate ?? updated.bitrate
-            // New bytes: the old hash would pair this file with its old
-            // twin as byte-identical. The next sweep hashes it afresh.
+            // New bytes: the next sweep hashes it afresh.
             updated.contentHash = nil
             try updated.update(db)
             try ContentHashFailure.filter(sql: "mediaItemID = ?", arguments: [item.id]).deleteAll(db)
@@ -109,6 +106,12 @@ public struct RepairJob: Job {
                 .filter(sql: "mediaItemID = ?", arguments: [item.id])
                 .deleteAll(db)
         }
+        await context.reportProgress(current: 2, total: 3)
+
+        // The file plays: clear the flag and put it back out of the
+        // playback-issues folder — last, because it is a move of its own
+        // and can fail without the repair being undone.
+        try library.unstage(.playbackIssue, itemID: item.id, fileAccess: fileAccess)
         await context.reportProgress(current: 3, total: 3)
         await context.setSummary(
             "repaired with \(payload.recipe.name) — original archived at \(archiveRelative)")
