@@ -57,7 +57,10 @@ import Testing
         model.toggleDeletionAndAdvance()
 
         try await waitUntil { model.item?.id == b.id }
-        #expect(try stored(library, a.id)?.markedForDeletion == true)
+        // The mark shows at once; the row (and the move to the staging
+        // folder) follows off the main actor. Checked the instant the
+        // queue moved on, a busy machine could still be writing it.
+        try await waitUntil { (try? stored(library, a.id))??.markedForDeletion == true }
         #expect(model.triageCount == 0, "outside Triage mode the pass count is untouched")
     }
 
@@ -143,6 +146,9 @@ import Testing
         AppSettingsStore.shared.update { $0.deletionMarkAdvances = true }
         model.markForDeletion()
         try await waitUntil { model.item?.id == b.id }
-        #expect(try stored(library, a.id)?.markedForDeletion == true)
+        // The mark shows at once; the row (and the move to the staging
+        // folder) follows off the main actor. Checked the instant the
+        // queue moved on, a busy machine could still be writing it.
+        try await waitUntil { (try? stored(library, a.id))??.markedForDeletion == true }
     }
 }
