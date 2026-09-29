@@ -188,6 +188,7 @@ struct LibraryPickerView: View {
                 .help("Create a new library from a template")
             AddExistingLibraryButton()
             DemoLibraryButton()
+            SignalSamplesLibraryButton()
 
             Spacer(minLength: 8)
 
