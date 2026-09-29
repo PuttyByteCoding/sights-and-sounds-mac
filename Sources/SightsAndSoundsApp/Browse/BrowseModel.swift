@@ -106,9 +106,6 @@ final class BrowseModel {
         }
     }
 
-    /// Open the player at `itemID` (or the first visible item) with the
-    /// companion pending. Nothing to play means nothing to analyse, and
-    /// the caller's control stays inert.
     /// The request that opens an auxiliary window from this listing. The
     /// windows that act on "the filtered items" carry them along.
     func auxRequest(_ kind: AuxWindowRequest.Kind) -> AuxWindowRequest {
@@ -127,6 +124,9 @@ final class BrowseModel {
         return request
     }
 
+    /// Open the player at `itemID` (or the first visible item) with the
+    /// companion pending. Nothing to play means nothing to analyse, and
+    /// the caller's control stays inert.
     func openPlayerForAnalysis(at itemID: UUID? = nil) {
         let online = visibleItems.filter(isOnline)
         guard let first = itemID.flatMap({ id in online.first { $0.id == id } }) ?? online.first
