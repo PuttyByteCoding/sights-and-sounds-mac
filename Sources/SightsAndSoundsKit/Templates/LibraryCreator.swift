@@ -84,6 +84,24 @@ public enum LibraryCreator {
         }
 
         let library = try LibraryDatabase.open(at: url)
+        do {
+            try populate(library, plan: plan, firstSource: firstSource, registerIn: app)
+        } catch {
+            // This call made the file, so a failure takes it away again —
+            // with its WAL and shared-memory files. Left behind, the
+            // half-made library blocked every retry at the same name.
+            try? library.close()
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(atPath: url.path + suffix)
+            }
+            throw error
+        }
+        return library
+    }
+
+    private static func populate(
+        _ library: LibraryDatabase, plan: LibraryPlan, firstSource: Source?, registerIn app: AppDatabase?
+    ) throws {
         try library.ensureInfo(name: plan.name)
 
         try library.writer.write { db in
@@ -152,6 +170,5 @@ public enum LibraryCreator {
         if let app {
             try app.register(library)
         }
-        return library
     }
 }
