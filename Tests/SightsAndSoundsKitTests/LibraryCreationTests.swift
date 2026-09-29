@@ -15,6 +15,16 @@ import Testing
 
     // MARK: Never over an existing file
 
+    /// The refusal names the file and says why, and gives no advice of
+    /// its own: New Library can offer another name, but the signal-samples
+    /// library's name is fixed and only its folder can change, so each
+    /// caller says what to do next.
+    @Test func theRefusalGivesNoAdviceOnlyACallerCanGive() {
+        let text = "\(LibraryCreationError.fileExists("Some.sqlite"))"
+        #expect(text.contains("“Some.sqlite” already exists"))
+        #expect(!text.contains("Choose"))
+    }
+
     /// The save panel asks "Replace?" and creation used to open the file
     /// that was there and migrate it: the template's categories were
     /// injected into an existing library (or the insert failed halfway
@@ -55,6 +65,30 @@ import Testing
         // And the name is free again.
         plan.categories[1].tags.removeLast()
         _ = try LibraryCreator.create(at: url, plan: plan)
+    }
+
+    /// The one way a library file is made (New Library, the signal-samples
+    /// library): never over a file, and nothing left when the fill fails —
+    /// a failure at the very end (registering it) included.
+    @Test func createFreshIsWholeOrNothing() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Fresh.sqlite")
+        struct LastStepFailed: Error {}
+
+        #expect(throws: LastStepFailed.self) {
+            try LibraryDatabase.createFresh(at: url) { library in
+                try library.ensureInfo(name: "Fresh")
+                throw LastStepFailed()
+            }
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+
+        let made = try LibraryDatabase.createFresh(at: url) { try $0.ensureInfo(name: "Fresh") }
+        #expect(try made.info()?.name == "Fresh")
+        #expect(throws: LibraryCreationError.fileExists("Fresh.sqlite")) {
+            try LibraryDatabase.createFresh(at: url) { _ in }
+        }
     }
 
     // MARK: Templates
