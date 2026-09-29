@@ -254,11 +254,11 @@ struct RulesTabView: View {
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                     .disabled(!model.isDirty)
                 Spacer()
-                Button("Apply this rule") { model.applySelected() }
+                Button(model.isApplying ? "Applying…" : "Apply this rule") { model.applySelected() }
                     .buttonStyle(PrimaryButtonStyle())
                     // Applying the SAVED rule, so an unsaved edit must be
                     // saved first rather than silently written.
-                    .disabled(model.isDirty || model.draft?.actions.isEmpty ?? true)
+                    .disabled(model.isApplying || model.isDirty || model.draft?.actions.isEmpty ?? true)
             }
         }
     }

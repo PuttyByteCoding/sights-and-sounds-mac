@@ -12,6 +12,7 @@ import SightsAndSoundsKit
 struct ImportView: View {
     @Environment(BrowseModel.self) private var model
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
 
     enum Step: Int, CaseIterable {
         case source, scan, review, importing
@@ -107,12 +108,20 @@ struct ImportView: View {
                 summary: summary.text,
                 onMore: {
                     finished = nil
+                    // The post-import rescan must not pull the window back
+                    // to Review after you have moved on.
+                    scanTask?.cancel()
                     step = .source
                 },
                 onOpen: {
+                    // The library window is behind this one, and its grid
+                    // already has the new items: close Import to show it.
+                    // It used to close only this sheet.
                     finished = nil
+                    dismiss()
                 })
         }
+        .onDisappear { scanTask?.cancel() }
     }
 
     // MARK: - Step 1 · Source
@@ -500,12 +509,14 @@ struct ImportView: View {
             Text("\(selectedPaths.count) selected")
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.quaternary)
-            Button(selectedPaths.isEmpty
-                ? "Nothing selected" : "Import \(selectedPaths.count) Files") {
+            Button(importButtonTitle) {
                 beginImport()
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(selectedPaths.isEmpty || step == .importing)
+            // Off while ANY run is live, not just while the overlay shows:
+            // "Run in background" left it armed, and a second press
+            // imported the same files again.
+            .disabled(selectedPaths.isEmpty || run?.isRunning == true)
         }
         .padding(.horizontal, 14)
         .frame(height: 62)
@@ -700,8 +711,13 @@ struct ImportView: View {
         }
     }
 
+    private var importButtonTitle: String {
+        if run?.isRunning == true { return "Importing…" }
+        return selectedPaths.isEmpty ? "Nothing selected" : "Import \(selectedPaths.count) Files"
+    }
+
     private func beginImport() {
-        guard let source = selectedSource else { return }
+        guard let source = selectedSource, run?.isRunning != true else { return }
         // The step changes only once there is a runner to import with:
         // it used to switch first and strand the window on Import.
         guard let runner = try? app.runner(for: model.libraryID) else {
@@ -739,6 +755,9 @@ struct ImportView: View {
             // Import finishing is a worker signal: new rows want hashes
             // and thumbnails.
             app.signalMaintenance(for: model.libraryID)
+            // The scan on screen predates the import: rescan, so what was
+            // just imported shows as known and is no longer ticked.
+            if let selectedSource { beginScan(selectedSource) }
         }
     }
 

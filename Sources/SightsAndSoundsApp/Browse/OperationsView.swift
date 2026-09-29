@@ -26,6 +26,9 @@ struct OperationsView: View {
     @State private var ocrInterval = AppSettingsStore.shared.current.ocrSampleIntervalSeconds
     @State private var joinOrder: [UUID] = []
     @State private var status: String?
+    /// This set of files is queued: Run stays off until something about
+    /// the run changes, so a second click cannot queue the same encode.
+    @State private var queued = false
 
     /// The rows the operation will act on. Unticking recomputes every
     /// number — nothing here hardcodes its own count.
@@ -47,6 +50,11 @@ struct OperationsView: View {
         .frame(minWidth: 980, minHeight: 600)
         .background(Theme.Surface.content)
         .task { await load() }
+        // A different run is a new run: Run comes back on.
+        .onChange(of: operation) { queued = false }
+        .onChange(of: excluded) { queued = false }
+        .onChange(of: preset) { queued = false }
+        .onChange(of: remuxMode) { queued = false }
     }
 
     // MARK: - Operation list
@@ -369,7 +377,7 @@ struct OperationsView: View {
                 run()
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!runnable)
+            .disabled(!runnable || queued)
         }
         .padding(.horizontal, 14)
         .frame(height: 62)
@@ -435,7 +443,8 @@ struct OperationsView: View {
     // MARK: - Running
 
     private func run() {
-        guard let runner = try? app.runner(for: model.libraryID) else { return }
+        guard !queued, let runner = try? app.runner(for: model.libraryID) else { return }
+        queued = true
         let targets = included
         let operation = operation, preset = preset, mode = remuxMode
         let ocr = ocr, interval = ocrInterval
@@ -445,9 +454,13 @@ struct OperationsView: View {
                 try await operation.enqueue(
                     targets, order: order, on: runner, preset: preset, mode: mode,
                     ocr: ocr, interval: interval)
-                _ = try await runner.runPending()
+                // Said as soon as it is true: waiting on the drain meant
+                // the status (and a Run still enabled) until every job
+                // ahead had finished.
                 status = "Queued on this library — follow it in Background Tasks"
+                await runner.startDraining()
             } catch {
+                queued = false
                 status = "\(error)"
             }
         }

@@ -7,6 +7,7 @@ public enum MoveError: Error, CustomStringConvertible {
     case moveFailed(String)
     case logNotFound
     case alreadyReverted
+    case movedSince
 
     public var description: String {
         switch self {
@@ -15,6 +16,7 @@ public enum MoveError: Error, CustomStringConvertible {
         case .moveFailed(let message): "move failed: \(message)"
         case .logNotFound: "no such move-log entry"
         case .alreadyReverted: "this move has already been reverted"
+        case .movedSince: "the file has moved again since — put the later move back first"
         }
     }
 }
@@ -114,6 +116,12 @@ extension LibraryDatabase {
             throw MoveError.logNotFound
         }
         guard log.revertedAt == nil else { throw MoveError.alreadyReverted }
+        // Only the move that put the item where it IS can be put back.
+        // An older one's destination may now hold another item's file.
+        guard let item = try writer.read({ try MediaItem.fetchOne($0, key: log.mediaItemID) }) else {
+            throw MoveError.itemNotFound
+        }
+        guard item.relativePath == log.toPath else { throw MoveError.movedSince }
         guard let source = try writer.read({ try Source.fetchOne($0, key: log.sourceID) }),
               source.enabled, source.isOnline(using: fileAccess)
         else { throw MoveError.sourceUnavailable }

@@ -23,6 +23,9 @@ final class ImportRun {
     /// per-folder import is one job per folder, and every later folder
     /// used to go ahead after Cancel.
     private(set) var isCancelled = false
+    /// From `start` until the finish callback — what keeps Import from
+    /// being pressed again while a run carries on in the background.
+    private(set) var isRunning = false
 
     private let runner: JobRunner
     private let library: LibraryDatabase
@@ -33,6 +36,7 @@ final class ImportRun {
     }
 
     func start(sourceID: UUID, groups: [Group], onFinish: @escaping @MainActor (Tally) -> Void) {
+        isRunning = true
         Task {
             var tally = Tally()
             for group in groups where !group.paths.isEmpty {
@@ -67,6 +71,7 @@ final class ImportRun {
                     self.error = "\(error)"
                 }
             }
+            isRunning = false
             onFinish(tally)
         }
     }

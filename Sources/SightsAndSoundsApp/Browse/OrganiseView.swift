@@ -29,6 +29,15 @@ struct OrganiseView: View {
     @State private var sessions: [LibraryDatabase.MoveSession] = []
     @State private var status: String?
     @State private var errorText: String?
+    /// A reorganize this window queued is still running.
+    @State private var applying = false
+    /// The ids the plan on screen was made for — Move applies exactly
+    /// those, not whatever the listing holds by the time it is pressed.
+    @State private var plannedIDs: [UUID] = []
+    /// The grid's items when the window opened; nil is the whole library.
+    let scope: [UUID]?
+
+    private var scopeIDs: [UUID] { scope ?? model.visibleItems.map(\.id) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +52,11 @@ struct OrganiseView: View {
         .onAppear {
             preview()
             reloadHistory()
+        }
+        // Unscoped, the plan is over the listing — which lands after the
+        // window opens. It used to stay on "Nothing to move".
+        .onChange(of: model.visibleItems.count) {
+            if scope == nil { preview() }
         }
     }
 
@@ -80,7 +94,8 @@ struct OrganiseView: View {
             // Scope is the current filter, and it says so — rather than
             // leaving someone to discover that their filter was the
             // selection.
-            "applies to the \(model.visibleItems.count) items in the current filter"
+            scope.map { "applies to the \($0.count) items the grid showed when this window opened" }
+                ?? "applies to all \(model.visibleItems.count) videos in the library"
         case .history:
             "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
         }
@@ -277,7 +292,7 @@ struct OrganiseView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
-                .disabled(plan.movableCount == 0 || !validationErrors.isEmpty)
+                .disabled(applying || plan.movableCount == 0 || !validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
                     .foregroundStyle(Theme.Text.disabled)
@@ -424,24 +439,31 @@ struct OrganiseView: View {
             plan = []
             return
         }
-        plan = (try? model.library.previewReorganize(
-            template: template, itemIDs: model.visibleItems.map(\.id))) ?? []
+        let ids = scopeIDs
+        plannedIDs = ids
+        plan = (try? model.library.previewReorganize(template: template, itemIDs: ids)) ?? []
     }
 
     private func apply() {
-        guard let runner = try? app.runner(for: model.libraryID) else { return }
-        let ids = model.visibleItems.map(\.id)
+        guard !applying, let runner = try? app.runner(for: model.libraryID) else { return }
+        applying = true
+        let ids = plannedIDs
         let template = template
         Task {
             do {
                 await runner.register(ReorganizeJob.self)
                 _ = try await ReorganizeJob.enqueue(
                     on: runner, template: template, itemIDs: ids)
-                try await runner.runPending()
+                // Said now, not once the whole queue has drained.
                 status = "\(plan.movableCount) moves queued — each one logged and revertible"
+                try await runner.runPending()
+                applying = false
                 reloadHistory()
                 preview()
-            } catch { errorText = "\(error)" }
+            } catch {
+                applying = false
+                errorText = "\(error)"
+            }
         }
     }
 

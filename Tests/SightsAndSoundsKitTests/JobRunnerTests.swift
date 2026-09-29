@@ -65,6 +65,45 @@ import Testing
         }
     }
 
+    /// Runs until its gate opens.
+    private actor Gate {
+        static let shared = Gate()
+        private(set) var open = false
+        func set(_ value: Bool) { open = value }
+    }
+
+    private struct GatedJob: Job {
+        static let kind = "test.gated"
+        init(payload: Data?) throws {}
+        func run(_ context: JobContext) async throws {
+            while await !Gate.shared.open { try await Task.sleep(for: .milliseconds(10)) }
+        }
+    }
+
+    /// A window that only queued work must be able to say "queued" at
+    /// once. `runPending` returns when the whole queue has drained, so
+    /// Operations, Organise and Review reported "Queued…" only after every
+    /// job ahead had finished, and kept Run enabled all that time.
+    @Test func startDrainingReturnsWhileTheJobRuns() async throws {
+        let (library, runner) = try makeRunner()
+        await runner.register(GatedJob.self)
+        await Gate.shared.set(false)
+        let queued = try await runner.enqueue(GatedJob.self)
+
+        await runner.startDraining()
+        await runner.startDraining()  // a second call joins, never doubles
+
+        for _ in 0..<200 where try record(library, queued.id).state != .running {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try record(library, queued.id).state == .running)
+        await Gate.shared.set(true)
+        for _ in 0..<400 where try record(library, queued.id).state != .succeeded {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try record(library, queued.id).state == .succeeded)
+    }
+
     private func makeRunner() throws -> (LibraryDatabase, JobRunner) {
         let library = try LibraryDatabase.openInMemory()
         return (library, JobRunner(library: library))

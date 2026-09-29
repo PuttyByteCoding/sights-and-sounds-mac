@@ -122,4 +122,30 @@ import Testing
         #expect(!model.isPlaying)
         #expect(model.player.currentItem == nil)
     }
+
+    /// An offline item is still the item on screen: its title shows, and
+    /// so do the tag panel and the segments rail. They kept the LAST
+    /// item's tags and segments, so a checkbox meant to untag the new
+    /// item tagged it, and the rail's ✕ deleted the last file's segment.
+    @Test func anOfflineItemShowsItsOwnTagsAndSegments() async throws {
+        let (library, playable, offline, root) = try await makeLibrary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let band = TagCategory(name: "Band")
+        try await library.writer.write { try band.insert($0) }
+        let tag = try library.ensureTag(named: "The Examples", inCategory: band.id)
+        try library.assignTag(tag.id, to: playable.id)
+        try library.createEmbeddedClip(parentID: playable.id, name: "Song", startSeconds: 1, endSeconds: 2)
+        let model = PlayerModel(
+            request: PlayerRequest(
+                libraryID: UUID(), itemID: playable.id, playlist: [playable.id, offline.id], name: "Two"),
+            library: library, appDatabase: nil)
+        defer { model.shutdown() }
+        try await waitUntil { model.item?.id == playable.id && model.hasTag(tag.id) && !model.segments.isEmpty }
+
+        model.goNext()
+        try await waitUntil { model.item?.id == offline.id && model.loadError != nil }
+
+        #expect(!model.hasTag(tag.id))
+        #expect(model.segments.isEmpty)
+    }
 }

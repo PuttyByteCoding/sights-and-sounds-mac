@@ -27,7 +27,15 @@ struct MaintenanceView: View {
     @State private var tab: Tab = .writeback
     @State private var preview: WritebackPreview?
     @State private var previewing = false
-    @State private var wholeLibrary = false
+    @State private var wholeLibrary: Bool
+    /// The grid's items when the window opened; nil (a window saved
+    /// before the scope existed) offers only the whole library.
+    let scope: [UUID]?
+
+    init(scope: [UUID]?) {
+        self.scope = scope
+        _wholeLibrary = State(initialValue: scope == nil)
+    }
     @State private var runs: [TagWriteRun] = []
     @State private var backups: [LibraryDatabase.BackupFile] = []
     @State private var findings: [ValidationFinding] = []
@@ -89,11 +97,11 @@ struct MaintenanceView: View {
                     .foregroundStyle(Theme.Text.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if tab == .writeback {
+            if tab == .writeback, let scope {
                 ThemeSegmentedControl(
                     selection: $wholeLibrary,
                     options: [
-                        (false, "The \(model.visibleItems.count) filtered items"),
+                        (false, "The \(scope.count) items from the grid"),
                         (true, "The whole library"),
                     ],
                     emphasis: .neutral)
@@ -548,7 +556,7 @@ struct MaintenanceView: View {
             ? ((try? model.library.writer.read { db in
                 try UUID.fetchAll(db, sql: "SELECT id FROM mediaItem WHERE parentMediaItemID IS NULL")
             }) ?? [])
-            : model.visibleItems.map(\.id)
+            : (scope ?? [])
     }
 
     private func runPreview() {
