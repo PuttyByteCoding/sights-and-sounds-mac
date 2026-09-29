@@ -847,7 +847,7 @@ final class PlayerModel {
         flagWritesInFlight += 1
         flagWork = Task { [weak self] in
             await previous?.value
-            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<MediaItem?, Error> in
+            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<(MediaItem?, URL?), Error> in
                 Result {
                     // Deletion and playback-issue marks stage the file
                     // physically (and unstage on the way back); the other
@@ -867,17 +867,28 @@ final class PlayerModel {
                                 arguments: [on, itemID])
                         }
                     }
-                    return try library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                    let fresh = try library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                    // A staging move gives the file a new path; resolve it
+                    // here, off the main actor, like a load does.
+                    let url = try fresh.flatMap { try library.resolvedFileURL(for: $0, fileAccess: fileAccess) }
+                    return (fresh, url)
                 }
             }.value
             guard let self else { return }
             self.flagWritesInFlight -= 1
             switch outcome {
-            case .success(let fresh):
+            case .success(let (fresh, url)):
                 // The row as it now is (a staged file has a new path) —
                 // for the item still showing, once no later press waits.
+                // `fileURL` follows it: Save a Copy, Live Text, the screen
+                // read and scrub previews all read it, and it kept naming
+                // the path the file had just left.
                 if self.item?.id == itemID, self.flagWritesInFlight == 0 {
                     self.item = fresh
+                    if let url, url != self.fileURL {
+                        self.fileURL = url
+                        await ScrubPreviewProvider.shared.releaseGenerator(for: itemID)
+                    }
                 }
             case .failure(let error):
                 self.loadError = "\(error)"

@@ -58,4 +58,36 @@ import Testing
         try await waitUntil { staged()?.relativePath == "_ToDelete/a.mp4" }
         #expect(staged()?.markedForDeletion == true)
     }
+
+    /// The mark moves the file, and the player stays on it. Save a Copy,
+    /// Live Text on a paused frame, the screen read and scrub previews all
+    /// read `fileURL` — which kept naming the path the file had left.
+    @Test func afterAMarkMovesTheFileThePlayerNamesItsNewPath() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("player-flag-url-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await DemoMediaFactory.writeVideo(to: root.appendingPathComponent("a.mp4"), seconds: 2, variant: 0)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Flags")
+        let source = Source(name: "S", rootPath: root.path)
+        let item = MediaItem(sourceID: source.id, kind: .video, relativePath: "a.mp4", durationSeconds: 2, needsReview: false)
+        try await library.writer.write { db in
+            try source.insert(db)
+            try item.insert(db)
+        }
+        let model = PlayerModel(
+            request: PlayerRequest(libraryID: UUID(), itemID: item.id, playlist: [item.id], name: "One"),
+            library: library, appDatabase: nil)
+        defer { model.shutdown() }
+        try await waitUntil { model.item?.id == item.id && model.fileURL != nil }
+
+        model.perform(.togglePlaybackIssue)
+        try await waitUntil { model.item?.relativePath.hasSuffix("/a.mp4") == true && model.item?.relativePath != "a.mp4" }
+        try await waitUntil { model.fileURL?.lastPathComponent == "a.mp4" && model.fileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true }
+
+        model.perform(.togglePlaybackIssue)
+        try await waitUntil { model.item?.relativePath == "a.mp4" }
+        try await waitUntil { model.fileURL?.standardizedFileURL == root.appendingPathComponent("a.mp4").standardizedFileURL }
+    }
 }
+
