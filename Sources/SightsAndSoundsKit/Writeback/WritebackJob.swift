@@ -130,10 +130,7 @@ public struct WritebackJob: Job {
             if result.success {
                 written += 1
                 // A write that took the slow path keeps the reason with it.
-                try await record(
-                    .written,
-                    error: result.nativeToolError.map { "written by remux after \($0)" },
-                    fallback: result.usedRemuxFallback)
+                try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
                 // Bytes changed, whichever tool wrote them: the hash is of
                 // the whole file, so an in-place tag rewrite stales it as
                 // surely as a remux does, and the size may differ.
