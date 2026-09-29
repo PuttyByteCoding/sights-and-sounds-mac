@@ -205,6 +205,11 @@ struct TagInspector: View {
     /// tag is left, so the list it re-reads carries them without
     /// re-querying the whole vocabulary per keystroke.
     @State private var notesChanged = false
+    /// The pending notes write. Each one reaches every open window over
+    /// the library (a tag row is vocabulary: trees, counts, a listing);
+    /// written per keystroke, typing a sentence reloaded them all up to
+    /// ten times a second. Now written once typing pauses, and on leaving.
+    @State private var notesSave: Task<Void, Never>?
     @State private var newAlias = ""
     @State private var values: [UUID: String] = [:]
     @State private var convertTarget: UUID?
@@ -290,11 +295,12 @@ struct TagInspector: View {
                                 .stroke(Theme.Border.standard, lineWidth: 1))
                         .onChange(of: notes) { _, text in
                             guard text != tag.notes || notesChanged else { return }
-                            do {
-                                try library.setTagNotes(tag.id, text)
-                                notesChanged = true
-                                errorText = nil
-                            } catch { errorText = "\(error)" }
+                            notesSave?.cancel()
+                            notesSave = Task {
+                                try? await Task.sleep(for: .milliseconds(600))
+                                guard !Task.isCancelled else { return }
+                                saveNotes(text)
+                            }
                         }
                 }
 
@@ -446,8 +452,22 @@ struct TagInspector: View {
         // Leaving the tag (another selected, or the window closing) is
         // when the list needs to know the notes moved.
         .onDisappear {
+            // A pause not yet reached still saves.
+            if let pending = notesSave, !pending.isCancelled {
+                pending.cancel()
+                saveNotes(notes)
+            }
             if notesChanged { onChange() }
         }
+    }
+
+    private func saveNotes(_ text: String) {
+        notesSave = nil
+        do {
+            try library.setTagNotes(tag.id, text)
+            notesChanged = true
+            errorText = nil
+        } catch { errorText = "\(error)" }
     }
 }
 
