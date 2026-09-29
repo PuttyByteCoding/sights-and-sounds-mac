@@ -106,19 +106,27 @@ final class BrowseModel {
         }
     }
 
-    /// Open the player at `itemID` (or the first visible item) with the
-    /// companion pending. Nothing to play means nothing to analyse, and
-    /// the caller's control stays inert.
     /// The request that opens an auxiliary window from this listing. The
     /// windows that act on "the filtered items" carry them along.
     func auxRequest(_ kind: AuxWindowRequest.Kind) -> AuxWindowRequest {
         var request = AuxWindowRequest(libraryID: libraryID, kind: kind)
-        if kind == .organise || kind == .maintenance {
+        // Organise plans over its own listing when it has no list, and
+        // unfiltered, video-only and hiding nothing, that listing IS the
+        // grid's — so it is sent a list only when something narrows the
+        // grid (the list is the window's identity and saved state, and an
+        // unfiltered library put every id into both). Maintenance's
+        // write-back takes no list to mean every item of every kind, so it
+        // always gets the grid's items.
+        let narrowed = !filter.isEmpty || kinds != .video || hideOfflineItems
+        if kind == .maintenance || (kind == .organise && narrowed) {
             request.scopeItemIDs = visibleItems.map(\.id)
         }
         return request
     }
 
+    /// Open the player at `itemID` (or the first visible item) with the
+    /// companion pending. Nothing to play means nothing to analyse, and
+    /// the caller's control stays inert.
     func openPlayerForAnalysis(at itemID: UUID? = nil) {
         let online = visibleItems.filter(isOnline)
         guard let first = itemID.flatMap({ id in online.first { $0.id == id } }) ?? online.first
