@@ -92,6 +92,33 @@ import Testing
 
     // MARK: Clip export
 
+    /// A clip export writes the new file beside its show, and it used to
+    /// write it THERE from the first byte: a failed export, or a quit or
+    /// cancel mid-way, left a partial .mp4 in the library folder for the
+    /// next scan to import. It could not be cancelled either. It now
+    /// writes in a working folder on the same volume and moves the file
+    /// into place only once it is whole — and a cancelled run leaves
+    /// nothing behind.
+    @Test func aCancelledClipExportLeavesNothingInTheLibrary() async throws {
+        let f = try await OpsFixture()
+        defer { f.tearDown() }
+        let clip = try f.library.createEmbeddedClip(
+            parentID: f.parent.id, name: "encore", startSeconds: 1, endSeconds: 4)
+        let job = try ClipExportJob(payload: JSONEncoder().encode(ClipExportJob.Payload(clipID: clip.id)))
+        let context = JobContext(
+            library: f.library, jobID: UUID(), progressHandler: { _, _ in },
+            cancellationCheck: { true }, summaryHandler: { _ in })
+
+        await #expect(throws: CancellationError.self) { try await job.run(context) }
+
+        let files = try FileManager.default.contentsOfDirectory(atPath: f.root.appendingPathComponent("shows").path)
+        #expect(files == ["long.mp4"])
+        let exported = try await f.library.writer.read { db in
+            try MediaItem.filter(sql: "isExportedClip = 1").fetchCount(db)
+        }
+        #expect(exported == 0)
+    }
+
     @Test func clipExportProducesAStandaloneFileWithBreadcrumbs() async throws {
         let f = try await OpsFixture()
         defer { f.tearDown() }
