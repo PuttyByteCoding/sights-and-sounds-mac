@@ -54,6 +54,18 @@ extension LibraryDatabase {
     }
 }
 
+public enum LibraryCreationError: Error, Equatable, CustomStringConvertible {
+    case fileExists(String)
+
+    public var description: String {
+        switch self {
+        case .fileExists(let name):
+            "“\(name)” already exists — a new library is never made over a file. "
+                + "Choose another name, or add that library with Add Existing."
+        }
+    }
+}
+
 public enum LibraryCreator {
     @discardableResult
     public static func create(
@@ -64,6 +76,12 @@ public enum LibraryCreator {
     ) throws -> LibraryDatabase {
         let problems = plan.validationErrors()
         guard problems.isEmpty else { throw LibraryPlanError(problems: problems) }
+        // The save panel's "Replace?" is not ours to act on: opening the
+        // file that is there migrated it and poured the template into an
+        // existing library, keeping its identity. Never over a file.
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            throw LibraryCreationError.fileExists(url.lastPathComponent)
+        }
 
         let library = try LibraryDatabase.open(at: url)
         try library.ensureInfo(name: plan.name)
