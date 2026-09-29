@@ -21,7 +21,13 @@ import Testing
         guard let bundleFlag = arguments.firstIndex(of: "--test-bundle-path"),
               arguments.indices.contains(bundleFlag + 1)
         else {
-            // Not under `swift test` (e.g. Xcode's runner): nothing to relaunch.
+            // Not under swiftpm's testing helper (Xcode, or a toolchain that
+            // runs swift-testing inside xctest): nothing to relaunch. Said as
+            // a known issue, so a run that never tested this shows it rather
+            // than passing silently.
+            withKnownIssue("not relaunchable under this test runner; the launch check did not run") {
+                Issue.record("no --test-bundle-path in \(arguments.first ?? "?")")
+            }
             return
         }
         let child = Process()
@@ -37,11 +43,27 @@ import Testing
         child.environment = environment
         child.standardOutput = FileHandle.nullDevice
         child.standardError = FileHandle.nullDevice
+        // A child that hangs rather than crashes must not hang the run.
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(120))
+            if !Task.isCancelled, child.isRunning { child.terminate() }
+        }
+        defer { watchdog.cancel() }
         // Waited for by handler, not `waitUntilExit`: never block a
-        // shared pool thread on another process.
+        // shared pool thread on another process. A child that cannot start
+        // is a failure of this test, not of the whole run: reading a
+        // never-launched process's status raises and takes the run down.
+        var launchError: (any Error)?
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             child.terminationHandler = { _ in done.resume() }
-            do { try child.run() } catch { done.resume() }
+            do { try child.run() } catch {
+                launchError = error
+                done.resume()
+            }
+        }
+        if let launchError {
+            Issue.record("the child could not be started: \(launchError)")
+            return
         }
 
         #expect(child.terminationReason == .exit, "the child crashed (signal \(child.terminationStatus))")
