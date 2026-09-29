@@ -113,7 +113,12 @@ final class BrowseModel {
     /// windows that act on "the filtered items" carry them along.
     func auxRequest(_ kind: AuxWindowRequest.Kind) -> AuxWindowRequest {
         var request = AuxWindowRequest(libraryID: libraryID, kind: kind)
-        if kind == .organise || kind == .maintenance {
+        // Only when something narrows the grid: unfiltered, video-only and
+        // hiding nothing, the window's own listing IS the grid's. The list
+        // is the window's identity and its saved state, and an unfiltered
+        // library put every item's id into both.
+        let narrowed = !filter.isEmpty || kinds != .video || hideOfflineItems
+        if (kind == .organise || kind == .maintenance), narrowed {
             request.scopeItemIDs = visibleItems.map(\.id)
         }
         return request
