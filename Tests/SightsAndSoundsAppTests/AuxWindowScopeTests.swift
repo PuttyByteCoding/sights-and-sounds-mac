@@ -51,7 +51,7 @@ import Testing
     /// IS the grid's, so it carries no list: the list is the window's
     /// identity and its saved state, and an unfiltered library put every
     /// item's id into both (and opened a new window per listing).
-    @Test func anUnfilteredGridCarriesNoList() async throws {
+    @Test func anUnfilteredGridSendsOrganiseNoList() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Unfiltered")
         let source = Source(name: "Here", rootPath: FileManager.default.temporaryDirectory.path)
@@ -64,7 +64,10 @@ import Testing
         let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
         try await waitUntil { model.items.count == 4 }
         #expect(model.auxRequest(.organise).scopeItemIDs == nil)
-        #expect(model.auxRequest(.maintenance).scopeItemIDs == nil)
+        // Maintenance's write-back reads no list as every item of every
+        // kind — audio the grid never showed included — so it always gets
+        // the grid's items.
+        #expect(model.auxRequest(.maintenance).scopeItemIDs == model.visibleItems.map(\.id))
 
         // Audio as well as video is narrower than nothing: the window's own
         // listing is video only, so the grid's items travel.
