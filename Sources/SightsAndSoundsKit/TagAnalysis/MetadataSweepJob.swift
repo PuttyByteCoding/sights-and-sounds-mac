@@ -30,11 +30,23 @@ public struct MetadataSweepJob: Job {
 
     let fileAccess: any FileAccess
     let scope: Set<UUID>?
+    let ffprobeAvailable: @Sendable () -> Bool
 
     public init(payload: Data?) throws {
         fileAccess = LiveFileAccess()
         scope = payload.flatMap { try? JSONDecoder().decode(Payload.self, from: $0) }
             .map { Set($0.itemIDs) }
+        ffprobeAvailable = { TagWriters.ffprobePath() != nil }
+    }
+
+    /// For tests: a machine with or without the tool.
+    init(
+        fileAccess: any FileAccess = LiveFileAccess(), scope: Set<UUID>? = nil,
+        ffprobeAvailable: @escaping @Sendable () -> Bool
+    ) {
+        self.fileAccess = fileAccess
+        self.scope = scope
+        self.ffprobeAvailable = ffprobeAvailable
     }
 
     /// Enqueue a scoped sweep. Plain `enqueue`, not `enqueueUnlessPending`
@@ -49,6 +61,13 @@ public struct MetadataSweepJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
+        // No ffprobe, no sweep — and no markers. Every read would throw,
+        // each throw would be taken for a broken file, and the whole
+        // library would be marked failed for a missing tool.
+        guard ffprobeAvailable() else {
+            await context.setSummary(FfmpegTool.installHint)
+            return
+        }
 
         // Work is decided per run, matching ContentHashJob: unswept items
         // on enabled sources that are reachable right now. An offline
