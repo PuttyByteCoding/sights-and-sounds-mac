@@ -251,5 +251,30 @@ struct SignalSampleCorpusTests {
         }
         #expect(Set(SignalSamples.all.map(\.id)).count == SignalSamples.all.count, "two samples share an id")
     }
+
+    /// The corpus reads a missing evidence key or conclusion as 0, so a
+    /// renamed one would turn every "must not be drawn" truth about it into
+    /// a pass that can never fail. Each name a truth uses must be one the
+    /// rules still weigh.
+    @Test func everyEvidenceAndConclusionATruthNamesIsInTheRules() {
+        let rules = SignalInferenceRules.rules
+        let keys = Set(rules.flatMap { Array($0.supports.keys) + Array($0.contradicts.keys) })
+        let categories = Set(rules.map(\.category))
+        func check(_ truth: SignalSample.Truth, of sample: SignalSample) {
+            switch truth {
+            case .evidence(let key, _):
+                #expect(keys.contains(key), "\(sample.id): no rule weighs evidence “\(key)”")
+            case .concluded(let category, _):
+                #expect(categories.contains(category), "\(sample.id): no rule concludes “\(category)”")
+            case .gap(let inner, _):
+                check(inner, of: sample)
+            case .declared, .measured, .withheld:
+                break
+            }
+        }
+        for sample in SignalSamples.all {
+            for truth in sample.truths { check(truth, of: sample) }
+        }
+    }
 }
 
