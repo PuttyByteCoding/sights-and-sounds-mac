@@ -220,7 +220,10 @@ public enum TagWriters {
         let isMP4 = ["mp4", "m4v", "m4a", "mov"].contains(url.pathExtension.lowercased())
         let notWritten = isMP4 ? fields.filter(\.mp4Freeform).map(\.vorbisName) : []
         for field in fields where !notWritten.contains(field.vorbisName) {
-            arguments += ["-metadata", "\(field.vorbisName)=\(field.values.joined(separator: "; "))"]
+            // The MOV muxer knows these two only by its own names; given the
+            // Vorbis ones it dropped them without a word.
+            let key = isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+            arguments += ["-metadata", "\(key)=\(field.values.joined(separator: "; "))"]
         }
         arguments.append(temp.path)
         do {
@@ -235,6 +238,9 @@ public enum TagWriters {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }
     }
+
+    /// Standard fields ffmpeg's MOV muxer writes under a name of its own.
+    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track"]
 
     /// Where the remux writes before the swap: on the file's own
     /// volume. The system temp folder is on the boot volume, so a library

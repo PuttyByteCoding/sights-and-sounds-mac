@@ -41,4 +41,40 @@ import Testing
         #expect(after.contains("\"fra\""), "the stream's language was wiped")
         #expect(!after.contains("an old file tag"), "the file's old tags must still be replaced")
     }
+
+    /// ffmpeg's MP4 muxer knows album artist and track number only as
+    /// `album_artist` and `track`. Given the Vorbis names, it dropped both
+    /// — standard fields, not custom ones — and nothing said so. Every
+    /// standard field now lands.
+    @Test func everyStandardFieldReachesAnMP4() async throws {
+        guard FfmpegTool.path() != nil, TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-mp4-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("show.mp4")
+        try await DemoMediaFactory.writeVideo(to: file, seconds: 1)
+        let standard = StandardFields.all.filter { !$0.mp4Freeform }
+        var fields: [FieldWrite] = []
+        for (index, field) in standard.enumerated() {
+            let value: String
+            switch field.vorbisName {
+            case "TRACKNUMBER": value = "7"
+            case "DATE": value = "1999"
+            default: value = "Value\(index)"
+            }
+            fields.append(FieldWrite(
+                vorbisName: field.vorbisName, mp4Atom: field.mp4Atom, mp4Freeform: false, values: [value]))
+        }
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: fields, url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(result.notWritten.isEmpty)
+
+        let after = try TagWriters.readTagsJSON(url: file)
+        for field in fields {
+            let quoted = "\"" + field.values[0]
+            #expect(after.contains(quoted), "\(field.vorbisName) did not land: \(after)")
+        }
+    }
 }
+
