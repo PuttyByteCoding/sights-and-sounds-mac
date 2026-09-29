@@ -37,7 +37,9 @@ public final class AudioSignalMeter {
     private var clippedSamples = 0
     private var currentRun = [0, 0]
 
-    // Long-term spectrum of the mid channel.
+    // Long-term spectrum of whichever of mid (L+R) and side (L-R) carries
+    // the sound: of mid alone, a channel wired backwards cancelled to a
+    // bit of rounding at 0 Hz and read as sound that stopped at 100 Hz.
     private var pending: [Float] = []
     private var power: [Float]
     private var spectra = 0
@@ -105,17 +107,21 @@ public final class AudioSignalMeter {
         }
 
         let mid: [Float]
+        var spectrumSource: [Float]
         if let right {
             sumProduct += Double(vDSP.dot(left, right))
             mid = vDSP.multiply(0.5, vDSP.add(left, right))
             let side = vDSP.multiply(0.5, vDSP.subtract(left, right))
-            sumSideSquares += Double(vDSP.sumOfSquares(side))
+            let sideSquares = Double(vDSP.sumOfSquares(side))
+            sumSideSquares += sideSquares
+            spectrumSource = sideSquares > Double(vDSP.sumOfSquares(mid)) ? side : mid
         } else {
             mid = left
+            spectrumSource = left
         }
         sumMidSquares += Double(vDSP.sumOfSquares(mid))
 
-        accumulateSpectrum(mid)
+        accumulateSpectrum(spectrumSource)
         accumulateLoudness(both)
     }
 
@@ -139,8 +145,8 @@ public final class AudioSignalMeter {
         currentRun[channel] = run
     }
 
-    private func accumulateSpectrum(_ mid: [Float]) {
-        pending += mid
+    private func accumulateSpectrum(_ samples: [Float]) {
+        pending += samples
         let length = Self.spectrumLength
         var offset = 0
         var real = [Float](repeating: 0, count: length)

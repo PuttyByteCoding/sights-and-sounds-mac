@@ -372,8 +372,7 @@ public enum SignalSamples {
             graph: "\(pink()),pan=stereo|c0=c0|c1=-1*c0[out]",
             truths: [
                 .measured("audio.channelCorrelation", -1 ... -0.95),
-                .gap(.measured("audio.bandwidth40Hz", 19_000...24_000),
-                     "the spectrum is taken from L+R, which an inverted channel cancels to nothing"),
+                .measured("audio.bandwidth40Hz", 19_000...24_000),
             ]),
         audio(
             "hum 50 Hz", "Mains hum at 50 Hz and harmonics under quiet passages — a PAL-region analog chain. "

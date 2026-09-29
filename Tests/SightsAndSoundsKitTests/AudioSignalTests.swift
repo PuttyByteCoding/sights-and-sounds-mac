@@ -116,6 +116,21 @@ enum SyntheticSound {
         #expect(narrow.value("audio.bandwidth40Hz")! > 3_000)
     }
 
+    /// One channel wired backwards: L+R cancels to nothing, and a spectrum
+    /// read from it said the sound stopped at about 100 Hz — the "narrow
+    /// sound" of an analog channel, for a full-band digital track. The
+    /// spectrum is now read from whichever of L+R and L-R carries it.
+    @Test func anInvertedChannelDoesNotNarrowTheBandwidth() {
+        let full = SyntheticSound.noise(amplitude: 0.3, seconds: 8)
+        // Inverting a 24-bit sample is not exact: what is left of L+R is
+        // a one-bit offset, all of it at 0 Hz.
+        let oneBit = Float(1) / Float(1 << 23)
+        let inverted = full.map { -$0 - oneBit }
+        let findings = SyntheticSound.meter(left: full, right: inverted)
+        #expect(findings.value("audio.bandwidth40Hz")! > 19_000)
+        #expect(findings.value("audio.channelCorrelation")! < -0.95)
+    }
+
     @Test func aLineWhistleIsFoundAndNamesItsStandard() {
         let programme = SyntheticSound.noise(amplitude: 0.2, seconds: 8)
         let whistle = SyntheticSound.sine(15_625, amplitude: 0.01, seconds: 8)
