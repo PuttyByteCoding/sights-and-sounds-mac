@@ -210,7 +210,16 @@ public enum TagWriters {
         // `:g` — the FILE's tags are replaced; each stream keeps its own
         // (languages, track titles, handler names), which a plain
         // `-map_metadata -1` wiped and the snapshot cannot put back.
-        var arguments = ["-i", url.path, "-map", "0", "-c", "copy", "-map_metadata:g", "-1"]
+        //
+        // Ogg is the exception: its Vorbis comments ARE the stream's
+        // metadata, and its muxer writes no file-level tags at all. There
+        // the stream's comments are cleared and the fields written onto
+        // the audio stream — with `:g` alone the old comments stayed and
+        // the new ones went nowhere, under a success.
+        let isOgg = Self.oggFamily.contains(url.pathExtension.lowercased())
+        var arguments = ["-i", url.path, "-map", "0", "-c", "copy",
+                         isOgg ? "-map_metadata" : "-map_metadata:g", "-1"]
+        let metadataFlag = isOgg ? "-metadata:s:a:0" : "-metadata"
         // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
         // `-movflags use_metadata_tags` would store custom ones too, but
         // moves EVERY tag into QuickTime keys that Music and Finder do
@@ -220,7 +229,7 @@ public enum TagWriters {
         let isMP4 = ["mp4", "m4v", "m4a", "mov"].contains(url.pathExtension.lowercased())
         let notWritten = isMP4 ? fields.filter(\.mp4Freeform).map(\.vorbisName) : []
         for field in fields where !notWritten.contains(field.vorbisName) {
-            arguments += ["-metadata", "\(field.vorbisName)=\(field.values.joined(separator: "; "))"]
+            arguments += [metadataFlag, "\(field.vorbisName)=\(field.values.joined(separator: "; "))"]
         }
         arguments.append(temp.path)
         do {
@@ -235,6 +244,9 @@ public enum TagWriters {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }
     }
+
+    /// Containers whose tags live on the stream as Vorbis comments.
+    static let oggFamily: Set<String> = ["ogg", "oga", "ogv", "opus", "spx"]
 
     /// Where the remux writes before the swap: on the file's own
     /// volume. The system temp folder is on the boot volume, so a library
