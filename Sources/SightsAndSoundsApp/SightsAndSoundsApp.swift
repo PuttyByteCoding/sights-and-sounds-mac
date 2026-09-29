@@ -777,6 +777,9 @@ struct SignalSamplesLibraryButton: View {
                 ) { done, total in
                     Task { @MainActor in busyText = "Making signal samples… \(done) of \(total)" }
                 }
+            } catch let error as LibraryCreationError {
+                // The name is fixed here; only the folder can change.
+                failure = "\(error) Choose another folder."
             } catch {
                 failure = "\(error)"
             }

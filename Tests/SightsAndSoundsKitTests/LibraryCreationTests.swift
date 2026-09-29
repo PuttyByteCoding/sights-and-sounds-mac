@@ -15,6 +15,16 @@ import Testing
 
     // MARK: Never over an existing file
 
+    /// The refusal names the file and says why, and gives no advice of
+    /// its own: New Library can offer another name, but the signal-samples
+    /// library's name is fixed and only its folder can change, so each
+    /// caller says what to do next.
+    @Test func theRefusalGivesNoAdviceOnlyACallerCanGive() {
+        let text = "\(LibraryCreationError.fileExists("Some.sqlite"))"
+        #expect(text.contains("“Some.sqlite” already exists"))
+        #expect(!text.contains("Choose"))
+    }
+
     /// The save panel asks "Replace?" and creation used to open the file
     /// that was there and migrate it: the template's categories were
     /// injected into an existing library (or the insert failed halfway
