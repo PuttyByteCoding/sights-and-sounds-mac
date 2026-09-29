@@ -53,4 +53,31 @@ import Testing
         let jobs = try await library.writer.read { try JobRecord.fetchCount($0) }
         #expect(jobs == 0)
     }
+
+    /// "Run in background" leaves the Import window usable while the run
+    /// goes on. Import stayed armed there — it only looked at the window's
+    /// step — and a second click started a second run over the same files
+    /// and orphaned the first one's Cancel. The run says whether it is
+    /// still going.
+    @Test func aRunSaysItIsRunningUntilItFinishes() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-run-live-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await DemoMediaFactory.writeVideo(to: root.appendingPathComponent("a.mp4"), seconds: 1, variant: 0)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunLive")
+        let source = Source(name: "Here", rootPath: root.path)
+        try await library.writer.write { try source.insert($0) }
+        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        #expect(!run.isRunning)
+
+        var finished = false
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { _ in finished = true }
+        #expect(run.isRunning)
+        for _ in 0..<400 where !finished { try await Task.sleep(for: .milliseconds(25)) }
+
+        #expect(finished)
+        #expect(!run.isRunning)
+    }
 }
+
