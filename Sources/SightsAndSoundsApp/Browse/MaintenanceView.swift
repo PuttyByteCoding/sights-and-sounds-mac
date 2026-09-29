@@ -61,6 +61,7 @@ struct MaintenanceView: View {
         .frame(minWidth: 960, minHeight: 600)
         .background(Theme.Surface.content)
         .onAppear { reload() }
+        .followsLibraryChanges(model.changeCount([.items])) { reload() }
     }
 
     // MARK: - Header
