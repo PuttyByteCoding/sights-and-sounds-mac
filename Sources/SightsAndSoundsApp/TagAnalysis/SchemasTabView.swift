@@ -73,6 +73,7 @@ final class SchemasTabModel {
     func save() {
         do {
             let saved = try library.saveJsonSchema(
+                id: selectedID,
                 named: draftName,
                 keys: draftKeys.filter {
                     !$0.key.trimmingCharacters(in: .whitespaces).isEmpty
