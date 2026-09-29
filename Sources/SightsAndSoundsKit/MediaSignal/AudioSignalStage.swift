@@ -13,7 +13,8 @@ import Foundation
 public struct AudioSignalStage: SignalStage {
     public let name = "audioSignal"
     /// 3: the spectrum follows L-R when a channel is inverted.
-    public let version = 3
+    /// 4: a whistle or hum must be within 100 dB of the loudest bin.
+    public let version = 4
     public let kinds: Set<MediaKind> = [.video, .audio]
     public let pass = 1
 
