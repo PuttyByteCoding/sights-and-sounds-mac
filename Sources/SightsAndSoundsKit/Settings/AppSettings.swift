@@ -772,8 +772,13 @@ public final class AppSettingsStore: @unchecked Sendable {
         var updated = settings
         mutate(&updated)
         settings = updated
-        lock.unlock()
+        // Under the same lock, so two quick updates move the log in the
+        // order they changed the settings; set after unlocking, the older
+        // one could land last and leave the log in a folder the settings
+        // no longer name. The log never asks the store, so the lock order
+        // is always store, then log.
         if drivesLogFile { AppLog.shared.setFileDirectory(updated.logDirectory) }
+        lock.unlock()
 
         // Saves used to run unordered after the lock was released: two
         // quick updates could write A after B, leaving the file behind
