@@ -29,8 +29,18 @@ public struct OcrTextLine: Codable, Equatable, Identifiable, Sendable, Fetchable
 public struct OcrJob: Job {
     public static let kind = "operations.ocr"
 
+    /// The finest sampling there is — the slider's lower end, the
+    /// estimate's and the job's. They had three different floors: the
+    /// job used 1 s and the estimate 0.1 s, so 0.5 s on the slider ran at
+    /// 1 s and the estimate promised twice the frames.
+    public static let minimumSampleIntervalSeconds = 0.5
+
+    public static func effectiveInterval(_ requested: Double) -> Double {
+        max(minimumSampleIntervalSeconds, requested)
+    }
+
     public static var sampleIntervalSeconds: Double {
-        max(1, AppSettingsStore.shared.current.ocrSampleIntervalSeconds)
+        effectiveInterval(AppSettingsStore.shared.current.ocrSampleIntervalSeconds)
     }
     public static var budgetSecondsPerRun: Double {
         max(30, AppSettingsStore.shared.current.ocrBudgetSecondsPerRun)
@@ -81,7 +91,7 @@ public struct OcrJob: Job {
     public static func frameCount(
         durations: [Double], sampleIntervalSeconds: Double
     ) -> Int {
-        let interval = max(0.1, sampleIntervalSeconds)
+        let interval = effectiveInterval(sampleIntervalSeconds)
         return durations.reduce(0) { $0 + Int((max(0, $1) / interval).rounded(.down)) }
     }
 
@@ -108,7 +118,7 @@ public struct OcrJob: Job {
         }
 
         let settings = payload.settings ?? AppSettingsStore.shared.current.ocr
-        let interval = max(1, payload.sampleIntervalSeconds ?? Self.sampleIntervalSeconds)
+        let interval = Self.effectiveInterval(payload.sampleIntervalSeconds ?? Self.sampleIntervalSeconds)
         let runEnd = min(duration, scannedThrough + Self.budgetSecondsPerRun)
         let times = stride(from: scannedThrough, to: runEnd, by: interval).map { $0 }
         guard !times.isEmpty else {
