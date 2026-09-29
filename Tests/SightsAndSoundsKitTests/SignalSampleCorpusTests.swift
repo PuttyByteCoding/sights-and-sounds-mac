@@ -189,3 +189,40 @@ struct SignalSampleCorpusTests {
     }
 }
 
+
+/// Making the samples library: never over an existing file, and a failed
+/// run leaves nothing behind, so it can simply be tried again.
+@Suite struct SignalSamplesLibraryTests {
+    private func folder() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-samples-lib-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    @Test func aFailedRunLeavesNoLibraryFile() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Signal Samples.sqlite")
+        // A tool that is not there: the first sample fails.
+        await #expect(throws: (any Error).self) {
+            try await SignalSamples.makeLibrary(
+                at: url, mediaFolder: dir.appendingPathComponent("Media"), ffmpeg: "/nonexistent/ffmpeg")
+        }
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix("Signal Samples.sqlite") }
+        #expect(left.isEmpty, "left behind: \(left)")
+    }
+
+    @Test func anExistingLibraryIsNeverOpened() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Signal Samples.sqlite")
+        let existing = try LibraryDatabase.open(at: url)
+        try existing.ensureInfo(name: "Someone else's")
+        await #expect(throws: LibraryCreationError.fileExists(url.lastPathComponent)) {
+            try await SignalSamples.makeLibrary(
+                at: url, mediaFolder: dir.appendingPathComponent("Media"), ffmpeg: "/nonexistent/ffmpeg")
+        }
+        #expect(try existing.info()?.name == "Someone else's")
+    }
+}

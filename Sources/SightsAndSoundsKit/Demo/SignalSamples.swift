@@ -645,7 +645,29 @@ public enum SignalSamples {
         at libraryURL: URL, mediaFolder: URL, ffmpeg: String,
         progress: @Sendable (Int, Int) -> Void = { _, _ in }
     ) async throws -> LibraryDatabase {
+        // Never over a file (it may be a library open right now), and a run
+        // that fails leaves nothing: a half-made file blocked every retry
+        // in the same folder with a raw SQLite error.
+        guard !FileManager.default.fileExists(atPath: libraryURL.path) else {
+            throw LibraryCreationError.fileExists(libraryURL.lastPathComponent)
+        }
         let library = try LibraryDatabase.open(at: libraryURL)
+        do {
+            try await fill(library, mediaFolder: mediaFolder, ffmpeg: ffmpeg, progress: progress)
+        } catch {
+            try? library.close()
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(atPath: libraryURL.path + suffix)
+            }
+            throw error
+        }
+        return library
+    }
+
+    private static func fill(
+        _ library: LibraryDatabase, mediaFolder: URL, ffmpeg: String,
+        progress: @Sendable (Int, Int) -> Void
+    ) async throws {
         try library.ensureInfo(name: "Signal Samples")
         let source = Source(name: "Signal Samples", rootPath: mediaFolder.path)
         let topic = TagCategory(name: "Topic")
@@ -674,7 +696,6 @@ public enum SignalSamples {
             if let tagID = tagIDs[sample.topic] { try library.assignTag(tagID, to: made.id) }
             progress(index + 1, all.count)
         }
-        return library
     }
 }
 
