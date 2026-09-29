@@ -69,11 +69,24 @@ public struct ClipExportJob: Job {
         let outputURL = root.appendingPathComponent(outputRelative)
 
         await context.reportProgress(current: 0, total: 1)
+        try await context.checkCancellation()
+        // Exported in a working folder on the library's volume, then
+        // moved into place whole. It used to be written straight beside
+        // the show: a failed export, or a quit mid-way, left a partial
+        // .mp4 in the library folder for the next scan to import.
+        let workingURL = try LibraryDatabase.workingURL(toReplace: parentFile, fileExtension: "mp4")
+        defer { try? FileManager.default.removeItem(at: workingURL.deletingLastPathComponent()) }
         try await AVExport.passthrough(
-            assetURL: parentFile, to: outputURL,
+            assetURL: parentFile, to: workingURL,
             timeRange: CMTimeRange(
                 start: CMTime(seconds: start, preferredTimescale: 600),
                 end: CMTime(seconds: end, preferredTimescale: 600)))
+        // The export itself cannot be interrupted; a cancel during it is
+        // honoured here, before anything reaches the library.
+        try await context.checkCancellation()
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileAccess.moveFile(at: workingURL, to: outputURL)
 
         let probe = await MediaProbe.probe(url: outputURL)
         let size = (try? fileAccess.fileSize(at: outputURL)) ?? 0
