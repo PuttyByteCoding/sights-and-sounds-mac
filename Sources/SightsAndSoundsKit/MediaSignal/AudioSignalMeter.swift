@@ -37,13 +37,14 @@ public final class AudioSignalMeter {
     private var clippedSamples = 0
     private var currentRun = [0, 0]
 
-    // Long-term spectrum of whichever of mid (L+R) and side (L-R) carries
-    // the sound: of mid alone, a channel wired backwards cancelled to a
-    // bit of rounding at 0 Hz and read as sound that stopped at 100 Hz.
-    private var pending: [Float] = []
-    private var power: [Float]
-    private var spectra = 0
-    private var quiet: [(meanSquare: Double, power: [Float])] = []
+    // Long-term spectra of mid (L+R) and side (L-R), kept apart; the one
+    // carrying more of the whole track is read. Of mid alone, a channel
+    // wired backwards cancelled to a bit of rounding at 0 Hz and read as
+    // sound that stopped at 100 Hz. Chosen per decoder buffer instead,
+    // true stereo (mid and side about equal) spliced the two into each
+    // FFT block, and every join spread energy across the whole band.
+    private var midSpectrum: Spectrum
+    private var sideSpectrum: Spectrum
     private let fft: FFTSetup
     private let window: [Float]
 
@@ -62,7 +63,8 @@ public final class AudioSignalMeter {
         self.channels = channels
         self.fft = fft
         window = vDSP.window(ofType: Float.self, usingSequence: .hanningNormalized, count: Self.spectrumLength, isHalfWindow: false)
-        power = [Float](repeating: 0, count: Self.spectrumLength / 2)
+        midSpectrum = Spectrum(length: Self.spectrumLength)
+        sideSpectrum = Spectrum(length: Self.spectrumLength)
         chunkLength = Int((sampleRate / 10).rounded())
         let coefficients = Self.kWeighting(sampleRate: sampleRate)
         weighting = (0..<channels).compactMap { _ in
@@ -107,21 +109,18 @@ public final class AudioSignalMeter {
         }
 
         let mid: [Float]
-        var spectrumSource: [Float]
         if let right {
             sumProduct += Double(vDSP.dot(left, right))
             mid = vDSP.multiply(0.5, vDSP.add(left, right))
             let side = vDSP.multiply(0.5, vDSP.subtract(left, right))
-            let sideSquares = Double(vDSP.sumOfSquares(side))
-            sumSideSquares += sideSquares
-            spectrumSource = sideSquares > Double(vDSP.sumOfSquares(mid)) ? side : mid
+            sumSideSquares += Double(vDSP.sumOfSquares(side))
+            sideSpectrum.accumulate(side, fft: fft, window: window)
         } else {
             mid = left
-            spectrumSource = left
         }
         sumMidSquares += Double(vDSP.sumOfSquares(mid))
 
-        accumulateSpectrum(spectrumSource)
+        midSpectrum.accumulate(mid, fft: fft, window: window)
         accumulateLoudness(both)
     }
 
@@ -143,43 +142,6 @@ public final class AudioSignalMeter {
             }
         }
         currentRun[channel] = run
-    }
-
-    private func accumulateSpectrum(_ samples: [Float]) {
-        pending += samples
-        let length = Self.spectrumLength
-        var offset = 0
-        var real = [Float](repeating: 0, count: length)
-        var imaginary = [Float](repeating: 0, count: length)
-        var magnitudes = [Float](repeating: 0, count: length / 2)
-        while pending.count - offset >= length {
-            let block = Array(pending[offset..<offset + length])
-            offset += length
-            let meanSquare = Double(vDSP.meanSquare(block))
-            vDSP.multiply(block, window, result: &real)
-            vDSP.fill(&imaginary, with: 0)
-            real.withUnsafeMutableBufferPointer { realPart in
-                imaginary.withUnsafeMutableBufferPointer { imaginaryPart in
-                    var split = DSPSplitComplex(realp: realPart.baseAddress!, imagp: imaginaryPart.baseAddress!)
-                    vDSP_fft_zip(fft, &split, 1, 14, FFTDirection(FFT_FORWARD))
-                    vDSP_zvmags(&split, 1, &magnitudes, 1, vDSP_Length(length / 2))
-                }
-            }
-            vDSP.add(power, magnitudes, result: &power)
-            spectra += 1
-            keepIfQuiet(meanSquare: meanSquare, power: magnitudes)
-        }
-        pending.removeFirst(offset)
-    }
-
-    private func keepIfQuiet(meanSquare: Double, power: [Float]) {
-        guard meanSquare > Self.silenceMeanSquare else { return }
-        if quiet.count < Self.quietBlocksKept {
-            quiet.append((meanSquare, power))
-        } else if let loudest = quiet.indices.max(by: { quiet[$0].meanSquare < quiet[$1].meanSquare }),
-                  quiet[loudest].meanSquare > meanSquare {
-            quiet[loudest] = (meanSquare, power)
-        }
     }
 
     private func accumulateLoudness(_ both: [[Float]]) {
@@ -232,11 +194,13 @@ public final class AudioSignalMeter {
         }
 
         measureLoudness(into: &findings)
-        if spectra > 0 {
+        let spectrum = channels == 2 && sumSideSquares > sumMidSquares ? sideSpectrum : midSpectrum
+        if spectrum.spectra > 0 {
             AudioSpectrumReading.measure(
-                power: power.map { $0 / Float(spectra) }, sampleRate: sampleRate, prefix: "audio",
-                into: &findings)
+                power: spectrum.power.map { $0 / Float(spectrum.spectra) }, sampleRate: sampleRate,
+                prefix: "audio", into: &findings)
         }
+        let quiet = spectrum.quiet
         if quiet.count >= 4 {
             var floor = [Float](repeating: 0, count: Self.spectrumLength / 2)
             for block in quiet { vDSP.add(floor, block.power, result: &floor) }
@@ -276,3 +240,56 @@ public final class AudioSignalMeter {
         }
     }
 }
+
+/// One signal's long-term power spectrum, in blocks of `length`, and the
+/// quietest of those blocks for the noise floor and the hum.
+private struct Spectrum {
+    let length: Int
+    var pending: [Float] = []
+    var power: [Float]
+    var spectra = 0
+    var quiet: [(meanSquare: Double, power: [Float])] = []
+
+    init(length: Int) {
+        self.length = length
+        power = [Float](repeating: 0, count: length / 2)
+    }
+
+    mutating func accumulate(_ samples: [Float], fft: FFTSetup, window: [Float]) {
+        pending += samples
+        var offset = 0
+        var real = [Float](repeating: 0, count: length)
+        var imaginary = [Float](repeating: 0, count: length)
+        var magnitudes = [Float](repeating: 0, count: length / 2)
+        let log2n = vDSP_Length(log2(Double(length)))
+        while pending.count - offset >= length {
+            let block = Array(pending[offset..<offset + length])
+            offset += length
+            let meanSquare = Double(vDSP.meanSquare(block))
+            vDSP.multiply(block, window, result: &real)
+            vDSP.fill(&imaginary, with: 0)
+            real.withUnsafeMutableBufferPointer { realPart in
+                imaginary.withUnsafeMutableBufferPointer { imaginaryPart in
+                    var split = DSPSplitComplex(realp: realPart.baseAddress!, imagp: imaginaryPart.baseAddress!)
+                    vDSP_fft_zip(fft, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+                    vDSP_zvmags(&split, 1, &magnitudes, 1, vDSP_Length(length / 2))
+                }
+            }
+            vDSP.add(power, magnitudes, result: &power)
+            spectra += 1
+            keepIfQuiet(meanSquare: meanSquare, power: magnitudes)
+        }
+        pending.removeFirst(offset)
+    }
+
+    mutating func keepIfQuiet(meanSquare: Double, power: [Float]) {
+        guard meanSquare > AudioSignalMeter.silenceMeanSquare else { return }
+        if quiet.count < AudioSignalMeter.quietBlocksKept {
+            quiet.append((meanSquare, power))
+        } else if let loudest = quiet.indices.max(by: { quiet[$0].meanSquare < quiet[$1].meanSquare }),
+                  quiet[loudest].meanSquare > meanSquare {
+            quiet[loudest] = (meanSquare, power)
+        }
+    }
+}
+
