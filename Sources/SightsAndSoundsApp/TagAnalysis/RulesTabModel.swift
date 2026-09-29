@@ -20,6 +20,12 @@ final class RulesTabModel {
     private(set) var cardDryRuns: [UUID: RuleDryRun] = [:]
     private(set) var lastApplied: RuleApplication?
     private(set) var loadError: String?
+    /// An Apply in flight: a rule's writes walk the library, so they run
+    /// off the main actor and the button waits for them.
+    private(set) var isApplying = false
+
+    private var dryRunTask: Task<Void, Never>?
+    private var cardDryRunGeneration = 0
 
     var selectedID: UUID?
 
@@ -62,11 +68,14 @@ final class RulesTabModel {
     /// it walks every stored pair.
     private func refreshCardDryRuns() {
         let library = library, rules = rules
+        cardDryRunGeneration += 1
+        let generation = cardDryRunGeneration
         Task {
             let runs = try? await Task.detached(priority: .utility) {
                 try library.dryRuns(for: rules)
             }.value
-            if let runs { self.cardDryRuns = runs }
+            // An older walk that finishes last must not win.
+            if let runs, generation == cardDryRunGeneration { self.cardDryRuns = runs }
         }
     }
 
@@ -80,14 +89,28 @@ final class RulesTabModel {
     /// The dry run follows the DRAFT, not the stored rule: §6 says a rule
     /// reports before it writes, and a report of what is already saved
     /// would answer the wrong question while someone is editing.
-    func refreshDryRun() {
+    ///
+    /// The run walks the whole candidate queue, so it runs off the main
+    /// actor — it used to run on it, once per keystroke in the matcher
+    /// field. Typing waits for a pause (`settle`), and each new run
+    /// cancels the last, so only the newest draft's answer lands.
+    func refreshDryRun(settle: Duration = .zero) {
+        dryRunTask?.cancel()
         guard let subject = draft ?? selected else {
             dryRun = nil
             return
         }
         let library = library
-        Task {
-            dryRun = try? library.dryRun(subject)
+        dryRunTask = Task {
+            if settle > .zero {
+                try? await Task.sleep(for: settle)
+                guard !Task.isCancelled else { return }
+            }
+            let run = try? await Task.detached(priority: .userInitiated) {
+                try library.dryRun(subject)
+            }.value
+            guard !Task.isCancelled else { return }
+            dryRun = run
         }
     }
 
@@ -141,7 +164,7 @@ final class RulesTabModel {
         guard var draft else { return }
         transform(&draft)
         self.draft = draft
-        refreshDryRun()
+        refreshDryRun(settle: .milliseconds(150))
     }
 
     func saveDraft() {
@@ -187,12 +210,21 @@ final class RulesTabModel {
     /// nothing is written until Apply, and applying an unsaved edit would
     /// write something the rule list does not show.
     func applySelected() {
-        guard let selected else { return }
-        do {
-            lastApplied = try library.applyAnalysisRule(selected)
-            reload()
-        } catch {
-            loadError = "\(error)"
+        guard let selected, !isApplying else { return }
+        isApplying = true
+        let library = library
+        Task {
+            let outcome = await Task.detached(priority: .userInitiated) {
+                Result { try library.applyAnalysisRule(selected) }
+            }.value
+            isApplying = false
+            switch outcome {
+            case .success(let applied):
+                lastApplied = applied
+                reload()
+            case .failure(let error):
+                loadError = "\(error)"
+            }
         }
     }
 }
