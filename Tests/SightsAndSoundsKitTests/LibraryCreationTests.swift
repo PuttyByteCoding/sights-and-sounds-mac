@@ -57,6 +57,30 @@ import Testing
         _ = try LibraryCreator.create(at: url, plan: plan)
     }
 
+    /// The one way a library file is made (New Library, the signal-samples
+    /// library): never over a file, and nothing left when the fill fails —
+    /// a failure at the very end (registering it) included.
+    @Test func createFreshIsWholeOrNothing() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Fresh.sqlite")
+        struct LastStepFailed: Error {}
+
+        #expect(throws: LastStepFailed.self) {
+            try LibraryDatabase.createFresh(at: url) { library in
+                try library.ensureInfo(name: "Fresh")
+                throw LastStepFailed()
+            }
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+
+        let made = try LibraryDatabase.createFresh(at: url) { try $0.ensureInfo(name: "Fresh") }
+        #expect(try made.info()?.name == "Fresh")
+        #expect(throws: LibraryCreationError.fileExists("Fresh.sqlite")) {
+            try LibraryDatabase.createFresh(at: url) { _ in }
+        }
+    }
+
     // MARK: Templates
 
     @Test func templatesMatchTheBriefsSampleTable() {

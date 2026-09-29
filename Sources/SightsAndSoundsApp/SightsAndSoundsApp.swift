@@ -768,14 +768,15 @@ struct SignalSamplesLibraryButton: View {
         Task.detached(priority: .userInitiated) {
             var failure: String?
             do {
-                let library = try await SignalSamples.makeLibrary(
+                // Registered inside, so a failed registration takes the file
+                // away too rather than leaving one that blocks a retry.
+                _ = try await SignalSamples.makeLibrary(
                     at: folder.appendingPathComponent("Signal Samples.sqlite"),
                     mediaFolder: folder.appendingPathComponent("Signal Samples", isDirectory: true),
-                    ffmpeg: ffmpeg
+                    ffmpeg: ffmpeg, registerIn: appDatabase
                 ) { done, total in
                     Task { @MainActor in busyText = "Making signal samples… \(done) of \(total)" }
                 }
-                if let appDatabase { _ = try await MainActor.run { try appDatabase.register(library) } }
             } catch {
                 failure = "\(error)"
             }

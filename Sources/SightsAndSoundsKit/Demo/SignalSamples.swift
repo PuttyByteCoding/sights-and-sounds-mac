@@ -643,25 +643,16 @@ public enum SignalSamples {
     @discardableResult
     public static func makeLibrary(
         at libraryURL: URL, mediaFolder: URL, ffmpeg: String,
+        registerIn app: AppDatabase? = nil,
         progress: @Sendable (Int, Int) -> Void = { _, _ in }
     ) async throws -> LibraryDatabase {
-        // Never over a file (it may be a library open right now), and a run
-        // that fails leaves nothing: a half-made file blocked every retry
-        // in the same folder with a raw SQLite error.
-        guard !FileManager.default.fileExists(atPath: libraryURL.path) else {
-            throw LibraryCreationError.fileExists(libraryURL.lastPathComponent)
-        }
-        let library = try LibraryDatabase.open(at: libraryURL)
-        do {
+        // Never over a file, and a run that fails — registering included —
+        // leaves none: a half-made or unregistered file blocked every retry
+        // in the same folder (see createFresh).
+        try await LibraryDatabase.createFresh(at: libraryURL) { library in
             try await fill(library, mediaFolder: mediaFolder, ffmpeg: ffmpeg, progress: progress)
-        } catch {
-            try? library.close()
-            for suffix in ["", "-wal", "-shm"] {
-                try? FileManager.default.removeItem(atPath: libraryURL.path + suffix)
-            }
-            throw error
+            try app?.register(library)
         }
-        return library
     }
 
     private static func fill(

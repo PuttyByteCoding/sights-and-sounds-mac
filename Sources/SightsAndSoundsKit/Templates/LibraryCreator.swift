@@ -76,27 +76,11 @@ public enum LibraryCreator {
     ) throws -> LibraryDatabase {
         let problems = plan.validationErrors()
         guard problems.isEmpty else { throw LibraryPlanError(problems: problems) }
-        // The save panel's "Replace?" is not ours to act on: opening the
-        // file that is there migrated it and poured the template into an
-        // existing library, keeping its identity. Never over a file.
-        guard !FileManager.default.fileExists(atPath: url.path) else {
-            throw LibraryCreationError.fileExists(url.lastPathComponent)
-        }
-
-        let library = try LibraryDatabase.open(at: url)
-        do {
+        // The save panel's "Replace?" is not ours to act on: never over a
+        // file, and a failure part-way leaves none (see createFresh).
+        return try LibraryDatabase.createFresh(at: url) { library in
             try populate(library, plan: plan, firstSource: firstSource, registerIn: app)
-        } catch {
-            // This call made the file, so a failure takes it away again —
-            // with its WAL and shared-memory files. Left behind, the
-            // half-made library blocked every retry at the same name.
-            try? library.close()
-            for suffix in ["", "-wal", "-shm"] {
-                try? FileManager.default.removeItem(atPath: url.path + suffix)
-            }
-            throw error
         }
-        return library
     }
 
     private static func populate(
