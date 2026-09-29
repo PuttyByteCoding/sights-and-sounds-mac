@@ -116,6 +116,35 @@ enum SyntheticSound {
         #expect(narrow.value("audio.bandwidth40Hz")! > 3_000)
     }
 
+    /// One channel wired backwards: L+R cancels to nothing, and a spectrum
+    /// read from it said the sound stopped at about 100 Hz — the "narrow
+    /// sound" of an analog channel, for a full-band digital track. The
+    /// spectrum is now read from whichever of L+R and L-R carries it.
+    @Test func anInvertedChannelDoesNotNarrowTheBandwidth() {
+        let full = SyntheticSound.noise(amplitude: 0.3, seconds: 8)
+        // Inverting a 24-bit sample is not exact: what is left of L+R is
+        // a one-bit offset, all of it at 0 Hz.
+        let oneBit = Float(1) / Float(1 << 23)
+        let inverted = full.map { -$0 - oneBit }
+        let findings = SyntheticSound.meter(left: full, right: inverted)
+        #expect(findings.value("audio.bandwidth40Hz")! > 19_000)
+        #expect(findings.value("audio.channelCorrelation")! < -0.95)
+    }
+
+    /// True stereo from a narrow channel — two independent hisses, both
+    /// low-passed, as a tape transfer has. Mid and side carry about the
+    /// same energy, and choosing between them per decoder buffer spliced
+    /// the two into one FFT block: every join a step, every step energy
+    /// across the whole band, and the narrow tape read as a full-band
+    /// digital master. The choice is made once, for the whole track.
+    @Test func narrowTrueStereoStaysNarrow() {
+        let left = SyntheticSound.lowPassed(SyntheticSound.noise(amplitude: 0.3, seconds: 20, seed: 1), taps: 9)
+        let right = SyntheticSound.lowPassed(SyntheticSound.noise(amplitude: 0.3, seconds: 20, seed: 2), taps: 9)
+        let findings = SyntheticSound.meter(left: left, right: right)
+        #expect(findings.value("audio.bandwidth40Hz")! < 6_000)
+        #expect(findings.value("audio.rolloffHz")! < 12_000)
+    }
+
     @Test func aLineWhistleIsFoundAndNamesItsStandard() {
         let programme = SyntheticSound.noise(amplitude: 0.2, seconds: 8)
         let whistle = SyntheticSound.sine(15_625, amplitude: 0.01, seconds: 8)

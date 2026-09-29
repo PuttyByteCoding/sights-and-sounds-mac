@@ -12,7 +12,8 @@ import Foundation
 /// would make every mono file look like mono passed off as stereo.
 public struct AudioSignalStage: SignalStage {
     public let name = "audioSignal"
-    public let version = 2
+    /// 3: the spectrum follows L-R when a channel is inverted.
+    public let version = 3
     public let kinds: Set<MediaKind> = [.video, .audio]
     public let pass = 1
 
