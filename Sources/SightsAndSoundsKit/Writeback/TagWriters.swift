@@ -11,7 +11,7 @@ public struct TagWriteResult: Sendable {
     public let nativeToolError: String?
     /// Fields the writer could not store in this file — custom fields in
     /// an MP4 written without AtomicParsley. The rest were written.
-    public let notWritten: [String]
+    let notWritten: [String]
 
     public init(
         success: Bool, usedRemuxFallback: Bool, error: String?, nativeToolError: String? = nil,
@@ -26,7 +26,7 @@ public struct TagWriteResult: Sendable {
 
     /// The note a written file keeps: why it took the slow path, and what
     /// it could not hold. Nil when there is nothing to say.
-    public var writtenNote: String? {
+    var writtenNote: String? {
         var parts: [String] = []
         if let nativeToolError { parts.append("written by remux after \(nativeToolError)") }
         if !notWritten.isEmpty {
