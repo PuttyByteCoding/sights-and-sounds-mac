@@ -63,14 +63,27 @@ public struct ImportStaging: Codable, Sendable, Equatable {
     /// Apply to one inserted row. A staged tag or field deleted while the
     /// import waited is skipped, not fatal — it used to fail the job with
     /// the row already in, and a re-run then skipped that row as imported,
-    /// so its staging never landed.
-    func apply(to itemID: UUID, in library: LibraryDatabase, resolved: Resolved) throws {
+    /// so its staging never landed. One deleted while the import RUNS is
+    /// skipped too: the write that meets it fails, and if the value is
+    /// then gone, that is why. Returns the values found gone this way.
+    func apply(to itemID: UUID, in library: LibraryDatabase, resolved: Resolved) throws -> Set<UUID> {
+        var vanished: Set<UUID> = []
         for tagID in tagIDs where resolved.presentTagIDs.contains(tagID) {
-            try library.assignTag(tagID, to: itemID)
+            do {
+                try library.assignTag(tagID, to: itemID)
+            } catch {
+                guard try !Self.tagExists(tagID, in: library) else { throw error }
+                vanished.insert(tagID)
+            }
         }
         for (fieldID, value) in fieldValues {
             guard let definition = resolved.definitions[fieldID] else { continue }
-            try library.setFieldValue(value, ofItem: itemID, field: definition)
+            do {
+                try library.setFieldValue(value, ofItem: itemID, field: definition)
+            } catch {
+                guard try !Self.fieldExists(fieldID, in: library) else { throw error }
+                vanished.insert(fieldID)
+            }
         }
         if clearsNeedsReview {
             try library.setNeedsReview([itemID], false)
@@ -78,6 +91,15 @@ public struct ImportStaging: Codable, Sendable, Equatable {
         if marksFavorite {
             _ = try library.toggleFlag(.favorite, itemID: itemID)
         }
+        return vanished
+    }
+
+    private static func tagExists(_ id: UUID, in library: LibraryDatabase) throws -> Bool {
+        try library.writer.read { try Tag.exists($0, key: id) }
+    }
+
+    private static func fieldExists(_ id: UUID, in library: LibraryDatabase) throws -> Bool {
+        try library.writer.read { try FieldDefinition.exists($0, key: id) }
     }
 }
 

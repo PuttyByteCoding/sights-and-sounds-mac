@@ -95,4 +95,78 @@ import Testing
         func moveFile(at url: URL, to destination: URL) throws {}
         func removeFile(at url: URL) throws {}
     }
+
+    /// A staged tag deleted while the import RUNS — not before — is also
+    /// skipped and said. The staging is resolved once per run, so for the
+    /// length of the run the assign itself met the deleted tag and threw.
+    @Test func aStagedTagDeletedMidRunIsSkippedToo() async throws {
+        let root = URL(fileURLWithPath: "/Volumes/SAS-Test-MidRun-\(UUID().uuidString)", isDirectory: true)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "MidRun")
+        let source = Source(name: "S", rootPath: root.path)
+        let band = TagCategory(name: "Band")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try band.insert(db)
+        }
+        let doomed = try library.ensureTag(named: "Doomed", inCategory: band.id)
+        let files = DeletingVolume(
+            files: ["a.mp4", "b.mp4", "c.mp4"].map { root.appendingPathComponent($0) },
+            onSecondSize: { try? library.deleteTag(doomed.id) })
+        let job = ImportJob(
+            payload: .init(sourceID: source.id, staging: ImportStaging(tagIDs: [doomed.id])), fileAccess: files)
+        let summary = Summary()
+        let context = JobContext(
+            library: library, jobID: UUID(), progressHandler: { _, _ in },
+            cancellationCheck: { false }, summaryHandler: { await summary.set($0) })
+
+        try await job.run(context)
+
+        let count = try await library.writer.read { try MediaItem.fetchCount($0) }
+        #expect(count == 3)
+        #expect(await summary.text?.contains("1 staged tag or field no longer exists") == true)
+    }
+
+    /// Rescanning the same case-sensitive folder: the twin that was left
+    /// out the first time is still a twin, not "already imported".
+    @Test func aCaseTwinIsStillNamedOnALaterScan() async throws {
+        let root = URL(fileURLWithPath: "/Volumes/SAS-Test-CaseAgain-\(UUID().uuidString)", isDirectory: true)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "CaseAgain")
+        let source = Source(name: "Case", rootPath: root.path)
+        try await library.writer.write { try source.insert($0) }
+        let files = CaseSensitiveVolume(files: ["A.mp4", "a.mp4"].map { root.appendingPathComponent($0) })
+        for _ in 0..<2 {
+            let summary = Summary()
+            let context = JobContext(
+                library: library, jobID: UUID(), progressHandler: { _, _ in },
+                cancellationCheck: { false }, summaryHandler: { await summary.set($0) })
+            try await ImportJob(payload: .init(sourceID: source.id), fileAccess: files).run(context)
+            let text = await summary.text ?? ""
+            #expect(text.contains("a.mp4"), "\(text)")
+        }
+    }
+
+    private final class DeletingVolume: FileAccess, @unchecked Sendable {
+        let files: [URL]
+        let onSecondSize: () -> Void
+        private let lock = NSLock()
+        private var sizes = 0
+        init(files: [URL], onSecondSize: @escaping () -> Void) {
+            self.files = files
+            self.onSecondSize = onSecondSize
+        }
+        func isReachable(_ url: URL) -> Bool { true }
+        func contentsOfDirectory(at url: URL) throws -> [URL] { files }
+        func allFiles(under url: URL) throws -> [URL] { files }
+        func fileSize(at url: URL) throws -> Int64 {
+            let count = lock.withLock { sizes += 1; return sizes }
+            if count == 2 { onSecondSize() }
+            return 1
+        }
+        func readFile(at url: URL, chunk: (Data) throws -> Void) throws {}
+        func moveFile(at url: URL, to destination: URL) throws {}
+        func removeFile(at url: URL) throws {}
+    }
 }
+

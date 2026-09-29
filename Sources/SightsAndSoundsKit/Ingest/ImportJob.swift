@@ -132,6 +132,18 @@ public struct ImportJob: Job {
         var insertedFolded: Set<String> = []
         var caseTwins: [String] = []
         let resolved = try payload.staging?.resolve(in: library)
+        var vanished: Set<UUID> = []
+        // The library's own spellings, for a later scan of a case-sensitive
+        // folder: a candidate whose folded path is known but whose exact
+        // spelling is not, while the library's spelling is ALSO on disk,
+        // is the twin left out before — still a twin, not "already in".
+        let exactKnown = try await library.writer.read { db in
+            Set(try String.fetchAll(
+                db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?", arguments: [source.id]))
+        }
+        let candidateSpellings = Set(selected.map(\.relative))
+        let knownSpellingByFold = Dictionary(
+            exactKnown.map { ($0.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
         await context.reportProgress(current: 0, total: selected.count)
 
         for (index, candidate) in selected.enumerated() {
@@ -145,7 +157,12 @@ public struct ImportJob: Job {
                 continue
             }
             if existing.contains(folded) {
-                skipped += 1
+                if !exactKnown.contains(candidate.relative),
+                   let known = knownSpellingByFold[folded], candidateSpellings.contains(known) {
+                    caseTwins.append(candidate.relative)
+                } else {
+                    skipped += 1
+                }
                 continue
             }
 
@@ -180,7 +197,7 @@ public struct ImportJob: Job {
             // single-select category still replaces rather than
             // accumulating — the rule cannot be skipped by importing.
             if let staging = payload.staging, let resolved {
-                try staging.apply(to: item.id, in: library, resolved: resolved)
+                vanished.formUnion(try staging.apply(to: item.id, in: library, resolved: resolved))
             }
             inserted += 1
         }
@@ -194,7 +211,7 @@ public struct ImportJob: Job {
         // The leading "N new, M already imported" is read by the import
         // window; a note goes after it.
         var summary = "\(inserted) new, \(skipped) already imported"
-        let missingStaged = resolved?.missing.count ?? 0
+        let missingStaged = resolved.map { $0.missing.union(vanished).count } ?? 0
         if missingStaged > 0 {
             summary += missingStaged == 1
                 ? " — 1 staged tag or field no longer exists and was not applied"
