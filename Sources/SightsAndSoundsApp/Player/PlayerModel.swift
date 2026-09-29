@@ -500,7 +500,12 @@ final class PlayerModel {
         }
         item = loaded
         fileURL = url
-        durationSeconds = loaded.durationSeconds ?? 0
+        // A segment plays inside its parent's file, so the timeline is the
+        // FILE's; the row's duration is only the segment's length. Taken
+        // as the file's, it clamped every seek: a song at 40:00 started
+        // at its own length and looped there. Zero lets the first tick
+        // read the file's duration from the player.
+        durationSeconds = loaded.parentMediaItemID == nil ? (loaded.durationSeconds ?? 0) : 0
         // The playhead answers for THIS item from now on. It used to keep
         // the last item's position until the new file's first time tick
         // — seconds, on a big file over the network — and a "skip the
@@ -1394,7 +1399,9 @@ final class PlayerModel {
                     self.seek(to: target)
                 }
                 // One completion tally per session, on first crossing 90%.
-                if !self.completionRecorded, self.durationSeconds > 0,
+                // Segments record no watch history, as at load and on stop.
+                if !self.completionRecorded, self.item?.clipStartSeconds == nil,
+                   self.durationSeconds > 0,
                    time.seconds > self.durationSeconds * 0.9 {
                     self.completionRecorded = true
                     if let id = self.item?.id {
