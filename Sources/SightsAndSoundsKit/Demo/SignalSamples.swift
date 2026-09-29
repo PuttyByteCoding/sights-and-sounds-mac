@@ -16,8 +16,8 @@ import Foundation
 /// footage. Pictures are H.264 at a high quality unless the property
 /// needs otherwise (10-bit HEVC for depth); soundtracks are Apple
 /// Lossless, so the encode cannot move the truth.
-public struct SignalSample: Sendable, Identifiable {
-    public enum Topic: String, Sendable, CaseIterable {
+struct SignalSample: Sendable, Identifiable {
+    enum Topic: String, Sendable, CaseIterable {
         case resolution = "Resolution"
         case scan = "Interlaced and Progressive"
         case timing = "Frame Timing"
@@ -29,7 +29,7 @@ public struct SignalSample: Sendable, Identifiable {
     }
 
     /// What the file was built to be, as a reading.
-    public enum Truth: Sendable {
+    enum Truth: Sendable {
         /// A declared value, exactly.
         case declared(String, String)
         /// A measured value inside a range.
@@ -48,20 +48,20 @@ public struct SignalSample: Sendable, Identifiable {
         indirect case gap(Truth, String)
     }
 
-    public let id: String
-    public let topic: Topic
+    let id: String
+    let topic: Topic
     /// One line: what the file is.
-    public let summary: String
+    let summary: String
     /// ffmpeg arguments up to, not including, the output path.
-    public let arguments: [String]
-    public let fileExtension: String
-    public let kind: MediaKind
+    let arguments: [String]
+    let fileExtension: String
+    let kind: MediaKind
     /// The stages worth running on it (`SignalStage.name`).
-    public let stages: [String]
-    public let truths: [Truth]
+    let stages: [String]
+    let truths: [Truth]
 
-    public var fileName: String { "\(id).\(fileExtension)" }
-    public var relativePath: String { "\(topic.rawValue)/\(fileName)" }
+    var fileName: String { "\(id).\(fileExtension)" }
+    var relativePath: String { "\(topic.rawValue)/\(fileName)" }
 }
 
 public enum SignalSamples {
@@ -122,7 +122,7 @@ public enum SignalSamples {
 
     // MARK: - The samples
 
-    public static let all: [SignalSample] =
+    static let all: [SignalSample] =
         resolution + scan + timing + pictureArea + detailSamples + sound + cadence + tone
 
     static func video(
@@ -621,7 +621,7 @@ public enum SignalSamples {
 
     /// Write one sample. ffmpeg writes to a working name and it is moved
     /// into place whole, so a failed sample leaves nothing half-written.
-    public static func write(_ sample: SignalSample, into folder: URL, ffmpeg: String) throws -> URL {
+    static func write(_ sample: SignalSample, into folder: URL, ffmpeg: String) throws -> URL {
         let url = folder.appendingPathComponent(sample.relativePath)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -691,7 +691,7 @@ public enum SignalSamples {
 }
 
 extension SignalSample.Truth: CustomStringConvertible {
-    public var description: String {
+    var description: String {
         switch self {
         case .declared(let key, let value): "\(key) = \(value)"
         case .measured(let key, let range): "\(key) in \(range.lowerBound)…\(range.upperBound)"
@@ -704,6 +704,6 @@ extension SignalSample.Truth: CustomStringConvertible {
 }
 
 extension SignalSample: CustomStringConvertible {
-    public var description: String { id }
+    var description: String { id }
 }
 
