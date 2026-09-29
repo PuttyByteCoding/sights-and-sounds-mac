@@ -72,6 +72,43 @@ import Testing
 
     /// Probe output is classified so recipes can match it. Substring
     /// matching on ffmpeg's own stable strings.
+    /// A pair is answered once. Review can show a pair again while its
+    /// decision is still being carried out (the file move is slow), and a
+    /// "Not Duplicates" there used to overwrite the committed decision
+    /// while the loser was still being staged — or decide it twice.
+    @Test func aPairIsAnsweredOnce() throws {
+        let f = try FilterFixture()
+        func pair() throws -> DuplicateCandidate {
+            let candidate = DuplicateCandidate(
+                itemA: f.show1995.id, itemB: f.show2001.id, source: .fingerprint)
+            try f.library.writer.write { db in
+                try DuplicateCandidate.deleteAll(db)
+                try candidate.insert(db)
+            }
+            return candidate
+        }
+        func status(_ id: UUID) throws -> DuplicateStatus? {
+            try f.library.writer.read { try DuplicateCandidate.fetchOne($0, key: id)?.status }
+        }
+
+        let decided = try pair()
+        try f.library.decide(
+            keeper: f.show1995.id, loser: f.show2001.id, candidateID: decided.id,
+            mergeTagIDs: [], fileAccess: PretendFiles())
+        #expect(throws: DecideError.alreadyAnswered) { try f.library.rejectCandidate(decided.id) }
+        #expect(throws: DecideError.alreadyAnswered) { try f.library.keepBothCandidate(decided.id) }
+        #expect(try status(decided.id) == .confirmed)
+
+        let rejected = try pair()
+        try f.library.rejectCandidate(rejected.id)
+        #expect(throws: DecideError.alreadyAnswered) {
+            try f.library.decide(
+                keeper: f.show1995.id, loser: f.show2001.id, candidateID: rejected.id,
+                mergeTagIDs: [], fileAccess: PretendFiles())
+        }
+        #expect(try status(rejected.id) == .rejected)
+    }
+
     @Test func probeOutputIsClassified() {
         #expect(PlaybackFailureKind.classify("moov atom not found") == .missingIndex)
         #expect(PlaybackFailureKind.classify("Invalid data found when processing input") == .truncated)
