@@ -38,36 +38,39 @@ public struct ImportStaging: Codable, Sendable, Equatable {
         tagIDs.isEmpty && fieldValues.isEmpty && !clearsNeedsReview && !marksFavorite
     }
 
-    /// Apply to one freshly inserted item.
-    /// Apply to one inserted row. A staged tag or field deleted while the
-    /// import waited is skipped, not fatal — it used to fail the job with
-    /// the row already in, and a re-run then skipped that row as imported,
-    /// so its staging never landed. Returns how many staged values no
-    /// longer existed, for the job to say so.
-    @discardableResult
-    func apply(to itemID: UUID, in library: LibraryDatabase) throws -> Int {
-        var missing = 0
-        let existingTagIDs: Set<UUID> = tagIDs.isEmpty ? [] : try library.writer.read { db in
+    /// What of this staging still exists, looked up once for a whole run.
+    struct Resolved {
+        let presentTagIDs: Set<UUID>
+        let definitions: [UUID: FieldDefinition]
+        /// Staged tags and fields that no longer exist. A value staged
+        /// onto five hundred files is still one missing value.
+        let missing: Set<UUID>
+    }
+
+    func resolve(in library: LibraryDatabase) throws -> Resolved {
+        let present: Set<UUID> = tagIDs.isEmpty ? [] : try library.writer.read { db in
             Set(try UUID.fetchAll(
                 db, sql: "SELECT id FROM \(Tag.databaseTableName) WHERE id IN (\(tagIDs.map { _ in "?" }.joined(separator: ",")))",
                 arguments: StatementArguments(tagIDs)))
         }
-        for tagID in tagIDs {
-            guard existingTagIDs.contains(tagID) else {
-                missing += 1
-                continue
-            }
+        let definitions = fieldValues.isEmpty ? [:] : Dictionary(
+            try library.fields(scope: .mediaItem).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let missing = Set(tagIDs.filter { !present.contains($0) })
+            .union(fieldValues.keys.filter { definitions[$0] == nil })
+        return Resolved(presentTagIDs: present, definitions: definitions, missing: missing)
+    }
+
+    /// Apply to one inserted row. A staged tag or field deleted while the
+    /// import waited is skipped, not fatal — it used to fail the job with
+    /// the row already in, and a re-run then skipped that row as imported,
+    /// so its staging never landed.
+    func apply(to itemID: UUID, in library: LibraryDatabase, resolved: Resolved) throws {
+        for tagID in tagIDs where resolved.presentTagIDs.contains(tagID) {
             try library.assignTag(tagID, to: itemID)
         }
-        if !fieldValues.isEmpty {
-            let definitions = try library.fields(scope: .mediaItem)
-            for (fieldID, value) in fieldValues {
-                guard let definition = definitions.first(where: { $0.id == fieldID }) else {
-                    missing += 1
-                    continue
-                }
-                try library.setFieldValue(value, ofItem: itemID, field: definition)
-            }
+        for (fieldID, value) in fieldValues {
+            guard let definition = resolved.definitions[fieldID] else { continue }
+            try library.setFieldValue(value, ofItem: itemID, field: definition)
         }
         if clearsNeedsReview {
             try library.setNeedsReview([itemID], false)
@@ -75,7 +78,6 @@ public struct ImportStaging: Codable, Sendable, Equatable {
         if marksFavorite {
             _ = try library.toggleFlag(.favorite, itemID: itemID)
         }
-        return missing
     }
 }
 

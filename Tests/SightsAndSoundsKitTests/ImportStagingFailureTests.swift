@@ -17,7 +17,7 @@ import Testing
             .appendingPathComponent("sas-import-staging-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        for name in ["a.mp4", "b.mp4"] {
+        for name in ["a.mp4", "b.mp4", "c.mp4"] {
             try Data("x".utf8).write(to: root.appendingPathComponent(name))
         }
         let library = try LibraryDatabase.openInMemory()
@@ -41,14 +41,16 @@ import Testing
         let record = try await library.writer.read { try JobRecord.fetchOne($0, key: queued.id)! }
         #expect(record.state == .succeeded, "\(record.error ?? "")")
         let items = try await library.writer.read { try MediaItem.fetchAll($0) }
-        #expect(items.count == 2)
+        #expect(items.count == 3)
         // What still exists was applied to both.
         let favourites = items.filter { $0.isFavorite }.count
-        #expect(favourites == 2)
+        #expect(favourites == 3)
         for item in items {
             #expect(try library.tags(of: item.id).flatMap(\.tags).map(\.id) == [kept.id])
         }
-        #expect(record.summary?.contains("no longer exist") == true, "\(record.summary ?? "")")
+        // One deleted tag is one missing value, however many files it
+        // was staged onto (it read "3" here, and "500" on a big import).
+        #expect(record.summary?.contains("1 staged tag or field no longer exists") == true, "\(record.summary ?? "")")
     }
 
     /// On a case-sensitive volume `a.mp4` and `A.mp4` are two files, but
@@ -62,14 +64,25 @@ import Testing
         try await library.writer.write { try source.insert($0) }
         let files = CaseSensitiveVolume(files: ["A.mp4", "a.mp4", "b.mp4"].map { root.appendingPathComponent($0) })
         let job = ImportJob(payload: .init(sourceID: source.id), fileAccess: files)
+        let summary = Summary()
         let context = JobContext(
             library: library, jobID: UUID(), progressHandler: { _, _ in },
-            cancellationCheck: { false }, summaryHandler: { _ in })
+            cancellationCheck: { false }, summaryHandler: { await summary.set($0) })
 
         try await job.run(context)
 
         let paths = try await library.writer.read { try MediaItem.fetchAll($0).map(\.relativePath) }.sorted()
         #expect(paths == ["A.mp4", "b.mp4"])
+        // The twin is not "already imported" — it is in no library — and
+        // the summary says which file was left out and why.
+        let text = await summary.text ?? ""
+        #expect(text.hasPrefix("2 new, 0 already imported"), "\(text)")
+        #expect(text.contains("a.mp4"), "\(text)")
+    }
+
+    private actor Summary {
+        var text: String?
+        func set(_ value: String) { text = value }
     }
 
     private struct CaseSensitiveVolume: FileAccess {
