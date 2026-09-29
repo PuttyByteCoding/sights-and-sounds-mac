@@ -8,7 +8,7 @@ extension LibraryDatabase {
     /// and removed with its WAL and shared-memory files, so the same name
     /// can simply be tried again. New Library and the signal-samples
     /// library both make theirs here.
-    public static func createFresh(at url: URL, fill: (LibraryDatabase) throws -> Void) throws -> LibraryDatabase {
+    static func createFresh(at url: URL, fill: (LibraryDatabase) throws -> Void) throws -> LibraryDatabase {
         let library = try openFresh(at: url)
         do {
             try fill(library)
@@ -19,7 +19,7 @@ extension LibraryDatabase {
         return library
     }
 
-    public static func createFresh(
+    static func createFresh(
         at url: URL, fill: (LibraryDatabase) async throws -> Void
     ) async throws -> LibraryDatabase {
         let library = try openFresh(at: url)
