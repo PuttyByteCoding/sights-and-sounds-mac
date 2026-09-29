@@ -116,7 +116,7 @@ public enum SignalInferenceRules {
             "mainsHum": 0.3, "narrowSound": 0.25,
         ], contradicts: ["highDefinitionDetail": 0.6, "cleanPicture": 0.4, "fullBandSound": 0.4], forSoundAlone: true),
         Rule(kind: .history, category: "Range converted wrongly", supports: [
-            "rangeBeyondItsTag": 0.8, "washedOut": 0.3,
+            "rangeBeyondItsTag": 0.8, "videoLevelsInAFullTag": 0.8, "washedOut": 0.3,
         ]),
         Rule(kind: .history, category: "Bit depth padded", supports: ["paddedBitDepth": 0.9]),
         Rule(kind: .history, category: "Sound through an earlier lossy codec", supports: [

@@ -136,6 +136,11 @@ struct SignalSampleCorpusTests {
                 .first { $0.key == key }?.strength ?? 0
             return (key, "\(range.lowerBound)…\(range.upperBound)", String(format: "%.2f", strength),
                     range.contains(strength))
+        case .concluded(let category, let range):
+            let confidence = SignalInferenceRules.conclude(SignalFacts(findings: findings)).conclusions
+                .first { $0.category == category }?.confidence ?? 0
+            return (category, "\(range.lowerBound)…\(range.upperBound)", String(format: "%.2f", confidence),
+                    range.contains(confidence))
         case .gap(let inner, _):
             return judge(inner, findings)
         }

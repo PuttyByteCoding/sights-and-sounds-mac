@@ -40,6 +40,9 @@ public struct SignalSample: Sendable, Identifiable {
         /// range (0...0 for "must not be drawn") — for what only shows when
         /// two readings are set side by side.
         case evidence(String, ClosedRange<Double>)
+        /// A conclusion the rules draw — what reaches the screen — at a
+        /// confidence in the range (0...0 for "must not be drawn").
+        case concluded(String, ClosedRange<Double>)
         /// A truth the analysis does not reach yet, and why. The corpus
         /// still checks it and reports it as known, so a fix shows up.
         indirect case gap(Truth, String)
@@ -83,12 +86,14 @@ public enum SignalSamples {
                 "mandelbrot=size=\(double):rate=\(rate):maxiter=120:start_scale=1.5,scale=\(size):flags=lanczos"]
     }
     /// A luma ramp written as raw code values, so no range conversion can
-    /// move it: `low`…`high` left to right, colour neutral, over a moving
-    /// fractal's texture in the top half.
+    /// move it: `high` at both edges falling to `low` in the middle, colour
+    /// neutral. Darkest in the middle, because a dark strip at an edge is
+    /// what a pillarbox bar looks like, and the picture area would be
+    /// measured inside it.
     static func levels(low: Int, high: Int) -> [String] {
         ["-f", "lavfi", "-t", "2", "-i",
          "color=size=640x360:rate=24,format=yuv420p,"
-            + "geq=lum='\(low)+(\(high)-\(low))*X/W':cb=128:cr=128"]
+            + "geq=lum='\(low)+(\(high)-\(low))*abs(2*X/W-1)':cb=128:cr=128"]
     }
     static let noAudio = ["-an"]
     /// 8 s of pink noise, 48 kHz.
@@ -98,6 +103,7 @@ public enum SignalSamples {
     static let alac = ["-c:a", "alac", "-ar", "48000"]
 
     static let declaredStage = "declared"
+    static let probeStage = "probeTools"
     static let timingStage = "frameTiming"
     static let audioStage = "audioSignal"
     static let stillsStage = "pictureStills"
@@ -180,10 +186,11 @@ public enum SignalSamples {
             "True interlace from 59.94 moving frames, top field first, declared interlaced.",
             input: motion("720x480", "60000/1001"), filter: "interlace=scan=tff:lowpass=0",
             extra: ["-flags", "+ilme+ildct", "-x264opts", "tff=1"],
-            stages: [declaredStage, sequenceStage],
+            stages: [declaredStage, probeStage, sequenceStage],
+            // An MP4 has no fiel atom, so AVFoundation declares nothing about
+            // fields; the bitstream's own flags are read by ffprobe.
             truths: [
-                .gap(.declared("video.fieldCount", "2"),
-                     "an MP4 without a fiel atom: the bitstream says interlaced, and only the atom is read"),
+                .declared("ffprobe.video.field_order", "tt"),
                 .measured("interlace.combedFrameFraction", 0.3...1),
             ]),
         video(
@@ -491,6 +498,7 @@ public enum SignalSamples {
                 .measured("colour.usesFullRange", 0...0),
                 .evidence("rangeBeyondItsTag", 0...0),
                 .evidence("videoLevelsInAFullTag", 0...0),
+                .concluded("Range converted wrongly", 0...0),
             ]),
         video(
             "full range tagged video", .tone,
@@ -501,6 +509,7 @@ public enum SignalSamples {
                 .declared("video.range", "video"),
                 .measured("colour.usesFullRange", 1...1),
                 .evidence("rangeBeyondItsTag", 0.5...1),
+                .concluded("Range converted wrongly", 0.5...1),
             ]),
         video(
             "video range tagged full", .tone,
@@ -510,6 +519,7 @@ public enum SignalSamples {
             truths: [
                 .declared("video.range", "full"),
                 .evidence("videoLevelsInAFullTag", 0.5...1),
+                .concluded("Range converted wrongly", 0.5...1),
             ]),
         video(
             "lifted and flattened", .tone,
@@ -640,6 +650,7 @@ extension SignalSample.Truth: CustomStringConvertible {
         case .measured(let key, let range): "\(key) in \(range.lowerBound)…\(range.upperBound)"
         case .withheld(let key): "\(key) withheld"
         case .evidence(let key, let range): "evidence \(key) at \(range.lowerBound)…\(range.upperBound)"
+        case .concluded(let category, let range): "concludes “\(category)” at \(range.lowerBound)…\(range.upperBound)"
         case .gap(let truth, _): "\(truth) (not yet read)"
         }
     }

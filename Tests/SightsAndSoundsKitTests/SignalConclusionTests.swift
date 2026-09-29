@@ -39,6 +39,19 @@ import Testing
         #expect(strength("full", low: 16, high: 235) > 0.5)
         #expect(strength("full", low: 1, high: 254) == 0)
         #expect(strength("video", low: 16, high: 235) == 0)
+        // A dim, flat full-range clip (a webcam in a dark room) never
+        // reaches the ends either, but does not stop at 16 and 235: that
+        // is low contrast, not a range mismatch.
+        #expect(strength("full", low: 40, high: 200) == 0)
+
+        // And it is said: evidence no conclusion takes up never reaches
+        // the screen.
+        let mismatch = facts(["video.range": "full"]) { f in
+            f.measure("colour.lumaLowest", 16)
+            f.measure("colour.lumaHighest", 235)
+        }
+        let drawn = SignalInferenceRules.conclude(mismatch).conclusions
+        #expect((confidence(drawn, "Range converted wrongly") ?? 0) >= 0.5)
     }
 
     @Test func aTapeCaptureScaledIntoAnHDFrame() {
