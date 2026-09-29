@@ -110,13 +110,8 @@ struct SignalSampleCorpusTests {
                     sql: "INSERT INTO truth VALUES (?, ?, ?, ?, ?, ?, ?)",
                     arguments: [sample.id, sample.topic.rawValue, key, expected, actual, held, gapReason(truth)])
             }
-            if !held {
-                let message = "\(sample.id): \(key) should be \(expected), read \(actual)"
-                if case .gap(_, let reason) = truth {
-                    problems.append("KNOWN: \(message) — \(reason)")
-                } else {
-                    problems.append(message)
-                }
+            if let problem = problem(sample.id, truth, key: key, expected: expected, actual: actual, held: held) {
+                problems.append(problem)
             }
         }
         return problems
@@ -151,6 +146,36 @@ struct SignalSampleCorpusTests {
     static func gapReason(_ truth: SignalSample.Truth) -> String? {
         if case .gap(_, let reason) = truth { return reason }
         return nil
+    }
+
+    /// What a verdict has to say, if anything. A gap that now holds has
+    /// been closed: that is said too, so the truth is promoted rather than
+    /// left looking unreached (a closed gap used to pass silently).
+    static func problem(
+        _ sample: String, _ truth: SignalSample.Truth, key: String, expected: String, actual: String, held: Bool
+    ) -> String? {
+        let message = "\(sample): \(key) should be \(expected), read \(actual)"
+        if case .gap(_, let reason) = truth {
+            return held
+                ? "\(sample): \(key) is marked a known gap (\(reason)) but now holds — make it a plain truth"
+                : "KNOWN: \(message) — \(reason)"
+        }
+        return held ? nil : message
+    }
+}
+
+/// The corpus's verdicts, without making any files.
+@Suite struct SignalSampleVerdictTests {
+    @Test func aClosedGapIsReportedAndAnOpenOneIsKnown() {
+        let gap = SignalSample.Truth.gap(.withheld("audio.lineWhistleHz"), "why")
+        let closed = SignalSampleCorpusTests.problem("s", gap, key: "k", expected: "e", actual: "a", held: true)
+        #expect(closed?.contains("now holds") == true)
+        #expect(closed?.hasPrefix("KNOWN: ") == false)
+        let open = SignalSampleCorpusTests.problem("s", gap, key: "k", expected: "e", actual: "a", held: false)
+        #expect(open?.hasPrefix("KNOWN: ") == true)
+        let plain = SignalSample.Truth.withheld("audio.lineWhistleHz")
+        #expect(SignalSampleCorpusTests.problem("s", plain, key: "k", expected: "e", actual: "a", held: true) == nil)
+        #expect(SignalSampleCorpusTests.problem("s", plain, key: "k", expected: "e", actual: "a", held: false) != nil)
     }
 }
 
