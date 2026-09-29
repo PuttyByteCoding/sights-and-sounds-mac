@@ -65,7 +65,7 @@ struct BrowseView: View {
             model.openPlayerForAnalysis()
             return
         }
-        openWindow(id: "aux", value: AuxWindowRequest(libraryID: model.libraryID, kind: kind))
+        openWindow(id: "aux", value: model.auxRequest(kind))
     }
 
     /// "Video" when one kind is selected, "2 media types" when several —
