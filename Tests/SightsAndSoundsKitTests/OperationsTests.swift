@@ -244,7 +244,12 @@ import Testing
         let record = try await RepairJob.enqueue(
             on: f.runner, itemID: f.parent.id, recipe: RepairRecipe.shipped[0])
         try await f.runner.runPending()
-        #expect(try await f.job(record.id).state == .failed)
+        // The repair happened; only the put-back did not. A failed job
+        // invited a retry that would repair the repaired file again, and
+        // said nothing about where it was left.
+        let job = try await f.job(record.id)
+        #expect(job.state == .succeeded, "\(job.error ?? "")")
+        #expect(job.summary?.contains("could not be moved back") == true, "\(job.summary ?? "")")
 
         let state = try await hashState(f)
         #expect(state.hash == nil)
