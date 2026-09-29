@@ -19,6 +19,7 @@ public enum DecideError: Error, CustomStringConvertible, Equatable {
     case keeperMarkedForDeletion
     case candidateDoesNotLinkPair
     case parentAndSegment
+    case alreadyAnswered
 
     public var description: String {
         switch self {
@@ -29,6 +30,7 @@ public enum DecideError: Error, CustomStringConvertible, Equatable {
         case .candidateDoesNotLinkPair: "the candidate does not link these two items"
         case .parentAndSegment:
             "one of these is a segment of the other — they share one file, so neither can be deleted as a duplicate"
+        case .alreadyAnswered: "this pair has already been answered"
         }
     }
 }
@@ -62,18 +64,23 @@ extension LibraryDatabase {
     /// file being staged, and — like `rejected` — the row survives so
     /// the sweeps cannot re-flag it.
     public func keepBothCandidate(_ candidateID: UUID) throws {
-        try writer.write { db in
-            try db.execute(
-                sql: "UPDATE duplicateCandidate SET status = 'keptBoth' WHERE id = ?",
-                arguments: [candidateID])
-        }
+        try answer(candidateID, with: .keptBoth)
     }
 
     public func rejectCandidate(_ candidateID: UUID) throws {
+        try answer(candidateID, with: .rejected)
+    }
+
+    /// A pair is answered once: only a pending pair takes an answer. Review
+    /// can show a pair again while its decision is still being carried out
+    /// (the loser's move is slow), and an unconditional update let a second
+    /// answer overwrite the first while its file was still being staged.
+    private func answer(_ candidateID: UUID, with status: DuplicateStatus) throws {
         try writer.write { db in
             try db.execute(
-                sql: "UPDATE duplicateCandidate SET status = 'rejected' WHERE id = ?",
-                arguments: [candidateID])
+                sql: "UPDATE duplicateCandidate SET status = ? WHERE id = ? AND status = 'pending'",
+                arguments: [status.rawValue, candidateID])
+            guard db.changesCount > 0 else { throw DecideError.alreadyAnswered }
         }
     }
 
@@ -109,6 +116,7 @@ extension LibraryDatabase {
                 guard let candidate = try DuplicateCandidate.fetchOne(db, key: candidateID),
                       Set([candidate.itemAID, candidate.itemBID]) == Set([keeperID, loserID])
                 else { throw DecideError.candidateDoesNotLinkPair }
+                guard candidate.status == .pending else { throw DecideError.alreadyAnswered }
             }
 
             // Recompute mergeability here — never trust the caller's list.
