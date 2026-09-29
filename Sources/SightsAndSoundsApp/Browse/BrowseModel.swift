@@ -789,7 +789,6 @@ final class BrowseModel {
         importStatus[source.id] = "queued…"
         Task {
             do {
-                await jobRunner.register(ImportJob.self)
                 let record = try await ImportJob.enqueue(on: jobRunner, sourceID: source.id)
                 let drain = Task { try await jobRunner.runPending() }
 
@@ -1293,7 +1292,6 @@ final class BrowseModel {
 
     func runValidation() async {
         do {
-            await jobRunner.register(ValidationJob.self)
             _ = try await jobRunner.enqueueUnlessPending(ValidationJob.self)
             try await jobRunner.runPending()
         } catch {

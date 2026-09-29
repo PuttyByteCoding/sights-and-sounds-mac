@@ -589,7 +589,6 @@ struct ReviewView: View {
         repairing.insert(itemID)
         Task {
             do {
-                await runner.register(RepairJob.self)
                 _ = try await RepairJob.enqueue(on: runner, itemID: itemID, recipe: recipe)
                 // Said now: waiting on the drain meant silence (and a Run
                 // fix that queued the same repair again) until every job

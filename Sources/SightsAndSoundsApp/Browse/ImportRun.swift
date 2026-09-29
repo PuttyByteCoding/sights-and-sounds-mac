@@ -42,7 +42,6 @@ final class ImportRun {
             for group in groups where !group.paths.isEmpty {
                 guard !isCancelled, !Task.isCancelled else { break }
                 do {
-                    await runner.register(ImportJob.self)
                     let record = try await ImportJob.enqueue(
                         on: runner, sourceID: sourceID,
                         relativePaths: group.paths, staging: group.staging)

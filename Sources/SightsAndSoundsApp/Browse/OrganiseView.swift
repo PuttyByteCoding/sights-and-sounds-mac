@@ -457,7 +457,6 @@ struct OrganiseView: View {
         let template = template
         Task {
             do {
-                await runner.register(ReorganizeJob.self)
                 _ = try await ReorganizeJob.enqueue(
                     on: runner, template: template, itemIDs: ids)
                 // Said now, not once the whole queue has drained.

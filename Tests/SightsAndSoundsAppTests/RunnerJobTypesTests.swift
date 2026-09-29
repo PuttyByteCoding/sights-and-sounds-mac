@@ -1,5 +1,5 @@
 import Foundation
-import SightsAndSoundsKit
+@testable import SightsAndSoundsKit
 import Testing
 
 @testable import SightsAndSoundsApp

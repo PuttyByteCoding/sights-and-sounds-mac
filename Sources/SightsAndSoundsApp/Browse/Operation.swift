@@ -280,40 +280,33 @@ enum Operation: String, CaseIterable {
     ) async throws {
         switch self {
         case .optimize, .repair:
-            await runner.register(RemuxJob.self)
             for item in items {
                 _ = try await RemuxJob.enqueue(
                     on: runner, itemID: item.id, mode: self == .optimize ? .optimize : .repair)
             }
         case .encode:
-            await runner.register(EncodeJob.self)
             for item in items {
                 _ = try await EncodeJob.enqueue(on: runner, itemID: item.id, preset: preset)
             }
         case .clipExport:
-            await runner.register(ClipExportJob.self)
             for item in items {
                 _ = try await ClipExportJob.enqueue(on: runner, clipID: item.id)
             }
         case .blockRemoval:
-            await runner.register(BlockRemovalJob.self)
             for item in items {
                 _ = try await BlockRemovalJob.enqueue(on: runner, itemID: item.id)
             }
         case .ocr:
-            await runner.register(OcrJob.self)
             for item in items {
                 _ = try await OcrJob.enqueue(
                     on: runner, itemID: item.id, settings: ocr, sampleIntervalSeconds: interval)
             }
         case .join:
             guard let first = items.first else { return }
-            await runner.register(JoinJob.self)
             _ = try await JoinJob.enqueue(
                 on: runner, sourceID: first.sourceID, folderPath: first.folderPath,
                 itemIDs: order)
         case .writeTags:
-            await runner.register(WritebackJob.self)
             _ = try await WritebackJob.enqueue(
                 on: runner, itemIDs: items.map(\.id),
                 scopeDescription: "selection (\(items.count) files)")

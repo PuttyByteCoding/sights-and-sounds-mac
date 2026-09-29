@@ -53,10 +53,10 @@ public actor JobRunner {
         }
     }
 
-    /// Make a job kind runnable. Registering twice replaces (test hook).
     /// Whether a queued row of this kind can run.
-    public func handles(kind: String) -> Bool { jobTypes[kind] != nil }
+    func handles(kind: String) -> Bool { jobTypes[kind] != nil }
 
+    /// Make a job kind runnable. Registering twice replaces (test hook).
     public func register(_ type: any Job.Type) {
         jobTypes[type.kind] = type
     }
