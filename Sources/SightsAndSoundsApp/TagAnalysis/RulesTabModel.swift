@@ -25,6 +25,8 @@ final class RulesTabModel {
     private(set) var isApplying = false
 
     private var dryRunTask: Task<Void, Never>?
+    /// The draft's walk; tests slow it down to overlap edits with it.
+    var walkDryRun: @Sendable (LibraryDatabase, RuleEngine.Rule) throws -> RuleDryRun = { try $0.dryRun($1) }
     private var cardDryRunGeneration = 0
 
     var selectedID: UUID?
@@ -92,8 +94,9 @@ final class RulesTabModel {
     ///
     /// The run walks the whole candidate queue, so it runs off the main
     /// actor — it used to run on it, once per keystroke in the matcher
-    /// field. Typing waits for a pause (`settle`), and each new run
-    /// cancels the last, so only the newest draft's answer lands.
+    /// field. Typing waits for a pause (`settle`), a pause that ends
+    /// during a walk waits for that walk (`startDryRunWalk`), and only an
+    /// answer for the draft still on screen lands.
     func refreshDryRun(settle: Duration = .zero) {
         dryRunTask?.cancel()
         guard draft ?? selected != nil else {
@@ -114,7 +117,8 @@ final class RulesTabModel {
     /// task that awaited it left it running: slow typing piled up
     /// concurrent walks whose answers were then thrown away. Now an edit
     /// during a walk only marks it stale, and when it finishes one more
-    /// walk runs for the newest draft.
+    /// walk runs for the newest draft. A finished walk whose rule is no
+    /// longer the one on screen is dropped.
     private var walking = false
     private var walkIsStale = false
 
@@ -129,17 +133,20 @@ final class RulesTabModel {
         }
         walking = true
         walkIsStale = false
-        let library = library
+        let library = library, walk = walkDryRun
         Task {
             let run = try? await Task.detached(priority: .userInitiated) {
-                try library.dryRun(subject)
+                try walk(library, subject)
             }.value
             walking = false
             if walkIsStale {
                 startDryRunWalk()
-            } else {
+            } else if subject == draft ?? selected {
                 dryRun = run
             }
+            // Otherwise the subject changed without marking this walk
+            // stale — cleared, or an edit still settling — and whatever
+            // changed it has already asked for its own answer.
         }
     }
 
