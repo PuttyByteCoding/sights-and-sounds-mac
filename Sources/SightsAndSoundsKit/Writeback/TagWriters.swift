@@ -147,7 +147,7 @@ public enum TagWriters {
                 nativeToolError = "metaflac: \(error)"  // then fall through to ffmpeg
             }
         }
-        if ["mp4", "m4a", "m4v", "mov"].contains(ext), let parsley = tools.atomicParsley {
+        if Self.mp4Family.contains(ext), let parsley = tools.atomicParsley {
             // `--metaEnema` is what makes this a wipe-and-rewrite, and it
             // wipes the cover art with everything else. The library does
             // not hold the art and snapshots do not record it, so it is
@@ -226,10 +226,13 @@ public enum TagWriters {
         // not read — the title included. So the known fields are
         // written, and the custom ones are named as not written rather
         // than vanishing under a success.
-        let isMP4 = ["mp4", "m4v", "m4a", "mov"].contains(url.pathExtension.lowercased())
+        let isMP4 = Self.mp4Family.contains(url.pathExtension.lowercased())
         let notWritten = isMP4 ? fields.filter(\.mp4Freeform).map(\.vorbisName) : []
         for field in fields where !notWritten.contains(field.vorbisName) {
-            arguments += [metadataFlag, "\(field.vorbisName)=\(field.values.joined(separator: "; "))"]
+            // The MOV muxer knows these two only by its own names; given the
+            // Vorbis ones it dropped them without a word.
+            let key = isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+            arguments += [metadataFlag, "\(key)=\(field.values.joined(separator: "; "))"]
         }
         arguments.append(temp.path)
         do {
@@ -245,8 +248,15 @@ public enum TagWriters {
         }
     }
 
+    /// Standard fields ffmpeg's MOV muxer writes under a name of its own.
+    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track"]
+
     /// Containers whose tags live on the stream as Vorbis comments.
     static let oggFamily: Set<String> = ["ogg", "oga", "ogv", "opus", "spx"]
+
+    /// The MP4 family: AtomicParsley writes these, and a remux of them
+    /// names its iTunes keys.
+    static let mp4Family: Set<String> = ["mp4", "m4a", "m4v", "mov"]
 
     /// Where the remux writes before the swap: on the file's own
     /// volume. The system temp folder is on the boot volume, so a library
