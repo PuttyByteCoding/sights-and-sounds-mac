@@ -32,6 +32,9 @@ struct ImportView: View {
     @State private var outcome: ScanOutcome?
     @State private var scanError: String?
     @State private var scanTask: Task<Void, Never>?
+    /// The window is open. A run carries on after the window closes, and
+    /// its finish must not start a rescan for a window that is gone.
+    @State private var isShown = false
 
     // Review state
     @State private var checkedFolders: Set<String> = []
@@ -121,7 +124,11 @@ struct ImportView: View {
                     dismiss()
                 })
         }
-        .onDisappear { scanTask?.cancel() }
+        .onAppear { isShown = true }
+        .onDisappear {
+            isShown = false
+            scanTask?.cancel()
+        }
     }
 
     // MARK: - Step 1 · Source
@@ -756,8 +763,9 @@ struct ImportView: View {
             // and thumbnails.
             app.signalMaintenance(for: model.libraryID)
             // The scan on screen predates the import: rescan, so what was
-            // just imported shows as known and is no longer ticked.
-            if let selectedSource { beginScan(selectedSource) }
+            // just imported shows as known and is no longer ticked — while
+            // there is a window to show it in.
+            if isShown, let selectedSource { beginScan(selectedSource) }
         }
     }
 
