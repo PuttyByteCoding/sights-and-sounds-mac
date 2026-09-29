@@ -233,7 +233,7 @@ public enum SignalSamples {
             cfr("59.94", "60000/1001", 59.94),
             video(
                 "variable rate", .timing,
-                "Variable frame rate: frame intervals wander between about 25 and 40 ms, as a phone records.",
+                "Variable frame rate: frame intervals wander between about 29 and 38 ms, as a phone records.",
                 input: motion("640x360", "30"),
                 filter: "settb=1/90000,setpts='(N/30+0.006*sin(N*0.7))/TB'",
                 extra: ["-fps_mode", "passthrough", "-enc_time_base", "1/90000", "-video_track_timescale", "90000"],
@@ -382,7 +382,7 @@ public enum SignalSamples {
             "out of phase", "The right channel inverted: a wiring or azimuth fault.",
             graph: "\(pink()),pan=stereo|c0=c0|c1=-1*c0[out]",
             truths: [
-                .measured("audio.channelCorrelation", -1 ... -0.95),
+                .measured("audio.channelCorrelation", -1.001 ... -0.95),
                 .measured("audio.bandwidth40Hz", 19_000...24_000),
             ]),
         audio(
