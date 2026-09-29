@@ -65,17 +65,20 @@ import Testing
         }
     }
 
-    /// Runs until its gate opens.
+    /// Runs until its gate opens, counting the jobs that got past start.
     private actor Gate {
         static let shared = Gate()
         private(set) var open = false
+        private(set) var started = 0
         func set(_ value: Bool) { open = value }
+        func start() { started += 1 }
     }
 
     private struct GatedJob: Job {
         static let kind = "test.gated"
         init(payload: Data?) throws {}
         func run(_ context: JobContext) async throws {
+            await Gate.shared.start()
             while await !Gate.shared.open { try await Task.sleep(for: .milliseconds(10)) }
         }
     }
@@ -84,11 +87,16 @@ import Testing
     /// once. `runPending` returns when the whole queue has drained, so
     /// Operations, Organise and Review reported "Queued…" only after every
     /// job ahead had finished, and kept Run enabled all that time.
-    @Test func startDrainingReturnsWhileTheJobRuns() async throws {
+    ///
+    /// Time-limited: if `startDraining` ever awaited the drain again, the
+    /// gate below would never open and the test would hang, not fail.
+    @Test(.timeLimit(.minutes(1)))
+    func startDrainingReturnsWhileTheJobRuns() async throws {
         let (library, runner) = try makeRunner()
         await runner.register(GatedJob.self)
         await Gate.shared.set(false)
         let queued = try await runner.enqueue(GatedJob.self)
+        let behind = try await runner.enqueue(GatedJob.self)
 
         await runner.startDraining()
         await runner.startDraining()  // a second call joins, never doubles
@@ -97,11 +105,17 @@ import Testing
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(try record(library, queued.id).state == .running)
+        // A second drain would have started the job behind it by now.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await Gate.shared.started == 1, "a second drain ran beside the first")
+        #expect(try record(library, behind.id).state == .queued)
+
         await Gate.shared.set(true)
-        for _ in 0..<400 where try record(library, queued.id).state != .succeeded {
+        for _ in 0..<400 where try record(library, behind.id).state != .succeeded {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(try record(library, queued.id).state == .succeeded)
+        #expect(try record(library, behind.id).state == .succeeded)
     }
 
     private func makeRunner() throws -> (LibraryDatabase, JobRunner) {
