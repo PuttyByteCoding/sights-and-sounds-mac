@@ -65,6 +65,18 @@ public struct JsonSchemaDefinition: Codable, Equatable, Identifiable, Sendable,
     }
 }
 
+public enum JsonSchemaError: Error, Equatable, CustomStringConvertible {
+    case nameTaken(String)
+    case notFound
+
+    public var description: String {
+        switch self {
+        case .nameTaken(let name): "a schema named “\(name)” already exists — select it to edit it"
+        case .notFound: "that schema no longer exists"
+        }
+    }
+}
+
 extension LibraryDatabase {
 
     public func jsonSchemas() throws -> [JsonSchemaDefinition] {
@@ -95,6 +107,42 @@ extension LibraryDatabase {
             let made = JsonSchemaDefinition(name: name, definitionJSON: json)
             try made.insert(db)
             return made
+        }
+    }
+
+    /// Save what the editor has open: the schema with this id (a rename
+    /// changes that one schema), or a new one when `id` is nil. A name
+    /// that belongs to ANOTHER schema is refused — the by-name save above
+    /// would have made a second schema on a rename, or replaced someone
+    /// else's keys on a new one.
+    @discardableResult
+    public func saveJsonSchema(
+        id: UUID?, named rawName: String, keys: [SchemaKey]
+    ) throws -> JsonSchemaDefinition {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw DatabaseError(message: "a schema needs a name")
+        }
+        let json = String(data: try JSONEncoder().encode(keys), encoding: .utf8) ?? "[]"
+        return try writer.write { db in
+            if let holder = try JsonSchemaDefinition
+                .filter(sql: "name = ? COLLATE NOCASE", arguments: [name])
+                .fetchOne(db), holder.id != id
+            {
+                throw JsonSchemaError.nameTaken(name)
+            }
+            guard let id else {
+                let made = JsonSchemaDefinition(name: name, definitionJSON: json)
+                try made.insert(db)
+                return made
+            }
+            guard var existing = try JsonSchemaDefinition.fetchOne(db, key: id) else {
+                throw JsonSchemaError.notFound
+            }
+            existing.name = name
+            existing.definitionJSON = json
+            try existing.update(db)
+            return existing
         }
     }
 
