@@ -131,6 +131,16 @@ struct SignalSampleCorpusTests {
         case .withheld(let key):
             let read = reading(key, findings)
             return (key, "withheld", read.map { String(format: "%.4g", $0) } ?? "withheld", read == nil)
+        case .evidence(let key, let range):
+            let strength = SignalEvidenceRules.evidence(from: SignalFacts(findings: findings))
+                .first { $0.key == key }?.strength ?? 0
+            return (key, "\(range.lowerBound)…\(range.upperBound)", String(format: "%.2f", strength),
+                    range.contains(strength))
+        case .concluded(let category, let range):
+            let confidence = SignalInferenceRules.conclude(SignalFacts(findings: findings)).conclusions
+                .first { $0.category == category }?.confidence ?? 0
+            return (category, "\(range.lowerBound)…\(range.upperBound)", String(format: "%.2f", confidence),
+                    range.contains(confidence))
         case .gap(let inner, _):
             return judge(inner, findings)
         }

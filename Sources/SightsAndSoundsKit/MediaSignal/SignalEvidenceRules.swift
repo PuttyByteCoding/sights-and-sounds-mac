@@ -147,6 +147,19 @@ public enum SignalEvidenceRules {
         if facts.value("colour.usesFullRange") == 1, facts.declared["video.range"] != "full" {
             add("rangeBeyondItsTag", .processing, 0.8, "samples reach full range in a file not tagged full range")
         }
+        // The other way round: levels that stop AT video black and white,
+        // in a file that says full. Played as full range, black at 16 is a
+        // dark grey and white at 235 a light one. Stopping near 16 and 235
+        // — within the same over- and undershoot ColourReading allows video
+        // range — is the signature; a dim or flat full-range clip that
+        // simply never reaches the ends is low contrast, not a mismatch.
+        if facts.declared["video.range"] == "full",
+           let lowest = facts.value("colour.lumaLowest"), let highest = facts.value("colour.lumaHighest"),
+           (ColourReading.videoRangeTolerance.lowerBound...24).contains(lowest),
+           (225...ColourReading.videoRangeTolerance.upperBound).contains(highest) {
+            add("videoLevelsInAFullTag", .processing, 0.7,
+                "samples keep to \(text(lowest, 0))–\(text(highest, 0)) in a file tagged full range: it plays washed out")
+        }
         if facts.value("colour.washedOut") == 1 {
             // Weak: a sunlit scene with no shadows reads the same way.
             add("washedOut", .processing, 0.4, "the picture never nears black or white in any sampled frame")

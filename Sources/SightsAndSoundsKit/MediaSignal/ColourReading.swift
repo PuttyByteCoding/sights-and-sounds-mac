@@ -10,6 +10,12 @@ import Foundation
 /// tenth of the colour detail its 4:2:0 container could hold. All three
 /// are read here from the planes.
 public enum ColourReading {
+    /// How far outside 16...235 a video-range picture's extremes can land
+    /// — grain, sharpening, encoder overshoot — before they count as full
+    /// range. The range-mismatch evidence uses the same edges, so the two
+    /// rules meet with no gap between them.
+    static let videoRangeTolerance: ClosedRange<Double> = 8...245
+
     public static func measure(_ frames: [PictureFrame], in area: PictureGeometry.ActiveArea) -> SignalFindings {
         var findings = SignalFindings()
         guard !frames.isEmpty else { return findings }
@@ -53,7 +59,9 @@ public enum ColourReading {
         findings.measure("colour.aboveVideoWhiteShare", FrameSummary.percentile(above, 0.9))
         // Video range keeps to 16...235 with a little over- and undershoot.
         // Reaching well outside it, in more than one frame, is full range.
-        let outside = zip(lows, highs).count { $0.1 < 8 || $1.1 > 245 }
+        let outside = zip(lows, highs).count {
+            $0.1 < videoRangeTolerance.lowerBound || $1.1 > videoRangeTolerance.upperBound
+        }
         findings.measure("colour.usesFullRange", outside >= 2 ? 1 : 0)
         // A picture that never gets near black or white has been lifted or
         // flattened: usually a range conversion applied twice.

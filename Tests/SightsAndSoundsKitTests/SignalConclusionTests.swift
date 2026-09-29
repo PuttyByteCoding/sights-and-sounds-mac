@@ -22,6 +22,42 @@ import Testing
         conclusions.first { $0.category == category }?.confidence
     }
 
+    /// Levels that keep to 16–235 in a file declared full range play back
+    /// washed out: blacks at 16 of 255 are a dark grey. Levels were judged
+    /// without the declared range, so nothing said so. The mismatch is now
+    /// evidence of a processing mistake — and levels that do reach the
+    /// ends, or a file declared video range, say nothing.
+    @Test func videoLevelsInAFileDeclaredFullAreSaid() {
+        func strength(_ range: String, low: Double, high: Double) -> Double {
+            let facts = facts(["video.range": range]) { f in
+                f.measure("colour.lumaLowest", low)
+                f.measure("colour.lumaHighest", high)
+            }
+            return SignalEvidenceRules.evidence(from: facts)
+                .first { $0.key == "videoLevelsInAFullTag" }?.strength ?? 0
+        }
+        #expect(strength("full", low: 16, high: 235) > 0.5)
+        #expect(strength("full", low: 1, high: 254) == 0)
+        #expect(strength("video", low: 16, high: 235) == 0)
+        // A dim, flat full-range clip (a webcam in a dark room) never
+        // reaches the ends either, but does not stop at 16 and 235: that
+        // is low contrast, not a range mismatch.
+        #expect(strength("full", low: 40, high: 200) == 0)
+        // Grain and encoder overshoot put video-range extremes a few codes
+        // outside 16–235 (here 10 and 243) without reaching what counts as
+        // full range: still video levels, and still said.
+        #expect(strength("full", low: 10, high: 243) > 0.5)
+
+        // And it is said: evidence no conclusion takes up never reaches
+        // the screen.
+        let mismatch = facts(["video.range": "full"]) { f in
+            f.measure("colour.lumaLowest", 16)
+            f.measure("colour.lumaHighest", 235)
+        }
+        let drawn = SignalInferenceRules.conclude(mismatch).conclusions
+        #expect((confidence(drawn, "Range converted wrongly") ?? 0) >= 0.5)
+    }
+
     @Test func aTapeCaptureScaledIntoAnHDFrame() {
         let facts = facts(["container.writingApplication": "HandBrake 1.7.0", "video.bitDepth": "8"]) { f in
             f.measure("geometry.pillarboxed", 1)
