@@ -35,7 +35,7 @@ public struct OcrJob: Job {
     /// 1 s and the estimate promised twice the frames.
     public static let minimumSampleIntervalSeconds = 0.5
 
-    public static func effectiveInterval(_ requested: Double) -> Double {
+    static func effectiveInterval(_ requested: Double) -> Double {
         max(minimumSampleIntervalSeconds, requested)
     }
 
