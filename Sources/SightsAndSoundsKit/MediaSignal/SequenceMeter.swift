@@ -21,7 +21,6 @@ public final class SequenceMeter {
 
     private var previous: PictureFrame?
     private var beforePrevious: PictureFrame?
-    private var previousChange: [Float]?
 
     private(set) var differences: [Double] = []
     private(set) var combedShares: [Double] = []
@@ -48,7 +47,6 @@ public final class SequenceMeter {
         differences.append(Double(vDSP.meanMagnitude(change)))
         combedShares.append(Self.combedShare(frame, change: change))
 
-        previousChange = change
 
         gradientEnergies.append(Self.gradientEnergy(frame))
 
@@ -196,12 +194,6 @@ public final class SequenceMeter {
             vDSP_vsub(luma.baseAddress!, 1, luma.baseAddress! + 1, 1, &steps, 1, vDSP_Length(steps.count))
         }
         return Double(vDSP.meanMagnitude(steps))
-    }
-
-    static func correlation(_ a: [Float], _ b: [Float]) -> Double? {
-        let energy = (vDSP.sumOfSquares(a) * vDSP.sumOfSquares(b)).squareRoot()
-        guard energy > 1e-6 else { return nil }
-        return Double(vDSP.dot(a, b) / energy)
     }
 
     // MARK: - The window's reading
