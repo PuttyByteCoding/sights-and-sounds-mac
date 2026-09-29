@@ -116,14 +116,15 @@ public struct ImportJob: Job {
             candidates.filter { wanted.contains($0.relative.lowercased()) }
         } ?? candidates
 
-        // Folded once, looked up per file. Scanning every known path for
-        // every candidate made a full rescan quadratic: 40,000 items was
-        // over a billion string comparisons.
-        var existing = try await library.writer.read { db in
+        // The library's own spellings, read once. Folded once too, and
+        // looked up per file: scanning every known path for every
+        // candidate made a full rescan quadratic — 40,000 items was over a
+        // billion string comparisons.
+        let exactKnown = try await library.writer.read { db in
             Set(try String.fetchAll(
-                db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?",
-                arguments: [source.id]).map { $0.lowercased() })
+                db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?", arguments: [source.id]))
         }
+        var existing = Set(exactKnown.map { $0.lowercased() })
 
         var inserted = 0
         var skipped = 0
@@ -133,14 +134,10 @@ public struct ImportJob: Job {
         var caseTwins: [String] = []
         let resolved = try payload.staging?.resolve(in: library)
         var vanished: Set<UUID> = []
-        // The library's own spellings, for a later scan of a case-sensitive
-        // folder: a candidate whose folded path is known but whose exact
-        // spelling is not, while the library's spelling is ALSO on disk,
-        // is the twin left out before — still a twin, not "already in".
-        let exactKnown = try await library.writer.read { db in
-            Set(try String.fetchAll(
-                db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?", arguments: [source.id]))
-        }
+        // For a later scan of a case-sensitive folder: a candidate whose
+        // folded path is known but whose exact spelling is not, while the
+        // library's spelling is ALSO on disk, is the twin left out before
+        // — still a twin, not "already in".
         let candidateSpellings = Set(selected.map(\.relative))
         let knownSpellingByFold = Dictionary(
             exactKnown.map { ($0.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
