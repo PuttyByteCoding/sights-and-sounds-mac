@@ -47,81 +47,100 @@ import Testing
         #expect(model.dryRun?.actionCount == 3)
     }
 
-    /// Counts walks in flight and holds each one long enough for the
-    /// next edit to arrive while it runs.
-    final class SlowWalks: @unchecked Sendable {
+    /// Walks that wait at a gate the test opens, so an edit is made
+    /// while a walk is certainly still running, however loaded the
+    /// machine. Once opened the gate stays open.
+    final class GatedWalks: @unchecked Sendable {
         private let lock = NSLock()
+        private let gate = DispatchSemaphore(value: 0)
+        private var isOpen = false
         private var running = 0
-        private(set) var mostAtOnce = 0
-        private(set) var total = 0
+        private var counts = (started: 0, finished: 0, mostAtOnce: 0)
+
+        var started: Int { lock.withLock { counts.started } }
+        var finished: Int { lock.withLock { counts.finished } }
+        var mostAtOnce: Int { lock.withLock { counts.mostAtOnce } }
+
+        func open() {
+            lock.withLock { isOpen = true }
+            gate.signal()
+        }
 
         func walk(_ library: LibraryDatabase, _ rule: RuleEngine.Rule) throws -> RuleDryRun {
-            lock.withLock { running += 1; total += 1; mostAtOnce = max(mostAtOnce, running) }
-            defer { lock.withLock { running -= 1 } }
-            Thread.sleep(forTimeInterval: 0.4)
+            let wait = lock.withLock {
+                running += 1
+                counts.started += 1
+                counts.mostAtOnce = max(counts.mostAtOnce, running)
+                return !isOpen
+            }
+            if wait {
+                _ = gate.wait(timeout: .now() + 10)   // never strand a pool thread
+                gate.signal()   // let any later walk through too
+            }
+            defer { lock.withLock { running -= 1; counts.finished += 1 } }
             return try library.dryRun(rule)
         }
     }
 
-    /// Edits arriving while a slow walk runs never start a second walk
-    /// beside it, and the answer ends on the newest draft.
-    @Test func aSlowWalkIsNeverJoinedByASecond() async throws {
-        let model = try model()
-        let walks = SlowWalks()
-        model.walkDryRun = walks.walk
-        for _ in 0..<3 {
-            model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: $0.matcher, actions: $0.actions + [.ignore]) }
-            try await Task.sleep(for: .milliseconds(250))
-        }
-        try await waitUntil { model.dryRun?.actionCount == 3 }
-        try await Task.sleep(for: .milliseconds(600))
-        #expect(model.dryRun?.actionCount == 3)
-        #expect(walks.mostAtOnce == 1)
-    }
-
-    /// A model whose new rule's first (fast) answer has landed and whose
-    /// later walks are slow; the answer on screen is cleared.
-    private func modelWithSlowWalks() async throws -> (RulesTabModel, SlowWalks, RuleEngine.Rule) {
+    /// A model whose new rule's first answer has landed, whose later walks
+    /// wait at a gate, and whose rule is re-shown with its answer cleared
+    /// and a gated walk under way.
+    private func modelWithAGatedWalk() async throws -> (RulesTabModel, GatedWalks) {
         let model = try model()
         try await waitUntil { model.dryRun != nil }
         let rule = try #require(model.draft)
-        let walks = SlowWalks()
+        let walks = GatedWalks()
         model.walkDryRun = walks.walk
         model.selectedID = nil
         model.draft = nil
         model.refreshDryRun()
         #expect(model.dryRun == nil)
-        return (model, walks, rule)
+        model.selectedID = rule.id
+        model.draft = rule
+        model.refreshDryRun()
+        try await waitUntil { walks.started == 1 }
+        return (model, walks)
+    }
+
+    private func addAnAction(_ model: RulesTabModel) {
+        model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: $0.matcher, actions: $0.actions + [.ignore]) }
+    }
+
+    /// Edits whose settle ends while a walk runs never start a second
+    /// walk beside it, and the answer ends on the newest draft.
+    @Test func aRunningWalkIsNeverJoinedByASecond() async throws {
+        let (model, walks) = try await modelWithAGatedWalk()
+        for _ in 0..<3 {
+            addAnAction(model)
+            try await Task.sleep(for: .milliseconds(200))   // past the settle
+        }
+        #expect(walks.started == 1, "an edit started a walk beside the running one")
+        walks.open()
+        try await waitUntil { model.dryRun?.actionCount == 3 }
+        #expect(walks.mostAtOnce == 1)
+        #expect(walks.started == 2, "one more walk, for the newest draft")
     }
 
     /// Clearing the subject while a walk runs: the walk's answer is for a
     /// rule no longer on screen, so it must not land.
     @Test func aWalkForARuleNoLongerShownDoesNotLand() async throws {
-        let (model, walks, rule) = try await modelWithSlowWalks()
-        model.selectedID = rule.id
-        model.draft = rule
-        model.refreshDryRun()
-        try await waitUntil { walks.total == 1 }
+        let (model, walks) = try await modelWithAGatedWalk()
         model.selectedID = nil
         model.draft = nil
         model.refreshDryRun()
-        try await Task.sleep(for: .milliseconds(700))
+        walks.open()
+        try await waitUntil { walks.finished == 1 }
+        try await Task.sleep(for: .milliseconds(200))
         #expect(model.dryRun == nil)
     }
 
     /// An edit still settling when a walk ends: the older draft's answer
     /// must not show in the meantime.
     @Test func anAnswerForAnOlderDraftDoesNotLand() async throws {
-        let (model, walks, rule) = try await modelWithSlowWalks()
-        model.selectedID = rule.id
-        model.draft = rule
-        model.refreshDryRun()
-        try await waitUntil { walks.total == 1 }
-        // The walk ends ~400 ms after it began; this edit settles 150 ms
-        // after it is made, so after the walk has ended.
-        try await Task.sleep(for: .milliseconds(300))
-        model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: $0.matcher, actions: $0.actions + [.ignore]) }
-        for _ in 0..<150 where model.dryRun == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let (model, walks) = try await modelWithAGatedWalk()
+        addAnAction(model)
+        walks.open()
+        try await waitUntil { model.dryRun != nil }
         #expect(model.dryRun?.actionCount == 1, "the first answer to land was for the older draft")
     }
 
