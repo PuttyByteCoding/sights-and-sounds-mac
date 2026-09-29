@@ -731,6 +731,64 @@ struct DemoLibraryButton: View {
 }
 
 
+/// A library of Media Signal samples: short files made to order, each
+/// showing one property the analysis reads, its truth in the notes.
+/// What the sweep concludes about them can be set beside what they are.
+struct SignalSamplesLibraryButton: View {
+    @Environment(AppModel.self) private var model
+    @State private var busyText: String?
+
+    var body: some View {
+        if let busyText {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(busyText).font(.caption)
+            }
+        } else {
+            Button("Create Signal Samples…", systemImage: "waveform.path.ecg") { create() }
+                .help("Short generated files, each showing one property Media Signal reads (needs ffmpeg)")
+        }
+    }
+
+    private func create() {
+        guard let ffmpeg = FfmpegTool.path() else {
+            model.loadError = "Signal samples are made with ffmpeg. \(FfmpegTool.installHint)"
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.title = "Choose a folder for the signal samples"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Create Here"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        busyText = "Making signal samples…"
+        let appDatabase = model.appDatabase
+        Task.detached(priority: .userInitiated) {
+            var failure: String?
+            do {
+                let library = try await SignalSamples.makeLibrary(
+                    at: folder.appendingPathComponent("Signal Samples.sqlite"),
+                    mediaFolder: folder.appendingPathComponent("Signal Samples", isDirectory: true),
+                    ffmpeg: ffmpeg
+                ) { done, total in
+                    Task { @MainActor in busyText = "Making signal samples… \(done) of \(total)" }
+                }
+                if let appDatabase { _ = try await MainActor.run { try appDatabase.register(library) } }
+            } catch {
+                failure = "\(error)"
+            }
+            let message = failure
+            await MainActor.run {
+                busyText = nil
+                if let message { model.loadError = "Signal samples failed: \(message)" }
+                model.refresh()
+            }
+        }
+    }
+}
+
 struct LogWindowButton: View {
     @Environment(\.openWindow) private var openWindow
 
