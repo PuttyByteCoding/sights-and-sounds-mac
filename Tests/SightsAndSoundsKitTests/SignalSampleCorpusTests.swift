@@ -129,8 +129,13 @@ struct SignalSampleCorpusTests {
             let shown = read.map { String(format: "%.4g", $0) } ?? "absent"
             return (key, "\(range.lowerBound)…\(range.upperBound)", shown, read.map(range.contains) ?? false)
         case .withheld(let key):
+            // Absent only counts when the stage read that family at all: a
+            // renamed stage or key must not pass every "withheld" by default.
+            let family = key.split(separator: ".").first.map(String.init) ?? key
+            let familyRead = findings.measured.contains { $0.key.hasPrefix(family + ".") && $0.key != key }
             let read = reading(key, findings)
-            return (key, "withheld", read.map { String(format: "%.4g", $0) } ?? "withheld", read == nil)
+            let shown = read.map { String(format: "%.4g", $0) } ?? (familyRead ? "withheld" : "no \(family).* readings at all")
+            return (key, "withheld", shown, read == nil && familyRead)
         case .evidence(let key, let range):
             let strength = SignalEvidenceRules.evidence(from: SignalFacts(findings: findings))
                 .first { $0.key == key }?.strength ?? 0
@@ -226,3 +231,25 @@ struct SignalSampleCorpusTests {
         #expect(try existing.info()?.name == "Someone else's")
     }
 }
+
+/// Always on, no ffmpeg needed: the opt-in corpus cannot rot unseen. Every
+/// stage a sample names must be a real stage — a renamed one was skipped
+/// without a word — and it must be one that reads the sample's kind.
+@Suite struct SignalSampleCatalogTests {
+    @Test func everySampleNamesRealStagesForItsKind() {
+        let stages = Dictionary(uniqueKeysWithValues: SignalStages.all.map { ($0.name, $0) })
+        for sample in SignalSamples.all {
+            #expect(!sample.stages.isEmpty, "\(sample.id) runs no stage")
+            for name in sample.stages {
+                guard let stage = stages[name] else {
+                    Issue.record("\(sample.id) names a stage that does not exist: \(name)")
+                    continue
+                }
+                #expect(stage.kinds.contains(sample.kind), "\(sample.id): \(name) does not read \(sample.kind)")
+            }
+            #expect(!sample.truths.isEmpty, "\(sample.id) holds no truth")
+        }
+        #expect(Set(SignalSamples.all.map(\.id)).count == SignalSamples.all.count, "two samples share an id")
+    }
+}
+

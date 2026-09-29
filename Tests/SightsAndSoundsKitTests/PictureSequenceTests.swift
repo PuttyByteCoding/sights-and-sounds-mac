@@ -177,7 +177,9 @@ import Testing
         }
         let reading = reading((0..<40).map { field($0 % 2) })
         #expect(reading.bobFlutter > 0.9)
-        #expect(self.reading((0..<40).map { Self.scene($0 * 3) }).bobFlutter < 0.7)
+        // Below where the evidence ramp starts (0.1): the metric is a share
+        // of flipping blocks now, and 0.7 would be full-strength evidence.
+        #expect(self.reading((0..<40).map { Self.scene($0 * 3) }).bobFlutter < 0.1)
     }
 
     /// The same bob with half the picture moving. The still half still
