@@ -76,6 +76,8 @@ struct ReviewView: View {
         .frame(minWidth: 980, minHeight: 600)
         .background(Theme.Surface.content)
         .onAppear { reload() }
+        // Marks, restores and new pairs made anywhere else show here.
+        .followsLibraryChanges(model.changeCount([.items, .duplicates])) { reload() }
     }
 
     // MARK: - Header
