@@ -470,6 +470,8 @@ struct NewLibraryView: View {
             } else {
                 creationError = "Created, but the counts do not match the plan — see below."
             }
+        } catch let error as LibraryCreationError {
+            creationError = "\(error) Choose another name, or add that library with Add Existing."
         } catch {
             creationError = "\(error)"
         }

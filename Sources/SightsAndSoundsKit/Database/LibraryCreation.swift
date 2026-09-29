@@ -1,5 +1,20 @@
 import Foundation
 
+/// Why a new library file was not made. The text says what happened and
+/// no more: what to do next depends on what the person chose — a name in
+/// New Library, only a folder for the signal-samples library — so each
+/// caller adds that.
+public enum LibraryCreationError: Error, Equatable, CustomStringConvertible {
+    case fileExists(String)
+
+    public var description: String {
+        switch self {
+        case .fileExists(let name):
+            "“\(name)” already exists — a new library is never made over a file."
+        }
+    }
+}
+
 extension LibraryDatabase {
     /// A new library file, made whole or not at all. Never over a file
     /// that is already there (it may be a library open right now: opening
@@ -8,7 +23,7 @@ extension LibraryDatabase {
     /// and removed with its WAL and shared-memory files, so the same name
     /// can simply be tried again. New Library and the signal-samples
     /// library both make theirs here.
-    public static func createFresh(at url: URL, fill: (LibraryDatabase) throws -> Void) throws -> LibraryDatabase {
+    static func createFresh(at url: URL, fill: (LibraryDatabase) throws -> Void) throws -> LibraryDatabase {
         let library = try openFresh(at: url)
         do {
             try fill(library)
@@ -19,7 +34,7 @@ extension LibraryDatabase {
         return library
     }
 
-    public static func createFresh(
+    static func createFresh(
         at url: URL, fill: (LibraryDatabase) async throws -> Void
     ) async throws -> LibraryDatabase {
         let library = try openFresh(at: url)

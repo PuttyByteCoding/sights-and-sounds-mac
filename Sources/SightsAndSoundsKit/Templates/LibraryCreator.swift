@@ -54,18 +54,6 @@ extension LibraryDatabase {
     }
 }
 
-public enum LibraryCreationError: Error, Equatable, CustomStringConvertible {
-    case fileExists(String)
-
-    public var description: String {
-        switch self {
-        case .fileExists(let name):
-            "“\(name)” already exists — a new library is never made over a file. "
-                + "Choose another name, or add that library with Add Existing."
-        }
-    }
-}
-
 public enum LibraryCreator {
     @discardableResult
     public static func create(
