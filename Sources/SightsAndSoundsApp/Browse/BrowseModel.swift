@@ -328,15 +328,25 @@ final class BrowseModel {
         // being reloaded, the ones already on screen are the ones to use.
         let knownSources = sources
         Task.detached(priority: .userInitiated) { [weak self] in
-            do {
-                var loaded = Loaded()
-                if parts.contains(.sources) {
+            // Each part loads on its own. They shared one `do`: a throw
+            // in any of them (the saved filters, the duplicate count)
+            // skipped applying ALL of them, left the listing unloaded and
+            // put "Query Failed" in place of the grid for something that
+            // was not the listing. Now a part that fails keeps what is on
+            // screen and says so on the error line; the listing's own
+            // failure is still the listing's.
+            var loaded = Loaded()
+            var failures: [String] = []
+            if parts.contains(.sources) {
+                do {
                     let sources = try library.sources()
                     loaded.sources = sources
                     loaded.onlineIDs = Set(
                         sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
-                }
-                if parts.contains(.vocabulary) {
+                } catch { failures.append("sources: \(error)") }
+            }
+            if parts.contains(.vocabulary) {
+                do {
                     loaded.vocabulary = try library.vocabulary()
                         .filter { !$0.category.hiddenFromBrowse }
                         .map { CategoryTags(category: $0.category, tags: $0.tags) }
@@ -344,8 +354,10 @@ final class BrowseModel {
                         grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
                         by: \.tagID
                     ).mapValues { $0.map(\.alias) }
-                }
-                if parts.contains(.counts) {
+                } catch { failures.append("tags: \(error)") }
+            }
+            if parts.contains(.counts) {
+                do {
                     var trees: [UUID: [FolderNode]] = [:]
                     for source in loaded.sources ?? knownSources where source.enabled {
                         trees[source.id] = FolderTreeBuilder.build(
@@ -356,26 +368,30 @@ final class BrowseModel {
                     // and the listing they label share one baseline, so
                     // they cannot disagree.
                     loaded.counts = try library.browseCounts(kinds: kinds)
-                }
-                if parts.contains(.duplicates) {
-                    loaded.pendingDuplicates = try library.pendingCandidates().count
-                }
-                if parts.contains(.savedFilters) {
-                    loaded.savedFilters = try library.savedFilters()
-                }
-                if parts.contains(.menuFacts), !parts.contains(.listing) {
-                    // With the listing these ride along in its payload.
+                } catch { failures.append("counts: \(error)") }
+            }
+            if parts.contains(.duplicates) {
+                do { loaded.pendingDuplicates = try library.pendingCandidates().count }
+                catch { failures.append("duplicates: \(error)") }
+            }
+            if parts.contains(.savedFilters) {
+                do { loaded.savedFilters = try library.savedFilters() }
+                catch { failures.append("saved filters: \(error)") }
+            }
+            if parts.contains(.menuFacts), !parts.contains(.listing) {
+                // With the listing these ride along in its payload.
+                do {
                     loaded.hideBlockItemIDs = try library.itemIDsWithHideBlocks()
                     loaded.snapshotRefs = try library.recentSnapshotRefs(perItem: 10)
-                }
-                let result = loaded
-                await MainActor.run { [weak self] in
-                    self?.apply(result, parts: parts, generations: generations)
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    self.listingError = "\(error)"
+                } catch { failures.append("item details: \(error)") }
+            }
+            let result = loaded, failed = failures
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.apply(result, parts: parts, generations: generations)
+                if !failed.isEmpty {
+                    self.errorMessage = "Part of the sidebar could not be loaded — "
+                        + failed.joined(separator: "; ")
                 }
             }
         }
