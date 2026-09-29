@@ -12,7 +12,9 @@ import Foundation
 /// first of these, and nothing about the source.
 public struct PictureSequenceStage: SignalStage {
     public let name = "pictureSequences"
-    public let version = 1
+    /// 2: bob flutter read from blocks that flip back, not whole-frame
+    /// change correlation (motion drowned it).
+    public let version = 2
     public let kinds: Set<MediaKind> = [.video]
     public let pass = 3
 

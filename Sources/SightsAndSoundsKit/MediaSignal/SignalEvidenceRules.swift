@@ -213,7 +213,10 @@ public enum SignalEvidenceRules {
             add("linesInPairs", .processing, ramp(pairs, from: 0.2, to: 0.45), "rows come in matching pairs (\(text(pairs)))")
         }
         if let flutter = facts.value("interlace.bobFlutter", .median) {
-            add("bobFlutter", .processing, ramp(flutter, from: 0.75, to: 0.92), "still areas flip between two pictures frame to frame")
+            // The share of changing blocks that are back where they were two
+            // frames earlier: none for motion or noise, all of a still bobbed
+            // scene, and the still part of a bobbed scene that moves.
+            add("bobFlutter", .processing, ramp(flutter, from: 0.1, to: 0.3), "still areas flip between two pictures frame to frame")
         }
         if let flicker = facts.value("temporal.lumaFlicker", .median) {
             add("brightnessFlicker", .source, ramp(flicker, from: 0.8, to: 2.5), "brightness jumps \(text(flicker)) code values frame to frame")

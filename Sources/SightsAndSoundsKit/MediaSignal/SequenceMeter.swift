@@ -27,7 +27,7 @@ public final class SequenceMeter {
     private(set) var combedShares: [Double] = []
     private(set) var blendedFlags: [Bool] = []
     private(set) var linePairAsymmetries: [Double] = []
-    private(set) var changeCorrelations: [Double] = []
+    private(set) var flipShares: [Double] = []
     private(set) var gradientEnergies: [Double] = []
     private(set) var meanLevels: [Double] = []
     public private(set) var frameCount = 0
@@ -48,24 +48,63 @@ public final class SequenceMeter {
         differences.append(Double(vDSP.meanMagnitude(change)))
         combedShares.append(Self.combedShare(frame, change: change))
 
-        // A naive bob deinterlacer shows the two fields as alternate
-        // frames, half a line apart, so a still scene flips between two
-        // pictures: each change is the last one undone, and the two
-        // changes correlate at -1. Independent noise gives -0.5 by
-        // construction and motion gives about zero.
-        if let previousChange, let correlation = Self.correlation(change, previousChange) {
-            changeCorrelations.append(correlation)
-        }
         previousChange = change
 
         gradientEnergies.append(Self.gradientEnergy(frame))
 
         if let beforePrevious, beforePrevious.width == frame.width, beforePrevious.height == frame.height {
             blendedFlags.append(Self.isBlend(previous.luma, of: beforePrevious.luma, and: frame.luma))
+            // A naive bob deinterlacer shows the two fields as alternate
+            // frames half a line apart, so still areas flip between two
+            // pictures: back to what they were two frames ago. Measured over
+            // the whole frame (the correlation of successive changes), any
+            // motion drowned it. Now: of the blocks that changed, the share
+            // that are back where they were two frames before.
+            if let share = Self.flipShare(frame, previous: previous, beforePrevious: beforePrevious) {
+                flipShares.append(share)
+            }
         }
     }
 
     // MARK: - Per-frame measures
+
+    /// Of the 8x8 blocks that changed since the last frame, the share that
+    /// have come back to how they were two frames ago. Motion does not come
+    /// back; noise changes as much two frames apart as one; a bob's still
+    /// areas flip and return. Nil when too little changed to say.
+    static func flipShare(_ frame: PictureFrame, previous: PictureFrame, beforePrevious: PictureFrame) -> Double? {
+        let width = frame.width, height = frame.height, side = 8
+        guard width >= side, height >= side else { return nil }
+        var changing = 0, returning = 0
+        var y = 0
+        while y + side <= height {
+            var x = 0
+            while x + side <= width {
+                var oneBack: Float = 0, twoBack: Float = 0
+                for row in y..<y + side {
+                    let start = row * width + x
+                    for index in start..<start + side {
+                        oneBack += abs(frame.luma[index] - previous.luma[index])
+                        twoBack += abs(frame.luma[index] - beforePrevious.luma[index])
+                    }
+                }
+                let count = Float(side * side)
+                if oneBack / count > flipChangeLimit {
+                    changing += 1
+                    if twoBack < oneBack * flipReturnRatio { returning += 1 }
+                }
+                x += side
+            }
+            y += side
+        }
+        guard changing * 20 >= (width / side) * (height / side) else { return nil }
+        return Double(returning) / Double(changing)
+    }
+
+    /// Mean change per pixel, in code values, for a block to count as changing.
+    static let flipChangeLimit: Float = 2
+    /// Back where it was: two-frames-apart difference under this share of the one-frame change.
+    static let flipReturnRatio: Float = 0.25
 
     /// Share of moving pixels that are comb teeth.
     static func combedShare(_ frame: PictureFrame, change: [Float]) -> Double {
@@ -208,7 +247,7 @@ public final class SequenceMeter {
         }
 
         reading.linePairAsymmetry = FrameSummary.percentile(linePairAsymmetries, 0.5) ?? 0
-        reading.bobFlutter = -(FrameSummary.percentile(changeCorrelations, 0.5) ?? 0)
+        reading.bobFlutter = FrameSummary.percentile(flipShares, 0.5) ?? 0
         if let beat = CadenceReading.beat(in: gradientEnergies) {
             reading.sharpnessPeriod = beat.period
             reading.sharpnessPeriodStrength = beat.strength
