@@ -182,6 +182,9 @@ final class AppModel {
     }
 
     init() {
+        // Settings first: loading them is what points the log at its
+        // file, so everything logged from here on reaches it.
+        _ = AppSettingsStore.shared
         do {
             // A test that builds an AppModel gets a registry of its own,
             // not the list of this machine's real libraries.
@@ -360,14 +363,7 @@ final class AppModel {
         if let existing = runners[libraryID] { return existing }
         let runner = JobRunner(
             library: try library(for: libraryID),
-            jobTypes: [
-                ImportJob.self, ContentHashJob.self, ThumbnailBatchJob.self,
-                HashDuplicateSweepJob.self, FingerprintCaptureJob.self,
-                FingerprintMatchSweepJob.self, ClipExportJob.self, RemuxJob.self,
-                EncodeJob.self, BlockRemovalJob.self, OcrJob.self, JoinJob.self,
-                ReorganizeJob.self, WritebackJob.self, RestoreTagsJob.self,
-                ValidationJob.self, MetadataSweepJob.self, MediaSignalJob.self,
-            ],
+            jobTypes: JobCatalog.all,
             paused: tasksPaused)
         runners[libraryID] = runner
         return runner

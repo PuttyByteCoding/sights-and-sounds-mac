@@ -87,6 +87,45 @@ import Testing
         #expect(throws: (any Error).self) { try f.library.revertMove(log.id) }
     }
 
+    /// An older move of an item that has moved again since is not the
+    /// move that put it where it is. Reverting it used to move whatever
+    /// file sat at that move's destination — here another item's, moved
+    /// in later under the same name — and point this item at it.
+    @Test func anOlderMoveOfAnItemThatMovedAgainIsNotReverted() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let x = try await f.addItem(path: "shows/1995/x.mp4")
+        let y = try await f.addItem(path: "other/x.mp4")
+        let first = try f.library.moveFile(itemID: x.id, to: "band/x.mp4")
+        _ = try f.library.moveFile(itemID: x.id, to: "band2/x.mp4")
+        _ = try f.library.moveFile(itemID: y.id, to: "band/x.mp4")
+
+        #expect(throws: MoveError.self) { try f.library.revertMove(first.id) }
+
+        // Nothing moved: each item still names its own file.
+        #expect(try await f.reload(x.id).relativePath == "band2/x.mp4")
+        #expect(try await f.reload(y.id).relativePath == "band/x.mp4")
+        #expect(f.exists("band2/x.mp4") && f.exists("band/x.mp4"))
+        #expect(!f.exists("shows/1995/x.mp4"))
+        let yBytes = try Data(contentsOf: f.root.appendingPathComponent("band/x.mp4"))
+        #expect(String(decoding: yBytes, as: UTF8.self) == "media-other/x.mp4")
+        #expect(try f.library.moveLogs().first { $0.id == first.id }?.revertedAt == nil)
+    }
+
+    /// Put back newest first, the same chain unwinds cleanly.
+    @Test func aChainOfMovesRevertsNewestFirst() async throws {
+        let f = try await MoveFixture()
+        defer { f.tearDown() }
+        let x = try await f.addItem(path: "shows/1995/x.mp4")
+        let first = try f.library.moveFile(itemID: x.id, to: "band/x.mp4")
+        let second = try f.library.moveFile(itemID: x.id, to: "band2/x.mp4")
+
+        try f.library.revertMove(second.id)
+        try f.library.revertMove(first.id)
+        #expect(try await f.reload(x.id).relativePath == "shows/1995/x.mp4")
+        #expect(f.exists("shows/1995/x.mp4"))
+    }
+
     // MARK: Segments follow their file
 
     /// A segment is a range inside its show's file, and carries that

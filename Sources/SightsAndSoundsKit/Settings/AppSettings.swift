@@ -683,8 +683,17 @@ public final class AppSettingsStore: @unchecked Sendable {
     /// set (muted, loop, skip distances, the key map, a custom thumbnail
     /// folder) and any test that called `update` would have rewritten the
     /// real file. Tests get defaults and a file of their own.
-    public static let shared = AppSettingsStore(
-        fileURL: isUnderTest ? testScratch.appendingPathComponent("settings.json") : nil)
+    public static let shared: AppSettingsStore = {
+        let store = AppSettingsStore(
+            fileURL: isUnderTest ? testScratch.appendingPathComponent("settings.json") : nil)
+        store.drivesLogFile = true
+        AppLog.shared.setFileDirectory(store.current.logDirectory)
+        return store
+    }()
+
+    /// Only the app's store decides where the log file goes; a scratch
+    /// store in a test must not move it.
+    private var drivesLogFile = false
 
     /// True when this process is a test runner. XCTest is loaded into
     /// every test process (swift-testing runs through its helper too) and
@@ -764,6 +773,7 @@ public final class AppSettingsStore: @unchecked Sendable {
         mutate(&updated)
         settings = updated
         lock.unlock()
+        if drivesLogFile { AppLog.shared.setFileDirectory(updated.logDirectory) }
 
         // Saves used to run unordered after the lock was released: two
         // quick updates could write A after B, leaving the file behind

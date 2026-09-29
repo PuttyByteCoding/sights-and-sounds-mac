@@ -9,14 +9,31 @@ public struct TagWriteResult: Sendable {
     /// fell through to the remux — kept whether or not the remux then
     /// succeeded, so "why did this file take the slow path" has an answer.
     public let nativeToolError: String?
+    /// Fields the writer could not store in this file — custom fields in
+    /// an MP4 written without AtomicParsley. The rest were written.
+    public let notWritten: [String]
 
     public init(
-        success: Bool, usedRemuxFallback: Bool, error: String?, nativeToolError: String? = nil
+        success: Bool, usedRemuxFallback: Bool, error: String?, nativeToolError: String? = nil,
+        notWritten: [String] = []
     ) {
         self.success = success
         self.usedRemuxFallback = usedRemuxFallback
         self.error = error
         self.nativeToolError = nativeToolError
+        self.notWritten = notWritten
+    }
+
+    /// The note a written file keeps: why it took the slow path, and what
+    /// it could not hold. Nil when there is nothing to say.
+    public var writtenNote: String? {
+        var parts: [String] = []
+        if let nativeToolError { parts.append("written by remux after \(nativeToolError)") }
+        if !notWritten.isEmpty {
+            parts.append("not written (MP4 custom fields need AtomicParsley): "
+                + notWritten.joined(separator: ", "))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "; ")
     }
 }
 
@@ -164,7 +181,7 @@ public enum TagWriters {
         return TagWriteResult(
             success: remux.success, usedRemuxFallback: true,
             error: remux.error.map { "\($0) (after \(nativeToolError))" },
-            nativeToolError: nativeToolError)
+            nativeToolError: nativeToolError, notWritten: remux.notWritten)
     }
 
     /// The coverage floor: an ffmpeg `-c copy` remux carrying `-metadata`
@@ -190,8 +207,19 @@ public enum TagWriters {
             rmdir(temp.deletingLastPathComponent().path)
         }
 
-        var arguments = ["-i", url.path, "-map", "0", "-c", "copy", "-map_metadata", "-1"]
-        for field in fields {
+        // `:g` — the FILE's tags are replaced; each stream keeps its own
+        // (languages, track titles, handler names), which a plain
+        // `-map_metadata -1` wiped and the snapshot cannot put back.
+        var arguments = ["-i", url.path, "-map", "0", "-c", "copy", "-map_metadata:g", "-1"]
+        // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
+        // `-movflags use_metadata_tags` would store custom ones too, but
+        // moves EVERY tag into QuickTime keys that Music and Finder do
+        // not read — the title included. So the known fields are
+        // written, and the custom ones are named as not written rather
+        // than vanishing under a success.
+        let isMP4 = ["mp4", "m4v", "m4a", "mov"].contains(url.pathExtension.lowercased())
+        let notWritten = isMP4 ? fields.filter(\.mp4Freeform).map(\.vorbisName) : []
+        for field in fields where !notWritten.contains(field.vorbisName) {
             arguments += ["-metadata", "\(field.vorbisName)=\(field.values.joined(separator: "; "))"]
         }
         arguments.append(temp.path)
@@ -201,7 +229,8 @@ public enum TagWriters {
             guard replaced != nil else {
                 return TagWriteResult(success: false, usedRemuxFallback: true, error: "atomic replace failed")
             }
-            return TagWriteResult(success: true, usedRemuxFallback: true, error: nil)
+            return TagWriteResult(
+                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten)
         } catch {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }

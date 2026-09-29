@@ -58,6 +58,12 @@ struct AuxWindowRequest: Codable, Hashable {
     /// Player kind: the tag whose items the queue holds, so Refresh can
     /// re-run it. Optional so saved window state decodes.
     var tagID: UUID? = nil
+    /// Organise and Maintenance: the items the grid showed when the
+    /// window was opened — what "the filtered items" means there. The
+    /// window's own model starts unfiltered, so without this they acted
+    /// on the whole library. Nil (a window saved before this existed)
+    /// is the whole library, and says so.
+    var scopeItemIDs: [UUID]? = nil
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -135,8 +141,8 @@ struct AuxiliaryWindowView: View {
             switch request.kind {
             case .categories: CategoryManagerView()
             case .review: ReviewView()
-            case .organise: OrganiseView()
-            case .maintenance: MaintenanceView()
+            case .organise: OrganiseView(scope: request.scopeItemIDs)
+            case .maintenance: MaintenanceView(scope: request.scopeItemIDs)
             case .importMedia: ImportView()
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()

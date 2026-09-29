@@ -31,6 +31,13 @@ struct OrganiseView: View {
     @State private var errorText: String?
     /// A reorganize this window queued is still running.
     @State private var applying = false
+    /// The ids the plan on screen was made for — Move applies exactly
+    /// those, not whatever the listing holds by the time it is pressed.
+    @State private var plannedIDs: [UUID] = []
+    /// The grid's items when the window opened; nil is the whole library.
+    let scope: [UUID]?
+
+    private var scopeIDs: [UUID] { scope ?? model.visibleItems.map(\.id) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +52,11 @@ struct OrganiseView: View {
         .onAppear {
             preview()
             reloadHistory()
+        }
+        // Unscoped, the plan is over the listing — which lands after the
+        // window opens. It used to stay on "Nothing to move".
+        .onChange(of: model.visibleItems.count) {
+            if scope == nil { preview() }
         }
     }
 
@@ -82,7 +94,8 @@ struct OrganiseView: View {
             // Scope is the current filter, and it says so — rather than
             // leaving someone to discover that their filter was the
             // selection.
-            "applies to the \(model.visibleItems.count) items in the current filter"
+            scope.map { "applies to the \($0.count) items the grid showed when this window opened" }
+                ?? "applies to all \(model.visibleItems.count) videos in the library"
         case .history:
             "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
         }
@@ -426,14 +439,15 @@ struct OrganiseView: View {
             plan = []
             return
         }
-        plan = (try? model.library.previewReorganize(
-            template: template, itemIDs: model.visibleItems.map(\.id))) ?? []
+        let ids = scopeIDs
+        plannedIDs = ids
+        plan = (try? model.library.previewReorganize(template: template, itemIDs: ids)) ?? []
     }
 
     private func apply() {
         guard !applying, let runner = try? app.runner(for: model.libraryID) else { return }
         applying = true
-        let ids = model.visibleItems.map(\.id)
+        let ids = plannedIDs
         let template = template
         Task {
             do {
