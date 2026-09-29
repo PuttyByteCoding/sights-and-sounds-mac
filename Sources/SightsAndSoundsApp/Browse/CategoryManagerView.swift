@@ -75,7 +75,7 @@ struct CategoryManagerView: View {
         .onAppear { reload() }
         // A rename in the sidebar, a tag made from the player: whoever
         // wrote the vocabulary, this list follows.
-        .followsLibraryChanges(model.changeCount([.vocabulary, .tagging])) { reload() }
+        .followsLibraryChanges(model, [.vocabulary, .tagging]) { reload() }
         .sheet(isPresented: $showPaste) {
             if let category = selectedCategory {
                 PasteTagListSheet(category: category, library: model.library) {

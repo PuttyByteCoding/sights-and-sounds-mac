@@ -1468,15 +1468,26 @@ enum GridFocus {
 /// backup or stat every staged file. The count the window opened with is
 /// not a change.
 struct FollowsLibraryChanges: ViewModifier {
-    let count: Int
+    let model: BrowseModel
+    let domains: Set<LibraryChangeDomain>
     let reload: () -> Void
     @State private var seen: Int?
 
     func body(content: Content) -> some View {
-        content
-            .onAppear { seen = count }
+        // Read here, in the modifier's own body, not the window's: read in
+        // the window, every hub delivery in ANY domain re-rendered the
+        // whole window, ten times a second during an import.
+        let count = model.changeCount(domains)
+        return content
             .task(id: count) {
-                guard let seen, count != seen else { return }
+                // The first run is the window opening: the count it finds is
+                // where it starts, not a change. (Seeded here rather than in
+                // onAppear, whose order against this first run is not given.)
+                guard let seen else {
+                    seen = count
+                    return
+                }
+                guard count != seen else { return }
                 try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled else { return }
                 self.seen = count
@@ -1486,8 +1497,10 @@ struct FollowsLibraryChanges: ViewModifier {
 }
 
 extension View {
-    func followsLibraryChanges(_ count: Int, reload: @escaping () -> Void) -> some View {
-        modifier(FollowsLibraryChanges(count: count, reload: reload))
+    func followsLibraryChanges(
+        _ model: BrowseModel, _ domains: Set<LibraryChangeDomain>, reload: @escaping () -> Void
+    ) -> some View {
+        modifier(FollowsLibraryChanges(model: model, domains: domains, reload: reload))
     }
 }
 
