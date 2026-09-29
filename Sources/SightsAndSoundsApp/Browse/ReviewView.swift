@@ -84,7 +84,7 @@ struct ReviewView: View {
         .background(Theme.Surface.content)
         .onAppear { reload() }
         // Marks, restores and new pairs made anywhere else show here.
-        .followsLibraryChanges(model.changeCount([.items, .duplicates])) { reload() }
+        .followsLibraryChanges(model, [.items, .duplicates]) { reload() }
     }
 
     // MARK: - Header
