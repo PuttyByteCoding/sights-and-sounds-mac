@@ -4,7 +4,8 @@ public enum SignalRules {
     /// Raise when a threshold or a weight changes. Conclusions drawn by an
     /// older version are re-drawn from the stored findings; no file is
     /// decoded again.
-    public static let version = 1
+    /// 2: video levels in a file tagged full range are evidence.
+    public static let version = 2
 
     /// Below this a category is not worth saying.
     static let reportable = 0.35

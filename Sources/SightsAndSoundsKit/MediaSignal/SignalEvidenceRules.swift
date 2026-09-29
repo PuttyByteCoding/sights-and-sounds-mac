@@ -147,6 +147,15 @@ public enum SignalEvidenceRules {
         if facts.value("colour.usesFullRange") == 1, facts.declared["video.range"] != "full" {
             add("rangeBeyondItsTag", .processing, 0.8, "samples reach full range in a file not tagged full range")
         }
+        // The other way round: levels that keep to video range, in a file
+        // that says full. Played as full range, black at 16 is a dark grey
+        // and white at 235 a light one.
+        if facts.declared["video.range"] == "full",
+           let lowest = facts.value("colour.lumaLowest"), let highest = facts.value("colour.lumaHighest"),
+           lowest >= 12, highest <= 240 {
+            add("videoLevelsInAFullTag", .processing, 0.7,
+                "samples keep to \(text(lowest, 0))–\(text(highest, 0)) in a file tagged full range: it plays washed out")
+        }
         if facts.value("colour.washedOut") == 1 {
             // Weak: a sunlit scene with no shadows reads the same way.
             add("washedOut", .processing, 0.4, "the picture never nears black or white in any sampled frame")

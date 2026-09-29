@@ -36,6 +36,10 @@ public struct SignalSample: Sendable, Identifiable {
         case measured(String, ClosedRange<Double>)
         /// A reading that must be withheld: absent from the findings.
         case withheld(String)
+        /// Evidence the rules draw from the findings, at a strength in the
+        /// range (0...0 for "must not be drawn") — for what only shows when
+        /// two readings are set side by side.
+        case evidence(String, ClosedRange<Double>)
         /// A truth the analysis does not reach yet, and why. The corpus
         /// still checks it and reports it as known, so a fix shows up.
         indirect case gap(Truth, String)
@@ -485,13 +489,19 @@ public enum SignalSamples {
                 .declared("video.range", "video"),
                 .measured("colour.belowVideoBlackShare", 0...0.01),
                 .measured("colour.usesFullRange", 0...0),
+                .evidence("rangeBeyondItsTag", 0...0),
+                .evidence("videoLevelsInAFullTag", 0...0),
             ]),
         video(
             "full range tagged video", .tone,
             "Levels 0–255 declared as 16–235: blacks crushed and whites clipped on playback.",
             input: levels(low: 0, high: 255), filter: "setparams=range=tv",
             stages: [declaredStage, stillsStage],
-            truths: [.declared("video.range", "video"), .measured("colour.usesFullRange", 1...1)]),
+            truths: [
+                .declared("video.range", "video"),
+                .measured("colour.usesFullRange", 1...1),
+                .evidence("rangeBeyondItsTag", 0.5...1),
+            ]),
         video(
             "video range tagged full", .tone,
             "Levels 16–235 declared as full range: washed out on playback.",
@@ -499,8 +509,7 @@ public enum SignalSamples {
             stages: [declaredStage, stillsStage],
             truths: [
                 .declared("video.range", "full"),
-                .gap(.measured("colour.washedOut", 1...1),
-                     "levels are judged without the declared range: 16–235 declared full plays washed out, and nothing says so"),
+                .evidence("videoLevelsInAFullTag", 0.5...1),
             ]),
         video(
             "lifted and flattened", .tone,
@@ -509,14 +518,19 @@ public enum SignalSamples {
             stages: [stillsStage],
             truths: [.measured("colour.washedOut", 1...1)]),
         video(
-            "10-bit real", .tone, "10-bit HEVC with smooth 10-bit gradients: the low bits carry picture.",
-            input: ["-f", "lavfi", "-t", "2", "-i", "gradients=size=640x360:rate=24:speed=0.02:type=radial,format=yuv420p10le"],
+            "10-bit real", .tone, "10-bit HEVC holding a 10-bit ramp: the low bits carry picture.",
+            // Written as raw 10-bit code values: ffmpeg's gradients source
+            // picks random colours each run, so a sample built on it read
+            // differently every time.
+            input: ["-f", "lavfi", "-t", "2", "-i",
+                    "color=size=640x360:rate=24,format=yuv420p10le,geq=lum='64+X*(940-64)/W':cb=512:cr=512"],
             codec: ["-c:v", "libx265", "-tag:v", "hvc1", "-pix_fmt", "yuv420p10le", "-x265-params", "lossless=1:log-level=error"],
             ext: "mov", stages: [declaredStage, stillsStage],
             truths: [.declared("video.bitDepth", "10"), .measured("colour.lowBitsUsedShare", 0.2...1)]),
         video(
-            "10-bit holding 8-bit", .tone, "10-bit HEVC whose picture was 8-bit: the low bits are empty.",
-            input: ["-f", "lavfi", "-t", "2", "-i", "gradients=size=640x360:rate=24:speed=0.02:type=radial,format=yuv420p,format=yuv420p10le"],
+            "10-bit holding 8-bit", .tone, "10-bit HEVC whose picture was an 8-bit ramp: the low bits are empty.",
+            input: ["-f", "lavfi", "-t", "2", "-i",
+                    "color=size=640x360:rate=24,format=yuv420p,geq=lum='16+X*219/W':cb=128:cr=128,format=yuv420p10le"],
             codec: ["-c:v", "libx265", "-tag:v", "hvc1", "-pix_fmt", "yuv420p10le", "-x265-params", "lossless=1:log-level=error"],
             ext: "mov", stages: [declaredStage, stillsStage],
             truths: [.declared("video.bitDepth", "10"), .measured("colour.lowBitsUsedShare", 0...0.005)]),
@@ -625,6 +639,7 @@ extension SignalSample.Truth: CustomStringConvertible {
         case .declared(let key, let value): "\(key) = \(value)"
         case .measured(let key, let range): "\(key) in \(range.lowerBound)…\(range.upperBound)"
         case .withheld(let key): "\(key) withheld"
+        case .evidence(let key, let range): "evidence \(key) at \(range.lowerBound)…\(range.upperBound)"
         case .gap(let truth, _): "\(truth) (not yet read)"
         }
     }
