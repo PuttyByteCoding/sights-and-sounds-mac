@@ -80,10 +80,26 @@ public final class AppLog: @unchecked Sendable {
     /// file handle for every line, under the buffer's lock, on whichever
     /// thread logged — often the main one.
     private func appendToFileIfConfigured(_ entry: LogEntry) {
-        guard let directory = AppSettingsStore.shared.current.logDirectory else { return }
+        lock.lock()
+        let directory = fileDirectory
+        lock.unlock()
+        guard let directory else { return }
         fileQueue.async { [dayFormatter] in
             Self.append(entry, to: directory, dayFormatter: dayFormatter)
         }
+    }
+
+    /// Where the daily file goes, or nil for none. The settings store
+    /// tells the log; the log never asks the store. Asking is how a
+    /// settings file that would not decode crashed every launch: the
+    /// store logged the problem while it was still being created, and
+    /// the log then asked for the store being created.
+    private var fileDirectory: String?
+
+    public func setFileDirectory(_ path: String?) {
+        lock.lock()
+        fileDirectory = path
+        lock.unlock()
     }
 
     private let fileQueue = DispatchQueue(label: "com.puttybyte.sightsandsounds.log-file", qos: .utility)
