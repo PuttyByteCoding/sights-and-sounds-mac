@@ -26,7 +26,9 @@ extension LibraryDatabase {
                     db,
                     sql: """
                     SELECT COUNT(*) FROM mediaItem \
-                    WHERE contentHash IS NULL AND parentMediaItemID IS NULL
+                    WHERE contentHash IS NULL AND parentMediaItemID IS NULL \
+                    AND NOT EXISTS (SELECT 1 FROM contentHashFailure \
+                                    WHERE contentHashFailure.mediaItemID = mediaItem.id)
                     """) ?? 0,
                 failed: try Int.fetchOne(
                     db, sql: "SELECT COUNT(*) FROM contentHashFailure") ?? 0)
@@ -85,6 +87,12 @@ extension LibraryDatabase {
         }
     }
 
+    public func retryThumbnailFailures() throws {
+        try writer.write { db in
+            try db.execute(sql: "DELETE FROM thumbnailState WHERE failureMessage IS NOT NULL")
+        }
+    }
+
     public func retryMetadataSweepFailures() throws {
         try writer.write { db in
             try db.execute(sql: "DELETE FROM metadataSweepState WHERE failureMessage IS NOT NULL")
@@ -118,7 +126,7 @@ extension LibraryDatabase {
 extension LibraryDatabase {
     /// Thumbnails are disk-state driven — the cache directory IS the
     /// record — so recalculating is deleting the library's cache folder
-    /// (plus the state rows) and letting the sweep self-heal.
+    /// (plus the state rows) and letting the sweep rebuild it.
     public func resetThumbnails(libraryID: UUID) throws {
         try writer.write { db in
             try db.execute(sql: "DELETE FROM thumbnailState")
@@ -129,19 +137,30 @@ extension LibraryDatabase {
     }
 
     public func thumbnailStatus(libraryID: UUID) throws -> SweepStatus {
-        // Missing is judged the way the sweep judges it: a video item
-        // whose cache file is absent. Failures self-heal by design, so
-        // the failed column is always zero here.
-        let items = try writer.read { db in
-            try Row.fetchAll(
-                db, sql: "SELECT id FROM mediaItem WHERE kind = ?",
+        // Judged the way the sweep judges it: a video item whose cache
+        // file is absent is missing — unless it failed, which the sweep
+        // records and skips until retried. Failures were once said to
+        // self-heal and counted as zero; a corrupt file then read as
+        // "missing" forever with nothing to retry.
+        let (items, failed) = try writer.read { db in
+            let ids = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id FROM mediaItem WHERE kind = ? \
+                AND NOT EXISTS (SELECT 1 FROM thumbnailState \
+                                WHERE thumbnailState.mediaItemID = mediaItem.id \
+                                AND thumbnailState.failureMessage IS NOT NULL)
+                """,
                 arguments: [MediaKind.video.rawValue])
                 .map { $0["id"] as UUID }
+            let failed = try Int.fetchOne(
+                db, sql: "SELECT COUNT(*) FROM thumbnailState WHERE failureMessage IS NOT NULL") ?? 0
+            return (ids, failed)
         }
         let missing = items.count { itemID in
             !FileManager.default.fileExists(
                 atPath: ThumbnailStore.url(libraryID: libraryID, itemID: itemID).path)
         }
-        return SweepStatus(missing: missing, failed: 0)
+        return SweepStatus(missing: missing, failed: failed)
     }
 }
