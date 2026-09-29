@@ -121,8 +121,10 @@ private struct FailingJob: Job {
             try ContentHashFailure(mediaItemID: unhashed.id, message: "io").insert(db)
         }
 
+        // A failed item is failed, not missing as well — the sweep skips
+        // it, so counting it as missing kept that number above zero.
         var status = try library.contentHashStatus()
-        #expect(status.missing == 1)
+        #expect(status.missing == 0)
         #expect(status.failed == 1)
 
         // Retry: the failure row goes; the data stays.
