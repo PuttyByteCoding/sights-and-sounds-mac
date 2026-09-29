@@ -106,19 +106,27 @@ final class BrowseModel {
         }
     }
 
-    /// Open the player at `itemID` (or the first visible item) with the
-    /// companion pending. Nothing to play means nothing to analyse, and
-    /// the caller's control stays inert.
     /// The request that opens an auxiliary window from this listing. The
     /// windows that act on "the filtered items" carry them along.
     func auxRequest(_ kind: AuxWindowRequest.Kind) -> AuxWindowRequest {
         var request = AuxWindowRequest(libraryID: libraryID, kind: kind)
-        if kind == .organise || kind == .maintenance {
+        // Organise plans over its own listing when it has no list, and
+        // unfiltered, video-only and hiding nothing, that listing IS the
+        // grid's — so it is sent a list only when something narrows the
+        // grid (the list is the window's identity and saved state, and an
+        // unfiltered library put every id into both). Maintenance's
+        // write-back takes no list to mean every item of every kind, so it
+        // always gets the grid's items.
+        let narrowed = !filter.isEmpty || kinds != .video || hideOfflineItems
+        if kind == .maintenance || (kind == .organise && narrowed) {
             request.scopeItemIDs = visibleItems.map(\.id)
         }
         return request
     }
 
+    /// Open the player at `itemID` (or the first visible item) with the
+    /// companion pending. Nothing to play means nothing to analyse, and
+    /// the caller's control stays inert.
     func openPlayerForAnalysis(at itemID: UUID? = nil) {
         let online = visibleItems.filter(isOnline)
         guard let first = itemID.flatMap({ id in online.first { $0.id == id } }) ?? online.first
@@ -1468,15 +1476,26 @@ enum GridFocus {
 /// backup or stat every staged file. The count the window opened with is
 /// not a change.
 struct FollowsLibraryChanges: ViewModifier {
-    let count: Int
+    let model: BrowseModel
+    let domains: Set<LibraryChangeDomain>
     let reload: () -> Void
     @State private var seen: Int?
 
     func body(content: Content) -> some View {
-        content
-            .onAppear { seen = count }
+        // Read here, in the modifier's own body, not the window's: read in
+        // the window, every hub delivery in ANY domain re-rendered the
+        // whole window, ten times a second during an import.
+        let count = model.changeCount(domains)
+        return content
             .task(id: count) {
-                guard let seen, count != seen else { return }
+                // The first run is the window opening: the count it finds is
+                // where it starts, not a change. (Seeded here rather than in
+                // onAppear, whose order against this first run is not given.)
+                guard let seen else {
+                    seen = count
+                    return
+                }
+                guard count != seen else { return }
                 try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled else { return }
                 self.seen = count
@@ -1486,8 +1505,10 @@ struct FollowsLibraryChanges: ViewModifier {
 }
 
 extension View {
-    func followsLibraryChanges(_ count: Int, reload: @escaping () -> Void) -> some View {
-        modifier(FollowsLibraryChanges(count: count, reload: reload))
+    func followsLibraryChanges(
+        _ model: BrowseModel, _ domains: Set<LibraryChangeDomain>, reload: @escaping () -> Void
+    ) -> some View {
+        modifier(FollowsLibraryChanges(model: model, domains: domains, reload: reload))
     }
 }
 

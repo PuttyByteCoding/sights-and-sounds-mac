@@ -99,18 +99,39 @@ import Testing
     /// writes in a working folder on the same volume and moves the file
     /// into place only once it is whole — and a cancelled run leaves
     /// nothing behind.
-    @Test func aCancelledClipExportLeavesNothingInTheLibrary() async throws {
+    /// Answers "cancelled?" from a script, one answer per question, and
+    /// counts the questions.
+    private actor CancelScript {
+        private var answers: [Bool]
+        private(set) var asked = 0
+        init(_ answers: [Bool]) { self.answers = answers }
+        func next() -> Bool {
+            asked += 1
+            return answers.isEmpty ? true : answers.removeFirst()
+        }
+    }
+
+    /// Cancelled before the export starts, and cancelled while it runs
+    /// (the export itself cannot be interrupted, so that is honoured once
+    /// it is done — after the file is written, before it is moved in).
+    /// Either way nothing reaches the library: the second case is the one
+    /// that proves the export writes aside, and it failed when the export
+    /// wrote straight into the show's folder.
+    @Test(arguments: [[true], [false, true]])
+    func aCancelledClipExportLeavesNothingInTheLibrary(_ answers: [Bool]) async throws {
         let f = try await OpsFixture()
         defer { f.tearDown() }
         let clip = try f.library.createEmbeddedClip(
             parentID: f.parent.id, name: "encore", startSeconds: 1, endSeconds: 4)
         let job = try ClipExportJob(payload: JSONEncoder().encode(ClipExportJob.Payload(clipID: clip.id)))
+        let script = CancelScript(answers)
         let context = JobContext(
             library: f.library, jobID: UUID(), progressHandler: { _, _ in },
-            cancellationCheck: { true }, summaryHandler: { _ in })
+            cancellationCheck: { await script.next() }, summaryHandler: { _ in })
 
         await #expect(throws: CancellationError.self) { try await job.run(context) }
 
+        #expect(await script.asked == answers.count, "cancellation was not asked where expected")
         let files = try FileManager.default.contentsOfDirectory(atPath: f.root.appendingPathComponent("shows").path)
         #expect(files == ["long.mp4"])
         let exported = try await f.library.writer.read { db in
@@ -244,7 +265,12 @@ import Testing
         let record = try await RepairJob.enqueue(
             on: f.runner, itemID: f.parent.id, recipe: RepairRecipe.shipped[0])
         try await f.runner.runPending()
-        #expect(try await f.job(record.id).state == .failed)
+        // The repair happened; only the put-back did not. A failed job
+        // invited a retry that would repair the repaired file again, and
+        // said nothing about where it was left.
+        let job = try await f.job(record.id)
+        #expect(job.state == .succeeded, "\(job.error ?? "")")
+        #expect(job.summary?.contains("could not be moved back") == true, "\(job.summary ?? "")")
 
         let state = try await hashState(f)
         #expect(state.hash == nil)

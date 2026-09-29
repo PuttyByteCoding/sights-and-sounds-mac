@@ -46,4 +46,34 @@ import Testing
         let request = try JSONDecoder().decode(AuxWindowRequest.self, from: Data(saved.utf8))
         #expect(request.scopeItemIDs == nil)
     }
+
+    /// With nothing narrowing the grid, the window's own unfiltered listing
+    /// IS the grid's, so it carries no list: the list is the window's
+    /// identity and its saved state, and an unfiltered library put every
+    /// item's id into both (and opened a new window per listing).
+    @Test func anUnfilteredGridSendsOrganiseNoList() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Unfiltered")
+        let source = Source(name: "Here", rootPath: FileManager.default.temporaryDirectory.path)
+        try await library.writer.write { db in
+            try source.insert(db)
+            for n in 0..<4 {
+                try MediaItem(sourceID: source.id, kind: .video, relativePath: "\(n).mp4", needsReview: false).insert(db)
+            }
+        }
+        let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
+        try await waitUntil { model.items.count == 4 }
+        #expect(model.auxRequest(.organise).scopeItemIDs == nil)
+        // Maintenance's write-back reads no list as every item of every
+        // kind — audio the grid never showed included — so it always gets
+        // the grid's items.
+        #expect(model.auxRequest(.maintenance).scopeItemIDs == model.visibleItems.map(\.id))
+
+        // Audio as well as video is narrower than nothing: the window's own
+        // listing is video only, so the grid's items travel.
+        _ = model.toggleKind(.audio)
+        try await waitUntil { model.kinds.contains(.audio) }
+        #expect(model.auxRequest(.organise).scopeItemIDs != nil)
+    }
 }
+

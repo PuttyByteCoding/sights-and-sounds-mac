@@ -116,18 +116,31 @@ public struct ImportJob: Job {
             candidates.filter { wanted.contains($0.relative.lowercased()) }
         } ?? candidates
 
-        // Folded once, looked up per file. Scanning every known path for
-        // every candidate made a full rescan quadratic: 40,000 items was
-        // over a billion string comparisons.
-        var existing = try await library.writer.read { db in
+        // The library's own spellings, read once. Folded once too, and
+        // looked up per file: scanning every known path for every
+        // candidate made a full rescan quadratic — 40,000 items was over a
+        // billion string comparisons.
+        let exactKnown = try await library.writer.read { db in
             Set(try String.fetchAll(
-                db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?",
-                arguments: [source.id]).map { $0.lowercased() })
+                db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?", arguments: [source.id]))
         }
+        var existing = Set(exactKnown.map { $0.lowercased() })
 
         var inserted = 0
         var skipped = 0
-        var missingStaged = 0
+        // Paths this run inserted, folded: a second spelling of one is a
+        // different file on a case-sensitive volume, not "already imported".
+        var insertedFolded: Set<String> = []
+        var caseTwins: [String] = []
+        let resolved = try payload.staging?.resolve(in: library)
+        var vanished: Set<UUID> = []
+        // For a later scan of a case-sensitive folder: a candidate whose
+        // folded path is known but whose exact spelling is not, while the
+        // library's spelling is ALSO on disk, is the twin left out before
+        // — still a twin, not "already in".
+        let candidateSpellings = Set(selected.map(\.relative))
+        let knownSpellingByFold = Dictionary(
+            exactKnown.map { ($0.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
         await context.reportProgress(current: 0, total: selected.count)
 
         for (index, candidate) in selected.enumerated() {
@@ -135,8 +148,18 @@ public struct ImportJob: Job {
             defer { Task { await context.reportProgress(current: index + 1, total: selected.count) } }
 
             // NOCASE-unique paths: compare case-insensitively like the schema.
-            if existing.contains(candidate.relative.lowercased()) {
-                skipped += 1
+            let folded = candidate.relative.lowercased()
+            if insertedFolded.contains(folded) {
+                caseTwins.append(candidate.relative)
+                continue
+            }
+            if existing.contains(folded) {
+                if !exactKnown.contains(candidate.relative),
+                   let known = knownSpellingByFold[folded], candidateSpellings.contains(known) {
+                    caseTwins.append(candidate.relative)
+                } else {
+                    skipped += 1
+                }
                 continue
             }
 
@@ -165,12 +188,13 @@ public struct ImportJob: Job {
             // A case-sensitive volume can hold `a.mp4` and `A.mp4`; the
             // library holds one path per spelling-ignoring-case, and the
             // second insert used to fail the whole run on the index.
-            existing.insert(candidate.relative.lowercased())
+            existing.insert(folded)
+            insertedFolded.insert(folded)
             // Staging applies through the ordinary write paths, so a
             // single-select category still replaces rather than
             // accumulating — the rule cannot be skipped by importing.
-            if let staging = payload.staging {
-                missingStaged += try staging.apply(to: item.id, in: library)
+            if let staging = payload.staging, let resolved {
+                vanished.formUnion(try staging.apply(to: item.id, in: library, resolved: resolved))
             }
             inserted += 1
         }
@@ -184,10 +208,18 @@ public struct ImportJob: Job {
         // The leading "N new, M already imported" is read by the import
         // window; a note goes after it.
         var summary = "\(inserted) new, \(skipped) already imported"
+        let missingStaged = resolved.map { $0.missing.union(vanished).count } ?? 0
         if missingStaged > 0 {
-            summary += " — \(missingStaged) staged tags or fields no longer exist and were not applied"
-            AppLog.shared.warning("import", summary)
+            summary += missingStaged == 1
+                ? " — 1 staged tag or field no longer exists and was not applied"
+                : " — \(missingStaged) staged tags or fields no longer exist and were not applied"
         }
+        if !caseTwins.isEmpty {
+            // Library paths ignore case, so only one spelling can be in.
+            summary += " — not imported, another spelling already came in (paths ignore case): "
+                + caseTwins.joined(separator: ", ")
+        }
+        if missingStaged > 0 || !caseTwins.isEmpty { AppLog.shared.warning("import", summary) }
         await context.setSummary(summary)
     }
 }
