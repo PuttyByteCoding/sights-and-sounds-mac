@@ -76,5 +76,33 @@ import Testing
             #expect(after.contains(quoted), "\(field.vorbisName) did not land: \(after)")
         }
     }
+
+    /// Ogg keeps its Vorbis comments on the stream, not the file. Clearing
+    /// only the file's tags (above) left the old comments in place, and a
+    /// file-level `-metadata` is not written by the Ogg muxer at all: a
+    /// write-back to .ogg or .opus said "written" and changed nothing.
+    @Test(arguments: [("ogg", ["-c:a", "flac"]), ("opus", ["-c:a", "libopus", "-b:a", "64k"])])
+    func anOggFilesCommentsAreReplaced(_ ext: String, _ codec: [String]) throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-ogg-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.\(ext)")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "sine=f=440:duration=1:sample_rate=48000",
+            "-metadata:s:a:0", "TITLE=Old", "-metadata:s:a:0", "ARTIST=Old Artist",
+        ] + codec + [file.path], tool: ffmpeg)
+        #expect(try TagWriters.readTagsJSON(url: file).contains("Old Artist"))
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "TITLE", mp4Atom: "©nam", mp4Freeform: false, values: ["New"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+
+        let after = try TagWriters.readTagsJSON(url: file)
+        #expect(after.contains("\"New\""), "the new title was not written: \(after)")
+        #expect(!after.contains("Old Artist"), "the old comments were kept: \(after)")
+    }
 }
 
