@@ -629,11 +629,21 @@ struct ViewMenuCommands: View {
                 focusedBrowse?.openPlayerForAnalysis()
                 return
             }
-            openWindow(
-                id: "aux",
-                value: AuxWindowRequest(libraryID: focusedLibraryID, kind: kind))
+            openWindow(id: "aux", value: Self.request(kind, libraryID: focusedLibraryID, browse: focusedBrowse))
         }
         .keyboardShortcut(KeyEquivalent(key), modifiers: [.command, .option])
+    }
+
+    /// The same request the toolbar and the palette make, so the menu
+    /// opens the same window on the same items: Organise and Maintenance
+    /// act on "the filtered items", which only the focused grid knows.
+    static func request(
+        _ kind: AuxWindowRequest.Kind, libraryID: UUID, browse: BrowseModel?
+    ) -> AuxWindowRequest {
+        guard let browse, browse.libraryID == libraryID else {
+            return AuxWindowRequest(libraryID: libraryID, kind: kind)
+        }
+        return browse.auxRequest(kind)
     }
 }
 
