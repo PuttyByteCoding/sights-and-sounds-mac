@@ -49,11 +49,13 @@ import Testing
 
     /// Walks that wait at a gate the test opens, so an edit is made
     /// while a walk is certainly still running, however loaded the
-    /// machine. Once opened the gate stays open.
+    /// machine. Once opened the gate stays open. A held walk is suspended,
+    /// not blocking: it holds no thread of the shared pool, which the
+    /// test's own sleeps need to wake on.
     final class GatedWalks: @unchecked Sendable {
         private let lock = NSLock()
-        private let gate = DispatchSemaphore(value: 0)
         private var isOpen = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
         private var running = 0
         private var counts = (started: 0, finished: 0, mostAtOnce: 0)
 
@@ -62,20 +64,27 @@ import Testing
         var mostAtOnce: Int { lock.withLock { counts.mostAtOnce } }
 
         func open() {
-            lock.withLock { isOpen = true }
-            gate.signal()
+            let held = lock.withLock {
+                isOpen = true
+                defer { waiting = [] }
+                return waiting
+            }
+            for walk in held { walk.resume() }
         }
 
-        func walk(_ library: LibraryDatabase, _ rule: RuleEngine.Rule) throws -> RuleDryRun {
-            let wait = lock.withLock {
+        func walk(_ library: LibraryDatabase, _ rule: RuleEngine.Rule) async throws -> RuleDryRun {
+            lock.withLock {
                 running += 1
                 counts.started += 1
                 counts.mostAtOnce = max(counts.mostAtOnce, running)
-                return !isOpen
             }
-            if wait {
-                _ = gate.wait(timeout: .now() + 10)   // never strand a pool thread
-                gate.signal()   // let any later walk through too
+            await withCheckedContinuation { (walk: CheckedContinuation<Void, Never>) in
+                let goNow = lock.withLock {
+                    if isOpen { return true }
+                    waiting.append(walk)
+                    return false
+                }
+                if goNow { walk.resume() }
             }
             defer { lock.withLock { running -= 1; counts.finished += 1 } }
             return try library.dryRun(rule)

@@ -26,7 +26,7 @@ final class RulesTabModel {
 
     private var dryRunTask: Task<Void, Never>?
     /// The draft's walk; tests slow it down to overlap edits with it.
-    var walkDryRun: @Sendable (LibraryDatabase, RuleEngine.Rule) throws -> RuleDryRun = { try $0.dryRun($1) }
+    var walkDryRun: @Sendable (LibraryDatabase, RuleEngine.Rule) async throws -> RuleDryRun = { try $0.dryRun($1) }
     private var cardDryRunGeneration = 0
 
     var selectedID: UUID?
@@ -136,7 +136,7 @@ final class RulesTabModel {
         let library = library, walk = walkDryRun
         Task {
             let run = try? await Task.detached(priority: .userInitiated) {
-                try walk(library, subject)
+                try await walk(library, subject)
             }.value
             walking = false
             if walkIsStale {
