@@ -32,6 +32,21 @@ import Testing
         #expect(model.dryRun?.actionCount == 3)
     }
 
+    /// Edits further apart than the settle each start a walk. The walk
+    /// cannot be stopped, so a later edit must not start a second one
+    /// beside it, and the answer on screen must still end on the newest
+    /// draft.
+    @Test func editsSlowerThanTheSettleEndOnTheNewestDraft() async throws {
+        let model = try model()
+        for _ in 0..<3 {
+            model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: $0.matcher, actions: $0.actions + [.ignore]) }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        try await waitUntil { model.dryRun?.actionCount == 3 }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(model.dryRun?.actionCount == 3)
+    }
+
     @Test func applyRunsAndReportsWithoutBlocking() async throws {
         let model = try model()
         model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: .keyEquals(key: "artist"), actions: [.ignore]) }

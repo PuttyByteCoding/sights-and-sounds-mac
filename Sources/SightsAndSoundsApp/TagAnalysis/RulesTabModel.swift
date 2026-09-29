@@ -96,21 +96,50 @@ final class RulesTabModel {
     /// cancels the last, so only the newest draft's answer lands.
     func refreshDryRun(settle: Duration = .zero) {
         dryRunTask?.cancel()
-        guard let subject = draft ?? selected else {
+        guard draft ?? selected != nil else {
             dryRun = nil
             return
         }
-        let library = library
         dryRunTask = Task {
             if settle > .zero {
                 try? await Task.sleep(for: settle)
                 guard !Task.isCancelled else { return }
             }
+            startDryRunWalk()
+        }
+    }
+
+    /// One walk at a time. The walk is a synchronous pass over the whole
+    /// candidate queue and cannot be stopped part-way, so cancelling the
+    /// task that awaited it left it running: slow typing piled up
+    /// concurrent walks whose answers were then thrown away. Now an edit
+    /// during a walk only marks it stale, and when it finishes one more
+    /// walk runs for the newest draft.
+    private var walking = false
+    private var walkIsStale = false
+
+    private func startDryRunWalk() {
+        guard !walking else {
+            walkIsStale = true
+            return
+        }
+        guard let subject = draft ?? selected else {
+            dryRun = nil
+            return
+        }
+        walking = true
+        walkIsStale = false
+        let library = library
+        Task {
             let run = try? await Task.detached(priority: .userInitiated) {
                 try library.dryRun(subject)
             }.value
-            guard !Task.isCancelled else { return }
-            dryRun = run
+            walking = false
+            if walkIsStale {
+                startDryRunWalk()
+            } else {
+                dryRun = run
+            }
         }
     }
 
