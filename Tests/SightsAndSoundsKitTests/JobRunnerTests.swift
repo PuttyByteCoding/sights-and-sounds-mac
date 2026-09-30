@@ -265,6 +265,27 @@ import Testing
         #expect(cancelled.startedAt == nil)
     }
 
+    /// Cancelling a job that has not started settles it at once. It used
+    /// to be only marked, and stayed "queued" until a drain reached it —
+    /// behind a sweep that could be days — so the dashboard said "Removed
+    /// from the queue" while the queue, and anything watching it, still
+    /// counted it.
+    @Test func cancellingAQueuedJobSettlesItWithoutADrain() async throws {
+        let (library, runner) = try makeRunner()
+        await runner.register(CountingJob.self)
+        let queued = try await runner.enqueue(CountingJob.self)
+
+        await runner.requestCancel(queued.id)
+
+        let cancelled = try record(library, queued.id)
+        #expect(cancelled.state == .cancelled)
+        #expect(cancelled.finishedAt != nil)
+        #expect(cancelled.startedAt == nil)
+        // And a drain afterwards does not run it.
+        try await runner.runPending()
+        #expect(try record(library, queued.id).state == .cancelled)
+    }
+
     @Test func jobsRunOldestFirstAndDrainCompletely() async throws {
         let (library, runner) = try makeRunner()
         await runner.register(CountingJob.self)
