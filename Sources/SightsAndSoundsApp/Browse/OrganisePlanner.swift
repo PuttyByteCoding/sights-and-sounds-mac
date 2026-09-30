@@ -47,7 +47,9 @@ final class OrganisePlanner {
 
     /// The newest request not yet walked.
     private var pending: Request?
-    private var walking = false
+    /// A walk is running. Readable so tests can tell when one has ended
+    /// and decided whether its plan lands (both happen in one turn).
+    private(set) var walking = false
     private var settling: Task<Void, Never>?
     /// When the current burst of settling requests began. A steady stream
     /// (an import's listing refreshes) would otherwise push the settle back
