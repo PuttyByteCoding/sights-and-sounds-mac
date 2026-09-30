@@ -239,6 +239,8 @@ public actor JobRunner {
     }
 
     private func run(_ record: JobRecord) async {
+        // A queued job is cancelled by `requestCancel` itself; this is the
+        // fallback for when that write failed and only the mark was left.
         if cancelRequested.remove(record.id) != nil {
             AppLog.shared.info("jobs", "\(record.kind): cancelled before start")
             try? transition(record.id) { row in
