@@ -92,13 +92,6 @@ import Testing
 
     // MARK: Clip export
 
-    /// A clip export writes the new file beside its show, and it used to
-    /// write it THERE from the first byte: a failed export, or a quit or
-    /// cancel mid-way, left a partial .mp4 in the library folder for the
-    /// next scan to import. It could not be cancelled either. It now
-    /// writes in a working folder on the same volume and moves the file
-    /// into place only once it is whole — and a cancelled run leaves
-    /// nothing behind.
     /// Answers "cancelled?" from a script, one answer per question, and
     /// counts the questions.
     private actor CancelScript {
@@ -111,6 +104,14 @@ import Testing
         }
     }
 
+    /// A clip export writes the new file beside its show, and it used to
+    /// write it THERE from the first byte: a failed export, or a quit or
+    /// cancel mid-way, left a partial .mp4 in the library folder for the
+    /// next scan to import. It could not be cancelled either. It now
+    /// writes in a working folder on the same volume and moves the file
+    /// into place only once it is whole — and a cancelled run leaves
+    /// nothing behind.
+    ///
     /// Cancelled before the export starts, and cancelled while it runs
     /// (the export itself cannot be interrupted, so that is honoured once
     /// it is done — after the file is written, before it is moved in).
