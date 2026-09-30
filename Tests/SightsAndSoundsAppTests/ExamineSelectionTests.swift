@@ -32,8 +32,9 @@ import Testing
             try segment.insert(db)
             try other.insert(db)
         }
-        // A runner with no job types registered: the row is queued and
-        // then fails as unknown, which is fine; the row is what is tested.
+        // The job really runs (a runner handles every catalog kind), but
+        // the source's root does not exist, so it finds no file to open and
+        // decodes nothing; the queued row is what is tested.
         let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
         try await waitUntil { model.items.count == 3 }
         model.click(video.id, extend: true, range: false)
