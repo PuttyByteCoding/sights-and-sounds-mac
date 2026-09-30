@@ -173,9 +173,18 @@ public actor JobRunner {
     /// Start the queue draining and return at once — for a caller that
     /// has only queued work and should say so now, rather than after
     /// every job ahead of its own has finished. Joins a drain in flight.
+    /// Nobody awaits this drain, so a queue it cannot read is logged
+    /// rather than lost.
     public func startDraining() {
         guard drain == nil else { return }
-        drain = Task { try await self.drainQueue() }
+        drain = Task {
+            do {
+                return try await self.drainQueue()
+            } catch {
+                AppLog.shared.error("jobs", "The job queue stopped: \(error)")
+                throw error
+            }
+        }
     }
 
     private func drainQueue() async throws -> [UUID] {

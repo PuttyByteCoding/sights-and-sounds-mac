@@ -118,6 +118,25 @@ import Testing
         #expect(try record(library, behind.id).state == .succeeded)
     }
 
+    /// Nobody awaits the drain `startDraining` starts, so a queue it
+    /// could not read vanished while the window still said "Queued…". It
+    /// goes to the log now.
+    @Test(.timeLimit(.minutes(1)))
+    func aDrainThatCannotReadTheQueueIsLogged() async throws {
+        let (library, runner) = try makeRunner()
+        try await library.writer.write { try $0.execute(sql: "DROP TABLE job") }
+
+        await runner.startDraining()
+
+        func logged() -> Bool {
+            AppLog.shared.snapshot().contains {
+                $0.level == .error && $0.category == "jobs" && $0.message.contains("no such table: job")
+            }
+        }
+        for _ in 0..<200 where !logged() { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(logged(), "the failed drain left nothing in the log")
+    }
+
     private func makeRunner() throws -> (LibraryDatabase, JobRunner) {
         let library = try LibraryDatabase.openInMemory()
         return (library, JobRunner(library: library))
