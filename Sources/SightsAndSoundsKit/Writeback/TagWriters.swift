@@ -261,13 +261,22 @@ public enum TagWriters {
         let isMov = ext == "mov"
         // The ffmpeg tool stamps its own encoder tag (AVI: software) over
         // any given, so such a field is never kept, though its name is.
-        let stamped: Set<String> = ext == "avi" ? ["encoder", "software"] : ["encoder"]
+        // Not in Ogg: there the stamp goes in the vendor string.
+        let stamped: Set<String> = isOgg ? [] : ext == "avi" ? ["encoder", "software"] : ["encoder"]
         let notWritten = fields.filter { field in
             let key = muxerKey(field)
             if stamped.contains(key.lowercased()) { return true }
             guard isMP4 else { return false }
             return !Self.mp4MuxerWrites(key: key, value: field.values.joined(separator: "; "), mov: isMov)
         }.map(\.vorbisName)
+        // Nothing fits: known before the file is touched. Running the remux
+        // anyway wiped the file's existing tags and then reported failure.
+        if !fields.isEmpty, notWritten.count == fields.count {
+            let shown = notWritten.prefix(10).joined(separator: ", ")
+            return TagWriteResult(
+                success: false, usedRemuxFallback: true,
+                error: "this file's format keeps none of these fields: \(shown) — the file was left as it was")
+        }
         for field in fields where !notWritten.contains(field.vorbisName) {
             let key = muxerKey(field)
             arguments += [metadataFlag, "\(key)=\(field.values.joined(separator: "; "))"]

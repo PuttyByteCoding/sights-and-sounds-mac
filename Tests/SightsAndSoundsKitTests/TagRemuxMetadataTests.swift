@@ -392,4 +392,36 @@ import Testing
             fields: [("ENCODER", "My Rig"), ("TITLE", "Night One")]) else { return }
         #expect(result.notWritten == ["ENCODER"], "\(result.notWritten)")
     }
+
+    /// In Ogg, ffmpeg's own stamp goes in the Vorbis vendor string, not
+    /// an ENCODER comment, so a given ENCODER is kept there.
+    @Test func anOggKeepsAnEncoderField() throws {
+        guard let (result, after) = try remux("song.ogg",
+            make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "libopus"],
+            fields: [("ENCODER", "My Rig")]) else { return }
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+        #expect(after.contains("My Rig"))
+    }
+
+    /// When the file's format can keep none of the fields, that is known
+    /// before the file is touched. The remux ran anyway: it wiped the
+    /// file's existing tags, then reported the failure. It refuses first.
+    @Test func aWriteNothingCanFitLeavesTheFileAlone() throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-none-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("clip.mov")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libx264",
+            "-metadata", "title=The Old Title", file.path,
+        ], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "PERFORMER", mp4Atom: "PERFORMER", mp4Freeform: true, values: ["The Examples"]),
+        ], url: file)
+        #expect(!result.success)
+        #expect(try TagWriters.readTagsJSON(url: file).contains("The Old Title"), "the file's tags were wiped")
+    }
 }
