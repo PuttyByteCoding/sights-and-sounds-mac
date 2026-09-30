@@ -37,6 +37,9 @@ struct OrganiseView: View {
     /// run with an edited template would move the files twice, into a
     /// session whose put-back restores the first layout, not the original.
     @State private var movesPending = false
+    /// This library's runner is paused (globally, or its lane from Background
+    /// Tasks), so queued moves will not run until it resumes.
+    @State private var queuePaused = false
     /// The grid's items when the window opened; nil is the whole library.
     let scope: [UUID]?
 
@@ -76,6 +79,20 @@ struct OrganiseView: View {
                 }
             } catch {
                 movesPending = false
+            }
+        }
+        // Pausing writes nothing to the queue, so the observation above
+        // cannot see it. Only while moves wait, the runner's own flag is
+        // read every two seconds — the per-library pause lives there, not
+        // in the app-wide one.
+        .task(id: movesPending) {
+            guard movesPending, let runner = try? app.runner(for: model.libraryID) else {
+                queuePaused = false
+                return
+            }
+            while !Task.isCancelled {
+                queuePaused = await runner.isPaused
+                try? await Task.sleep(for: .seconds(2))
             }
         }
         // Moves (a revert from another window, a run finishing) change
@@ -131,7 +148,7 @@ struct OrganiseView: View {
     /// Says why Move is unavailable: moves already queued, or a newer
     /// plan still being made.
     private var moveTitle: String {
-        if movesPending { return app.tasksPaused ? "Moves queued — tasks paused" : "Moves queued…" }
+        if movesPending { return queuePaused ? "Moves queued — tasks paused" : "Moves queued…" }
         if !planner.isCurrent { return "Updating plan…" }
         let count = planner.plan.movableCount
         return count == 0 ? "Nothing to move" : "Move \(count) items"

@@ -108,8 +108,12 @@ import Testing
         #expect(seen.last == 0, "the queued move never ran: \(seen)")
     }
 
+    /// Watching starts the queue, but a paused runner stays paused: the
+    /// moves wait, whatever watches them. (The runner's drain is what
+    /// holds them; this pins that watching goes through it rather than
+    /// around it.)
     @Test(.timeLimit(.minutes(1)))
-    func whilePausedTheQueueIsLeftAlone() async throws {
+    func watchingNeverRunsAPausedQueue() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "OrganisePaused")
         let runner = JobRunner(library: library, paused: true)
