@@ -22,6 +22,11 @@ final class OrganisePlanner {
     private(set) var plannedIDs: [UUID] = []
     private(set) var plannedTemplate = ""
     private(set) var validationErrors: [String] = []
+    /// The plan on screen is for the latest request. False from a new
+    /// request until its plan lands: Move applies the plan on screen, so
+    /// while a newer one is being made it would move files by a template
+    /// the field no longer shows.
+    private(set) var isCurrent = true
 
     /// How a plan is made; tests hold it at a gate.
     var makePlan: @Sendable (LibraryDatabase, String, [UUID]) async throws -> [ReorganizePlanEntry] = {
@@ -54,11 +59,13 @@ final class OrganisePlanner {
         validationErrors = OrganizeTemplate.validate(template, categoryNames: categoryNames).map(\.message)
         guard validationErrors.isEmpty else {
             pending = nil
+            isCurrent = true   // nothing to wait for; the errors say why
             plan = []
             plannedIDs = []
             plannedTemplate = ""
             return
         }
+        isCurrent = false
         pending = Request(generation: generation, template: template, ids: ids, library: library)
         settling = Task {
             if settle > .zero {
@@ -83,6 +90,7 @@ final class OrganisePlanner {
                 plan = made ?? []
                 plannedIDs = request.ids
                 plannedTemplate = request.template
+                isCurrent = true
             } else {
                 // Stale: a newer request is waiting (or was invalid and
                 // cleared, in which case there is nothing to walk).

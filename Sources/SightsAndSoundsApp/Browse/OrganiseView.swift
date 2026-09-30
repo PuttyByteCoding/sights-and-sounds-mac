@@ -106,6 +106,13 @@ struct OrganiseView: View {
         }
     }
 
+    /// Says why Move is unavailable while a newer plan is being made.
+    private var moveTitle: String {
+        if !planner.isCurrent { return "Updating plan…" }
+        let count = planner.plan.movableCount
+        return count == 0 ? "Nothing to move" : "Move \(count) items"
+    }
+
     private var historyHeadline: String {
         "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
     }
@@ -296,12 +303,12 @@ struct OrganiseView: View {
             }
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
             VStack(alignment: .leading, spacing: 8) {
-                Button(planner.plan.movableCount == 0 ? "Nothing to move" : "Move \(planner.plan.movableCount) items") {
+                Button(moveTitle) {
                     apply()
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
-                .disabled(applying || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
+                .disabled(applying || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
                     .foregroundStyle(Theme.Text.disabled)
@@ -456,12 +463,14 @@ struct OrganiseView: View {
         // with, not what the field says by now.
         let ids = planner.plannedIDs
         let template = planner.plannedTemplate
+        // Counted now: a newer plan can land before the queue answers.
+        let count = planner.plan.movableCount
         Task {
             do {
                 _ = try await ReorganizeJob.enqueue(
                     on: runner, template: template, itemIDs: ids)
                 // Said now, not once the whole queue has drained.
-                status = "\(planner.plan.movableCount) moves queued — each one logged and revertible"
+                status = "\(count) moves queued — each one logged and revertible"
                 try await runner.runPending()
                 applying = false
                 reloadHistory()

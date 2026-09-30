@@ -103,6 +103,30 @@ import Testing
         #expect(plans.started == 1)
     }
 
+    /// Move applies the plan on screen. While a newer request is still
+    /// being planned that plan is out of date, and Move must say so by
+    /// being unavailable: it would move files by the old template.
+    @Test func thePlanIsNotCurrentWhileANewerOneIsBeingMade() async throws {
+        let (planner, plans, library) = try planner()
+        plans.open()
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        try await waitUntil { planner.isCurrent }
+        #expect(planner.plannedTemplate == "%Band")
+
+        let held = GatedPlans()
+        planner.makePlan = held.make
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
+        #expect(!planner.isCurrent, "the old plan still counts as current right after the edit")
+        try await waitUntil { held.started == 1 }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!planner.isCurrent, "the old plan counts as current while the new one is made")
+        #expect(planner.plannedTemplate == "%Band")
+
+        held.open()
+        try await waitUntil { planner.isCurrent }
+        #expect(planner.plannedTemplate == "%Band/Live")
+    }
+
     @Test func anInvalidTemplateMakesNoPlanAndDropsOneInFlight() async throws {
         let (planner, plans, library) = try planner()
         planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
