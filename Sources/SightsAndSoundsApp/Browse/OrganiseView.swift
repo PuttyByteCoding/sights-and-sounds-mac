@@ -29,10 +29,14 @@ struct OrganiseView: View {
     @State private var sessions: [LibraryDatabase.MoveSession] = []
     @State private var status: String?
     @State private var errorText: String?
-    /// Move is being queued. Only that: once queued, Move is available
-    /// again — a second press re-plans at run time, finds every item
-    /// already in place and moves nothing.
+    /// Move is being queued.
     @State private var applying = false
+    /// A reorganize of this library is queued or running — from this
+    /// window or any other. Move waits for it: behind a long queue the plan
+    /// on screen would otherwise offer the same moves again, and a second
+    /// run with an edited template would move the files twice, into a
+    /// session whose put-back restores the first layout, not the original.
+    @State private var movesPending = false
     /// The grid's items when the window opened; nil is the whole library.
     let scope: [UUID]?
 
@@ -60,6 +64,15 @@ struct OrganiseView: View {
         }
         // Moves (a revert from another window, a run finishing) change
         // the history and what the plan would do.
+        // Observed, not polled; cancelled with the window.
+        .task {
+            let counts = model.library.pendingJobCounts(of: ReorganizeJob.kind)
+            do {
+                for try await count in counts { movesPending = count > 0 }
+            } catch {
+                movesPending = false
+            }
+        }
         .followsLibraryChanges(model, [.items]) {
             reloadHistory()
             preview(settle: .milliseconds(300))
@@ -108,8 +121,10 @@ struct OrganiseView: View {
         }
     }
 
-    /// Says why Move is unavailable while a newer plan is being made.
+    /// Says why Move is unavailable: moves already queued, or a newer
+    /// plan still being made.
     private var moveTitle: String {
+        if movesPending { return "Moves queued…" }
         if !planner.isCurrent { return "Updating plan…" }
         let count = planner.plan.movableCount
         return count == 0 ? "Nothing to move" : "Move \(count) items"
@@ -310,7 +325,7 @@ struct OrganiseView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
-                .disabled(applying || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
+                .disabled(applying || movesPending || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
                     .foregroundStyle(Theme.Text.disabled)

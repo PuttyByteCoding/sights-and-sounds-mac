@@ -16,9 +16,11 @@ import Testing
         private let lock = NSLock()
         private var isOpen = false
         private var waiting: [CheckedContinuation<Void, Never>] = []
-        private(set) var started = false
+        private var hasStarted = false
 
-        func reset() { lock.withLock { isOpen = false; started = false } }
+        var started: Bool { lock.withLock { hasStarted } }
+
+        func reset() { lock.withLock { isOpen = false; hasStarted = false } }
 
         func open() {
             let held = lock.withLock {
@@ -30,7 +32,7 @@ import Testing
         }
 
         func hold() async {
-            lock.withLock { started = true }
+            lock.withLock { hasStarted = true }
             await withCheckedContinuation { (job: CheckedContinuation<Void, Never>) in
                 let goNow = lock.withLock {
                     if isOpen { return true }
@@ -66,7 +68,9 @@ import Testing
             try await OrganiseMove.queue(on: runner, template: "%Band", ids: [UUID()])
             queued = true
         }
-        for _ in 0..<200 where !queued { try await Task.sleep(for: .milliseconds(10)) }
+        // Correct code needs one write and a hop; the old code never
+        // returned. A wide bound costs nothing on correct code.
+        for _ in 0..<400 where !queued { try await Task.sleep(for: .milliseconds(25)) }
         #expect(queued, "queueing the moves waited for the sweep ahead of them")
 
         let jobs = try await library.writer.read { try JobRecord.fetchAll($0) }
