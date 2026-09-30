@@ -144,3 +144,34 @@ public enum RepairError: Error, CustomStringConvertible {
         }
     }
 }
+
+extension LibraryDatabase {
+    /// The items with a repair queued or running: now, and again whenever
+    /// that set changes. From the queue itself, so a window rebuilt while
+    /// a repair waits still knows about it.
+    public func pendingRepairItems() -> AsyncValueObservation<Set<UUID>> {
+        ValueObservation
+            .tracking { try Self.pendingRepairItems(in: $0) }
+            .removeDuplicates()
+            .values(in: writer)
+    }
+
+    /// The same set, read once: for right after queueing, when a repair
+    /// queued and done between two deliveries reads to the observation as
+    /// no change at all.
+    public func currentPendingRepairItems() throws -> Set<UUID> {
+        try writer.read { try Self.pendingRepairItems(in: $0) }
+    }
+
+    private static func pendingRepairItems(in db: Database) throws -> Set<UUID> {
+        let pending = [JobState.queued.rawValue, JobState.running.rawValue]
+        let payloads = try Data?.fetchAll(
+            db,
+            JobRecord
+                .select(Column("payload"))
+                .filter(Column("kind") == RepairJob.kind && pending.contains(Column("state"))))
+        return Set(payloads.compactMap { data in
+            data.flatMap { try? JSONDecoder().decode(RepairJob.Payload.self, from: $0) }?.itemID
+        })
+    }
+}

@@ -31,14 +31,28 @@ import Testing
         #expect(try await counts.next() == 0, "a finished run still counted, or another kind did")
     }
 
-    /// The count once, for a caller that must not wait for a change the
-    /// observation may never deliver (a run that is queued and done inside
-    /// one delivery reads as no change).
-    @Test func theCountCanBeReadOnce() async throws {
+    /// Which items have a repair queued or running, from the queue itself:
+    /// a window that keeps its own note of what it queued forgets it when
+    /// it is rebuilt (Review swaps to the player and back), and then offered
+    /// Run fix again for a repair still waiting.
+    @Test(.timeLimit(.minutes(1)))
+    func theItemsWithARepairWaitingFollowTheQueue() async throws {
         let library = try LibraryDatabase.openInMemory()
         let runner = JobRunner(library: library, paused: true)
-        #expect(try library.pendingJobCount(of: ReorganizeJob.kind) == 0)
-        _ = try await ReorganizeJob.enqueue(on: runner, template: "%Band", itemIDs: [])
-        #expect(try library.pendingJobCount(of: ReorganizeJob.kind) == 1)
+        var items = library.pendingRepairItems().makeAsyncIterator()
+        #expect(try await items.next() == [])
+
+        let item = UUID()
+        let recipe = RepairRecipe(
+            name: "remux", matchPattern: nil, tool: "ffmpeg",
+            argumentTemplate: ["{input}", "{output}"], estimate: "seconds")
+        let job = try await RepairJob.enqueue(on: runner, itemID: item, recipe: recipe)
+        #expect(try await items.next() == [item])
+
+        try await library.writer.write { db in
+            try db.execute(sql: "UPDATE job SET state = ? WHERE id = ?",
+                           arguments: [JobState.succeeded.rawValue, job.id])
+        }
+        #expect(try await items.next() == [])
     }
 }

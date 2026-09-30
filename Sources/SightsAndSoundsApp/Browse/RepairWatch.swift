@@ -4,62 +4,59 @@ import Observation
 /// Which of Review's issues have a repair waiting, and what came of them.
 ///
 /// Run fix used to wait for `runPending`, which returns only when the
-/// whole queue is empty — or at once when the queue is paused. Paused, it
-/// counted a repair that had not run as resolved and let Run fix queue the
-/// same repair again; behind a long sweep it stayed disabled until the
-/// sweep ended. This follows the queue instead: an item is held while any
-/// repair is queued or running, and only a repair whose item is no longer
-/// flagged afterwards counts as resolved.
+/// whole queue is empty — or at once when the queue is paused — and a
+/// window-local record of what it queued then had races of its own, and
+/// was forgotten when the window was rebuilt (Review swaps to the player
+/// and back). The queue is the truth now: an item is repairing while it
+/// has a repair queued or running (`pending`, observed), or while its
+/// Run fix click is still being queued (`enqueuing`). Only a repair queued
+/// from here whose item is no longer flagged afterwards counts as
+/// resolved.
 @Observable
 @MainActor
 final class RepairWatch {
-    private var awaiting: Set<UUID> = []
-    private var repairsPending = false
-    /// Repairs clicked but not yet in the queue. The queue's "none
-    /// pending" says nothing about them, so nothing settles meanwhile.
-    private var enqueuing = 0
+    /// From the queue.
+    private var pending: Set<UUID> = []
+    /// Clicked, not yet in the queue.
+    private var enqueuing: Set<UUID> = []
+    /// Queued from this window: counted once their repairs are done.
+    private var watched: Set<UUID> = []
 
-    /// Also counts as a repair pending: the queue's own report of it
-    /// comes later, and a reload in between must not settle the item.
+    func isRepairing(_ item: UUID) -> Bool {
+        pending.contains(item) || enqueuing.contains(item)
+    }
+
     func queued(_ item: UUID) {
-        awaiting.insert(item)
-        repairsPending = true
-        enqueuing += 1
+        enqueuing.insert(item)
+        watched.insert(item)
     }
 
-    /// The repair is in the queue: pending until the queue reports none.
-    func enqueued(_ item: UUID) {
-        enqueuing = max(0, enqueuing - 1)
-        repairsPending = true
+    /// The enqueue returned. On success `pendingNow` is the queue read
+    /// after it committed, applied in the same step that ends the click's
+    /// own hold, so the item is never shown free while its repair waits —
+    /// and a repair queued and already done is not held on a guess.
+    func enqueueFinished(_ item: UUID, pendingNow: Set<UUID>?) {
+        if let pendingNow { pending = pendingNow } else { watched.remove(item) }
+        enqueuing.remove(item)
     }
 
-    /// The repair was never queued (the enqueue failed). True when that
-    /// was the last thing holding other items whose repairs are done:
-    /// nothing else will ask again, so a reload is due now.
+    /// The queue's set changed. True when a repair queued from here has
+    /// finished: time to reload and `settle`.
     @discardableResult
-    func release(_ item: UUID) -> Bool {
-        enqueuing = max(0, enqueuing - 1)
-        awaiting.remove(item)
-        return !repairsPending && enqueuing == 0 && !awaiting.isEmpty
+    func pendingChanged(to items: Set<UUID>) -> Bool {
+        pending = items
+        return !finished.isEmpty
     }
 
-    /// Run fix waits for this item's repair.
-    func isRepairing(_ item: UUID) -> Bool { awaiting.contains(item) }
-
-    /// The number of queued or running repairs changed. True when none are
-    /// left for items still awaited: time to reload and `settle`.
-    func pendingChanged(to count: Int) -> Bool {
-        repairsPending = count > 0
-        return !repairsPending && enqueuing == 0 && !awaiting.isEmpty
-    }
-
-    /// After a reload: the awaited items that are no longer flagged were
-    /// resolved; every awaited item is let go (one still flagged can try
-    /// another recipe). Nothing is settled while repairs are still queued.
+    /// After a reload: repairs queued from here that are done count as
+    /// resolved if their item is no longer flagged, and are let go.
     func settle(stillFlagged: Set<UUID>) -> Int {
-        guard !repairsPending, enqueuing == 0 else { return 0 }
-        let resolved = awaiting.subtracting(stillFlagged).count
-        awaiting.removeAll()
-        return resolved
+        let done = finished
+        watched.subtract(done)
+        return done.subtracting(stillFlagged).count
+    }
+
+    private var finished: Set<UUID> {
+        watched.filter { !pending.contains($0) && !enqueuing.contains($0) }
     }
 }

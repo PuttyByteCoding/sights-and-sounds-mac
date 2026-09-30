@@ -14,13 +14,6 @@ extension LibraryDatabase {
             .values(in: writer)
     }
 
-    /// The same count, read once: for a caller that must not wait for a
-    /// change the observation may never deliver — a job queued and done
-    /// between two deliveries reads as no change at all.
-    public func pendingJobCount(of kind: String) throws -> Int {
-        try writer.read { try Self.pendingCount(of: kind, in: $0) }
-    }
-
     private static func pendingCount(of kind: String, in db: Database) throws -> Int {
         let pending = [JobState.queued.rawValue, JobState.running.rawValue]
         return try JobRecord
