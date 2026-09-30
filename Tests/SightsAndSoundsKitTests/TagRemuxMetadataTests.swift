@@ -502,4 +502,20 @@ import Testing
         #expect(result.notWritten.isEmpty, "\(result.notWritten)")
         #expect(after.contains("The Examples"))
     }
+
+    /// ASF (.wma, .wmv) keeps a comment and a description in one field,
+    /// read back as "comment". A description alone was named not kept
+    /// (and a write of it alone counted failed); with both, the later one
+    /// silently replaced the other while the earlier was counted kept.
+    @Test func anAsfDescriptionIsKeptAndAClashIsNamed() throws {
+        let make = ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "wmav2"]
+        guard let (alone, _) = try remux("song.wma", make: make,
+            fields: [("DESCRIPTION", "A night recording")]) else { return }
+        #expect(alone.notWritten.isEmpty, "\(alone.notWritten)")
+
+        guard let (both, after) = try remux("song.wma", make: make,
+            fields: [("COMMENT", "The comment"), ("DESCRIPTION", "The description")]) else { return }
+        #expect(both.notWritten == ["COMMENT"], "\(both.notWritten)")
+        #expect(after.contains("The description"))
+    }
 }

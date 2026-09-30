@@ -275,9 +275,20 @@ public enum TagWriters {
         // any given, so such a field is never kept, though its name is.
         // Not in Ogg: there the stamp goes in the vendor string.
         let stamped: Set<String> = isOgg ? [] : ext == "avi" ? ["encoder", "software"] : ["encoder"]
+        // ASF (.wma, .wmv) keeps a comment and a description in one field:
+        // given both, the later replaced the earlier, which then read back
+        // as kept. The earlier is named, not written.
+        let isAsf = ["wma", "wmv", "asf"].contains(ext)
+        var displaced: Set<String> = []
+        if isAsf {
+            let keys = fields.map { muxerKey($0).lowercased() }
+            if let c = keys.firstIndex(of: "comment"), let d = keys.firstIndex(of: "description") {
+                displaced.insert(fields[min(c, d)].vorbisName)
+            }
+        }
         let notWritten = fields.filter { field in
             let key = muxerKey(field)
-            if stamped.contains(key.lowercased()) { return true }
+            if stamped.contains(key.lowercased()) || displaced.contains(field.vorbisName) { return true }
             guard isMP4 else { return false }
             return !Self.mp4MuxerWrites(key: key, value: field.values.joined(separator: "; "), mov: isMov)
         }.map(\.vorbisName)
@@ -308,8 +319,10 @@ public enum TagWriters {
             // most containers (.wav, .aiff, .avi, .ts) keep only a few tags
             // and dropped the rest under a success.
             let passed = fields.filter { !notWritten.contains($0.vorbisName) }
-            let vorbis = isOgg || ext == "flac"
-            let dropped = Self.fieldsMissing(passed, from: url, streamTags: isOgg, vorbis: vorbis, key: muxerKey)
+            // Vorbis comments and ASF both read a description back as "comment".
+            let commentHoldsDescription = isOgg || ext == "flac" || isAsf
+            let dropped = Self.fieldsMissing(
+                passed, from: url, streamTags: isOgg, commentHoldsDescription: commentHoldsDescription, key: muxerKey)
             return TagWriteResult(
                 success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped,
                 atomicParsleyWouldHelp: isMP4 && !isMov && atomicParsleyMissing && !notWritten.isEmpty)
@@ -350,7 +363,7 @@ public enum TagWriters {
     /// for a dropped file title. Nothing is named when the tags cannot be
     /// read: the write itself succeeded, and there is nothing to compare.
     static func fieldsMissing(
-        _ fields: [FieldWrite], from url: URL, streamTags: Bool, vorbis: Bool = false,
+        _ fields: [FieldWrite], from url: URL, streamTags: Bool, commentHoldsDescription: Bool = false,
         key: (FieldWrite) -> String
     ) -> [String] {
         struct Probe: Decodable {
@@ -368,10 +381,11 @@ public enum TagWriters {
         return fields.filter { field in
             let name = key(field).lowercased()
             // Read back under another name: AVI keeps an album as IPRD
-            // ("product"); Vorbis comments read DESCRIPTION as "comment".
+            // ("product"); Vorbis comments and ASF read DESCRIPTION as
+            // "comment".
             var names = [name]
             if name == "album" { names.append("product") }
-            if name == "description", vorbis { names.append("comment") }
+            if name == "description", commentHoldsDescription { names.append("comment") }
             return !names.contains(where: present.contains)
         }.map(\.vorbisName)
     }
