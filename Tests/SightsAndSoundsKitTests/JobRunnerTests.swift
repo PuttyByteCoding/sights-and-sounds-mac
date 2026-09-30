@@ -66,11 +66,16 @@ import Testing
     }
 
     /// Runs until its gate opens, counting the jobs that got past start.
+    /// Shared by the process, so a test resets both before it uses it.
     private actor Gate {
         static let shared = Gate()
         private(set) var open = false
         private(set) var started = 0
         func set(_ value: Bool) { open = value }
+        func reset() {
+            open = false
+            started = 0
+        }
         func start() { started += 1 }
     }
 
@@ -94,7 +99,10 @@ import Testing
     func startDrainingReturnsWhileTheJobRuns() async throws {
         let (library, runner) = try makeRunner()
         await runner.register(GatedJob.self)
-        await Gate.shared.set(false)
+        await Gate.shared.reset()
+        // However the test ends, its jobs stop polling: a gate left shut
+        // kept them looping for the rest of the process.
+        defer { Task { await Gate.shared.set(true) } }
         let queued = try await runner.enqueue(GatedJob.self)
         let behind = try await runner.enqueue(GatedJob.self)
 
