@@ -64,7 +64,10 @@ struct ReviewView: View {
     /// older list re-ticks what was just restored.
     @State private var reloadGeneration = 0
     /// Items with a repair this window queued that has not finished.
-    @State private var repairing: Set<UUID> = []
+    @State private var repairs = RepairWatch()
+    /// A pair decision that failed, reported here: the compare pane that
+    /// made it may already have been replaced by the next pair.
+    @State private var decisionError: String?
     @State private var repairStatus: String?
     /// Ticked videos whose segments are not saved yet — asked about in
     /// place of the ordinary confirmation.
@@ -85,6 +88,16 @@ struct ReviewView: View {
         .onAppear { reload() }
         // Marks, restores and new pairs made anywhere else show here.
         .followsLibraryChanges(model, [.items, .duplicates]) { reload() }
+        // Repairs queued or running, observed rather than waited for; the
+        // watch says when the last one has gone and the issues need a look.
+        .task {
+            let counts = model.library.pendingJobCounts(of: RepairJob.kind)
+            do {
+                for try await count in counts {
+                    if repairs.pendingChanged(to: count) { reload() }
+                }
+            } catch {}
+        }
     }
 
     // MARK: - Header
@@ -261,13 +274,22 @@ struct ReviewView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 10)
                 }
+                if let decisionError {
+                    Text(decisionError)
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.Status.red)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 6)
+                }
                 CompareView(
                     candidate: candidate, itemA: a, itemB: b,
                     onResolved: { outcome in
+                        decisionError = nil
                         lastOutcome = outcome
                         resolvedThisPass[.duplicates, default: 0] += 1
                         reload()
-                    })
+                    },
+                    onFailed: { decisionError = $0 })
                     .id(candidate.id)
             }
         } else {
@@ -442,7 +464,7 @@ struct ReviewView: View {
                 }
                 Button("Run fix") { runFix() }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(pickedRecipeID == nil || selectedIssueID.map(repairing.contains) == true)
+                    .disabled(pickedRecipeID == nil || selectedIssueID.map(repairs.isRepairing) == true)
             }
         }
         .padding(.horizontal, 14)
@@ -584,24 +606,21 @@ struct ReviewView: View {
     }
 
     private func runFix() {
-        guard let itemID = selectedIssueID, !repairing.contains(itemID),
+        guard let itemID = selectedIssueID, !repairs.isRepairing(itemID),
               let recipe = recipes.first(where: { $0.id == pickedRecipeID }),
               let runner = try? app.runner(for: model.libraryID)
         else { return }
-        repairing.insert(itemID)
+        repairs.queued(itemID)
         Task {
             do {
                 _ = try await RepairJob.enqueue(on: runner, itemID: itemID, recipe: recipe)
-                // Said now: waiting on the drain meant silence (and a Run
-                // fix that queued the same repair again) until every job
-                // ahead had finished.
+                // Queued and started, not waited for: the watch on the
+                // queue lets the item go when no repair is left, and
+                // counts it only if its flag cleared.
                 repairStatus = "Repair queued — follow it in Background Tasks"
-                try await runner.runPending()
-                repairing.remove(itemID)
-                resolvedThisPass[.issues, default: 0] += 1
-                reload()
+                await runner.startDraining()
             } catch {
-                repairing.remove(itemID)
+                repairs.release(itemID)
                 errorText = "\(error)"
             }
         }
@@ -649,6 +668,7 @@ struct ReviewView: View {
                 }
                 guard generation == reloadGeneration else { return }
                 issues = flagged
+                resolvedThisPass[.issues, default: 0] += repairs.settle(stillFlagged: Set(flagged.map(\.id)))
                 if selectedIssueID == nil || !issues.contains(where: { $0.id == selectedIssueID }) {
                     if let first = issues.first { select(issue: first) } else { selectedIssueID = nil }
                 }
@@ -839,6 +859,9 @@ private struct CompareView: View {
     /// Called with what the decision came to, for the review window to
     /// show — this pane goes as soon as the next pair is selected.
     let onResolved: (String?) -> Void
+    /// A decision that failed after its work went off the main actor: said
+    /// by the parent, since this pane may have been replaced meanwhile.
+    let onFailed: (String) -> Void
 
     @State private var keeperID: UUID?
     @State private var mergeSelection: Set<UUID> = []
@@ -1051,7 +1074,7 @@ private struct CompareView: View {
                 errorText = nil
                 onResolved(text)
             case .failure(let error):
-                errorText = "\(error)"
+                onFailed("Could not decide the pair: \(error)")
             }
         }
     }
