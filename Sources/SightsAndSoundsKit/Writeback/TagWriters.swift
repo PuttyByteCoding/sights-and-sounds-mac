@@ -245,12 +245,12 @@ public enum TagWriters {
         let isOgg = Self.oggFamily.contains(url.pathExtension.lowercased())
         var arguments = ["-i", url.path, "-map", "0", "-c", "copy",
                          isOgg ? "-map_metadata" : "-map_metadata:g", "-1"]
-        // AIFF's own chunks hold only a name and an annotation; everything
-        // else lives in an ID3 chunk (where Music keeps AIFF tags), which
-        // the muxer writes only when asked — without it the remux stripped
-        // the file's tags down to its title.
+        // AIFF's own chunks hold only a name and an annotation, and a raw
+        // AAC (ADTS) stream none at all; their tags live in an ID3 block
+        // (where Music keeps AIFF tags), which the muxer writes only when
+        // asked — without it the remux wiped them and wrote none back.
         let ext = url.pathExtension.lowercased()
-        if ext == "aiff" || ext == "aif" { arguments += ["-write_id3v2", "1"] }
+        if ["aiff", "aif", "aac"].contains(ext) { arguments += ["-write_id3v2", "1"] }
         let metadataFlag = isOgg ? "-metadata:s:\(Self.oggTagStream(of: url))" : "-metadata"
         // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
         // `-movflags use_metadata_tags` would store custom ones too, but

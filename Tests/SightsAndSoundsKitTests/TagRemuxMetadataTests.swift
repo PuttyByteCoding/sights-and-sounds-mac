@@ -491,4 +491,15 @@ import Testing
         #expect(!result.success)
         #expect(result.error?.contains("AtomicParsley can write") == false, "\(result.error ?? "")")
     }
+
+    /// A raw AAC (ADTS) file keeps its tags only in an ID3 block, which
+    /// the muxer writes only when asked — like AIFF. The remux wiped them
+    /// and wrote none.
+    @Test func anAacKeepsItsTagsInAnID3Block() throws {
+        guard let (result, after) = try remux("song.aac",
+            make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac"],
+            fields: [("TITLE", "Night One"), ("ARTIST", "The Examples")]) else { return }
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+        #expect(after.contains("The Examples"))
+    }
 }
