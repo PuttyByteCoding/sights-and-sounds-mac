@@ -35,4 +35,14 @@ import Testing
         let runner = JobRunner(library: library, jobTypes: JobCatalog.all)
         #expect(await runner.handles(kind: RepairJob.kind))
     }
+
+    /// A runner built without a list handles every catalog kind. The
+    /// default was none: app tests built such runners, every job they
+    /// queued failed at once, and they passed while testing nothing.
+    @Test func aRunnerBuiltWithoutAListHandlesEveryCatalogKind() async throws {
+        let runner = JobRunner(library: try LibraryDatabase.openInMemory())
+        for type in JobCatalog.all {
+            #expect(await runner.handles(kind: type.kind), "\(type.kind)")
+        }
+    }
 }

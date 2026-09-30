@@ -34,6 +34,11 @@ import Testing
         let imported = try await library.writer.read { try MediaItem.fetchAll($0).map(\.relativePath) }
         #expect(!imported.contains("two/b.mp4"))
         #expect(!imported.contains("three/c.mp4"))
+        // The first folder's import really ran: a job that failed to start
+        // imports nothing, and the checks above would pass with Cancel broken.
+        let jobs = try await library.writer.read { try JobRecord.fetchAll($0) }
+        #expect(!jobs.isEmpty)
+        #expect(jobs.allSatisfy { $0.state != .failed }, "\(jobs.compactMap(\.error))")
     }
 
     /// Cancel pressed before the first job exists still stops the run —
@@ -78,6 +83,9 @@ import Testing
 
         #expect(finished)
         #expect(!run.isRunning)
+        // A real run, not one whose job failed at once.
+        let imported = try await library.writer.read { try MediaItem.fetchAll($0).map(\.relativePath) }
+        #expect(imported == ["a.mp4"])
     }
 }
 

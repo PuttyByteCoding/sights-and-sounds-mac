@@ -17,7 +17,13 @@ public actor JobRunner {
     /// enqueues and drains the moment it has the runner must never meet
     /// a kind that is "not registered yet" or a pause that has not
     /// landed.
-    public init(library: LibraryDatabase, jobTypes: [any Job.Type] = [], paused: Bool = false) {
+    ///
+    /// Every kind in `JobCatalog` by default: the catalog is the only
+    /// place job kinds are registered. The default used to be none, so a
+    /// runner built without the list failed every job it was given at
+    /// once — and tests driving app code on such a runner passed while
+    /// testing nothing.
+    public init(library: LibraryDatabase, jobTypes: [any Job.Type] = JobCatalog.all, paused: Bool = false) {
         self.library = library
         self.jobTypes = Dictionary(
             jobTypes.map { ($0.kind, $0) }, uniquingKeysWith: { _, last in last })
