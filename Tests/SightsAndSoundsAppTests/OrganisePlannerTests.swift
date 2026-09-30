@@ -133,9 +133,45 @@ import Testing
         try await waitUntil { plans.started == 1 }
         planner.preview(template: "", ids: [UUID()], categoryNames: ["Band"], library: library)
         #expect(!planner.validationErrors.isEmpty)
+        #expect(planner.isCurrent, "nothing is being made: the errors say why Move is unavailable")
         plans.open()
         try await Task.sleep(for: .milliseconds(200))
         #expect(planner.plannedIDs.isEmpty, "a plan for the template before the bad one landed")
         #expect(plans.started == 1)
+    }
+
+    /// An import refreshes the listing several times a second, and each
+    /// refresh asks for a plan with the same template. Move stays usable
+    /// through it — the plan on screen is for the template in the field —
+    /// and plans still land rather than waiting for the import to stop.
+    @Test(.timeLimit(.minutes(1)))
+    func aSteadyStreamOfRequestsForOneTemplateKeepsLandingPlans() async throws {
+        let (planner, plans, library) = try planner()
+        plans.open()
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        try await waitUntil { planner.isCurrent && !planner.plannedIDs.isEmpty }
+        let before = plans.started
+
+        var landedDuringTheStream = Set<[UUID]>()
+        var alwaysCurrent = true
+        for _ in 0..<70 {
+            planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
+                            settle: .milliseconds(300))
+            alwaysCurrent = alwaysCurrent && planner.isCurrent
+            landedDuringTheStream.insert(planner.plannedIDs)
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(alwaysCurrent, "Move went unavailable though the template never changed")
+        #expect(plans.started > before, "no plan was made while the requests kept coming")
+        #expect(landedDuringTheStream.count > 1, "the plan on screen never moved during the stream")
+    }
+
+    @Test func aPlanThatFailsLeavesMoveAvailableOnNothing() async throws {
+        let planner = OrganisePlanner()
+        planner.makePlan = { _, _, _ in throw CancellationError() }
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"],
+                        library: try LibraryDatabase.openInMemory())
+        try await waitUntil { planner.isCurrent }
+        #expect(planner.plan.isEmpty)
     }
 }
