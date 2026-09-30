@@ -65,11 +65,11 @@ public struct JsonSchemaDefinition: Codable, Equatable, Identifiable, Sendable,
     }
 }
 
-public enum JsonSchemaError: Error, Equatable, CustomStringConvertible {
+enum JsonSchemaError: Error, Equatable, CustomStringConvertible {
     case nameTaken(String)
     case notFound
 
-    public var description: String {
+    var description: String {
         switch self {
         case .nameTaken(let name): "a schema named “\(name)” already exists — select it to edit it"
         case .notFound: "that schema no longer exists"

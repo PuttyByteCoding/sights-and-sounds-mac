@@ -96,7 +96,7 @@ public final class AppLog: @unchecked Sendable {
     /// the log then asked for the store being created.
     private var fileDirectory: String?
 
-    public func setFileDirectory(_ path: String?) {
+    func setFileDirectory(_ path: String?) {
         lock.lock()
         fileDirectory = path
         lock.unlock()
