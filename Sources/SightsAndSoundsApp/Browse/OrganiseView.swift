@@ -29,7 +29,9 @@ struct OrganiseView: View {
     @State private var sessions: [LibraryDatabase.MoveSession] = []
     @State private var status: String?
     @State private var errorText: String?
-    /// A reorganize this window queued is still running.
+    /// Move is being queued. Only that: once queued, Move is available
+    /// again — a second press re-plans at run time, finds every item
+    /// already in place and moves nothing.
     @State private var applying = false
     /// The grid's items when the window opened; nil is the whole library.
     let scope: [UUID]?
@@ -467,14 +469,11 @@ struct OrganiseView: View {
         let count = planner.plan.movableCount
         Task {
             do {
-                _ = try await ReorganizeJob.enqueue(
-                    on: runner, template: template, itemIDs: ids)
-                // Said now, not once the whole queue has drained.
+                // Returns once queued: history and the plan refresh when
+                // the moves land (the window follows the library's items).
+                try await OrganiseMove.queue(on: runner, template: template, ids: ids)
                 status = "\(count) moves queued — each one logged and revertible"
-                try await runner.runPending()
                 applying = false
-                reloadHistory()
-                preview()
             } catch {
                 applying = false
                 errorText = "\(error)"
