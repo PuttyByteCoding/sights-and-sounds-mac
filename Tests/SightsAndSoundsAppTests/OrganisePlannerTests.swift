@@ -137,17 +137,16 @@ import Testing
         #expect(planner.isCurrent, "nothing is being made: the errors say why Move is unavailable")
         #expect(plans.started == 1)
 
-        // Walks run one at a time, so a later request's walk starts only
-        // once the held walk has finished and decided whether to land.
-        // Holding that later walk at a second gate leaves the moment in
-        // between to look at — whatever the timing.
-        let later = GatedPlans()
-        planner.makePlan = later.make
+        // Released while the field is still invalid. A walk ends and
+        // decides whether its plan lands in one turn, so once `walking` is
+        // false the decision has been made — whatever the timing.
         plans.open()
-        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
-        try await waitUntil { later.started == 1 }
+        try await waitUntil { !planner.walking }
         #expect(planner.plannedIDs.isEmpty, "a plan for the template before the bad one landed")
-        later.open()
+        #expect(!planner.validationErrors.isEmpty)
+
+        // And a valid template afterwards plans normally.
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
         try await waitUntil { planner.plannedTemplate == "%Band/Live" }
     }
 
