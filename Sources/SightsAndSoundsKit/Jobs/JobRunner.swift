@@ -140,11 +140,26 @@ public actor JobRunner {
         return try enqueue(type, payload: payload)
     }
 
-    /// Ask a queued or running job to stop. Queued jobs are cancelled
-    /// before they start; running jobs stop at their next cooperative
-    /// check.
+    /// Ask a queued or running job to stop. A queued job is cancelled at
+    /// once — it used to be only marked, and stayed "queued" until a drain
+    /// reached it, behind a sweep possibly days later, while the dashboard
+    /// said it was gone. A running job stops at its next cooperative check.
     public func requestCancel(_ jobID: UUID) {
-        cancelRequested.insert(jobID)
+        // One statement, so a job cannot start between the look and the
+        // write; and the drain runs on this actor, so it cannot be holding
+        // this row between choosing it and starting it.
+        let settledKind = try? library.writer.write { db -> String? in
+            try db.execute(
+                sql: "UPDATE job SET state = ?, finishedAt = ? WHERE id = ? AND state = ?",
+                arguments: [JobState.cancelled.rawValue, Date(), jobID, JobState.queued.rawValue])
+            guard db.changesCount > 0 else { return nil }
+            return try String.fetchOne(db, sql: "SELECT kind FROM job WHERE id = ?", arguments: [jobID])
+        }
+        if let kind = settledKind ?? nil {
+            AppLog.shared.info("jobs", "\(kind): cancelled before start")
+        } else {
+            cancelRequested.insert(jobID)
+        }
     }
 
     /// Pause is not cancel: no new job starts while paused, the one
@@ -224,6 +239,8 @@ public actor JobRunner {
     }
 
     private func run(_ record: JobRecord) async {
+        // A queued job is cancelled by `requestCancel` itself; this is the
+        // fallback for when that write failed and only the mark was left.
         if cancelRequested.remove(record.id) != nil {
             AppLog.shared.info("jobs", "\(record.kind): cancelled before start")
             try? transition(record.id) { row in
