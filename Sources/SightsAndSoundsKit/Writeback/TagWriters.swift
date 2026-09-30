@@ -219,19 +219,27 @@ public enum TagWriters {
         let isOgg = Self.oggFamily.contains(url.pathExtension.lowercased())
         var arguments = ["-i", url.path, "-map", "0", "-c", "copy",
                          isOgg ? "-map_metadata" : "-map_metadata:g", "-1"]
-        let metadataFlag = isOgg ? "-metadata:s:a:0" : "-metadata"
+        let metadataFlag = isOgg ? "-metadata:s:\(Self.oggTagStream(of: url))" : "-metadata"
         // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
         // `-movflags use_metadata_tags` would store custom ones too, but
         // moves EVERY tag into QuickTime keys that Music and Finder do
-        // not read — the title included. So the known fields are
-        // written, and the custom ones are named as not written rather
-        // than vanishing under a success.
+        // not read — the title included. So the keys it writes are
+        // written, and the rest are named as not written rather than
+        // vanishing under a success. Decided by the muxer's own keys, not
+        // by `mp4Freeform`: a snapshot restore marks every tag it does not
+        // know as freeform, disc and copyright included, which the muxer
+        // writes and which were wiped and not put back.
         let isMP4 = Self.mp4Family.contains(url.pathExtension.lowercased())
-        let notWritten = isMP4 ? fields.filter(\.mp4Freeform).map(\.vorbisName) : []
+        func muxerKey(_ field: FieldWrite) -> String {
+            // The MOV muxer knows some standard fields only by its own
+            // names; given the Vorbis ones it dropped them without a word.
+            isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+        }
+        let notWritten = isMP4
+            ? fields.filter { !Self.mp4MuxerWrites.contains(muxerKey($0).lowercased()) }.map(\.vorbisName)
+            : []
         for field in fields where !notWritten.contains(field.vorbisName) {
-            // The MOV muxer knows these two only by its own names; given the
-            // Vorbis ones it dropped them without a word.
-            let key = isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+            let key = muxerKey(field)
             arguments += [metadataFlag, "\(key)=\(field.values.joined(separator: "; "))"]
         }
         arguments.append(temp.path)
@@ -249,7 +257,34 @@ public enum TagWriters {
     }
 
     /// Standard fields ffmpeg's MOV muxer writes under a name of its own.
-    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track"]
+    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track", "DISCNUMBER": "disc"]
+
+    /// The keys ffmpeg's MOV muxer writes as iTunes atoms — measured with
+    /// ffmpeg 9 by writing each and reading it back with ffprobe. It drops
+    /// every other key (performer, sort orders, tempo, custom names).
+    static let mp4MuxerWrites: Set<String> = [
+        "title", "artist", "album_artist", "composer", "album", "date", "comment", "genre",
+        "copyright", "grouping", "lyrics", "description", "synopsis", "show", "episode_id",
+        "network", "keywords", "media_type", "hd_video", "gapless_playback", "compilation",
+        "track", "disc",
+    ]
+
+    /// Which stream an Ogg file's tags go on: its first audio stream, as
+    /// readers expect, or — in a video-only .ogv, which has none — its
+    /// first stream. Aimed at a missing audio stream, ffmpeg exited 0 with
+    /// the old tags cleared and the new ones written nowhere.
+    static func oggTagStream(of url: URL) -> String {
+        guard let ffprobe = ffprobePath(),
+              let output = try? ProcessRunner.run(ffprobe, [
+                  "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+                  "-of", "csv=p=0", url.path,
+              ]),
+              output.status == 0
+        else { return "a:0" }
+        let audio = String(data: output.stdout, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return audio.isEmpty ? "0" : "a:0"
+    }
 
     /// Containers whose tags live on the stream as Vorbis comments.
     static let oggFamily: Set<String> = ["ogg", "oga", "ogv", "opus", "spx"]

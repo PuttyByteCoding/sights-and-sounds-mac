@@ -104,5 +104,52 @@ import Testing
         #expect(after.contains("\"New\""), "the new title was not written: \(after)")
         #expect(!after.contains("Old Artist"), "the old comments were kept: \(after)")
     }
-}
 
+    /// A snapshot restore marks every tag it does not know as custom — but
+    /// the MOV muxer writes many of them (disc, copyright, grouping…). The
+    /// remux wiped them from the file and named them "not written", so a
+    /// restore without AtomicParsley lost what the snapshot held. Only a
+    /// key the muxer really drops is named now.
+    @Test func aRestoreIntoAnM4AKeepsEveryKeyTheMuxerWrites() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-m4a-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", file.path], tool: ffmpeg)
+
+        let snapshot = #"{"format":{"tags":{"disc":"1/2","copyright":"Example Label","grouping":"Live Sets","foo":"bar"}}}"#
+        let fields = SnapshotRestore.fields(fromSnapshotJSON: snapshot)
+        let result = TagWriters.ffmpegRemuxWrite(fields: fields, url: file)
+        #expect(result.success, "\(result.error ?? "")")
+
+        let after = try TagWriters.readTagsJSON(url: file)
+        for value in ["1/2", "Example Label", "Live Sets"] {
+            #expect(after.contains(value), "\(value) was dropped: \(after)")
+        }
+        #expect(result.notWritten == ["FOO"], "\(result.notWritten)")
+    }
+
+    /// Ogg keeps its tags on a stream, and the remux wrote them onto the
+    /// first audio stream. A video-only .ogv has none: ffmpeg exited 0,
+    /// the old tags were cleared and the new ones went nowhere — a
+    /// success that lost every tag.
+    @Test func aVideoOnlyOggKeepsTheTagsItIsGiven() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-ogv-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("clip.ogv")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libvpx", file.path,
+        ], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "TITLE", mp4Atom: "©nam", mp4Freeform: false, values: ["Night One"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(try TagWriters.readTagsJSON(url: file).contains("Night One"), "the title went nowhere")
+    }
+}
