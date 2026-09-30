@@ -147,4 +147,35 @@ import Testing
         #expect(finished, "the run waited for the job ahead of it")
         #expect(!run.isRunning)
     }
+
+    /// Cancel pressed while a folder was still being queued cancelled
+    /// nothing: the job did not exist yet, and once it did the run polled
+    /// it to the end, importing that folder after Cancel. On a paused
+    /// queue it never ended at all.
+    @Test(.timeLimit(.minutes(1)))
+    func cancelWhileAFolderIsBeingQueuedCancelsThatFolder() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunQueueing")
+        let source = Source(name: "Here", rootPath: "/tmp/sas-import-queueing-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let runner = JobRunner(library: library, paused: true)
+        let gate = Gate()
+        defer { gate.open() }
+        let run = ImportRun(runner: runner, library: library)
+        let enqueue = run.enqueue
+        run.enqueue = { runner, sourceID, paths, staging in
+            await gate.hold()
+            return try await enqueue(runner, sourceID, paths, staging)
+        }
+
+        var finished = false
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { _ in finished = true }
+        try await Task.sleep(for: .milliseconds(50))
+        run.cancel()
+        gate.open()
+        for _ in 0..<300 where !finished { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(finished, "the folder queued during Cancel was not cancelled")
+        let states = try await library.writer.read { try JobRecord.fetchAll($0).map(\.state) }
+        #expect(states == [.cancelled])
+    }
 }

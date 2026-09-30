@@ -30,6 +30,11 @@ final class ImportRun {
     private let runner: JobRunner
     private let library: LibraryDatabase
 
+    /// How a group's job is queued; tests hold it at a gate.
+    var enqueue: @Sendable (JobRunner, UUID, [String], ImportStaging?) async throws -> JobRecord = {
+        try await ImportJob.enqueue(on: $0, sourceID: $1, relativePaths: $2, staging: $3)
+    }
+
     init(runner: JobRunner, library: LibraryDatabase) {
         self.runner = runner
         self.library = library
@@ -42,10 +47,12 @@ final class ImportRun {
             for group in groups where !group.paths.isEmpty {
                 guard !isCancelled, !Task.isCancelled else { break }
                 do {
-                    let record = try await ImportJob.enqueue(
-                        on: runner, sourceID: sourceID,
-                        relativePaths: group.paths, staging: group.staging)
+                    let record = try await enqueue(runner, sourceID, group.paths, group.staging)
                     running = record
+                    // Cancel pressed while it was being queued found no
+                    // job to cancel; this one is cancelled now, before it
+                    // can run, and settles like any other.
+                    if isCancelled { await runner.requestCancel(record.id) }
                     // Started, not waited for: waiting for the drain meant
                     // waiting for the whole queue, so a cancelled or
                     // finished folder still held the run until every job
