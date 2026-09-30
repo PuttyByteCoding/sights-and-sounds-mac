@@ -108,11 +108,17 @@ struct ReviewView: View {
         // Repairs queued or running, observed rather than waited for; the
         // watch says when the last one has gone and the issues need a look.
         .task {
-            do {
-                for try await items in model.library.pendingRepairItems() {
-                    if repairs.pendingChanged(to: items) { reload() }
-                }
-            } catch {}
+            // Restarted if it fails: one error used to end it, and every
+            // item held then or queued later stayed held until the window
+            // was rebuilt.
+            while !Task.isCancelled {
+                do {
+                    for try await items in model.library.pendingRepairItems() {
+                        if repairs.pendingChanged(to: items) { reload() }
+                    }
+                } catch {}
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
     }
 
@@ -645,6 +651,16 @@ struct ReviewView: View {
                     if repairs.pendingChanged(to: pendingNow) { reload() }
                 } else {
                     repairs.enqueueFinishedUnread(itemID)
+                    // The observation cannot be relied on to correct it: a
+                    // repair queued and done before it looks reads as no
+                    // change. Read again until a read succeeds.
+                    for _ in 0..<5 {
+                        try? await Task.sleep(for: .seconds(1))
+                        if let pendingNow = await Task.detached(operation: { try? library.currentPendingRepairItems() }).value {
+                            if repairs.pendingChanged(to: pendingNow) { reload() }
+                            break
+                        }
+                    }
                 }
             } catch {
                 errorText = "\(error)"
