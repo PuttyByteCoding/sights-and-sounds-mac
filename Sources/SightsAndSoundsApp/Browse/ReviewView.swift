@@ -652,8 +652,10 @@ struct ReviewView: View {
                     reload()
                 }
             } catch {
-                repairs.release(itemID)
                 errorText = "\(error)"
+                // That enqueue may have been all that held other items whose
+                // repairs finished meanwhile; nothing else would ask again.
+                if repairs.release(itemID) { reload() }
             }
         }
     }

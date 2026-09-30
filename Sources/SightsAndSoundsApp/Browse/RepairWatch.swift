@@ -33,10 +33,14 @@ final class RepairWatch {
         repairsPending = true
     }
 
-    /// The repair was never queued (the enqueue failed).
-    func release(_ item: UUID) {
+    /// The repair was never queued (the enqueue failed). True when that
+    /// was the last thing holding other items whose repairs are done:
+    /// nothing else will ask again, so a reload is due now.
+    @discardableResult
+    func release(_ item: UUID) -> Bool {
         enqueuing = max(0, enqueuing - 1)
         awaiting.remove(item)
+        return !repairsPending && enqueuing == 0 && !awaiting.isEmpty
     }
 
     /// Run fix waits for this item's repair.

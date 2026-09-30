@@ -85,4 +85,20 @@ import Testing
         #expect(watch.pendingChanged(to: 0))
         #expect(watch.settle(stillFlagged: []) == 1)
     }
+
+    /// A's repair finishes while B's is still being queued, so A cannot
+    /// settle yet; then B's enqueue fails. That failure was the last thing
+    /// holding A, and nothing asked again: A stayed "Repair queued" with
+    /// its repair long done. Releasing B says a reload is due.
+    @Test func aFailedEnqueueThatWasHoldingAnotherItemAsksForAReload() {
+        let watch = RepairWatch()
+        let a = UUID(), b = UUID()
+        watch.queued(a)
+        watch.enqueued(a)
+        watch.queued(b)
+        #expect(!watch.pendingChanged(to: 0))   // A done; B still being queued
+        #expect(watch.release(b), "nothing asks again for A")
+        #expect(watch.settle(stillFlagged: []) == 1)
+        #expect(!watch.isRepairing(a))
+    }
 }
