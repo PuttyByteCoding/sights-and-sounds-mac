@@ -198,10 +198,6 @@ public struct RestoreTagsJob: Job {
         var description: String { "the snapshot no longer exists" }
     }
 
-    struct KeptNothing: Error, CustomStringConvertible {
-        let note: String
-        var description: String { "the file kept none of the restored fields — \(note)" }
-    }
 
     public func run(_ context: JobContext) async throws {
         guard TagWriters.ffprobePath() != nil, FfmpegTool.path() != nil else {
@@ -227,7 +223,7 @@ public struct RestoreTagsJob: Job {
 
         let fields = SnapshotRestore.fields(fromSnapshotJSON: snapshot.tagsJSON)
 
-        let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
+        let result = try await Blocking.run { TagWriters.write(fields: fields, to: url, restoring: true) }
         guard result.success else {
             throw FfmpegTool.FfmpegError(exitCode: -1, stderrTail: result.error ?? "write failed")
         }
@@ -241,11 +237,10 @@ public struct RestoreTagsJob: Job {
                 sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
                 arguments: [item.id])
         }
-        // The file's tags were replaced by nothing: a failure, not a restore
-        // of 0 fields. Its pre-restore snapshot can put them back.
-        if result.keptNothing(of: fields.count) {
-            throw KeptNothing(note: result.writtenNote ?? "")
-        }
+        // A restore that could hold none of the fields still succeeded: the
+        // file is as near the snapshot as its format allows (see
+        // `TagWriters.write(restoring:)`), and the note names what it could
+        // not hold. Its pre-restore snapshot can undo it.
         // What the writer could not hold is said, not counted as restored.
         let restored = fields.count - result.notWritten.count
         let note = result.writtenNote.map { " — \($0)" } ?? ""

@@ -424,4 +424,44 @@ import Testing
         #expect(!result.success)
         #expect(try TagWriters.readTagsJSON(url: file).contains("The Old Title"), "the file's tags were wiped")
     }
+
+    /// Refused for want of AtomicParsley, the message blamed the format:
+    /// an MP4 can hold custom fields, the missing tool is the reason.
+    @Test func anMP4RefusalNamesAtomicParsley() throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-refuse-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", file.path], tool: ffmpeg)
+        let result = TagWriters.write(
+            fields: [FieldWrite(vorbisName: "MOOD", mp4Atom: "MOOD", mp4Freeform: true, values: ["Calm"])],
+            to: file, tools: .init(metaflac: nil, atomicParsley: nil, ffmpeg: ffmpeg))
+        #expect(!result.success)
+        #expect(result.error?.contains("AtomicParsley") == true, "\(result.error ?? "")")
+    }
+
+    /// AtomicParsley refuses .mov (and says so on stdout, which is not
+    /// kept), so trying it first left every .mov write with the note
+    /// "written by remux after AtomicParsley: ffmpeg exited 2". A .mov
+    /// goes straight to the remux.
+    @Test func aMovIsNotHandedToAtomicParsley() throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil,
+              let parsley = TagWriters.atomicParsleyPath()
+        else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-mov-parsley-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("clip.mov")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libx264", file.path,
+        ], tool: ffmpeg)
+        let result = TagWriters.write(
+            fields: [FieldWrite(vorbisName: "TITLE", mp4Atom: "©nam", mp4Freeform: false, values: ["Night One"])],
+            to: file, tools: .init(metaflac: nil, atomicParsley: parsley, ffmpeg: ffmpeg))
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(result.nativeToolError == nil, "\(result.nativeToolError ?? "")")
+    }
 }

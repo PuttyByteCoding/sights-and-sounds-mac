@@ -136,8 +136,15 @@ public enum TagWriters {
     /// Write fields into the file. Wipe-and-rewrite semantics (ported):
     /// the write replaces the file's tag set with exactly these fields —
     /// which is why a pre-write snapshot is mandatory upstream.
+    ///
+    /// `restoring`: the fields are a snapshot being put back. A write-back
+    /// adds tags, so one where nothing fits is refused and the file left
+    /// alone; a restore aims at the snapshot's state, and when the format
+    /// can hold none of its fields a file cleared of tags is that state as
+    /// near as the format allows — refusing left written tags that could
+    /// then never be undone.
     public static func write(
-        fields: [FieldWrite], to url: URL, tools: Tools = .detected
+        fields: [FieldWrite], to url: URL, tools: Tools = .detected, restoring: Bool = false
     ) -> TagWriteResult {
         let ext = url.pathExtension.lowercased()
         var nativeToolError: String?
@@ -159,7 +166,9 @@ public enum TagWriters {
                 nativeToolError = "metaflac: \(error)"  // then fall through to ffmpeg
             }
         }
-        if Self.mp4Family.contains(ext), let parsley = tools.atomicParsley {
+        // Not .mov: AtomicParsley refuses it (on stdout, which is not kept),
+        // and every .mov write was left noting a failure with no reason.
+        if Self.mp4Family.contains(ext), ext != "mov", let parsley = tools.atomicParsley {
             // `--metaEnema` is what makes this a wipe-and-rewrite, and it
             // wipes the cover art with everything else. The library does
             // not hold the art and snapshots do not record it, so it is
@@ -189,7 +198,8 @@ public enum TagWriters {
                 nativeToolError = "AtomicParsley: \(error)"  // then fall through to ffmpeg
             }
         }
-        let remux = ffmpegRemuxWrite(fields: fields, url: url, ffmpeg: tools.ffmpeg)
+        let remux = ffmpegRemuxWrite(
+            fields: fields, url: url, ffmpeg: tools.ffmpeg, refuseWhenNothingFits: !restoring)
         guard let nativeToolError else { return remux }
         AppLog.shared.warning("writeback", "\(url.lastPathComponent): \(nativeToolError)")
         return TagWriteResult(
@@ -203,7 +213,8 @@ public enum TagWriters {
     /// installed. Temp + atomic swap; the essence is untouched by
     /// construction and the tags are recoverable from the snapshot.
     static func ffmpegRemuxWrite(
-        fields: [FieldWrite], url: URL, ffmpeg: String? = FfmpegTool.path()
+        fields: [FieldWrite], url: URL, ffmpeg: String? = FfmpegTool.path(),
+        refuseWhenNothingFits: Bool = true
     ) -> TagWriteResult {
         guard let ffmpeg else {
             return TagWriteResult(
@@ -271,11 +282,13 @@ public enum TagWriters {
         }.map(\.vorbisName)
         // Nothing fits: known before the file is touched. Running the remux
         // anyway wiped the file's existing tags and then reported failure.
-        if !fields.isEmpty, notWritten.count == fields.count {
+        if refuseWhenNothingFits, !fields.isEmpty, notWritten.count == fields.count {
             let shown = notWritten.prefix(10).joined(separator: ", ")
+            // An MP4 can hold custom fields; the missing tool is the reason.
+            let hint = isMP4 && !isMov ? " (AtomicParsley can write custom MP4 fields)" : ""
             return TagWriteResult(
                 success: false, usedRemuxFallback: true,
-                error: "this file's format keeps none of these fields: \(shown) — the file was left as it was")
+                error: "this file's format keeps none of these fields: \(shown)\(hint) — the file was left as it was")
         }
         for field in fields where !notWritten.contains(field.vorbisName) {
             let key = muxerKey(field)
