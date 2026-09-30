@@ -153,18 +153,22 @@ import Testing
         try await waitUntil { planner.isCurrent && !planner.plannedIDs.isEmpty }
         let before = plans.started
 
-        var landedDuringTheStream = Set<[UUID]>()
+        // Streams until a newer plan lands (bounded), so a slow pool only
+        // makes the stream longer, never the test fail. Every request is
+        // still arriving 50 ms after the last when the plan lands.
+        let first = planner.plannedIDs
         var alwaysCurrent = true
-        for _ in 0..<70 {
+        var landedMidStream = false
+        for _ in 0..<400 where !landedMidStream {
             planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
                             settle: .milliseconds(300))
             alwaysCurrent = alwaysCurrent && planner.isCurrent
-            landedDuringTheStream.insert(planner.plannedIDs)
             try await Task.sleep(for: .milliseconds(50))
+            landedMidStream = planner.plannedIDs != first
         }
         #expect(alwaysCurrent, "Move went unavailable though the template never changed")
         #expect(plans.started > before, "no plan was made while the requests kept coming")
-        #expect(landedDuringTheStream.count > 1, "the plan on screen never moved during the stream")
+        #expect(landedMidStream, "the plan on screen never moved while the requests kept coming")
     }
 
     /// A request replaced in the same turn never runs. An immediate one
