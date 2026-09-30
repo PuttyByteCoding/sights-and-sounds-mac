@@ -122,4 +122,14 @@ final class OrganisePlanner {
             startWalk()
         }
     }
+
+    /// The window closed: drop a request still settling and one waiting
+    /// behind the running walk. A running walk cannot be stopped part-way;
+    /// it ends on its own and nothing follows it.
+    func cancel() {
+        settling?.cancel()
+        settling = nil
+        burstStarted = nil
+        pending = nil
+    }
 }

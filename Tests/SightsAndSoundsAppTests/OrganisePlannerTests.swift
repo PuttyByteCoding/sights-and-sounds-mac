@@ -216,4 +216,25 @@ import Testing
         try await waitUntil { planner.isCurrent }
         #expect(planner.plan.isEmpty)
     }
+
+    /// Closing the window stops its planning: a request still settling
+    /// never walks, and one waiting behind a running walk never follows
+    /// it. It used to run on — a full-library walk for a window nobody
+    /// could see, on the pool this work was moved to.
+    @Test func cancellingStopsASettlingRequestAndAQueuedOne() async throws {
+        let (planner, plans, library) = try planner()
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
+                        settle: .milliseconds(200))
+        planner.cancel()
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(plans.started == 0, "a settling request walked after the window closed")
+
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        try await waitUntil { plans.started == 1 }
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.cancel()
+        plans.open()
+        try await waitUntil { !planner.walking }
+        #expect(plans.started == 1, "the request waiting behind the walk ran after the window closed")
+    }
 }
