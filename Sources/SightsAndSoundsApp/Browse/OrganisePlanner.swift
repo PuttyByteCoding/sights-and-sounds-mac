@@ -82,13 +82,16 @@ final class OrganisePlanner {
         burstStarted = started
         // Overdue: leave the settle already running to fire; it walks
         // whatever request is newest by then.
-        if settle > .zero, settling != nil, now - started >= Self.longestSettle { return }
+        // Counting this request's own pause, so the burst's first walk
+        // starts within `longestSettle` of its first request.
+        if settle > .zero, settling != nil, now - started + settle >= Self.longestSettle { return }
         settling?.cancel()
         settling = Task {
-            if settle > .zero {
-                try? await Task.sleep(for: settle)
-                guard !Task.isCancelled else { return }
-            }
+            if settle > .zero { try? await Task.sleep(for: settle) }
+            // Also for an immediate request: one replaced in the same turn
+            // must not run, or it drops its replacement's handle and leaves
+            // that settle orphaned, uncancellable, walking early.
+            guard !Task.isCancelled else { return }
             settling = nil
             burstStarted = nil
             startWalk()

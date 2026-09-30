@@ -7,8 +7,9 @@ import Testing
 /// Organise made its plan on the main actor — two queries per item over
 /// every video — and remade it on each listing refresh and again on each
 /// items change, so an unscoped window stalled through an import. The
-/// plan is now made off the main actor, one walk at a time, and only the
-/// newest request's plan lands.
+/// plan is now made off the main actor, one walk at a time. A plan lands
+/// only if it was made with the template in the field — a newer listing
+/// with the same template does not stop it, an older template always does.
 @Suite @MainActor struct OrganisePlannerTests {
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
@@ -164,6 +165,26 @@ import Testing
         #expect(alwaysCurrent, "Move went unavailable though the template never changed")
         #expect(plans.started > before, "no plan was made while the requests kept coming")
         #expect(landedDuringTheStream.count > 1, "the plan on screen never moved during the stream")
+    }
+
+    /// A request replaced in the same turn never runs. An immediate one
+    /// (opening the window) replaced by a settling one (the listing
+    /// arriving) used to run anyway and drop its replacement's handle; that
+    /// orphaned settle could not be cancelled, and it walked the next
+    /// request long before that request's own pause was over.
+    @Test func aReplacedRequestNeverRunsAndLeavesNoOrphanedSettle() async throws {
+        let (planner, plans, library) = try planner()
+        plans.open()
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
+                        settle: .milliseconds(150))
+        try await Task.sleep(for: .milliseconds(50))
+        let later = [UUID(), UUID()]
+        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
+                        settle: .milliseconds(1500))
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(planner.plannedIDs != later, "an orphaned settle walked the request before its pause was over")
+        try await waitUntil { planner.plannedIDs == later }
     }
 
     @Test func aPlanThatFailsLeavesMoveAvailableOnNothing() async throws {
