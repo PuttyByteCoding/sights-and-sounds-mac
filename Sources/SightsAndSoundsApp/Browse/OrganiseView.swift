@@ -24,16 +24,13 @@ struct OrganiseView: View {
 
     @State private var tab: Tab = .plan
     @State private var template = "%Band/%Year"
-    @State private var validationErrors: [String] = []
-    @State private var plan: [ReorganizePlanEntry] = []
+    /// The plan, made off the main actor.
+    @State private var planner = OrganisePlanner()
     @State private var sessions: [LibraryDatabase.MoveSession] = []
     @State private var status: String?
     @State private var errorText: String?
     /// A reorganize this window queued is still running.
     @State private var applying = false
-    /// The ids the plan on screen was made for — Move applies exactly
-    /// those, not whatever the listing holds by the time it is pressed.
-    @State private var plannedIDs: [UUID] = []
     /// The grid's items when the window opened; nil is the whole library.
     let scope: [UUID]?
 
@@ -54,15 +51,16 @@ struct OrganiseView: View {
             reloadHistory()
         }
         // Unscoped, the plan is over the listing — which lands after the
-        // window opens. It used to stay on "Nothing to move".
-        .onChange(of: model.visibleItems.count) {
-            if scope == nil { preview() }
+        // window opens. It used to stay on "Nothing to move". Watched in a
+        // child, so a listing refresh does not re-render this window.
+        .background {
+            if scope == nil { ListingSizeWatch(model: model) { preview(settle: .milliseconds(300)) } }
         }
         // Moves (a revert from another window, a run finishing) change
         // the history and what the plan would do.
         .followsLibraryChanges(model, [.items]) {
             reloadHistory()
-            preview()
+            preview(settle: .milliseconds(300))
         }
     }
 
@@ -72,9 +70,23 @@ struct OrganiseView: View {
                 selection: $tab,
                 options: Tab.allCases.map { ($0, $0.title) },
                 emphasis: .neutral)
-            Text(headline)
-                .font(Theme.mono(11))
-                .foregroundStyle(Theme.Text.quaternary)
+            Group {
+                switch (tab, scope) {
+                case (.plan, nil):
+                    // Unscoped, the count is the listing's; only this
+                    // child follows it.
+                    WholeListingHeadline(model: model)
+                case (.plan, let scope?):
+                    // Scope is the grid's filter, and it says so — rather
+                    // than leaving someone to discover that their filter
+                    // was the selection.
+                    Text("applies to the \(scope.count) items the grid showed when this window opened")
+                case (.history, _):
+                    Text(historyHeadline)
+                }
+            }
+            .font(Theme.mono(11))
+            .foregroundStyle(Theme.Text.quaternary)
             Spacer()
             if let status {
                 Text(status)
@@ -94,17 +106,15 @@ struct OrganiseView: View {
         }
     }
 
-    private var headline: String {
-        switch tab {
-        case .plan:
-            // Scope is the current filter, and it says so — rather than
-            // leaving someone to discover that their filter was the
-            // selection.
-            scope.map { "applies to the \($0.count) items the grid showed when this window opened" }
-                ?? "applies to all \(model.visibleItems.count) videos in the library"
-        case .history:
-            "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
-        }
+    /// Says why Move is unavailable while a newer plan is being made.
+    private var moveTitle: String {
+        if !planner.isCurrent { return "Updating plan…" }
+        let count = planner.plan.movableCount
+        return count == 0 ? "Nothing to move" : "Move \(count) items"
+    }
+
+    private var historyHeadline: String {
+        "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
     }
 
     // MARK: - Plan
@@ -135,7 +145,7 @@ struct OrganiseView: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.control)
                         .fill(Theme.Surface.well)
                         .stroke(Theme.Border.activeCard, lineWidth: 1))
-                .onChange(of: template) { preview() }
+                .onChange(of: template) { preview(settle: .milliseconds(150)) }
 
             // Tokens are inserted, not memorised.
             FlowRow(spacing: 5) {
@@ -173,7 +183,7 @@ struct OrganiseView: View {
                 .foregroundStyle(Theme.Text.disabled)
                 .fixedSize(horizontal: false, vertical: true)
 
-            ForEach(validationErrors, id: \.self) { error in
+            ForEach(planner.validationErrors, id: \.self) { error in
                 HStack(alignment: .top, spacing: 6) {
                     Circle().fill(Theme.Status.red).frame(width: 5, height: 5).padding(.top, 5)
                     Text(error)
@@ -192,7 +202,7 @@ struct OrganiseView: View {
     private var planTable: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(plan, id: \.itemID) { entry in
+                ForEach(planner.plan, id: \.itemID) { entry in
                     HStack(spacing: 10) {
                         Circle()
                             .fill(entry.toFolder == nil ? Theme.Text.disabled : Theme.Status.green)
@@ -246,14 +256,14 @@ struct OrganiseView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("This plan").modifier(Theme.sectionLabel())
-                        stat("\(plan.movableCount)", "items would move")
-                        stat("\(plan.count - plan.movableCount)", "skipped, left untouched")
-                        stat("\(plan.foldersCreated.count)", "folders created")
+                        stat("\(planner.plan.movableCount)", "items would move")
+                        stat("\(planner.plan.count - planner.plan.movableCount)", "skipped, left untouched")
+                        stat("\(planner.plan.foldersCreated.count)", "folders created")
                     }
-                    if !plan.skipReasons.isEmpty {
+                    if !planner.plan.skipReasons.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Why items are skipped").modifier(Theme.sectionLabel())
-                            ForEach(plan.skipReasons, id: \.reason) { entry in
+                            ForEach(planner.plan.skipReasons, id: \.reason) { entry in
                                 HStack {
                                     Text("\(entry.count)")
                                         .font(Theme.mono(10.5))
@@ -270,10 +280,10 @@ struct OrganiseView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    if !plan.foldersCreated.isEmpty {
+                    if !planner.plan.foldersCreated.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Folders this creates").modifier(Theme.sectionLabel())
-                            ForEach(plan.foldersCreated, id: \.folder) { entry in
+                            ForEach(planner.plan.foldersCreated, id: \.folder) { entry in
                                 HStack {
                                     Text(entry.folder)
                                         .font(Theme.mono(10))
@@ -293,12 +303,12 @@ struct OrganiseView: View {
             }
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
             VStack(alignment: .leading, spacing: 8) {
-                Button(plan.movableCount == 0 ? "Nothing to move" : "Move \(plan.movableCount) items") {
+                Button(moveTitle) {
                     apply()
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
-                .disabled(applying || plan.movableCount == 0 || !validationErrors.isEmpty)
+                .disabled(applying || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
                     .foregroundStyle(Theme.Text.disabled)
@@ -437,30 +447,30 @@ struct OrganiseView: View {
 
     // MARK: - Actions
 
-    private func preview() {
-        validationErrors = OrganizeTemplate
-            .validate(template, categoryNames: model.vocabulary.map(\.category.name))
-            .map(\.message)
-        guard validationErrors.isEmpty else {
-            plan = []
-            return
-        }
-        let ids = scopeIDs
-        plannedIDs = ids
-        plan = (try? model.library.previewReorganize(template: template, itemIDs: ids)) ?? []
+    /// Bursty triggers (typing, listing refreshes, library changes) pass
+    /// a settle so a burst makes one plan.
+    private func preview(settle: Duration = .zero) {
+        planner.preview(
+            template: template, ids: scopeIDs,
+            categoryNames: model.vocabulary.map(\.category.name), library: model.library,
+            settle: settle)
     }
 
     private func apply() {
         guard !applying, let runner = try? app.runner(for: model.libraryID) else { return }
         applying = true
-        let ids = plannedIDs
-        let template = template
+        // The plan on screen: its items and the template it was made
+        // with, not what the field says by now.
+        let ids = planner.plannedIDs
+        let template = planner.plannedTemplate
+        // Counted now: a newer plan can land before the queue answers.
+        let count = planner.plan.movableCount
         Task {
             do {
                 _ = try await ReorganizeJob.enqueue(
                     on: runner, template: template, itemIDs: ids)
                 // Said now, not once the whole queue has drained.
-                status = "\(plan.movableCount) moves queued — each one logged and revertible"
+                status = "\(count) moves queued — each one logged and revertible"
                 try await runner.runPending()
                 applying = false
                 reloadHistory()
@@ -512,5 +522,26 @@ struct OrganiseView: View {
 
     private func reloadHistory() {
         sessions = (try? model.library.moveSessions()) ?? []
+    }
+}
+
+/// Re-plans when the listing's size changes. Its own view, so the listing
+/// is read here and a refresh re-renders only this.
+private struct ListingSizeWatch: View {
+    let model: BrowseModel
+    let changed: () -> Void
+
+    var body: some View {
+        Color.clear.onChange(of: model.visibleItems.count) { changed() }
+    }
+}
+
+/// "applies to all N videos", following the listing without re-rendering
+/// the window around it.
+private struct WholeListingHeadline: View {
+    let model: BrowseModel
+
+    var body: some View {
+        Text("applies to all \(model.visibleItems.count) videos in the library")
     }
 }
