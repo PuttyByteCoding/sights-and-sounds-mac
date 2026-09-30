@@ -163,7 +163,9 @@ public enum TagWriters {
                 }
                 for field in fields {
                     let value = field.values.joined(separator: "; ")
-                    if field.mp4Freeform {
+                    if field.mp4Freeform, let native = parsleyNative(name: field.vorbisName, value: value) {
+                        arguments += native
+                    } else if field.mp4Freeform {
                         arguments += ["--rDNSatom", value, "name=\(field.vorbisName)", "domain=com.apple.iTunes"]
                     } else {
                         arguments += [parsleyFlag(for: field.mp4Atom), value]
@@ -329,6 +331,41 @@ public enum TagWriters {
     static func remuxScratchURL(for url: URL) throws -> URL {
         let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
         return try LibraryDatabase.workingURL(toReplace: url, fileExtension: ext)
+    }
+
+    /// A tag a snapshot restore does not know as a standard field, but
+    /// that has a native iTunes atom: it goes back to that atom. Written
+    /// as a custom iTunes atom instead — after `--metaEnema` had wiped the
+    /// native one — Music showed no disc, copyright or grouping, and the
+    /// next snapshot kept the custom spelling. Nil keeps it custom: no
+    /// native atom, or a value the native one cannot hold (text for a
+    /// yes/no flag), which is kept rather than lost.
+    static func parsleyNative(name: String, value: String) -> [String]? {
+        let value = value.trimmingCharacters(in: .whitespaces)
+        func flag(_ text: String) -> String? {
+            switch text.lowercased() {
+            case "1", "true", "yes": "true"
+            case "0", "false", "no": "false"
+            default: nil
+            }
+        }
+        switch name.lowercased() {
+        case "disc", "discnumber": return ["--disk", value]
+        case "track": return ["--tracknum", value]
+        case "copyright": return ["--copyright", value]
+        case "grouping": return ["--grouping", value]
+        case "lyrics": return ["--lyrics", value]
+        case "synopsis": return ["--longdesc", value]
+        case "show": return ["--TVShowName", value]
+        case "episode_id": return ["--TVEpisode", value]
+        case "network": return ["--TVNetwork", value]
+        case "keywords": return ["--keyword", value]
+        case "compilation": return flag(value).map { ["--compilation", $0] }
+        case "gapless_playback": return flag(value).map { ["--gapless", $0] }
+        case "hd_video": return flag(value).map { ["--hdvideo", $0] }
+        case "media_type": return Int(value).map { ["--stik", "value=\($0)"] }
+        default: return nil
+        }
     }
 
     private static func parsleyFlag(for atom: String) -> String {

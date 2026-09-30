@@ -200,4 +200,42 @@ import Testing
         #expect(try TagWriters.readTagsJSON(url: file).contains("1/2"), "a valid disc number was dropped")
         #expect(Set(result.notWritten) == ["COMPILATION", "TRACK"], "\(result.notWritten)")
     }
+
+    /// With AtomicParsley, a restore wrote every tag it did not know as a
+    /// custom iTunes atom — disc, copyright and grouping included — after
+    /// `--metaEnema` had wiped the native ones. Music then showed none of
+    /// them, and the next snapshot kept the custom spellings. A restored
+    /// key with a native atom goes back to that atom.
+    @Test func aRestoreWithAtomicParsleyPutsNativeKeysBackNatively() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil,
+              let parsley = TagWriters.atomicParsleyPath()
+        else { return }   // AtomicParsley is not on CI; this runs where it is installed
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-parsley-restore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac",
+            "-metadata", "disc=1/2", "-metadata", "copyright=Example Label",
+            "-metadata", "grouping=Live Sets", "-metadata", "compilation=1", file.path,
+        ], tool: ffmpeg)
+        let snapshot = try TagWriters.readTagsJSON(url: file)
+
+        let result = TagWriters.write(
+            fields: SnapshotRestore.fields(fromSnapshotJSON: snapshot), to: file,
+            tools: .init(metaflac: nil, atomicParsley: parsley, ffmpeg: ffmpeg))
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(!result.usedRemuxFallback)
+
+        let after = try TagWriters.readTagsJSON(url: file)
+        // ffprobe reads native atoms under lower-case names and custom
+        // iTunes atoms under the name they were given.
+        for key in ["\"disc\"", "\"copyright\"", "\"grouping\"", "\"compilation\""] {
+            #expect(after.contains(key), "\(key) is no longer a native atom: \(after)")
+        }
+        for key in ["\"DISC\"", "\"COPYRIGHT\"", "\"GROUPING\"", "\"COMPILATION\""] {
+            #expect(!after.contains(key), "\(key) came back as a custom atom: \(after)")
+        }
+    }
 }
