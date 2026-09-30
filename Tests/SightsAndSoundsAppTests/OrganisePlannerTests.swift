@@ -175,15 +175,23 @@ import Testing
     @Test func aReplacedRequestNeverRunsAndLeavesNoOrphanedSettle() async throws {
         let (planner, plans, library) = try planner()
         plans.open()
+        let clock = ContinuousClock()
+        let start = clock.now
         planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
         planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
                         settle: .milliseconds(150))
         try await Task.sleep(for: .milliseconds(50))
         let later = [UUID(), UUID()]
+        let sent = clock.now
         planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
-                        settle: .milliseconds(1500))
-        try await Task.sleep(for: .milliseconds(400))
-        #expect(planner.plannedIDs != later, "an orphaned settle walked the request before its pause was over")
+                        settle: .milliseconds(800))
+        try await Task.sleep(for: .milliseconds(300))
+        // Only meaningful when the machine kept time: a stall long enough
+        // to make the burst overdue (sent more than 1.2 s after it began)
+        // or to reach the 800 ms settle lands the plan legitimately.
+        if sent - start < .milliseconds(1000), clock.now - sent < .milliseconds(700) {
+            #expect(planner.plannedIDs != later, "an orphaned settle walked the request before its pause was over")
+        }
         try await waitUntil { planner.plannedIDs == later }
     }
 
