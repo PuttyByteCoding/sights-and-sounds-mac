@@ -135,10 +135,20 @@ import Testing
         planner.preview(template: "", ids: [UUID()], categoryNames: ["Band"], library: library)
         #expect(!planner.validationErrors.isEmpty)
         #expect(planner.isCurrent, "nothing is being made: the errors say why Move is unavailable")
-        plans.open()
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(planner.plannedIDs.isEmpty, "a plan for the template before the bad one landed")
         #expect(plans.started == 1)
+
+        // Walks run one at a time, so a later request's walk starts only
+        // once the held walk has finished and decided whether to land.
+        // Holding that later walk at a second gate leaves the moment in
+        // between to look at — whatever the timing.
+        let later = GatedPlans()
+        planner.makePlan = later.make
+        plans.open()
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
+        try await waitUntil { later.started == 1 }
+        #expect(planner.plannedIDs.isEmpty, "a plan for the template before the bad one landed")
+        later.open()
+        try await waitUntil { planner.plannedTemplate == "%Band/Live" }
     }
 
     /// An import refreshes the listing several times a second, and each
