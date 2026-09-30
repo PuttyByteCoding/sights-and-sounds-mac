@@ -254,8 +254,14 @@ public enum TagWriters {
             guard replaced != nil else {
                 return TagWriteResult(success: false, usedRemuxFallback: true, error: "atomic replace failed")
             }
+            // What the muxer actually kept, read back: a key set per
+            // container can only be as good as the last measurement, and
+            // most containers (.wav, .aiff, .avi, .ts) keep only a few tags
+            // and dropped the rest under a success.
+            let passed = fields.filter { !notWritten.contains($0.vorbisName) }
+            let dropped = Self.fieldsMissing(passed, from: url, aliases: muxerKey)
             return TagWriteResult(
-                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten)
+                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped)
         } catch {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }
@@ -272,12 +278,34 @@ public enum TagWriters {
         "copyright", "grouping", "lyrics", "description", "synopsis", "show", "episode_id",
         "network", "keywords", "media_type", "hd_video", "gapless_playback", "compilation",
         "track", "disc",
+        // Kept only in ISO 6709 form; plain text is dropped, and the
+        // read-back after the write names it.
+        "location",
     ]
 
     /// In a .mov the same muxer runs in QuickTime mode and keeps only
     /// these (measured the same way). AtomicParsley refuses .mov, so this
     /// is its only writer.
-    static let movMuxerWrites: Set<String> = ["title", "artist", "album", "date", "comment", "genre", "copyright"]
+    static let movMuxerWrites: Set<String> = [
+        "title", "artist", "album", "date", "comment", "genre", "copyright", "location",
+    ]
+
+    /// The fields that did not come back when the file's tags are read
+    /// after the write — compared by name (the field's own or the muxer's)
+    /// and value. Nothing is named when the tags cannot be read: the write
+    /// itself succeeded, and there is nothing to compare with.
+    static func fieldsMissing(_ fields: [FieldWrite], from url: URL, aliases: (FieldWrite) -> String) -> [String] {
+        guard !fields.isEmpty, let json = try? readTagsJSON(url: url) else { return [] }
+        var stored: [String: Set<String>] = [:]
+        for pair in tagPairs(fromSnapshotJSON: json) {
+            stored[pair.name.lowercased(), default: []].insert(pair.value.trimmingCharacters(in: .whitespaces))
+        }
+        return fields.filter { field in
+            let value = field.values.joined(separator: "; ").trimmingCharacters(in: .whitespaces)
+            let names = [field.vorbisName, aliases(field), mp4MuxerKeys[field.vorbisName] ?? field.vorbisName]
+            return !names.contains { stored[$0.lowercased()]?.contains(value) == true }
+        }.map(\.vorbisName)
+    }
 
     /// One-byte number atoms, and number pairs. Given text the muxer stores
     /// 0 or drops the value — a category "Compilation: Summer Hits" set the

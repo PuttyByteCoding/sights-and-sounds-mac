@@ -238,4 +238,56 @@ import Testing
             #expect(!after.contains(key), "\(key) came back as a custom atom: \(after)")
         }
     }
+
+    private func remux(_ name: String, make: [String], fields: [(String, String)]) throws -> (TagWriteResult, String)? {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return nil }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-readback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent(name)
+        try FfmpegTool.run(make + [file.path], tool: ffmpeg)
+        let result = TagWriters.ffmpegRemuxWrite(fields: fields.map { name, value in
+            FieldWrite(vorbisName: name, mp4Atom: name, mp4Freeform: true, values: [value])
+        }, url: file)
+        return (result, try TagWriters.readTagsJSON(url: file))
+    }
+
+    /// A .mov keeps a location of any text (©xyz). The measured key set
+    /// left it out, so a .mov's location — phone cameras write one — was
+    /// named not written and not put back by a restore.
+    @Test func aMovKeepsItsLocation() throws {
+        guard let (result, after) = try remux("clip.mov",
+            make: ["-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libx264"],
+            fields: [("LOCATION", "Paris, France")]) else { return }
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(after.contains("Paris, France"))
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+    }
+
+    /// Every remux reads its tags back, and a field that did not come back
+    /// is named — for every container, not only MP4. A .wav keeps title,
+    /// artist and genre; album artist and track vanished under a success.
+    @Test func aWavNamesWhatItsMuxerDropped() throws {
+        guard let (result, after) = try remux("song.wav",
+            make: ["-f", "lavfi", "-i", "sine=duration=1"],
+            fields: [("TITLE", "Night One"), ("ALBUMARTIST", "The Examples"), ("TRACKNUMBER", "7")]) else { return }
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(after.contains("Night One"))
+        #expect(Set(result.notWritten) == ["ALBUMARTIST", "TRACKNUMBER"], "\(result.notWritten)")
+    }
+
+    /// An .m4a keeps a location only in ISO 6709 form; plain text is
+    /// dropped by the muxer, and the read-back names it.
+    @Test func anM4ANamesALocationItCouldNotHold() throws {
+        guard let (result, after) = try remux("song.m4a",
+            make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac"],
+            fields: [("LOCATION", "+40.0000-074.0000/"), ("TITLE", "Night One")]) else { return }
+        #expect(after.contains("+40.0000-074.0000/"))
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+        guard let (plain, _) = try remux("song.m4a",
+            make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac"],
+            fields: [("LOCATION", "Paris, France")]) else { return }
+        #expect(plain.notWritten == ["LOCATION"], "\(plain.notWritten)")
+    }
 }
