@@ -46,7 +46,12 @@ final class ImportRun {
                         on: runner, sourceID: sourceID,
                         relativePaths: group.paths, staging: group.staging)
                     running = record
-                    let drain = Task { [runner] in try await runner.runPending() }
+                    // Started, not waited for: waiting for the drain meant
+                    // waiting for the whole queue, so a cancelled or
+                    // finished folder still held the run until every job
+                    // queued ahead or after it had finished. Its own row,
+                    // polled below, says when it is done.
+                    await runner.startDraining()
                     var settled = false
                     while !settled {
                         try? await Task.sleep(for: .milliseconds(250))
@@ -65,7 +70,6 @@ final class ImportRun {
                             }
                         }
                     }
-                    _ = try? await drain.value
                 } catch {
                     self.error = "\(error)"
                 }

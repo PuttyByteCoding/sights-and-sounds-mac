@@ -87,5 +87,64 @@ import Testing
         let imported = try await library.writer.read { try MediaItem.fetchAll($0).map(\.relativePath) }
         #expect(imported == ["a.mp4"])
     }
-}
 
+    /// Holds the queue until its gate opens; suspended, not blocking.
+    final class Gate: @unchecked Sendable {
+        static let shared = Gate()
+        private let lock = NSLock()
+        private var isOpen = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        func reset() { lock.withLock { isOpen = false } }
+        func open() {
+            let held = lock.withLock {
+                isOpen = true
+                defer { waiting = [] }
+                return waiting
+            }
+            for job in held { job.resume() }
+        }
+        func hold() async {
+            await withCheckedContinuation { (job: CheckedContinuation<Void, Never>) in
+                let goNow = lock.withLock {
+                    if isOpen { return true }
+                    waiting.append(job)
+                    return false
+                }
+                if goNow { job.resume() }
+            }
+        }
+    }
+
+    struct LongSweep: Job {
+        static let kind = "test.import-run.long-sweep"
+        init(payload: Data?) throws {}
+        func run(_ context: JobContext) async throws { await Gate.shared.hold() }
+    }
+
+    /// The run waited for the whole queue to drain after each folder. A
+    /// Cancel settles a queued import at once now, but the window still
+    /// said it was running — Import disabled — until every job ahead of
+    /// it, a sweep of hours, had finished.
+    @Test(.timeLimit(.minutes(1)))
+    func cancellingAnImportBehindALongJobFinishesTheRunAtOnce() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunBehind")
+        let source = Source(name: "Here", rootPath: "/tmp/sas-import-behind-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let runner = JobRunner(library: library, jobTypes: JobCatalog.all + [LongSweep.self])
+        Gate.shared.reset()
+        defer { Gate.shared.open() }
+        _ = try await runner.enqueue(LongSweep.self)
+        await runner.startDraining()
+
+        let run = ImportRun(runner: runner, library: library)
+        var finished = false
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { _ in finished = true }
+        for _ in 0..<400 where run.running == nil { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(run.running != nil)
+        run.cancel()
+        for _ in 0..<300 where !finished { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(finished, "the run waited for the job ahead of it")
+        #expect(!run.isRunning)
+    }
+}
