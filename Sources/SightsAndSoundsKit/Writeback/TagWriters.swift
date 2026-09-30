@@ -235,8 +235,11 @@ public enum TagWriters {
             // names; given the Vorbis ones it dropped them without a word.
             isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
         }
+        let isMov = url.pathExtension.lowercased() == "mov"
         let notWritten = isMP4
-            ? fields.filter { !Self.mp4MuxerWrites.contains(muxerKey($0).lowercased()) }.map(\.vorbisName)
+            ? fields.filter {
+                !Self.mp4MuxerWrites(key: muxerKey($0), value: $0.values.joined(separator: "; "), mov: isMov)
+            }.map(\.vorbisName)
             : []
         for field in fields where !notWritten.contains(field.vorbisName) {
             let key = muxerKey(field)
@@ -268,6 +271,32 @@ public enum TagWriters {
         "network", "keywords", "media_type", "hd_video", "gapless_playback", "compilation",
         "track", "disc",
     ]
+
+    /// In a .mov the same muxer runs in QuickTime mode and keeps only
+    /// these (measured the same way). AtomicParsley refuses .mov, so this
+    /// is its only writer.
+    static let movMuxerWrites: Set<String> = ["title", "artist", "album", "date", "comment", "genre", "copyright"]
+
+    /// One-byte number atoms, and number pairs. Given text the muxer stores
+    /// 0 or drops the value — a category "Compilation: Summer Hits" set the
+    /// compilation flag off — and still exits 0.
+    static let mp4ByteKeys: Set<String> = ["media_type", "hd_video", "gapless_playback", "compilation"]
+    static let mp4PairKeys: Set<String> = ["track", "disc"]
+
+    /// Whether the muxer really stores `value` under `key` in this file.
+    static func mp4MuxerWrites(key: String, value: String, mov: Bool) -> Bool {
+        let key = key.lowercased()
+        guard (mov ? movMuxerWrites : mp4MuxerWrites).contains(key) else { return false }
+        let value = value.trimmingCharacters(in: .whitespaces)
+        if mp4ByteKeys.contains(key) {
+            return Int(value).map { (0...255).contains($0) } ?? false
+        }
+        if mp4PairKeys.contains(key) {
+            let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+            return (1...2).contains(parts.count) && parts.allSatisfy { Int($0) != nil }
+        }
+        return true
+    }
 
     /// Which stream an Ogg file's tags go on: its first audio stream, as
     /// readers expect, or — in a video-only .ogv, which has none — its

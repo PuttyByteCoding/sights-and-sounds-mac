@@ -152,4 +152,52 @@ import Testing
         #expect(result.success, "\(result.error ?? "")")
         #expect(try TagWriters.readTagsJSON(url: file).contains("Night One"), "the title went nowhere")
     }
+
+    /// A .mov is written by the same muxer in QuickTime mode, which keeps
+    /// only seven keys. Album artist, grouping and the rest vanished from
+    /// a .mov under a success (AtomicParsley refuses .mov, so the remux is
+    /// its only writer). They are named as not written now.
+    @Test func aMovNamesTheKeysItsMuxerDrops() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-mov-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("clip.mov")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libx264", file.path,
+        ], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "TITLE", mp4Atom: "©nam", mp4Freeform: false, values: ["Night One"]),
+            FieldWrite(vorbisName: "ALBUMARTIST", mp4Atom: "aART", mp4Freeform: false, values: ["The Examples"]),
+            FieldWrite(vorbisName: "GROUPING", mp4Atom: "GROUPING", mp4Freeform: true, values: ["Live Sets"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(try TagWriters.readTagsJSON(url: file).contains("Night One"))
+        #expect(Set(result.notWritten) == ["ALBUMARTIST", "GROUPING"], "\(result.notWritten)")
+    }
+
+    /// Some MP4 keys are numbers. Given text, the muxer stored 0 (a
+    /// category "Compilation: Summer Hits" set the compilation flag off)
+    /// or dropped it, and the write still read as a success. A value the
+    /// key cannot hold is named as not written.
+    @Test func aNumberKeyGivenTextIsNamedNotCoerced() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-int-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", file.path], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "COMPILATION", mp4Atom: "COMPILATION", mp4Freeform: true, values: ["Summer Hits"]),
+            FieldWrite(vorbisName: "TRACK", mp4Atom: "TRACK", mp4Freeform: true, values: ["abc"]),
+            FieldWrite(vorbisName: "DISC", mp4Atom: "DISC", mp4Freeform: true, values: ["1/2"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(try TagWriters.readTagsJSON(url: file).contains("1/2"), "a valid disc number was dropped")
+        #expect(Set(result.notWritten) == ["COMPILATION", "TRACK"], "\(result.notWritten)")
+    }
 }
