@@ -147,6 +147,38 @@ import Testing
         }
     }
 
+    /// A staged tag deleted meanwhile, on a run that imports nothing new:
+    /// there was nothing to apply it to, so nothing was left unapplied and
+    /// the summary must not say so.
+    @Test func aMissingStagedTagIsNotReportedWhenNothingWasImported() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-import-nothing-new-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("x".utf8).write(to: root.appendingPathComponent("a.mp4"))
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "NothingNew")
+        let source = Source(name: "Here", rootPath: root.path)
+        let band = TagCategory(name: "Band")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try band.insert(db)
+        }
+        let runner = JobRunner(library: library, jobTypes: [ImportJob.self])
+        _ = try await ImportJob.enqueue(on: runner, sourceID: source.id)
+        try await runner.runPending()
+
+        let gone = try library.ensureTag(named: "Gone", inCategory: band.id)
+        let queued = try await ImportJob.enqueue(
+            on: runner, sourceID: source.id, staging: ImportStaging(tagIDs: [gone.id]))
+        try await library.writer.write { db in _ = try SightsAndSoundsKit.Tag.deleteOne(db, key: gone.id) }
+        try await runner.runPending()
+
+        let summary = try await library.writer.read { try JobRecord.fetchOne($0, key: queued.id)?.summary } ?? ""
+        #expect(summary.hasPrefix("0 new, 1 already imported"), "\(summary)")
+        #expect(!summary.contains("no longer exist"), "\(summary)")
+    }
+
     private final class DeletingVolume: FileAccess, @unchecked Sendable {
         let files: [URL]
         let onSecondSize: () -> Void

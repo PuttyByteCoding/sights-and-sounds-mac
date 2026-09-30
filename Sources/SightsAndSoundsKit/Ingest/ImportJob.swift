@@ -208,7 +208,9 @@ public struct ImportJob: Job {
         // The leading "N new, M already imported" is read by the import
         // window; a note goes after it.
         var summary = "\(inserted) new, \(skipped) already imported"
-        let missingStaged = resolved.map { $0.missing.union(vanished).count } ?? 0
+        // Only when something was imported: with nothing new there was
+        // nothing to apply a staged value to, so none went unapplied.
+        let missingStaged = inserted > 0 ? (resolved.map { $0.missing.union(vanished).count } ?? 0) : 0
         if missingStaged > 0 {
             summary += missingStaged == 1
                 ? " — 1 staged tag or field no longer exists and was not applied"
