@@ -13,7 +13,9 @@ import Testing
         #expect(TagWriters.parsleyNative(name: "track", value: "7") == ["--tracknum", "7"])
         for (name, value) in [("disc", "Disc 2"), ("track", "Silverstone"), ("track", "1; 2"),
                               ("track", "70000"), ("disc", "1/2/3"), ("media_type", "300"),
-                              ("media_type", "-1"), ("season_number", "abc"), ("episode_sort", "x")] {
+                              ("media_type", "-1"), ("season_number", "abc"), ("episode_sort", "x"),
+                              // TV numbers are 16 bits in AtomicParsley: 70000 wrapped to 4464.
+                              ("season_number", "70000"), ("episode_sort", "4294967295")] {
             #expect(TagWriters.parsleyNative(name: name, value: value) == nil, "\(name)=\(value)")
         }
         #expect(TagWriters.parsleyNative(name: "media_type", value: "9") == ["--stik", "value=9"])
@@ -46,5 +48,17 @@ import Testing
                 == ["--tracknum", "3/12"])
         #expect(TagWriters.parsleyArguments(forStandard: "©nam", name: "TITLE", value: "Night One")
                 == ["--title", "Night One"])
+    }
+
+    /// AtomicParsley reads a sort order's value from the argument after
+    /// the kind without taking it, so a value starting with "-" is read as
+    /// more options: "-Dash Band" set a purchase date and dropped the
+    /// title. Such a value stays a custom atom, passed where a dash is
+    /// harmless.
+    @Test func aSortValueStartingWithADashStaysCustom() {
+        for name in ["sort_name", "sort_artist", "sort_album", "sort_album_artist", "sort_composer", "sort_show"] {
+            #expect(TagWriters.parsleyNative(name: name, value: "-Dash Band") == nil, "\(name)")
+        }
+        #expect(TagWriters.parsleyNative(name: "sort_artist", value: "Dash Band") != nil)
     }
 }

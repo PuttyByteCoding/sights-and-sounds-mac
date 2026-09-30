@@ -339,6 +339,13 @@ public enum TagWriters {
     /// yes/no flag), which is kept rather than lost.
     static func parsleyNative(name: String, value: String) -> [String]? {
         let value = value.trimmingCharacters(in: .whitespaces)
+        // AtomicParsley reads the sort value from the argument after the
+        // kind without taking it, so one starting with "-" is read as more
+        // options ("-Dash Band" set a purchase date and dropped the
+        // title). That value stays custom, where a dash is harmless.
+        func sortOrder(_ kind: String) -> [String]? {
+            value.hasPrefix("-") ? nil : ["--sortOrder", kind, value]
+        }
         func flag(_ text: String) -> String? {
             switch text.lowercased() {
             case "1", "true", "yes": "true"
@@ -351,8 +358,9 @@ public enum TagWriters {
         // too big, and exits 0 — a value it cannot hold stays custom.
         case "disc", "discnumber": return isNumberPair(value) ? ["--disk", value] : nil
         case "track": return isNumberPair(value) ? ["--tracknum", value] : nil
-        case "season_number": return UInt32(value).map { ["--TVSeasonNum", String($0)] }
-        case "episode_sort": return UInt32(value).map { ["--TVEpisodeNum", String($0)] }
+        // 16 bits in AtomicParsley, whatever the atom's width: 70000 wrapped.
+        case "season_number": return UInt16(value).map { ["--TVSeasonNum", String($0)] }
+        case "episode_sort": return UInt16(value).map { ["--TVEpisodeNum", String($0)] }
         case "copyright": return ["--copyright", value]
         case "grouping": return ["--grouping", value]
         case "lyrics": return ["--lyrics", value]
@@ -368,12 +376,12 @@ public enum TagWriters {
         case "podcast": return flag(value).map { ["--podcastFlag", $0] }
         case "category": return ["--category", value]
         case "purchase_date": return ["--purchaseDate", value]
-        case "sort_name": return ["--sortOrder", "name", value]
-        case "sort_artist": return ["--sortOrder", "artist", value]
-        case "sort_album": return ["--sortOrder", "album", value]
-        case "sort_album_artist": return ["--sortOrder", "albumartist", value]
-        case "sort_composer": return ["--sortOrder", "composer", value]
-        case "sort_show": return ["--sortOrder", "show", value]
+        case "sort_name": return sortOrder("name")
+        case "sort_artist": return sortOrder("artist")
+        case "sort_album": return sortOrder("album")
+        case "sort_album_artist": return sortOrder("albumartist")
+        case "sort_composer": return sortOrder("composer")
+        case "sort_show": return sortOrder("show")
         default: return nil
         }
     }
