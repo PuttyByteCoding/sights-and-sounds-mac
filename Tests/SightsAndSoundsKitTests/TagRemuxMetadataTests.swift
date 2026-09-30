@@ -362,4 +362,34 @@ import Testing
         #expect(none.keptNothing(of: 2))
         #expect(!none.keptNothing(of: 3))
     }
+
+    /// ffmpeg writes a DESCRIPTION comment into Vorbis files but reads it
+    /// back as "comment"; it was named not kept, and a write of that field
+    /// alone counted as failed.
+    @Test func aVorbisDescriptionIsKept() throws {
+        guard let (result, _) = try remux("song.flac",
+            make: ["-f", "lavfi", "-i", "sine=duration=1"],
+            fields: [("DESCRIPTION", "A night recording")]) else { return }
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+    }
+
+    /// AIFF keeps only a name and an annotation of its own; the rest go in
+    /// an ID3 chunk (where Music keeps AIFF tags), which the remux did not
+    /// write and so stripped.
+    @Test func anAiffKeepsItsTagsInAnID3Chunk() throws {
+        guard let (result, after) = try remux("song.aiff",
+            make: ["-f", "lavfi", "-i", "sine=duration=1"],
+            fields: [("ARTIST", "The Examples"), ("ALBUM", "Live Sets"), ("GENRE", "Folk")]) else { return }
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+        #expect(after.contains("The Examples"))
+    }
+
+    /// The ffmpeg tool sets its own encoder tag over any given, so a
+    /// field named ENCODER was replaced — yet present, so counted kept.
+    @Test func anEncoderFieldIsNamedNotKept() throws {
+        guard let (result, _) = try remux("song.wav",
+            make: ["-f", "lavfi", "-i", "sine=duration=1"],
+            fields: [("ENCODER", "My Rig"), ("TITLE", "Night One")]) else { return }
+        #expect(result.notWritten == ["ENCODER"], "\(result.notWritten)")
+    }
 }

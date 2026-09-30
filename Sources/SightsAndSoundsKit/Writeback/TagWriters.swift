@@ -233,6 +233,12 @@ public enum TagWriters {
         let isOgg = Self.oggFamily.contains(url.pathExtension.lowercased())
         var arguments = ["-i", url.path, "-map", "0", "-c", "copy",
                          isOgg ? "-map_metadata" : "-map_metadata:g", "-1"]
+        // AIFF's own chunks hold only a name and an annotation; everything
+        // else lives in an ID3 chunk (where Music keeps AIFF tags), which
+        // the muxer writes only when asked — without it the remux stripped
+        // the file's tags down to its title.
+        let ext = url.pathExtension.lowercased()
+        if ext == "aiff" || ext == "aif" { arguments += ["-write_id3v2", "1"] }
         let metadataFlag = isOgg ? "-metadata:s:\(Self.oggTagStream(of: url))" : "-metadata"
         // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
         // `-movflags use_metadata_tags` would store custom ones too, but
@@ -252,12 +258,16 @@ public enum TagWriters {
             // custom TXXX frames that players do not show.
             Self.genericKeys[field.vorbisName] ?? field.vorbisName
         }
-        let isMov = url.pathExtension.lowercased() == "mov"
-        let notWritten = isMP4
-            ? fields.filter {
-                !Self.mp4MuxerWrites(key: muxerKey($0), value: $0.values.joined(separator: "; "), mov: isMov)
-            }.map(\.vorbisName)
-            : []
+        let isMov = ext == "mov"
+        // The ffmpeg tool stamps its own encoder tag (AVI: software) over
+        // any given, so such a field is never kept, though its name is.
+        let stamped: Set<String> = ext == "avi" ? ["encoder", "software"] : ["encoder"]
+        let notWritten = fields.filter { field in
+            let key = muxerKey(field)
+            if stamped.contains(key.lowercased()) { return true }
+            guard isMP4 else { return false }
+            return !Self.mp4MuxerWrites(key: key, value: field.values.joined(separator: "; "), mov: isMov)
+        }.map(\.vorbisName)
         for field in fields where !notWritten.contains(field.vorbisName) {
             let key = muxerKey(field)
             arguments += [metadataFlag, "\(key)=\(field.values.joined(separator: "; "))"]
@@ -274,7 +284,8 @@ public enum TagWriters {
             // most containers (.wav, .aiff, .avi, .ts) keep only a few tags
             // and dropped the rest under a success.
             let passed = fields.filter { !notWritten.contains($0.vorbisName) }
-            let dropped = Self.fieldsMissing(passed, from: url, streamTags: isOgg, key: muxerKey)
+            let vorbis = isOgg || ext == "flac"
+            let dropped = Self.fieldsMissing(passed, from: url, streamTags: isOgg, vorbis: vorbis, key: muxerKey)
             return TagWriteResult(
                 success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped,
                 atomicParsleyWouldHelp: isMP4 && !isMov && !notWritten.isEmpty)
@@ -315,7 +326,8 @@ public enum TagWriters {
     /// for a dropped file title. Nothing is named when the tags cannot be
     /// read: the write itself succeeded, and there is nothing to compare.
     static func fieldsMissing(
-        _ fields: [FieldWrite], from url: URL, streamTags: Bool, key: (FieldWrite) -> String
+        _ fields: [FieldWrite], from url: URL, streamTags: Bool, vorbis: Bool = false,
+        key: (FieldWrite) -> String
     ) -> [String] {
         struct Probe: Decodable {
             struct Tags: Decodable { let tags: [String: String]? }
@@ -331,8 +343,11 @@ public enum TagWriters {
         let present = Set(tags.flatMap(\.keys).map { $0.lowercased() })
         return fields.filter { field in
             let name = key(field).lowercased()
-            // AVI keeps an album as IPRD, which reads back as "product".
-            let names = name == "album" ? [name, "product"] : [name]
+            // Read back under another name: AVI keeps an album as IPRD
+            // ("product"); Vorbis comments read DESCRIPTION as "comment".
+            var names = [name]
+            if name == "album" { names.append("product") }
+            if name == "description", vorbis { names.append("comment") }
             return !names.contains(where: present.contains)
         }.map(\.vorbisName)
     }

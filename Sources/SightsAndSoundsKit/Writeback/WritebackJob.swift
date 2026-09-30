@@ -198,6 +198,11 @@ public struct RestoreTagsJob: Job {
         var description: String { "the snapshot no longer exists" }
     }
 
+    struct KeptNothing: Error, CustomStringConvertible {
+        let note: String
+        var description: String { "the file kept none of the restored fields — \(note)" }
+    }
+
     public func run(_ context: JobContext) async throws {
         guard TagWriters.ffprobePath() != nil, FfmpegTool.path() != nil else {
             await context.setSummary(FfmpegTool.installHint)
@@ -235,6 +240,11 @@ public struct RestoreTagsJob: Job {
             try db.execute(
                 sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
                 arguments: [item.id])
+        }
+        // The file's tags were replaced by nothing: a failure, not a restore
+        // of 0 fields. Its pre-restore snapshot can put them back.
+        if result.keptNothing(of: fields.count) {
+            throw KeptNothing(note: result.writtenNote ?? "")
         }
         // What the writer could not hold is said, not counted as restored.
         let restored = fields.count - result.notWritten.count

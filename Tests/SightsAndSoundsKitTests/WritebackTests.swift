@@ -186,6 +186,39 @@ import Testing
         #expect(allSnapshots.contains { $0.source == .preRestore })
     }
 
+    /// A restore into a file that kept none of the fields (a .ts keeps no
+    /// tags at all) replaced its tags with nothing and still finished as a
+    /// success. It fails now; its pre-restore snapshot can undo it.
+    @Test func aRestoreThatKeptNothingFails() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-restore-nothing-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "mpeg2video",
+            root.appendingPathComponent("clip.ts").path,
+        ], tool: ffmpeg)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "RestoreNothing")
+        let source = Source(name: "Here", rootPath: root.path)
+        let item = MediaItem(sourceID: source.id, kind: .video, relativePath: "clip.ts", needsReview: false)
+        let snapshot = EmbeddedTagSnapshot(
+            mediaItemID: item.id, source: .preWrite,
+            tagsJSON: #"{"format":{"tags":{"artist":"The Examples","album":"Live Sets"}}}"#)
+        try await library.writer.write { db in
+            try source.insert(db)
+            try item.insert(db)
+            try snapshot.insert(db)
+        }
+        let runner = JobRunner(library: library)
+        let restore = try await RestoreTagsJob.enqueue(on: runner, snapshotID: snapshot.id)
+        try await runner.runPending()
+
+        let row = try await library.writer.read { try JobRecord.fetchOne($0, key: restore.id)! }
+        #expect(row.state == .failed, "\(row.summary ?? "")")
+    }
+
     @Test func itemsWithNoWritebackTagsAreSkippedHonestly() async throws {
         // A REAL file (so the offline check passes) whose categories have
         // write-back disabled — the skip must name the right reason.
