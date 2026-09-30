@@ -123,6 +123,11 @@ import Testing
             addAnAction(model)
             try await Task.sleep(for: .milliseconds(200))   // past the settle
         }
+        // On a loaded machine the last edit's settle can still be pending
+        // here; firing after the gate opens, it would rightly ask for a
+        // third walk. Settle now instead: it cancels any pending settle and
+        // marks the running walk stale, so exactly one more walk follows.
+        model.refreshDryRun()
         #expect(walks.started == 1, "an edit started a walk beside the running one")
         walks.open()
         try await waitUntil { model.dryRun?.actionCount == 3 }
