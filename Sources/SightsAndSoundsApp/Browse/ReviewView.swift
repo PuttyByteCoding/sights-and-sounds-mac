@@ -640,9 +640,12 @@ struct ReviewView: View {
                 // change), and the watch follows it from there.
                 await runner.startDraining()
                 let library = model.library
-                let pendingNow = await Task.detached(operation: { try? library.currentPendingRepairItems() }).value
-                repairs.enqueueFinished(itemID, pendingNow: pendingNow ?? [itemID])
-                if repairs.pendingChanged(to: pendingNow ?? [itemID]) { reload() }
+                if let pendingNow = await Task.detached(operation: { try? library.currentPendingRepairItems() }).value {
+                    repairs.enqueueFinished(itemID, pendingNow: pendingNow)
+                    if repairs.pendingChanged(to: pendingNow) { reload() }
+                } else {
+                    repairs.enqueueFinishedUnread(itemID)
+                }
             } catch {
                 errorText = "\(error)"
                 repairs.enqueueFinished(itemID, pendingNow: nil)

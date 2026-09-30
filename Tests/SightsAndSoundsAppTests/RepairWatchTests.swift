@@ -78,4 +78,19 @@ import Testing
         #expect(watch.isRepairing(a))
         #expect(watch.settle(stillFlagged: []) == 0, "the failed one counted as resolved")
     }
+
+    /// The read after queueing can fail. It used to stand in as "only this
+    /// item is pending", so another item's queued repair looked done: Run
+    /// fix came back for it, and it was dropped uncounted.
+    @Test func aFailedReadAfterQueueingForgetsNothingElse() {
+        let watch = RepairWatch()
+        let a = UUID(), b = UUID()
+        watch.queued(a)
+        watch.enqueueFinished(a, pendingNow: [a])
+        watch.queued(b)
+        watch.enqueueFinishedUnread(b)
+        #expect(watch.isRepairing(a), "another item's queued repair looked done")
+        #expect(watch.isRepairing(b))
+        #expect(watch.settle(stillFlagged: [a, b]) == 0)
+    }
 }

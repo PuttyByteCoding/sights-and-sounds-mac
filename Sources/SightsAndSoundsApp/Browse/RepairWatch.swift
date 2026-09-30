@@ -40,6 +40,15 @@ final class RepairWatch {
         enqueuing.remove(item)
     }
 
+    /// The enqueue committed but the queue could not be read afterwards:
+    /// the item joins what is already known to be pending — standing in
+    /// for the whole set, it made other items' queued repairs look done.
+    /// The observation corrects it on its next delivery.
+    func enqueueFinishedUnread(_ item: UUID) {
+        pending.insert(item)
+        enqueuing.remove(item)
+    }
+
     /// The queue's set changed. True when a repair queued from here has
     /// finished: time to reload and `settle`.
     @discardableResult
