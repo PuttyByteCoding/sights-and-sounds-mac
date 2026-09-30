@@ -8,14 +8,23 @@ extension LibraryDatabase {
     /// whether or not it changed anything. Observed, not polled: nothing
     /// runs between changes to the queue.
     public func pendingJobCounts(of kind: String) -> AsyncValueObservation<Int> {
-        let pending = [JobState.queued.rawValue, JobState.running.rawValue]
-        return ValueObservation
-            .tracking { db in
-                try JobRecord
-                    .filter(Column("kind") == kind && pending.contains(Column("state")))
-                    .fetchCount(db)
-            }
+        ValueObservation
+            .tracking { try Self.pendingCount(of: kind, in: $0) }
             .removeDuplicates()
             .values(in: writer)
+    }
+
+    /// The same count, read once: for a caller that must not wait for a
+    /// change the observation may never deliver — a job queued and done
+    /// between two deliveries reads as no change at all.
+    public func pendingJobCount(of kind: String) throws -> Int {
+        try writer.read { try Self.pendingCount(of: kind, in: $0) }
+    }
+
+    private static func pendingCount(of kind: String, in db: Database) throws -> Int {
+        let pending = [JobState.queued.rawValue, JobState.running.rawValue]
+        return try JobRecord
+            .filter(Column("kind") == kind && pending.contains(Column("state")))
+            .fetchCount(db)
     }
 }

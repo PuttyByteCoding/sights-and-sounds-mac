@@ -16,7 +16,12 @@ final class RepairWatch {
     private var awaiting: Set<UUID> = []
     private var repairsPending = false
 
-    func queued(_ item: UUID) { awaiting.insert(item) }
+    /// Also counts as a repair pending: the queue's own report of it
+    /// comes later, and a reload in between must not settle the item.
+    func queued(_ item: UUID) {
+        awaiting.insert(item)
+        repairsPending = true
+    }
 
     /// The repair was never queued (the enqueue failed).
     func release(_ item: UUID) { awaiting.remove(item) }

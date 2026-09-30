@@ -68,7 +68,8 @@ struct ReviewView: View {
     /// A pair decision that failed, reported here: the compare pane that
     /// made it may already have been replaced by the next pair.
     @State private var decisionError: String?
-    @State private var repairStatus: String?
+    /// The runner is paused while the selected issue's repair waits.
+    @State private var repairQueuePaused = false
     /// Ticked videos whose segments are not saved yet — asked about in
     /// place of the ordinary confirmation.
     @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
@@ -88,6 +89,22 @@ struct ReviewView: View {
         .onAppear { reload() }
         // Marks, restores and new pairs made anywhere else show here.
         .followsLibraryChanges(model, [.items, .duplicates]) { reload() }
+        // Only while the selected issue's repair waits: pausing writes
+        // nothing the queue observation sees, so the runner is asked.
+        .task(id: selectedIssueID.map(repairs.isRepairing) == true) {
+            guard selectedIssueID.map(repairs.isRepairing) == true,
+                  let runner = try? app.runner(for: model.libraryID)
+            else {
+                repairQueuePaused = false
+                return
+            }
+            while !Task.isCancelled {
+                repairQueuePaused = await runner.isPaused
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        // A failed decision names its own pair; a new pair shows it no more.
+        .onChange(of: selectedCandidateID) { decisionError = nil }
         // Repairs queued or running, observed rather than waited for; the
         // watch says when the last one has gone and the issues need a look.
         .task {
@@ -457,8 +474,13 @@ struct ReviewView: View {
                         Text("The files move to the Trash and their items leave the library. On a volume that has no Trash they are deleted for good.")
                     }
             case .issues:
-                if let repairStatus {
-                    Text(repairStatus)
+                // Worked out from the selected issue, so it says why Run fix
+                // is waiting whenever that issue is shown again, and never
+                // lands under another issue.
+                if selectedIssueID.map(repairs.isRepairing) == true {
+                    Text(repairQueuePaused
+                        ? "Repair queued — tasks are paused"
+                        : "Repair queued — follow it in Background Tasks")
                         .font(Theme.ui(11.5))
                         .foregroundStyle(Theme.Accent.amber)
                 }
@@ -586,7 +608,6 @@ struct ReviewView: View {
         selectedIssueID = item.id
         pickedRecipeID = nil
         // "Repair queued" was about the last issue, not this one.
-        repairStatus = nil
         let library = model.library, appDatabase = app.appDatabase, id = item.id
         Task {
             let (evidence, recipes) = await Task.detached(priority: .userInitiated) {
@@ -617,8 +638,15 @@ struct ReviewView: View {
                 // Queued and started, not waited for: the watch on the
                 // queue lets the item go when no repair is left, and
                 // counts it only if its flag cleared.
-                repairStatus = "Repair queued — follow it in Background Tasks"
                 await runner.startDraining()
+                // Once, as well as observed: a repair queued and done
+                // between two deliveries reads to the observation as no
+                // change, and the watch would wait for it for ever.
+                let library = model.library
+                if let count = await Task.detached(operation: { try? library.pendingJobCount(of: RepairJob.kind) }).value,
+                   repairs.pendingChanged(to: count) {
+                    reload()
+                }
             } catch {
                 repairs.release(itemID)
                 errorText = "\(error)"
@@ -1074,7 +1102,7 @@ private struct CompareView: View {
                 errorText = nil
                 onResolved(text)
             case .failure(let error):
-                onFailed("Could not decide the pair: \(error)")
+                onFailed("Could not decide \(itemA.fileName) / \(itemB.fileName): \(error)")
             }
         }
     }

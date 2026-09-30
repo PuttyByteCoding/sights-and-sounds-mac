@@ -53,4 +53,15 @@ import Testing
         #expect(!watch.isRepairing(item))
         #expect(watch.isRepairing(other), "releasing one let go of another still queued")
     }
+
+    /// Queueing and the queue's first report of it are apart in time: a
+    /// reload in between (an import delivers several a second) settled the
+    /// item before its repair was even counted, and Run fix came back on.
+    @Test func aReloadBeforeTheQueueReportsTheRepairDoesNotSettleIt() {
+        let watch = RepairWatch()
+        let item = UUID()
+        watch.queued(item)
+        #expect(watch.settle(stillFlagged: [item]) == 0)
+        #expect(watch.isRepairing(item), "settled before the queue had reported the repair")
+    }
 }

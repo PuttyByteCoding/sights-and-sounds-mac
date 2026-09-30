@@ -30,4 +30,15 @@ import Testing
         }
         #expect(try await counts.next() == 0, "a finished run still counted, or another kind did")
     }
+
+    /// The count once, for a caller that must not wait for a change the
+    /// observation may never deliver (a run that is queued and done inside
+    /// one delivery reads as no change).
+    @Test func theCountCanBeReadOnce() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        let runner = JobRunner(library: library, paused: true)
+        #expect(try library.pendingJobCount(of: ReorganizeJob.kind) == 0)
+        _ = try await ReorganizeJob.enqueue(on: runner, template: "%Band", itemIDs: [])
+        #expect(try library.pendingJobCount(of: ReorganizeJob.kind) == 1)
+    }
 }
