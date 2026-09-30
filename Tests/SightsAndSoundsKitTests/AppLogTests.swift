@@ -42,7 +42,9 @@ import Testing
                 await context.setSummary("did the thing")
             }
         }
-        AppLog.shared.clear()
+        // No clear(): the log is shared by every suite running in
+        // parallel, and clearing it erased lines they were about to read.
+        // The lines are found by this job's own kind and summary instead.
         let library = try LibraryDatabase.openInMemory()
         let runner = JobRunner(library: library)
         await runner.register(NoteJob.self)
@@ -51,7 +53,7 @@ import Testing
 
         let jobLines = AppLog.shared.snapshot().filter { $0.category == "jobs" }
         #expect(jobLines.contains { $0.message.contains("test.note: started") })
-        #expect(jobLines.contains { $0.message.contains("succeeded — did the thing") })
+        #expect(jobLines.contains { $0.message.contains("test.note") && $0.message.contains("succeeded — did the thing") })
     }
 
     @Test func failuresLogAtErrorLevel() async throws {
@@ -61,7 +63,6 @@ import Testing
             struct Nope: Error, CustomStringConvertible { var description: String { "nope" } }
             func run(_ context: JobContext) async throws { throw Nope() }
         }
-        AppLog.shared.clear()
         let library = try LibraryDatabase.openInMemory()
         let runner = JobRunner(library: library)
         await runner.register(SadJob.self)
