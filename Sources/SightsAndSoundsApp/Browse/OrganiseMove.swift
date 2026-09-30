@@ -15,4 +15,26 @@ enum OrganiseMove {
         _ = try await ReorganizeJob.enqueue(on: runner, template: template, itemIDs: ids)
         await runner.startDraining()
     }
+
+    /// How many reorganizes of this library are queued or running, as that
+    /// changes. Seeing one starts the queue (joining a drain already under
+    /// way), unless tasks are paused: nothing else drains a library's queue
+    /// when it opens, so a Move queued before a quit would otherwise leave
+    /// the window on "Moves queued…" with no way on.
+    static func pending(in library: LibraryDatabase, runner: JobRunner) -> AsyncThrowingStream<Int, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await count in library.pendingJobCounts(of: ReorganizeJob.kind) {
+                        if count > 0, await !runner.isPaused { await runner.startDraining() }
+                        continuation.yield(count)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
 }

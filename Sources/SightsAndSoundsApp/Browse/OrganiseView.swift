@@ -62,17 +62,24 @@ struct OrganiseView: View {
         .background {
             if scope == nil { ListingSizeWatch(model: model) { preview(settle: .milliseconds(300)) } }
         }
-        // Moves (a revert from another window, a run finishing) change
-        // the history and what the plan would do.
-        // Observed, not polled; cancelled with the window.
+        // Whether a reorganize of this library is waiting, from any window:
+        // Move waits for it. Observed, not polled, and it stops with the
+        // window. Seeing one starts the queue unless tasks are paused.
         .task {
-            let counts = model.library.pendingJobCounts(of: ReorganizeJob.kind)
+            guard let runner = try? app.runner(for: model.libraryID) else { return }
             do {
-                for try await count in counts { movesPending = count > 0 }
+                for try await count in OrganiseMove.pending(in: model.library, runner: runner) {
+                    movesPending = count > 0
+                    // The queue has confirmed the moves: Move can stop
+                    // saying it is queueing them.
+                    if count > 0 { applying = false }
+                }
             } catch {
                 movesPending = false
             }
         }
+        // Moves (a revert from another window, a run finishing) change
+        // the history and what the plan would do.
         .followsLibraryChanges(model, [.items]) {
             reloadHistory()
             preview(settle: .milliseconds(300))
@@ -124,7 +131,7 @@ struct OrganiseView: View {
     /// Says why Move is unavailable: moves already queued, or a newer
     /// plan still being made.
     private var moveTitle: String {
-        if movesPending { return "Moves queued…" }
+        if movesPending { return app.tasksPaused ? "Moves queued — tasks paused" : "Moves queued…" }
         if !planner.isCurrent { return "Updating plan…" }
         let count = planner.plan.movableCount
         return count == 0 ? "Nothing to move" : "Move \(count) items"
@@ -488,6 +495,11 @@ struct OrganiseView: View {
                 // the moves land (the window follows the library's items).
                 try await OrganiseMove.queue(on: runner, template: template, ids: ids)
                 status = "\(count) moves queued — each one logged and revertible"
+                // Move stays unavailable until the queue confirms the moves
+                // (then "Moves queued…" takes over), so a second click
+                // cannot land in between. Two seconds at most: a run that
+                // finished that fast is never reported as pending at all.
+                try? await Task.sleep(for: .seconds(2))
                 applying = false
             } catch {
                 applying = false

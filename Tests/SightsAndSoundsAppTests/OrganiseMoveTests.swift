@@ -80,4 +80,50 @@ import Testing
         Gate.shared.open()
         _ = try await moving.value
     }
+
+    /// A reorganize left queued by an earlier session (quit behind a long
+    /// sweep) has nothing draining it after relaunch. Watching the pending
+    /// moves starts the queue, so the window is never stuck on "Moves
+    /// queued…" — unless tasks are paused, which the window says instead.
+    @Test(.timeLimit(.minutes(1)))
+    func watchingPendingMovesStartsAQueueNobodyStarted() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "OrganiseLeftQueued")
+        let runner = JobRunner(library: library)
+        // Queued, and nothing drains it.
+        _ = try await ReorganizeJob.enqueue(on: runner, template: "%Band", itemIDs: [])
+
+        var seen: [Int] = []
+        let watching = Task { @MainActor in
+            for try await count in OrganiseMove.pending(in: library, runner: runner) {
+                seen.append(count)
+                if count == 0, seen.contains(where: { $0 > 0 }) { return }
+            }
+        }
+        defer { watching.cancel() }
+        for _ in 0..<400 where !(seen.last == 0 && seen.contains { $0 > 0 }) {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(seen.first == 1)
+        #expect(seen.last == 0, "the queued move never ran: \(seen)")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func whilePausedTheQueueIsLeftAlone() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "OrganisePaused")
+        let runner = JobRunner(library: library, paused: true)
+        let job = try await ReorganizeJob.enqueue(on: runner, template: "%Band", itemIDs: [])
+
+        var seen: [Int] = []
+        let watching = Task { @MainActor in
+            for try await count in OrganiseMove.pending(in: library, runner: runner) { seen.append(count) }
+        }
+        defer { watching.cancel() }
+        for _ in 0..<400 where seen.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
+        #expect(seen == [1])
+        try await Task.sleep(for: .milliseconds(300))
+        let state = try await library.writer.read { try JobRecord.fetchOne($0, key: job.id)?.state }
+        #expect(state == .queued, "a paused queue was started")
+    }
 }
