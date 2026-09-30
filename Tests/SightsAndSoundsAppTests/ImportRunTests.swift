@@ -94,7 +94,11 @@ import Testing
         private let lock = NSLock()
         private var isOpen = false
         private var waiting: [CheckedContinuation<Void, Never>] = []
-        func reset() { lock.withLock { isOpen = false } }
+        private var hasArrived = false
+        /// Something has reached the gate, so a test can wait for that
+        /// rather than guess how long it takes.
+        var arrived: Bool { lock.withLock { hasArrived } }
+        func reset() { lock.withLock { isOpen = false; hasArrived = false } }
         func open() {
             let held = lock.withLock {
                 isOpen = true
@@ -104,6 +108,7 @@ import Testing
             for job in held { job.resume() }
         }
         func hold() async {
+            lock.withLock { hasArrived = true }
             await withCheckedContinuation { (job: CheckedContinuation<Void, Never>) in
                 let goNow = lock.withLock {
                     if isOpen { return true }
@@ -170,7 +175,10 @@ import Testing
 
         var finished = false
         run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { _ in finished = true }
-        try await Task.sleep(for: .milliseconds(50))
+        // Cancel must land while the folder is being queued, not before
+        // the run reaches it (that is cancelBeforeTheFirstJobStopsEverything).
+        for _ in 0..<400 where !gate.arrived { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(gate.arrived)
         run.cancel()
         gate.open()
         for _ in 0..<300 where !finished { try await Task.sleep(for: .milliseconds(10)) }
