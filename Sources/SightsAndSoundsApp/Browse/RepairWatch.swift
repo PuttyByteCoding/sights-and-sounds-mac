@@ -15,16 +15,29 @@ import Observation
 final class RepairWatch {
     private var awaiting: Set<UUID> = []
     private var repairsPending = false
+    /// Repairs clicked but not yet in the queue. The queue's "none
+    /// pending" says nothing about them, so nothing settles meanwhile.
+    private var enqueuing = 0
 
     /// Also counts as a repair pending: the queue's own report of it
     /// comes later, and a reload in between must not settle the item.
     func queued(_ item: UUID) {
         awaiting.insert(item)
         repairsPending = true
+        enqueuing += 1
+    }
+
+    /// The repair is in the queue: pending until the queue reports none.
+    func enqueued(_ item: UUID) {
+        enqueuing = max(0, enqueuing - 1)
+        repairsPending = true
     }
 
     /// The repair was never queued (the enqueue failed).
-    func release(_ item: UUID) { awaiting.remove(item) }
+    func release(_ item: UUID) {
+        enqueuing = max(0, enqueuing - 1)
+        awaiting.remove(item)
+    }
 
     /// Run fix waits for this item's repair.
     func isRepairing(_ item: UUID) -> Bool { awaiting.contains(item) }
@@ -33,14 +46,14 @@ final class RepairWatch {
     /// left for items still awaited: time to reload and `settle`.
     func pendingChanged(to count: Int) -> Bool {
         repairsPending = count > 0
-        return !repairsPending && !awaiting.isEmpty
+        return !repairsPending && enqueuing == 0 && !awaiting.isEmpty
     }
 
     /// After a reload: the awaited items that are no longer flagged were
     /// resolved; every awaited item is let go (one still flagged can try
     /// another recipe). Nothing is settled while repairs are still queued.
     func settle(stillFlagged: Set<UUID>) -> Int {
-        guard !repairsPending else { return 0 }
+        guard !repairsPending, enqueuing == 0 else { return 0 }
         let resolved = awaiting.subtracting(stillFlagged).count
         awaiting.removeAll()
         return resolved

@@ -635,16 +635,20 @@ struct ReviewView: View {
         Task {
             do {
                 _ = try await RepairJob.enqueue(on: runner, itemID: itemID, recipe: recipe)
+                repairs.enqueued(itemID)
                 // Queued and started, not waited for: the watch on the
                 // queue lets the item go when no repair is left, and
                 // counts it only if its flag cleared.
                 await runner.startDraining()
                 // Once, as well as observed: a repair queued and done
                 // between two deliveries reads to the observation as no
-                // change, and the watch would wait for it for ever.
+                // change, and the watch would wait for it for ever. Only
+                // ever to let go — a count read here may be stale by the
+                // time it lands, and must not mark repairs pending again
+                // after the queue has emptied.
                 let library = model.library
                 if let count = await Task.detached(operation: { try? library.pendingJobCount(of: RepairJob.kind) }).value,
-                   repairs.pendingChanged(to: count) {
+                   count == 0, repairs.pendingChanged(to: 0) {
                     reload()
                 }
             } catch {

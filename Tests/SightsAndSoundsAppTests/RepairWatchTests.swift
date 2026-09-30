@@ -13,6 +13,7 @@ import Testing
         let watch = RepairWatch()
         let item = UUID()
         watch.queued(item)
+        watch.enqueued(item)
         #expect(watch.isRepairing(item))
         // Paused, or behind a sweep: still queued, so still held.
         #expect(!watch.pendingChanged(to: 1))
@@ -27,6 +28,8 @@ import Testing
         let fixed = UUID(), stubborn = UUID()
         watch.queued(fixed)
         watch.queued(stubborn)
+        watch.enqueued(fixed)
+        watch.enqueued(stubborn)
         _ = watch.pendingChanged(to: 0)
         // The reload finds `stubborn` still flagged.
         #expect(watch.settle(stillFlagged: [stubborn]) == 1)
@@ -38,6 +41,7 @@ import Testing
         let watch = RepairWatch()
         let item = UUID()
         watch.queued(item)
+        watch.enqueued(item)
         _ = watch.pendingChanged(to: 1)
         #expect(watch.settle(stillFlagged: []) == 0)
         #expect(watch.isRepairing(item))
@@ -63,5 +67,22 @@ import Testing
         watch.queued(item)
         #expect(watch.settle(stillFlagged: [item]) == 0)
         #expect(watch.isRepairing(item), "settled before the queue had reported the repair")
+    }
+
+    /// Another repair finishing while this one is still being queued
+    /// reports "none pending" — which says nothing about this one, not yet
+    /// in the queue. It settled this item too, letting Run fix queue a
+    /// duplicate while its repair then ran.
+    @Test func aRepairStillBeingQueuedIsNotSettledByAnothersFinish() {
+        let watch = RepairWatch()
+        let a = UUID()
+        watch.queued(a)
+        #expect(!watch.pendingChanged(to: 0), "reloaded for a repair still being queued")
+        #expect(watch.settle(stillFlagged: [a]) == 0)
+        #expect(watch.isRepairing(a))
+        // Queued now, and the queue then empties: it settles.
+        watch.enqueued(a)
+        #expect(watch.pendingChanged(to: 0))
+        #expect(watch.settle(stillFlagged: []) == 1)
     }
 }
