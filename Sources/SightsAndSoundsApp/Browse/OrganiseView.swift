@@ -59,6 +59,9 @@ struct OrganiseView: View {
             preview()
             reloadHistory()
         }
+        // Planning is for this window: a walk for one nobody can see
+        // would hold a pool thread for nothing.
+        .onDisappear { planner.cancel() }
         // Unscoped, the plan is over the listing — which lands after the
         // window opens. It used to stay on "Nothing to move". Watched in a
         // child, so a listing refresh does not re-render this window.
