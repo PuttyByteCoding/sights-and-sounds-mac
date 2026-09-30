@@ -54,13 +54,13 @@ struct OrganiseView: View {
         // window opens. It used to stay on "Nothing to move". Watched in a
         // child, so a listing refresh does not re-render this window.
         .background {
-            if scope == nil { ListingSizeWatch(model: model) { preview() } }
+            if scope == nil { ListingSizeWatch(model: model) { preview(settle: .milliseconds(300)) } }
         }
         // Moves (a revert from another window, a run finishing) change
         // the history and what the plan would do.
         .followsLibraryChanges(model, [.items]) {
             reloadHistory()
-            preview()
+            preview(settle: .milliseconds(300))
         }
     }
 
@@ -71,10 +71,18 @@ struct OrganiseView: View {
                 options: Tab.allCases.map { ($0, $0.title) },
                 emphasis: .neutral)
             Group {
-                if tab == .plan, scope == nil {
+                switch (tab, scope) {
+                case (.plan, nil):
+                    // Unscoped, the count is the listing's; only this
+                    // child follows it.
                     WholeListingHeadline(model: model)
-                } else {
-                    Text(headline)
+                case (.plan, let scope?):
+                    // Scope is the grid's filter, and it says so — rather
+                    // than leaving someone to discover that their filter
+                    // was the selection.
+                    Text("applies to the \(scope.count) items the grid showed when this window opened")
+                case (.history, _):
+                    Text(historyHeadline)
                 }
             }
             .font(Theme.mono(11))
@@ -98,18 +106,8 @@ struct OrganiseView: View {
         }
     }
 
-    private var headline: String {
-        switch tab {
-        case .plan:
-            // Scope is the current filter, and it says so — rather than
-            // leaving someone to discover that their filter was the
-            // selection.
-            // Unscoped, the count is the listing's: shown by
-            // WholeListingHeadline, which alone follows the listing.
-            scope.map { "applies to the \($0.count) items the grid showed when this window opened" } ?? ""
-        case .history:
-            "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
-        }
+    private var historyHeadline: String {
+        "\(sessions.count) sessions · \(sessions.reduce(0) { $0 + $1.logs.count }) moves logged"
     }
 
     // MARK: - Plan
@@ -140,7 +138,7 @@ struct OrganiseView: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.control)
                         .fill(Theme.Surface.well)
                         .stroke(Theme.Border.activeCard, lineWidth: 1))
-                .onChange(of: template) { preview() }
+                .onChange(of: template) { preview(settle: .milliseconds(150)) }
 
             // Tokens are inserted, not memorised.
             FlowRow(spacing: 5) {
@@ -442,10 +440,13 @@ struct OrganiseView: View {
 
     // MARK: - Actions
 
-    private func preview() {
+    /// Bursty triggers (typing, listing refreshes, library changes) pass
+    /// a settle so a burst makes one plan.
+    private func preview(settle: Duration = .zero) {
         planner.preview(
             template: template, ids: scopeIDs,
-            categoryNames: model.vocabulary.map(\.category.name), library: model.library)
+            categoryNames: model.vocabulary.map(\.category.name), library: model.library,
+            settle: settle)
     }
 
     private func apply() {
