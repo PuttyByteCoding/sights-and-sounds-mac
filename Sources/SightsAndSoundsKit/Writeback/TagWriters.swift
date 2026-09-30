@@ -168,7 +168,7 @@ public enum TagWriters {
                     } else if field.mp4Freeform {
                         arguments += ["--rDNSatom", value, "name=\(field.vorbisName)", "domain=com.apple.iTunes"]
                     } else {
-                        arguments += [parsleyFlag(for: field.mp4Atom), value]
+                        arguments += parsleyArguments(forStandard: field.mp4Atom, name: field.vorbisName, value: value)
                     }
                 }
                 try runTool(parsley, arguments)
@@ -293,10 +293,7 @@ public enum TagWriters {
         if mp4ByteKeys.contains(key) {
             return Int(value).map { (0...255).contains($0) } ?? false
         }
-        if mp4PairKeys.contains(key) {
-            let parts = value.split(separator: "/", omittingEmptySubsequences: false)
-            return (1...2).contains(parts.count) && parts.allSatisfy { Int($0) != nil }
-        }
+        if mp4PairKeys.contains(key) { return isNumberPair(value) }
         return true
     }
 
@@ -350,8 +347,12 @@ public enum TagWriters {
             }
         }
         switch name.lowercased() {
-        case "disc", "discnumber": return ["--disk", value]
-        case "track": return ["--tracknum", value]
+        // Number atoms: AtomicParsley stores text as 0, or wraps a number
+        // too big, and exits 0 — a value it cannot hold stays custom.
+        case "disc", "discnumber": return isNumberPair(value) ? ["--disk", value] : nil
+        case "track": return isNumberPair(value) ? ["--tracknum", value] : nil
+        case "season_number": return UInt32(value).map { ["--TVSeasonNum", String($0)] }
+        case "episode_sort": return UInt32(value).map { ["--TVEpisodeNum", String($0)] }
         case "copyright": return ["--copyright", value]
         case "grouping": return ["--grouping", value]
         case "lyrics": return ["--lyrics", value]
@@ -363,9 +364,36 @@ public enum TagWriters {
         case "compilation": return flag(value).map { ["--compilation", $0] }
         case "gapless_playback": return flag(value).map { ["--gapless", $0] }
         case "hd_video": return flag(value).map { ["--hdvideo", $0] }
-        case "media_type": return Int(value).map { ["--stik", "value=\($0)"] }
+        case "media_type": return UInt8(value).map { ["--stik", "value=\($0)"] }
+        case "podcast": return flag(value).map { ["--podcastFlag", $0] }
+        case "category": return ["--category", value]
+        case "purchase_date": return ["--purchaseDate", value]
+        case "sort_name": return ["--sortOrder", "name", value]
+        case "sort_artist": return ["--sortOrder", "artist", value]
+        case "sort_album": return ["--sortOrder", "album", value]
+        case "sort_album_artist": return ["--sortOrder", "albumartist", value]
+        case "sort_composer": return ["--sortOrder", "composer", value]
+        case "sort_show": return ["--sortOrder", "show", value]
         default: return nil
         }
+    }
+
+    /// A standard field's AtomicParsley arguments. The track number goes
+    /// through `--tracknum`, which stores text as 0; a value it cannot
+    /// hold is kept as a custom atom instead.
+    static func parsleyArguments(forStandard atom: String, name: String, value: String) -> [String] {
+        if atom == "trkn", !isNumberPair(value) {
+            return ["--rDNSatom", value, "name=\(name)", "domain=com.apple.iTunes"]
+        }
+        return [parsleyFlag(for: atom), value]
+    }
+
+    /// `n` or `n/m`, each fitting the 16 bits the track and disc atoms hold.
+    static func isNumberPair(_ value: String) -> Bool {
+        let parts = value.trimmingCharacters(in: .whitespaces)
+            .split(separator: "/", omittingEmptySubsequences: false)
+        return (1...2).contains(parts.count)
+            && parts.allSatisfy { UInt16($0) != nil }
     }
 
     private static func parsleyFlag(for atom: String) -> String {
