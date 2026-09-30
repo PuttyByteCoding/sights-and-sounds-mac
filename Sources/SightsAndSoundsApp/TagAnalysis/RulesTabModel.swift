@@ -112,6 +112,10 @@ final class RulesTabModel {
         }
     }
 
+    /// A walk is running, and an edit arrived during it.
+    private var walking = false
+    private var walkIsStale = false
+
     /// One walk at a time. The walk is a synchronous pass over the whole
     /// candidate queue and cannot be stopped part-way, so cancelling the
     /// task that awaited it left it running: slow typing piled up
@@ -119,9 +123,6 @@ final class RulesTabModel {
     /// during a walk only marks it stale, and when it finishes one more
     /// walk runs for the newest draft. A finished walk whose rule is no
     /// longer the one on screen is dropped.
-    private var walking = false
-    private var walkIsStale = false
-
     private func startDryRunWalk() {
         guard !walking else {
             walkIsStale = true
