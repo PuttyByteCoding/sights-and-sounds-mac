@@ -267,14 +267,17 @@ import Testing
 
     /// Every remux reads its tags back, and a field that did not come back
     /// is named — for every container, not only MP4. A .wav keeps title,
-    /// artist and genre; album artist and track vanished under a success.
+    /// artist, genre and track, but has no place for album artist, which
+    /// vanished under a success.
     @Test func aWavNamesWhatItsMuxerDropped() throws {
         guard let (result, after) = try remux("song.wav",
             make: ["-f", "lavfi", "-i", "sine=duration=1"],
             fields: [("TITLE", "Night One"), ("ALBUMARTIST", "The Examples"), ("TRACKNUMBER", "7")]) else { return }
         #expect(result.success, "\(result.error ?? "")")
         #expect(after.contains("Night One"))
-        #expect(Set(result.notWritten) == ["ALBUMARTIST", "TRACKNUMBER"], "\(result.notWritten)")
+        // Track lands too, written under ffmpeg's generic name; album
+        // artist has no place in a WAV.
+        #expect(result.notWritten == ["ALBUMARTIST"], "\(result.notWritten)")
     }
 
     /// An .m4a keeps a location only in ISO 6709 form; plain text is
@@ -282,12 +285,81 @@ import Testing
     @Test func anM4ANamesALocationItCouldNotHold() throws {
         guard let (result, after) = try remux("song.m4a",
             make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac"],
-            fields: [("LOCATION", "+40.0000-074.0000/"), ("TITLE", "Night One")]) else { return }
-        #expect(after.contains("+40.0000-074.0000/"))
+            fields: [("LOCATION", "+40.7-074/"), ("TITLE", "Night One")]) else { return }
+        // Stored, and read back reformatted (+40.7000-074.0000/): kept.
+        #expect(after.contains("+40.7"))
         #expect(result.notWritten.isEmpty, "\(result.notWritten)")
         guard let (plain, _) = try remux("song.m4a",
             make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac"],
             fields: [("LOCATION", "Paris, France")]) else { return }
         #expect(plain.notWritten == ["LOCATION"], "\(plain.notWritten)")
+    }
+
+    /// Outside MP4 the fields went in under their Vorbis names, so an MP3
+    /// got TXXX:TRACKNUMBER and TXXX:ALBUMARTIST — custom frames players do
+    /// not show — and the read-back found them by name and said written.
+    /// They go in under ffmpeg's generic names now, which land in TRCK and
+    /// TPE2 (and as TRACKNUMBER/ALBUMARTIST in Ogg and FLAC).
+    @Test func anMP3GetsItsTrackAndAlbumArtistInTheirOwnFrames() throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-mp3-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.mp3")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "libmp3lame", file.path], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "TRACKNUMBER", mp4Atom: "trkn", mp4Freeform: false, values: ["3/9"]),
+            FieldWrite(vorbisName: "ALBUMARTIST", mp4Atom: "aART", mp4Freeform: false, values: ["The Examples"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        let bytes = try Data(contentsOf: file)
+        for frame in ["TRCK", "TPE2"] {
+            #expect(bytes.range(of: Data(frame.utf8)) != nil, "no \(frame) frame")
+        }
+        #expect(bytes.range(of: Data("TRACKNUMBER".utf8)) == nil, "written as a custom frame")
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+    }
+
+    /// A container reformats values on read (track 07 comes back 7). The
+    /// read-back compared values and named such fields "not written"; it
+    /// asks whether the tag is there now.
+    @Test func aValueReformattedOnReadIsStillWritten() throws {
+        guard let (result, _) = try remux("song.m4a",
+            make: ["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac"],
+            fields: [("TRACKNUMBER", "07"), ("DISC", "01/02")]) else { return }
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+    }
+
+    /// AVI keeps an album as IPRD, which reads back as "product".
+    @Test func anAviAlbumIsKept() throws {
+        guard let (result, _) = try remux("clip.avi",
+            make: ["-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "mpeg4"],
+            fields: [("ALBUM", "Live Sets"), ("TITLE", "Night One")]) else { return }
+        #expect(result.notWritten.isEmpty, "\(result.notWritten)")
+    }
+
+    /// The note blamed a missing AtomicParsley on every container and
+    /// listed every name; it says the format did not keep them, names at
+    /// most ten, and mentions AtomicParsley only where it would help.
+    @Test func theNoteSaysWhatTheFormatDidNotKeepBriefly() {
+        let names = (1...12).map { "FIELD\($0)" }
+        let note = TagWriteResult(success: true, usedRemuxFallback: true, error: nil, notWritten: names).writtenNote ?? ""
+        #expect(note.contains("not kept by this file's format"), "\(note)")
+        #expect(note.contains("FIELD10") && !note.contains("FIELD11"), "\(note)")
+        #expect(note.contains("and 2 more"), "\(note)")
+        #expect(!note.contains("AtomicParsley"), "\(note)")
+        let mp4 = TagWriteResult(success: true, usedRemuxFallback: true, error: nil, notWritten: ["PERFORMER"],
+                                 atomicParsleyWouldHelp: true).writtenNote ?? ""
+        #expect(mp4.contains("AtomicParsley"), "\(mp4)")
+    }
+
+    /// A write that kept none of its fields left the file's old tags wiped
+    /// and nothing in their place, and was counted "written".
+    @Test func aWriteThatKeptNothingIsRecognised() {
+        let none = TagWriteResult(success: true, usedRemuxFallback: true, error: nil, notWritten: ["A", "B"])
+        #expect(none.keptNothing(of: 2))
+        #expect(!none.keptNothing(of: 3))
     }
 }

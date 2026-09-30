@@ -128,9 +128,16 @@ public struct WritebackJob: Job {
 
             let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
             if result.success {
-                written += 1
-                // A write that took the slow path keeps the reason with it.
-                try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
+                if result.keptNothing(of: fields.count) {
+                    // The old tags were replaced by nothing: not a write.
+                    // The pre-write snapshot can put them back.
+                    failed += 1
+                    try await record(.failed, error: result.writtenNote, fallback: result.usedRemuxFallback)
+                } else {
+                    written += 1
+                    // A write that took the slow path keeps the reason with it.
+                    try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
+                }
                 // Bytes changed, whichever tool wrote them: the hash is of
                 // the whole file, so an in-place tag rewrite stales it as
                 // surely as a remux does, and the size may differ.

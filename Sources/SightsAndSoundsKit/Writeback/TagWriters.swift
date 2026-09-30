@@ -9,19 +9,29 @@ public struct TagWriteResult: Sendable {
     /// fell through to the remux — kept whether or not the remux then
     /// succeeded, so "why did this file take the slow path" has an answer.
     public let nativeToolError: String?
-    /// Fields the writer could not store in this file — custom fields in
-    /// an MP4 written without AtomicParsley. The rest were written.
+    /// Fields the file did not keep — its format has no place for them,
+    /// or its muxer dropped them. The rest were written.
     let notWritten: [String]
+    /// Some of them were custom fields in an MP4 written without
+    /// AtomicParsley, which could have stored them.
+    let atomicParsleyWouldHelp: Bool
 
     public init(
         success: Bool, usedRemuxFallback: Bool, error: String?, nativeToolError: String? = nil,
-        notWritten: [String] = []
+        notWritten: [String] = [], atomicParsleyWouldHelp: Bool = false
     ) {
         self.success = success
         self.usedRemuxFallback = usedRemuxFallback
         self.error = error
         self.nativeToolError = nativeToolError
         self.notWritten = notWritten
+        self.atomicParsleyWouldHelp = atomicParsleyWouldHelp
+    }
+
+    /// Written, but none of the fields stayed: the old tags were replaced
+    /// by nothing.
+    func keptNothing(of fieldCount: Int) -> Bool {
+        success && fieldCount > 0 && notWritten.count >= fieldCount
     }
 
     /// The note a written file keeps: why it took the slow path, and what
@@ -30,8 +40,10 @@ public struct TagWriteResult: Sendable {
         var parts: [String] = []
         if let nativeToolError { parts.append("written by remux after \(nativeToolError)") }
         if !notWritten.isEmpty {
-            parts.append("not written (MP4 custom fields need AtomicParsley): "
-                + notWritten.joined(separator: ", "))
+            let shown = notWritten.prefix(10).joined(separator: ", ")
+            let more = notWritten.count > 10 ? " and \(notWritten.count - 10) more" : ""
+            let hint = atomicParsleyWouldHelp ? " (AtomicParsley can write custom MP4 fields)" : ""
+            parts.append("not kept by this file's format: \(shown)\(more)\(hint)")
         }
         return parts.isEmpty ? nil : parts.joined(separator: "; ")
     }
@@ -233,9 +245,12 @@ public enum TagWriters {
         // writes and which were wiped and not put back.
         let isMP4 = Self.mp4Family.contains(url.pathExtension.lowercased())
         func muxerKey(_ field: FieldWrite) -> String {
-            // The MOV muxer knows some standard fields only by its own
-            // names; given the Vorbis ones it dropped them without a word.
-            isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+            // ffmpeg's generic names for standard fields: each muxer maps
+            // them to its own place (TPE2/TRCK in ID3, ALBUMARTIST/
+            // TRACKNUMBER in Vorbis comments, aART/trkn in MP4). Given the
+            // Vorbis names instead, MP4 dropped them and ID3 put them in
+            // custom TXXX frames that players do not show.
+            Self.genericKeys[field.vorbisName] ?? field.vorbisName
         }
         let isMov = url.pathExtension.lowercased() == "mov"
         let notWritten = isMP4
@@ -259,16 +274,17 @@ public enum TagWriters {
             // most containers (.wav, .aiff, .avi, .ts) keep only a few tags
             // and dropped the rest under a success.
             let passed = fields.filter { !notWritten.contains($0.vorbisName) }
-            let dropped = Self.fieldsMissing(passed, from: url, aliases: muxerKey)
+            let dropped = Self.fieldsMissing(passed, from: url, streamTags: isOgg, key: muxerKey)
             return TagWriteResult(
-                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped)
+                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped,
+                atomicParsleyWouldHelp: isMP4 && !isMov && !notWritten.isEmpty)
         } catch {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }
     }
 
     /// Standard fields ffmpeg's MOV muxer writes under a name of its own.
-    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track", "DISCNUMBER": "disc"]
+    static let genericKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track", "DISCNUMBER": "disc"]
 
     /// The keys ffmpeg's MOV muxer writes as iTunes atoms — measured with
     /// ffmpeg 9 by writing each and reading it back with ffprobe. It drops
@@ -291,19 +307,33 @@ public enum TagWriters {
     ]
 
     /// The fields that did not come back when the file's tags are read
-    /// after the write — compared by name (the field's own or the muxer's)
-    /// and value. Nothing is named when the tags cannot be read: the write
-    /// itself succeeded, and there is nothing to compare with.
-    static func fieldsMissing(_ fields: [FieldWrite], from url: URL, aliases: (FieldWrite) -> String) -> [String] {
-        guard !fields.isEmpty, let json = try? readTagsJSON(url: url) else { return [] }
-        var stored: [String: Set<String>] = [:]
-        for pair in tagPairs(fromSnapshotJSON: json) {
-            stored[pair.name.lowercased(), default: []].insert(pair.value.trimmingCharacters(in: .whitespaces))
+    /// after the write: asked by presence, not value — containers reformat
+    /// on read (track 07 comes back 7, a location gains decimals), and the
+    /// file's old tags were all replaced, so a tag there now is the one
+    /// just written. The file-level tags only (the stream's for Ogg): the
+    /// remux keeps each stream's own, and a stream title must not stand in
+    /// for a dropped file title. Nothing is named when the tags cannot be
+    /// read: the write itself succeeded, and there is nothing to compare.
+    static func fieldsMissing(
+        _ fields: [FieldWrite], from url: URL, streamTags: Bool, key: (FieldWrite) -> String
+    ) -> [String] {
+        struct Probe: Decodable {
+            struct Tags: Decodable { let tags: [String: String]? }
+            let format: Tags?
+            let streams: [Tags]?
         }
+        guard !fields.isEmpty, let json = try? readTagsJSON(url: url),
+              let probe = try? JSONDecoder().decode(Probe.self, from: Data(json.utf8))
+        else { return [] }
+        let tags = streamTags
+            ? (probe.streams ?? []).compactMap(\.tags)
+            : [probe.format?.tags].compactMap { $0 }
+        let present = Set(tags.flatMap(\.keys).map { $0.lowercased() })
         return fields.filter { field in
-            let value = field.values.joined(separator: "; ").trimmingCharacters(in: .whitespaces)
-            let names = [field.vorbisName, aliases(field), mp4MuxerKeys[field.vorbisName] ?? field.vorbisName]
-            return !names.contains { stored[$0.lowercased()]?.contains(value) == true }
+            let name = key(field).lowercased()
+            // AVI keeps an album as IPRD, which reads back as "product".
+            let names = name == "album" ? [name, "product"] : [name]
+            return !names.contains(where: present.contains)
         }.map(\.vorbisName)
     }
 
