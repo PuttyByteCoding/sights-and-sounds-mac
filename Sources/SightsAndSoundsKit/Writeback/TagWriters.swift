@@ -199,7 +199,8 @@ public enum TagWriters {
             }
         }
         let remux = ffmpegRemuxWrite(
-            fields: fields, url: url, ffmpeg: tools.ffmpeg, refuseWhenNothingFits: !restoring)
+            fields: fields, url: url, ffmpeg: tools.ffmpeg, refuseWhenNothingFits: !restoring,
+            atomicParsleyMissing: tools.atomicParsley == nil)
         guard let nativeToolError else { return remux }
         AppLog.shared.warning("writeback", "\(url.lastPathComponent): \(nativeToolError)")
         return TagWriteResult(
@@ -214,7 +215,7 @@ public enum TagWriters {
     /// construction and the tags are recoverable from the snapshot.
     static func ffmpegRemuxWrite(
         fields: [FieldWrite], url: URL, ffmpeg: String? = FfmpegTool.path(),
-        refuseWhenNothingFits: Bool = true
+        refuseWhenNothingFits: Bool = true, atomicParsleyMissing: Bool = true
     ) -> TagWriteResult {
         guard let ffmpeg else {
             return TagWriteResult(
@@ -284,8 +285,9 @@ public enum TagWriters {
         // anyway wiped the file's existing tags and then reported failure.
         if refuseWhenNothingFits, !fields.isEmpty, notWritten.count == fields.count {
             let shown = notWritten.prefix(10).joined(separator: ", ")
-            // An MP4 can hold custom fields; the missing tool is the reason.
-            let hint = isMP4 && !isMov ? " (AtomicParsley can write custom MP4 fields)" : ""
+            // An MP4 can hold custom fields; the missing tool is the reason —
+            // but not when AtomicParsley is there and has just failed.
+            let hint = isMP4 && !isMov && atomicParsleyMissing ? " (AtomicParsley can write custom MP4 fields)" : ""
             return TagWriteResult(
                 success: false, usedRemuxFallback: true,
                 error: "this file's format keeps none of these fields: \(shown)\(hint) — the file was left as it was")
@@ -310,7 +312,7 @@ public enum TagWriters {
             let dropped = Self.fieldsMissing(passed, from: url, streamTags: isOgg, vorbis: vorbis, key: muxerKey)
             return TagWriteResult(
                 success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped,
-                atomicParsleyWouldHelp: isMP4 && !isMov && !notWritten.isEmpty)
+                atomicParsleyWouldHelp: isMP4 && !isMov && atomicParsleyMissing && !notWritten.isEmpty)
         } catch {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }

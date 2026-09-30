@@ -20,7 +20,7 @@ public enum SnapshotRestore {
     /// Written by the container or the muxer, never by a person: not
     /// restored, since the write tools set their own.
     static let housekeeping: Set<String> = [
-        "major_brand", "minor_version", "compatible_brands", "encoder",
+        "major_brand", "minor_version", "compatible_brands", "encoder", "software",
         "creation_time", "handler_name", "vendor_id", "language", "duration",
         "encoded_by", "timecode",
     ]

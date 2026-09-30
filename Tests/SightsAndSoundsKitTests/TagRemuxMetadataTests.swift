@@ -464,4 +464,31 @@ import Testing
         #expect(result.success, "\(result.error ?? "")")
         #expect(result.nativeToolError == nil, "\(result.nativeToolError ?? "")")
     }
+
+    /// ffmpeg stamps an AVI's software tag itself, as it does encoder, so
+    /// a snapshot's copy is housekeeping, not a field to put back: every
+    /// AVI restore was counted one short, and one that put everything back
+    /// read "restored 0 of 1".
+    @Test func anAviSoftwareTagIsNotRestored() {
+        let fields = SnapshotRestore.fields(
+            fromSnapshotJSON: #"{"format":{"tags":{"software":"Lavf63.1.101","title":"Orig"}}}"#)
+        #expect(fields.map(\.vorbisName) == ["TITLE"])
+    }
+
+    /// Refused after AtomicParsley itself failed on the file, the message
+    /// told the user AtomicParsley could write the fields.
+    @Test func aRefusalAfterAtomicParsleyFailedDoesNotRecommendIt() throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-parsley-failed-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", file.path], tool: ffmpeg)
+        let result = TagWriters.write(
+            fields: [FieldWrite(vorbisName: "MOOD", mp4Atom: "MOOD", mp4Freeform: true, values: ["Calm"])],
+            to: file, tools: .init(metaflac: nil, atomicParsley: "/usr/bin/false", ffmpeg: ffmpeg))
+        #expect(!result.success)
+        #expect(result.error?.contains("AtomicParsley can write") == false, "\(result.error ?? "")")
+    }
 }
