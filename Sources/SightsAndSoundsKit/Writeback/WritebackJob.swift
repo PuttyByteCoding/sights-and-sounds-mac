@@ -128,9 +128,16 @@ public struct WritebackJob: Job {
 
             let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
             if result.success {
-                written += 1
-                // A write that took the slow path keeps the reason with it.
-                try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
+                if result.keptNothing(of: fields.count) {
+                    // The old tags were replaced by nothing: not a write.
+                    // The pre-write snapshot can put them back.
+                    failed += 1
+                    try await record(.failed, error: result.writtenNote, fallback: result.usedRemuxFallback)
+                } else {
+                    written += 1
+                    // A write that took the slow path keeps the reason with it.
+                    try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
+                }
                 // Bytes changed, whichever tool wrote them: the hash is of
                 // the whole file, so an in-place tag rewrite stales it as
                 // surely as a remux does, and the size may differ.
@@ -191,6 +198,7 @@ public struct RestoreTagsJob: Job {
         var description: String { "the snapshot no longer exists" }
     }
 
+
     public func run(_ context: JobContext) async throws {
         guard TagWriters.ffprobePath() != nil, FfmpegTool.path() != nil else {
             await context.setSummary(FfmpegTool.installHint)
@@ -215,7 +223,7 @@ public struct RestoreTagsJob: Job {
 
         let fields = SnapshotRestore.fields(fromSnapshotJSON: snapshot.tagsJSON)
 
-        let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
+        let result = try await Blocking.run { TagWriters.write(fields: fields, to: url, restoring: true) }
         guard result.success else {
             throw FfmpegTool.FfmpegError(exitCode: -1, stderrTail: result.error ?? "write failed")
         }
@@ -229,6 +237,10 @@ public struct RestoreTagsJob: Job {
                 sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
                 arguments: [item.id])
         }
+        // A restore that could hold none of the fields still succeeded: the
+        // file is as near the snapshot as its format allows (see
+        // `TagWriters.write(restoring:)`), and the note names what it could
+        // not hold. Its pre-restore snapshot can undo it.
         // What the writer could not hold is said, not counted as restored.
         let restored = fields.count - result.notWritten.count
         let note = result.writtenNote.map { " — \($0)" } ?? ""

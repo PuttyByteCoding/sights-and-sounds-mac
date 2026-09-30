@@ -9,19 +9,29 @@ public struct TagWriteResult: Sendable {
     /// fell through to the remux — kept whether or not the remux then
     /// succeeded, so "why did this file take the slow path" has an answer.
     public let nativeToolError: String?
-    /// Fields the writer could not store in this file — custom fields in
-    /// an MP4 written without AtomicParsley. The rest were written.
+    /// Fields the file did not keep — its format has no place for them,
+    /// or its muxer dropped them. The rest were written.
     let notWritten: [String]
+    /// Some of them were custom fields in an MP4 written without
+    /// AtomicParsley, which could have stored them.
+    let atomicParsleyWouldHelp: Bool
 
     public init(
         success: Bool, usedRemuxFallback: Bool, error: String?, nativeToolError: String? = nil,
-        notWritten: [String] = []
+        notWritten: [String] = [], atomicParsleyWouldHelp: Bool = false
     ) {
         self.success = success
         self.usedRemuxFallback = usedRemuxFallback
         self.error = error
         self.nativeToolError = nativeToolError
         self.notWritten = notWritten
+        self.atomicParsleyWouldHelp = atomicParsleyWouldHelp
+    }
+
+    /// Written, but none of the fields stayed: the old tags were replaced
+    /// by nothing.
+    func keptNothing(of fieldCount: Int) -> Bool {
+        success && fieldCount > 0 && notWritten.count >= fieldCount
     }
 
     /// The note a written file keeps: why it took the slow path, and what
@@ -30,8 +40,10 @@ public struct TagWriteResult: Sendable {
         var parts: [String] = []
         if let nativeToolError { parts.append("written by remux after \(nativeToolError)") }
         if !notWritten.isEmpty {
-            parts.append("not written (MP4 custom fields need AtomicParsley): "
-                + notWritten.joined(separator: ", "))
+            let shown = notWritten.prefix(10).joined(separator: ", ")
+            let more = notWritten.count > 10 ? " and \(notWritten.count - 10) more" : ""
+            let hint = atomicParsleyWouldHelp ? " (AtomicParsley can write custom MP4 fields)" : ""
+            parts.append("not kept by this file's format: \(shown)\(more)\(hint)")
         }
         return parts.isEmpty ? nil : parts.joined(separator: "; ")
     }
@@ -124,8 +136,15 @@ public enum TagWriters {
     /// Write fields into the file. Wipe-and-rewrite semantics (ported):
     /// the write replaces the file's tag set with exactly these fields —
     /// which is why a pre-write snapshot is mandatory upstream.
+    ///
+    /// `restoring`: the fields are a snapshot being put back. A write-back
+    /// adds tags, so one where nothing fits is refused and the file left
+    /// alone; a restore aims at the snapshot's state, and when the format
+    /// can hold none of its fields a file cleared of tags is that state as
+    /// near as the format allows — refusing left written tags that could
+    /// then never be undone.
     public static func write(
-        fields: [FieldWrite], to url: URL, tools: Tools = .detected
+        fields: [FieldWrite], to url: URL, tools: Tools = .detected, restoring: Bool = false
     ) -> TagWriteResult {
         let ext = url.pathExtension.lowercased()
         var nativeToolError: String?
@@ -147,7 +166,9 @@ public enum TagWriters {
                 nativeToolError = "metaflac: \(error)"  // then fall through to ffmpeg
             }
         }
-        if Self.mp4Family.contains(ext), let parsley = tools.atomicParsley {
+        // Not .mov: AtomicParsley refuses it (on stdout, which is not kept),
+        // and every .mov write was left noting a failure with no reason.
+        if Self.mp4Family.contains(ext), ext != "mov", let parsley = tools.atomicParsley {
             // `--metaEnema` is what makes this a wipe-and-rewrite, and it
             // wipes the cover art with everything else. The library does
             // not hold the art and snapshots do not record it, so it is
@@ -168,7 +189,7 @@ public enum TagWriters {
                     } else if field.mp4Freeform {
                         arguments += ["--rDNSatom", value, "name=\(field.vorbisName)", "domain=com.apple.iTunes"]
                     } else {
-                        arguments += [parsleyFlag(for: field.mp4Atom), value]
+                        arguments += parsleyArguments(forStandard: field.mp4Atom, name: field.vorbisName, value: value)
                     }
                 }
                 try runTool(parsley, arguments)
@@ -177,7 +198,9 @@ public enum TagWriters {
                 nativeToolError = "AtomicParsley: \(error)"  // then fall through to ffmpeg
             }
         }
-        let remux = ffmpegRemuxWrite(fields: fields, url: url, ffmpeg: tools.ffmpeg)
+        let remux = ffmpegRemuxWrite(
+            fields: fields, url: url, ffmpeg: tools.ffmpeg, refuseWhenNothingFits: !restoring,
+            atomicParsleyMissing: tools.atomicParsley == nil)
         guard let nativeToolError else { return remux }
         AppLog.shared.warning("writeback", "\(url.lastPathComponent): \(nativeToolError)")
         return TagWriteResult(
@@ -191,7 +214,8 @@ public enum TagWriters {
     /// installed. Temp + atomic swap; the essence is untouched by
     /// construction and the tags are recoverable from the snapshot.
     static func ffmpegRemuxWrite(
-        fields: [FieldWrite], url: URL, ffmpeg: String? = FfmpegTool.path()
+        fields: [FieldWrite], url: URL, ffmpeg: String? = FfmpegTool.path(),
+        refuseWhenNothingFits: Bool = true, atomicParsleyMissing: Bool = true
     ) -> TagWriteResult {
         guard let ffmpeg else {
             return TagWriteResult(
@@ -221,6 +245,12 @@ public enum TagWriters {
         let isOgg = Self.oggFamily.contains(url.pathExtension.lowercased())
         var arguments = ["-i", url.path, "-map", "0", "-c", "copy",
                          isOgg ? "-map_metadata" : "-map_metadata:g", "-1"]
+        // AIFF's own chunks hold only a name and an annotation, and a raw
+        // AAC (ADTS) stream none at all; their tags live in an ID3 block
+        // (where Music keeps AIFF tags), which the muxer writes only when
+        // asked — without it the remux wiped them and wrote none back.
+        let ext = url.pathExtension.lowercased()
+        if ["aiff", "aif", "aac"].contains(ext) { arguments += ["-write_id3v2", "1"] }
         let metadataFlag = isOgg ? "-metadata:s:\(Self.oggTagStream(of: url))" : "-metadata"
         // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
         // `-movflags use_metadata_tags` would store custom ones too, but
@@ -233,16 +263,46 @@ public enum TagWriters {
         // writes and which were wiped and not put back.
         let isMP4 = Self.mp4Family.contains(url.pathExtension.lowercased())
         func muxerKey(_ field: FieldWrite) -> String {
-            // The MOV muxer knows some standard fields only by its own
-            // names; given the Vorbis ones it dropped them without a word.
-            isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+            // ffmpeg's generic names for standard fields: each muxer maps
+            // them to its own place (TPE2/TRCK in ID3, ALBUMARTIST/
+            // TRACKNUMBER in Vorbis comments, aART/trkn in MP4). Given the
+            // Vorbis names instead, MP4 dropped them and ID3 put them in
+            // custom TXXX frames that players do not show.
+            Self.genericKeys[field.vorbisName] ?? field.vorbisName
         }
-        let isMov = url.pathExtension.lowercased() == "mov"
-        let notWritten = isMP4
-            ? fields.filter {
-                !Self.mp4MuxerWrites(key: muxerKey($0), value: $0.values.joined(separator: "; "), mov: isMov)
-            }.map(\.vorbisName)
-            : []
+        let isMov = ext == "mov"
+        // The ffmpeg tool stamps its own encoder tag (AVI: software) over
+        // any given, so such a field is never kept, though its name is.
+        // Not in Ogg: there the stamp goes in the vendor string.
+        let stamped: Set<String> = isOgg ? [] : ext == "avi" ? ["encoder", "software"] : ["encoder"]
+        // ASF (.wma, .wmv) keeps a comment and a description in one field:
+        // given both, the later replaced the earlier, which then read back
+        // as kept. The earlier is named, not written.
+        let isAsf = ["wma", "wmv", "asf"].contains(ext)
+        var displaced: Set<String> = []
+        if isAsf {
+            let keys = fields.map { muxerKey($0).lowercased() }
+            if let c = keys.firstIndex(of: "comment"), let d = keys.firstIndex(of: "description") {
+                displaced.insert(fields[min(c, d)].vorbisName)
+            }
+        }
+        let notWritten = fields.filter { field in
+            let key = muxerKey(field)
+            if stamped.contains(key.lowercased()) || displaced.contains(field.vorbisName) { return true }
+            guard isMP4 else { return false }
+            return !Self.mp4MuxerWrites(key: key, value: field.values.joined(separator: "; "), mov: isMov)
+        }.map(\.vorbisName)
+        // Nothing fits: known before the file is touched. Running the remux
+        // anyway wiped the file's existing tags and then reported failure.
+        if refuseWhenNothingFits, !fields.isEmpty, notWritten.count == fields.count {
+            let shown = notWritten.prefix(10).joined(separator: ", ")
+            // An MP4 can hold custom fields; the missing tool is the reason —
+            // but not when AtomicParsley is there and has just failed.
+            let hint = isMP4 && !isMov && atomicParsleyMissing ? " (AtomicParsley can write custom MP4 fields)" : ""
+            return TagWriteResult(
+                success: false, usedRemuxFallback: true,
+                error: "this file's format keeps none of these fields: \(shown)\(hint) — the file was left as it was")
+        }
         for field in fields where !notWritten.contains(field.vorbisName) {
             let key = muxerKey(field)
             arguments += [metadataFlag, "\(key)=\(field.values.joined(separator: "; "))"]
@@ -254,15 +314,25 @@ public enum TagWriters {
             guard replaced != nil else {
                 return TagWriteResult(success: false, usedRemuxFallback: true, error: "atomic replace failed")
             }
+            // What the muxer actually kept, read back: a key set per
+            // container can only be as good as the last measurement, and
+            // most containers (.wav, .aiff, .avi, .ts) keep only a few tags
+            // and dropped the rest under a success.
+            let passed = fields.filter { !notWritten.contains($0.vorbisName) }
+            // Vorbis comments and ASF both read a description back as "comment".
+            let commentHoldsDescription = isOgg || ext == "flac" || isAsf
+            let dropped = Self.fieldsMissing(
+                passed, from: url, streamTags: isOgg, commentHoldsDescription: commentHoldsDescription, key: muxerKey)
             return TagWriteResult(
-                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten)
+                success: true, usedRemuxFallback: true, error: nil, notWritten: notWritten + dropped,
+                atomicParsleyWouldHelp: isMP4 && !isMov && atomicParsleyMissing && !notWritten.isEmpty)
         } catch {
             return TagWriteResult(success: false, usedRemuxFallback: true, error: "\(error)")
         }
     }
 
     /// Standard fields ffmpeg's MOV muxer writes under a name of its own.
-    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track", "DISCNUMBER": "disc"]
+    static let genericKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track", "DISCNUMBER": "disc"]
 
     /// The keys ffmpeg's MOV muxer writes as iTunes atoms — measured with
     /// ffmpeg 9 by writing each and reading it back with ffprobe. It drops
@@ -272,12 +342,53 @@ public enum TagWriters {
         "copyright", "grouping", "lyrics", "description", "synopsis", "show", "episode_id",
         "network", "keywords", "media_type", "hd_video", "gapless_playback", "compilation",
         "track", "disc",
+        // Kept only in ISO 6709 form; plain text is dropped, and the
+        // read-back after the write names it.
+        "location",
     ]
 
     /// In a .mov the same muxer runs in QuickTime mode and keeps only
     /// these (measured the same way). AtomicParsley refuses .mov, so this
     /// is its only writer.
-    static let movMuxerWrites: Set<String> = ["title", "artist", "album", "date", "comment", "genre", "copyright"]
+    static let movMuxerWrites: Set<String> = [
+        "title", "artist", "album", "date", "comment", "genre", "copyright", "location",
+    ]
+
+    /// The fields that did not come back when the file's tags are read
+    /// after the write: asked by presence, not value — containers reformat
+    /// on read (track 07 comes back 7, a location gains decimals), and the
+    /// file's old tags were all replaced, so a tag there now is the one
+    /// just written. The file-level tags only (the stream's for Ogg): the
+    /// remux keeps each stream's own, and a stream title must not stand in
+    /// for a dropped file title. Nothing is named when the tags cannot be
+    /// read: the write itself succeeded, and there is nothing to compare.
+    static func fieldsMissing(
+        _ fields: [FieldWrite], from url: URL, streamTags: Bool, commentHoldsDescription: Bool = false,
+        key: (FieldWrite) -> String
+    ) -> [String] {
+        struct Probe: Decodable {
+            struct Tags: Decodable { let tags: [String: String]? }
+            let format: Tags?
+            let streams: [Tags]?
+        }
+        guard !fields.isEmpty, let json = try? readTagsJSON(url: url),
+              let probe = try? JSONDecoder().decode(Probe.self, from: Data(json.utf8))
+        else { return [] }
+        let tags = streamTags
+            ? (probe.streams ?? []).compactMap(\.tags)
+            : [probe.format?.tags].compactMap { $0 }
+        let present = Set(tags.flatMap(\.keys).map { $0.lowercased() })
+        return fields.filter { field in
+            let name = key(field).lowercased()
+            // Read back under another name: AVI keeps an album as IPRD
+            // ("product"); Vorbis comments and ASF read DESCRIPTION as
+            // "comment".
+            var names = [name]
+            if name == "album" { names.append("product") }
+            if name == "description", commentHoldsDescription { names.append("comment") }
+            return !names.contains(where: present.contains)
+        }.map(\.vorbisName)
+    }
 
     /// One-byte number atoms, and number pairs. Given text the muxer stores
     /// 0 or drops the value — a category "Compilation: Summer Hits" set the
@@ -293,10 +404,7 @@ public enum TagWriters {
         if mp4ByteKeys.contains(key) {
             return Int(value).map { (0...255).contains($0) } ?? false
         }
-        if mp4PairKeys.contains(key) {
-            let parts = value.split(separator: "/", omittingEmptySubsequences: false)
-            return (1...2).contains(parts.count) && parts.allSatisfy { Int($0) != nil }
-        }
+        if mp4PairKeys.contains(key) { return isNumberPair(value) }
         return true
     }
 
@@ -342,6 +450,13 @@ public enum TagWriters {
     /// yes/no flag), which is kept rather than lost.
     static func parsleyNative(name: String, value: String) -> [String]? {
         let value = value.trimmingCharacters(in: .whitespaces)
+        // AtomicParsley reads the sort value from the argument after the
+        // kind without taking it, so one starting with "-" is read as more
+        // options ("-Dash Band" set a purchase date and dropped the
+        // title). That value stays custom, where a dash is harmless.
+        func sortOrder(_ kind: String) -> [String]? {
+            value.hasPrefix("-") ? nil : ["--sortOrder", kind, value]
+        }
         func flag(_ text: String) -> String? {
             switch text.lowercased() {
             case "1", "true", "yes": "true"
@@ -350,8 +465,13 @@ public enum TagWriters {
             }
         }
         switch name.lowercased() {
-        case "disc", "discnumber": return ["--disk", value]
-        case "track": return ["--tracknum", value]
+        // Number atoms: AtomicParsley stores text as 0, or wraps a number
+        // too big, and exits 0 — a value it cannot hold stays custom.
+        case "disc", "discnumber": return isNumberPair(value) ? ["--disk", value] : nil
+        case "track": return isNumberPair(value) ? ["--tracknum", value] : nil
+        // 16 bits in AtomicParsley, whatever the atom's width: 70000 wrapped.
+        case "season_number": return UInt16(value).map { ["--TVSeasonNum", String($0)] }
+        case "episode_sort": return UInt16(value).map { ["--TVEpisodeNum", String($0)] }
         case "copyright": return ["--copyright", value]
         case "grouping": return ["--grouping", value]
         case "lyrics": return ["--lyrics", value]
@@ -363,9 +483,36 @@ public enum TagWriters {
         case "compilation": return flag(value).map { ["--compilation", $0] }
         case "gapless_playback": return flag(value).map { ["--gapless", $0] }
         case "hd_video": return flag(value).map { ["--hdvideo", $0] }
-        case "media_type": return Int(value).map { ["--stik", "value=\($0)"] }
+        case "media_type": return UInt8(value).map { ["--stik", "value=\($0)"] }
+        case "podcast": return flag(value).map { ["--podcastFlag", $0] }
+        case "category": return ["--category", value]
+        case "purchase_date": return ["--purchaseDate", value]
+        case "sort_name": return sortOrder("name")
+        case "sort_artist": return sortOrder("artist")
+        case "sort_album": return sortOrder("album")
+        case "sort_album_artist": return sortOrder("albumartist")
+        case "sort_composer": return sortOrder("composer")
+        case "sort_show": return sortOrder("show")
         default: return nil
         }
+    }
+
+    /// A standard field's AtomicParsley arguments. The track number goes
+    /// through `--tracknum`, which stores text as 0; a value it cannot
+    /// hold is kept as a custom atom instead.
+    static func parsleyArguments(forStandard atom: String, name: String, value: String) -> [String] {
+        if atom == "trkn", !isNumberPair(value) {
+            return ["--rDNSatom", value, "name=\(name)", "domain=com.apple.iTunes"]
+        }
+        return [parsleyFlag(for: atom), value]
+    }
+
+    /// `n` or `n/m`, each fitting the 16 bits the track and disc atoms hold.
+    static func isNumberPair(_ value: String) -> Bool {
+        let parts = value.trimmingCharacters(in: .whitespaces)
+            .split(separator: "/", omittingEmptySubsequences: false)
+        return (1...2).contains(parts.count)
+            && parts.allSatisfy { UInt16($0) != nil }
     }
 
     private static func parsleyFlag(for atom: String) -> String {

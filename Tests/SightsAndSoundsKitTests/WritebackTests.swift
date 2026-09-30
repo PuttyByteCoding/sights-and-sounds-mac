@@ -186,6 +186,65 @@ import Testing
         #expect(allSnapshots.contains { $0.source == .preRestore })
     }
 
+    /// Restore into a file with tags from the snapshot's `tagsJSON`.
+    private func restore(into name: String, make: [String], tagged: [String], snapshot tagsJSON: String)
+        async throws -> (JobRecord, String)?
+    {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return nil }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-restore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent(name)
+        try FfmpegTool.run(make + tagged + [file.path], tool: ffmpeg)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Restore")
+        let source = Source(name: "Here", rootPath: root.path)
+        let item = MediaItem(sourceID: source.id, kind: .video, relativePath: name, needsReview: false)
+        let snapshot = EmbeddedTagSnapshot(mediaItemID: item.id, source: .preWrite, tagsJSON: tagsJSON)
+        try await library.writer.write { db in
+            try source.insert(db)
+            try item.insert(db)
+            try snapshot.insert(db)
+        }
+        let runner = JobRunner(library: library)
+        let restore = try await RestoreTagsJob.enqueue(on: runner, snapshotID: snapshot.id)
+        try await runner.runPending()
+        let row = try await library.writer.read { try JobRecord.fetchOne($0, key: restore.id)! }
+        return (row, try TagWriters.readTagsJSON(url: file))
+    }
+
+    /// A restore aims at the snapshot's state. When the format can hold
+    /// none of the snapshot's fields, a file with no tags is that state as
+    /// near as the format allows, so the restore clears the file and says
+    /// so. It was refused instead: a camera .mov whose snapshot held only
+    /// its QuickTime make and model kept the title written over it, and
+    /// the write could not be undone.
+    @Test func aRestoreTheFormatCannotHoldStillClearsWhatWasWritten() async throws {
+        guard let (row, after) = try await restore(
+            into: "clip.mov",
+            make: ["-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libx264"],
+            tagged: ["-metadata", "title=Written Title"],
+            snapshot: #"{"format":{"tags":{"com.apple.quicktime.make":"Example","com.apple.quicktime.model":"Cam 1"}}}"#)
+        else { return }
+        #expect(row.state == .succeeded, "\(row.error ?? "")")
+        #expect(!after.contains("Written Title"), "the written title was not cleared")
+        #expect(row.summary?.contains("restored 0 of 2") == true, "\(row.summary ?? "")")
+    }
+
+    /// A .ts keeps no tags at all: restoring into one leaves it as it was
+    /// (tagless) and says none of the fields could be held.
+    @Test func aRestoreIntoAFileThatHoldsNoTagsSaysSo() async throws {
+        guard let (row, _) = try await restore(
+            into: "clip.ts",
+            make: ["-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "mpeg2video"],
+            tagged: [],
+            snapshot: #"{"format":{"tags":{"artist":"The Examples","album":"Live Sets"}}}"#)
+        else { return }
+        #expect(row.state == .succeeded, "\(row.error ?? "")")
+        #expect(row.summary?.contains("restored 0 of 2") == true, "\(row.summary ?? "")")
+    }
+
     @Test func itemsWithNoWritebackTagsAreSkippedHonestly() async throws {
         // A REAL file (so the offline check passes) whose categories have
         // write-back disabled — the skip must name the right reason.
