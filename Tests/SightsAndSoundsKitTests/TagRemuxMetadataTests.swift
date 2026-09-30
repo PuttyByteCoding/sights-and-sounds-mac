@@ -104,5 +104,138 @@ import Testing
         #expect(after.contains("\"New\""), "the new title was not written: \(after)")
         #expect(!after.contains("Old Artist"), "the old comments were kept: \(after)")
     }
-}
 
+    /// A snapshot restore marks every tag it does not know as custom — but
+    /// the MOV muxer writes many of them (disc, copyright, grouping…). The
+    /// remux wiped them from the file and named them "not written", so a
+    /// restore without AtomicParsley lost what the snapshot held. Only a
+    /// key the muxer really drops is named now.
+    @Test func aRestoreIntoAnM4AKeepsEveryKeyTheMuxerWrites() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-m4a-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", file.path], tool: ffmpeg)
+
+        let snapshot = #"{"format":{"tags":{"disc":"1/2","copyright":"Example Label","grouping":"Live Sets","foo":"bar"}}}"#
+        let fields = SnapshotRestore.fields(fromSnapshotJSON: snapshot)
+        let result = TagWriters.ffmpegRemuxWrite(fields: fields, url: file)
+        #expect(result.success, "\(result.error ?? "")")
+
+        let after = try TagWriters.readTagsJSON(url: file)
+        for value in ["1/2", "Example Label", "Live Sets"] {
+            #expect(after.contains(value), "\(value) was dropped: \(after)")
+        }
+        #expect(result.notWritten == ["FOO"], "\(result.notWritten)")
+    }
+
+    /// Ogg keeps its tags on a stream, and the remux wrote them onto the
+    /// first audio stream. A video-only .ogv has none: ffmpeg exited 0,
+    /// the old tags were cleared and the new ones went nowhere — a
+    /// success that lost every tag.
+    @Test func aVideoOnlyOggKeepsTheTagsItIsGiven() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-ogv-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("clip.ogv")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libvpx", file.path,
+        ], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "TITLE", mp4Atom: "©nam", mp4Freeform: false, values: ["Night One"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(try TagWriters.readTagsJSON(url: file).contains("Night One"), "the title went nowhere")
+    }
+
+    /// A .mov is written by the same muxer in QuickTime mode, which keeps
+    /// only seven keys. Album artist, grouping and the rest vanished from
+    /// a .mov under a success (AtomicParsley refuses .mov, so the remux is
+    /// its only writer). They are named as not written now.
+    @Test func aMovNamesTheKeysItsMuxerDrops() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-mov-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("clip.mov")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64", "-c:v", "libx264", file.path,
+        ], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "TITLE", mp4Atom: "©nam", mp4Freeform: false, values: ["Night One"]),
+            FieldWrite(vorbisName: "ALBUMARTIST", mp4Atom: "aART", mp4Freeform: false, values: ["The Examples"]),
+            FieldWrite(vorbisName: "GROUPING", mp4Atom: "GROUPING", mp4Freeform: true, values: ["Live Sets"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(try TagWriters.readTagsJSON(url: file).contains("Night One"))
+        #expect(Set(result.notWritten) == ["ALBUMARTIST", "GROUPING"], "\(result.notWritten)")
+    }
+
+    /// Some MP4 keys are numbers. Given text, the muxer stored 0 (a
+    /// category "Compilation: Summer Hits" set the compilation flag off)
+    /// or dropped it, and the write still read as a success. A value the
+    /// key cannot hold is named as not written.
+    @Test func aNumberKeyGivenTextIsNamedNotCoerced() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-remux-int-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run(["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", file.path], tool: ffmpeg)
+
+        let result = TagWriters.ffmpegRemuxWrite(fields: [
+            FieldWrite(vorbisName: "COMPILATION", mp4Atom: "COMPILATION", mp4Freeform: true, values: ["Summer Hits"]),
+            FieldWrite(vorbisName: "TRACK", mp4Atom: "TRACK", mp4Freeform: true, values: ["abc"]),
+            FieldWrite(vorbisName: "DISC", mp4Atom: "DISC", mp4Freeform: true, values: ["1/2"]),
+        ], url: file)
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(try TagWriters.readTagsJSON(url: file).contains("1/2"), "a valid disc number was dropped")
+        #expect(Set(result.notWritten) == ["COMPILATION", "TRACK"], "\(result.notWritten)")
+    }
+
+    /// With AtomicParsley, a restore wrote every tag it did not know as a
+    /// custom iTunes atom — disc, copyright and grouping included — after
+    /// `--metaEnema` had wiped the native ones. Music then showed none of
+    /// them, and the next snapshot kept the custom spellings. A restored
+    /// key with a native atom goes back to that atom.
+    @Test func aRestoreWithAtomicParsleyPutsNativeKeysBackNatively() async throws {
+        guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil,
+              let parsley = TagWriters.atomicParsleyPath()
+        else { return }   // AtomicParsley is not on CI; this runs where it is installed
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-parsley-restore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("song.m4a")
+        try FfmpegTool.run([
+            "-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac",
+            "-metadata", "disc=1/2", "-metadata", "copyright=Example Label",
+            "-metadata", "grouping=Live Sets", "-metadata", "compilation=1", file.path,
+        ], tool: ffmpeg)
+        let snapshot = try TagWriters.readTagsJSON(url: file)
+
+        let result = TagWriters.write(
+            fields: SnapshotRestore.fields(fromSnapshotJSON: snapshot), to: file,
+            tools: .init(metaflac: nil, atomicParsley: parsley, ffmpeg: ffmpeg))
+        #expect(result.success, "\(result.error ?? "")")
+        #expect(!result.usedRemuxFallback)
+
+        let after = try TagWriters.readTagsJSON(url: file)
+        // ffprobe reads native atoms under lower-case names and custom
+        // iTunes atoms under the name they were given.
+        for key in ["\"disc\"", "\"copyright\"", "\"grouping\"", "\"compilation\""] {
+            #expect(after.contains(key), "\(key) is no longer a native atom: \(after)")
+        }
+        for key in ["\"DISC\"", "\"COPYRIGHT\"", "\"GROUPING\"", "\"COMPILATION\""] {
+            #expect(!after.contains(key), "\(key) came back as a custom atom: \(after)")
+        }
+    }
+}

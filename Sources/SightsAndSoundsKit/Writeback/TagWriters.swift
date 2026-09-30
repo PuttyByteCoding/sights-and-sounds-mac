@@ -163,7 +163,9 @@ public enum TagWriters {
                 }
                 for field in fields {
                     let value = field.values.joined(separator: "; ")
-                    if field.mp4Freeform {
+                    if field.mp4Freeform, let native = parsleyNative(name: field.vorbisName, value: value) {
+                        arguments += native
+                    } else if field.mp4Freeform {
                         arguments += ["--rDNSatom", value, "name=\(field.vorbisName)", "domain=com.apple.iTunes"]
                     } else {
                         arguments += [parsleyFlag(for: field.mp4Atom), value]
@@ -219,19 +221,30 @@ public enum TagWriters {
         let isOgg = Self.oggFamily.contains(url.pathExtension.lowercased())
         var arguments = ["-i", url.path, "-map", "0", "-c", "copy",
                          isOgg ? "-map_metadata" : "-map_metadata:g", "-1"]
-        let metadataFlag = isOgg ? "-metadata:s:a:0" : "-metadata"
+        let metadataFlag = isOgg ? "-metadata:s:\(Self.oggTagStream(of: url))" : "-metadata"
         // ffmpeg's MP4/MOV muxer writes only the iTunes keys it knows.
         // `-movflags use_metadata_tags` would store custom ones too, but
         // moves EVERY tag into QuickTime keys that Music and Finder do
-        // not read — the title included. So the known fields are
-        // written, and the custom ones are named as not written rather
-        // than vanishing under a success.
+        // not read — the title included. So the keys it writes are
+        // written, and the rest are named as not written rather than
+        // vanishing under a success. Decided by the muxer's own keys, not
+        // by `mp4Freeform`: a snapshot restore marks every tag it does not
+        // know as freeform, disc and copyright included, which the muxer
+        // writes and which were wiped and not put back.
         let isMP4 = Self.mp4Family.contains(url.pathExtension.lowercased())
-        let notWritten = isMP4 ? fields.filter(\.mp4Freeform).map(\.vorbisName) : []
+        func muxerKey(_ field: FieldWrite) -> String {
+            // The MOV muxer knows some standard fields only by its own
+            // names; given the Vorbis ones it dropped them without a word.
+            isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+        }
+        let isMov = url.pathExtension.lowercased() == "mov"
+        let notWritten = isMP4
+            ? fields.filter {
+                !Self.mp4MuxerWrites(key: muxerKey($0), value: $0.values.joined(separator: "; "), mov: isMov)
+            }.map(\.vorbisName)
+            : []
         for field in fields where !notWritten.contains(field.vorbisName) {
-            // The MOV muxer knows these two only by its own names; given the
-            // Vorbis ones it dropped them without a word.
-            let key = isMP4 ? (Self.mp4MuxerKeys[field.vorbisName] ?? field.vorbisName) : field.vorbisName
+            let key = muxerKey(field)
             arguments += [metadataFlag, "\(key)=\(field.values.joined(separator: "; "))"]
         }
         arguments.append(temp.path)
@@ -249,7 +262,60 @@ public enum TagWriters {
     }
 
     /// Standard fields ffmpeg's MOV muxer writes under a name of its own.
-    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track"]
+    static let mp4MuxerKeys = ["ALBUMARTIST": "album_artist", "TRACKNUMBER": "track", "DISCNUMBER": "disc"]
+
+    /// The keys ffmpeg's MOV muxer writes as iTunes atoms — measured with
+    /// ffmpeg 9 by writing each and reading it back with ffprobe. It drops
+    /// every other key (performer, sort orders, tempo, custom names).
+    static let mp4MuxerWrites: Set<String> = [
+        "title", "artist", "album_artist", "composer", "album", "date", "comment", "genre",
+        "copyright", "grouping", "lyrics", "description", "synopsis", "show", "episode_id",
+        "network", "keywords", "media_type", "hd_video", "gapless_playback", "compilation",
+        "track", "disc",
+    ]
+
+    /// In a .mov the same muxer runs in QuickTime mode and keeps only
+    /// these (measured the same way). AtomicParsley refuses .mov, so this
+    /// is its only writer.
+    static let movMuxerWrites: Set<String> = ["title", "artist", "album", "date", "comment", "genre", "copyright"]
+
+    /// One-byte number atoms, and number pairs. Given text the muxer stores
+    /// 0 or drops the value — a category "Compilation: Summer Hits" set the
+    /// compilation flag off — and still exits 0.
+    static let mp4ByteKeys: Set<String> = ["media_type", "hd_video", "gapless_playback", "compilation"]
+    static let mp4PairKeys: Set<String> = ["track", "disc"]
+
+    /// Whether the muxer really stores `value` under `key` in this file.
+    static func mp4MuxerWrites(key: String, value: String, mov: Bool) -> Bool {
+        let key = key.lowercased()
+        guard (mov ? movMuxerWrites : mp4MuxerWrites).contains(key) else { return false }
+        let value = value.trimmingCharacters(in: .whitespaces)
+        if mp4ByteKeys.contains(key) {
+            return Int(value).map { (0...255).contains($0) } ?? false
+        }
+        if mp4PairKeys.contains(key) {
+            let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+            return (1...2).contains(parts.count) && parts.allSatisfy { Int($0) != nil }
+        }
+        return true
+    }
+
+    /// Which stream an Ogg file's tags go on: its first audio stream, as
+    /// readers expect, or — in a video-only .ogv, which has none — its
+    /// first stream. Aimed at a missing audio stream, ffmpeg exited 0 with
+    /// the old tags cleared and the new ones written nowhere.
+    static func oggTagStream(of url: URL) -> String {
+        guard let ffprobe = ffprobePath(),
+              let output = try? ProcessRunner.run(ffprobe, [
+                  "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+                  "-of", "csv=p=0", url.path,
+              ]),
+              output.status == 0
+        else { return "a:0" }
+        let audio = String(data: output.stdout, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return audio.isEmpty ? "0" : "a:0"
+    }
 
     /// Containers whose tags live on the stream as Vorbis comments.
     static let oggFamily: Set<String> = ["ogg", "oga", "ogv", "opus", "spx"]
@@ -265,6 +331,41 @@ public enum TagWriters {
     static func remuxScratchURL(for url: URL) throws -> URL {
         let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
         return try LibraryDatabase.workingURL(toReplace: url, fileExtension: ext)
+    }
+
+    /// A tag a snapshot restore does not know as a standard field, but
+    /// that has a native iTunes atom: it goes back to that atom. Written
+    /// as a custom iTunes atom instead — after `--metaEnema` had wiped the
+    /// native one — Music showed no disc, copyright or grouping, and the
+    /// next snapshot kept the custom spelling. Nil keeps it custom: no
+    /// native atom, or a value the native one cannot hold (text for a
+    /// yes/no flag), which is kept rather than lost.
+    static func parsleyNative(name: String, value: String) -> [String]? {
+        let value = value.trimmingCharacters(in: .whitespaces)
+        func flag(_ text: String) -> String? {
+            switch text.lowercased() {
+            case "1", "true", "yes": "true"
+            case "0", "false", "no": "false"
+            default: nil
+            }
+        }
+        switch name.lowercased() {
+        case "disc", "discnumber": return ["--disk", value]
+        case "track": return ["--tracknum", value]
+        case "copyright": return ["--copyright", value]
+        case "grouping": return ["--grouping", value]
+        case "lyrics": return ["--lyrics", value]
+        case "synopsis": return ["--longdesc", value]
+        case "show": return ["--TVShowName", value]
+        case "episode_id": return ["--TVEpisode", value]
+        case "network": return ["--TVNetwork", value]
+        case "keywords": return ["--keyword", value]
+        case "compilation": return flag(value).map { ["--compilation", $0] }
+        case "gapless_playback": return flag(value).map { ["--gapless", $0] }
+        case "hd_video": return flag(value).map { ["--hdvideo", $0] }
+        case "media_type": return Int(value).map { ["--stik", "value=\($0)"] }
+        default: return nil
+        }
     }
 
     private static func parsleyFlag(for atom: String) -> String {
