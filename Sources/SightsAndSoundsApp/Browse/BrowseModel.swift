@@ -1276,12 +1276,6 @@ final class BrowseModel {
         }
     }
 
-    func reorganize(template: String, itemIDs: [UUID]) {
-        runOperation { runner in
-            _ = try await ReorganizeJob.enqueue(on: runner, template: template, itemIDs: itemIDs)
-        }
-    }
-
     func writeTags(itemIDs: [UUID], scope: String) {
         runOperation { runner in
             _ = try await WritebackJob.enqueue(on: runner, itemIDs: itemIDs, scopeDescription: scope)

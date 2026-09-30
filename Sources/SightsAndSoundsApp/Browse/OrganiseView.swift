@@ -29,8 +29,17 @@ struct OrganiseView: View {
     @State private var sessions: [LibraryDatabase.MoveSession] = []
     @State private var status: String?
     @State private var errorText: String?
-    /// A reorganize this window queued is still running.
+    /// Move is being queued.
     @State private var applying = false
+    /// A reorganize of this library is queued or running — from this
+    /// window or any other. Move waits for it: behind a long queue the plan
+    /// on screen would otherwise offer the same moves again, and a second
+    /// run with an edited template would move the files twice, into a
+    /// session whose put-back restores the first layout, not the original.
+    @State private var movesPending = false
+    /// This library's runner is paused (globally, or its lane from Background
+    /// Tasks), so queued moves will not run until it resumes.
+    @State private var queuePaused = false
     /// The grid's items when the window opened; nil is the whole library.
     let scope: [UUID]?
 
@@ -55,6 +64,36 @@ struct OrganiseView: View {
         // child, so a listing refresh does not re-render this window.
         .background {
             if scope == nil { ListingSizeWatch(model: model) { preview(settle: .milliseconds(300)) } }
+        }
+        // Whether a reorganize of this library is waiting, from any window:
+        // Move waits for it. Observed, not polled, and it stops with the
+        // window. Seeing one starts the queue unless tasks are paused.
+        .task {
+            guard let runner = try? app.runner(for: model.libraryID) else { return }
+            do {
+                for try await count in OrganiseMove.pending(in: model.library, runner: runner) {
+                    movesPending = count > 0
+                    // The queue has confirmed the moves: Move can stop
+                    // saying it is queueing them.
+                    if count > 0 { applying = false }
+                }
+            } catch {
+                movesPending = false
+            }
+        }
+        // Pausing writes nothing to the queue, so the observation above
+        // cannot see it. Only while moves wait, the runner's own flag is
+        // read every two seconds — the per-library pause lives there, not
+        // in the app-wide one.
+        .task(id: movesPending) {
+            guard movesPending, let runner = try? app.runner(for: model.libraryID) else {
+                queuePaused = false
+                return
+            }
+            while !Task.isCancelled {
+                queuePaused = await runner.isPaused
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
         // Moves (a revert from another window, a run finishing) change
         // the history and what the plan would do.
@@ -106,8 +145,10 @@ struct OrganiseView: View {
         }
     }
 
-    /// Says why Move is unavailable while a newer plan is being made.
+    /// Says why Move is unavailable: moves already queued, or a newer
+    /// plan still being made.
     private var moveTitle: String {
+        if movesPending { return queuePaused ? "Moves queued — tasks paused" : "Moves queued…" }
         if !planner.isCurrent { return "Updating plan…" }
         let count = planner.plan.movableCount
         return count == 0 ? "Nothing to move" : "Move \(count) items"
@@ -308,7 +349,7 @@ struct OrganiseView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
-                .disabled(applying || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
+                .disabled(applying || movesPending || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
                     .foregroundStyle(Theme.Text.disabled)
@@ -467,14 +508,16 @@ struct OrganiseView: View {
         let count = planner.plan.movableCount
         Task {
             do {
-                _ = try await ReorganizeJob.enqueue(
-                    on: runner, template: template, itemIDs: ids)
-                // Said now, not once the whole queue has drained.
+                // Returns once queued: history and the plan refresh when
+                // the moves land (the window follows the library's items).
+                try await OrganiseMove.queue(on: runner, template: template, ids: ids)
                 status = "\(count) moves queued — each one logged and revertible"
-                try await runner.runPending()
+                // Move stays unavailable until the queue confirms the moves
+                // (then "Moves queued…" takes over), so a second click
+                // cannot land in between. Two seconds at most: a run that
+                // finished that fast is never reported as pending at all.
+                try? await Task.sleep(for: .seconds(2))
                 applying = false
-                reloadHistory()
-                preview()
             } catch {
                 applying = false
                 errorText = "\(error)"
