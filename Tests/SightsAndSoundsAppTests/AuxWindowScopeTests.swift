@@ -38,6 +38,18 @@ import Testing
         }
         // Other windows are about the library, not the listing.
         #expect(model.auxRequest(.review).scopeItemIDs == nil)
+
+        // The Window menu (⌥⌘4, ⌥⌘5) opens the same window the toolbar
+        // does: it built a bare request, so Maintenance opened on the
+        // whole library and a second window beside the toolbar's.
+        for kind in AuxWindowRequest.Kind.allCases {
+            #expect(ViewMenuCommands.request(kind, libraryID: model.libraryID, browse: model)
+                    == model.auxRequest(kind), "\(kind)")
+        }
+        // A focused grid of another library lends nothing.
+        let elsewhere = UUID()
+        #expect(ViewMenuCommands.request(.maintenance, libraryID: elsewhere, browse: model)
+                == AuxWindowRequest(libraryID: elsewhere, kind: .maintenance))
     }
 
     /// Windows saved before the scope existed reopen on the whole library.
