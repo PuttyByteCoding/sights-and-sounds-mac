@@ -167,4 +167,38 @@ import Testing
         try await waitUntil { !model.isApplying && model.lastApplied != nil }
         #expect(model.loadError == nil)
     }
+
+    /// Apply runs off the main actor. Choosing another rule meanwhile
+    /// cleared the result pane, and then the finished Apply wrote its
+    /// result into it — "Rule applied" under a rule that was not.
+    @Test func anApplyResultLandsOnlyOnTheRuleApplied() async throws {
+        let model = try model()
+        let applied = try #require(model.draft)
+        model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: .keyEquals(key: "artist"), actions: [.ignore]) }
+        model.saveDraft()
+        model.addRule()   // another rule, selected
+        model.select(try #require(model.rules.first { $0.id == applied.id }))
+        model.applySelected()
+        model.select(try #require(model.rules.first { $0.id != applied.id }))
+        try await waitUntil { !model.isApplying }
+        #expect(model.lastApplied == nil, "the other rule's pane shows the applied rule's result")
+    }
+
+    /// A request replaced in the same turn never walks. It ran anyway when
+    /// it had no pause to wait out, and the one replacing it then found a
+    /// walk running and queued a second: two whole-queue walks for one
+    /// action (a new rule from triage reloads, then selects).
+    @Test func aReplacedImmediateRequestNeverWalks() async throws {
+        let model = try model()
+        try await waitUntil { model.dryRun != nil }
+        let walks = GatedWalks()
+        model.walkDryRun = walks.walk
+        model.refreshDryRun()
+        model.refreshDryRun()
+        try await waitUntil { walks.started >= 1 }
+        walks.open()
+        try await waitUntil { walks.finished >= 1 }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(walks.started == 1, "the replaced request walked too")
+    }
 }

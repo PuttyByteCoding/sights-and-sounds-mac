@@ -104,10 +104,11 @@ final class RulesTabModel {
             return
         }
         dryRunTask = Task {
-            if settle > .zero {
-                try? await Task.sleep(for: settle)
-                guard !Task.isCancelled else { return }
-            }
+            if settle > .zero { try? await Task.sleep(for: settle) }
+            // Also for an immediate request: one replaced in the same turn
+            // must not walk, or the one replacing it finds a walk running
+            // and queues a second for the same draft.
+            guard !Task.isCancelled else { return }
             startDryRunWalk()
         }
     }
@@ -257,7 +258,10 @@ final class RulesTabModel {
             isApplying = false
             switch outcome {
             case .success(let applied):
-                lastApplied = applied
+                // Only on the pane of the rule that was applied: choosing
+                // another meanwhile cleared the result, and this used to
+                // write it back under the other rule.
+                if selectedID == selected.id { lastApplied = applied }
                 reload()
             case .failure(let error):
                 loadError = "\(error)"
