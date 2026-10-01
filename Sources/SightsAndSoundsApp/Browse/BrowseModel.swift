@@ -1479,12 +1479,19 @@ enum GridFocus {
 /// it shows — once things settle, not per delivery: an import commits up
 /// to ten deliveries a second, and some windows' reloads open every
 /// backup or stat every staged file. The count the window opened with is
-/// not a change.
+/// not a change. But never more than `longestSettle` after a burst began:
+/// each change put the settle back, and through an import Review,
+/// Maintenance and Tag Manager did not reload until it stopped. (Organise's
+/// planner caps its settle the same way.)
 struct FollowsLibraryChanges: ViewModifier {
     let model: BrowseModel
     let domains: Set<LibraryChangeDomain>
     let reload: () -> Void
     @State private var seen: Int?
+    /// When the unanswered changes began.
+    @State private var burstStarted: ContinuousClock.Instant?
+    static let settle: Duration = .milliseconds(400)
+    static let longestSettle: Duration = .seconds(2)
 
     func body(content: Content) -> some View {
         // Read here, in the modifier's own body, not the window's: read in
@@ -1501,9 +1508,16 @@ struct FollowsLibraryChanges: ViewModifier {
                     return
                 }
                 guard count != seen else { return }
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !Task.isCancelled else { return }
+                let now = ContinuousClock.now
+                let started = burstStarted ?? now
+                burstStarted = started
+                let wait = min(Self.settle, Self.longestSettle - (now - started))
+                if wait > .zero {
+                    try? await Task.sleep(for: wait)
+                    guard !Task.isCancelled else { return }
+                }
                 self.seen = count
+                burstStarted = nil
                 reload()
             }
     }
