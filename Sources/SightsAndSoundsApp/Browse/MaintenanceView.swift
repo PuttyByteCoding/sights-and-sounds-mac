@@ -23,7 +23,11 @@ struct MaintenanceView: View {
         }
     }
 
-    @State private var reloadGeneration = 0
+    @State private var reloading = false
+
+    @State private var reloadAgain = false
+
+    @State private var reloadWantsBackups = false
     @State private var tab: Tab = .writeback
     @State private var preview: WritebackPreview?
     @State private var previewing = false
@@ -62,7 +66,9 @@ struct MaintenanceView: View {
         .frame(minWidth: 960, minHeight: 600)
         .background(Theme.Surface.content)
         .onAppear { reload() }
-        .followsLibraryChanges(model, [.items]) { reload() }
+        // Items only: the backup list cannot change with them, and reading
+        // it opens every backup — every two seconds through an import.
+        .followsLibraryChanges(model, [.items]) { reload(includingBackups: false) }
     }
 
     // MARK: - Header
@@ -660,19 +666,29 @@ struct MaintenanceView: View {
 
     /// Everything the window shows, read off the main actor: the backup
     /// list opens every backup file, the reclaimable size sums every
-    /// staged file, and this runs after every button press. The last
-    /// reload asked for is the one that lands.
-    private func reload() {
+    /// staged file, and this runs after every button press. One reload at
+    /// a time: one asked for while another runs is folded into a single
+    /// run after it (a slow volume made them pile up, each opening every
+    /// backup), so the last asked for is still the last to land.
+    private func reload(includingBackups: Bool = true) {
+        reloadWantsBackups = reloadWantsBackups || includingBackups
+        guard !reloading else {
+            reloadAgain = true
+            return
+        }
+        reloading = true
+        let withBackups = reloadWantsBackups
+        reloadWantsBackups = false
         let library = model.library
-        reloadGeneration += 1
-        let generation = reloadGeneration
         Task {
             // One typed statement per read: the CI toolchain cannot
             // type-check the reads as one tuple expression in time.
             let read = await Task.detached(priority: .userInitiated) { () -> MaintenanceSnapshot in
                 var snapshot = MaintenanceSnapshot()
                 snapshot.findings = (try? library.validationFindings()) ?? []
-                snapshot.backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
+                if withBackups {
+                    snapshot.backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
+                }
                 let runs: [TagWriteRun]? = try? library.writer.read { db in
                     try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
                 }
@@ -684,12 +700,16 @@ struct MaintenanceView: View {
                 snapshot.reclaimable = (try? library.reclaimableBytes()) ?? 0
                 return snapshot
             }.value
-            guard generation == reloadGeneration else { return }
             findings = read.findings
-            backups = read.backups
+            if withBackups { backups = read.backups }
             runs = read.runs
             stagedCount = read.staged
             reclaimable = read.reclaimable
+            reloading = false
+            if reloadAgain {
+                reloadAgain = false
+                reload(includingBackups: false)
+            }
         }
     }
 }

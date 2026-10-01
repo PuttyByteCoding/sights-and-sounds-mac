@@ -117,32 +117,39 @@ import Testing
 
         // Changes closer together than the plain settle, for longer than
         // `longestSettle`; each one waited for, so the hub cannot merge the
-        // stream into one delivery. Only the cap can reload inside it.
+        // stream into one delivery. Only the cap can reload inside it — if
+        // the machine keeps up: a gap as long as the settle lets it reload
+        // without the cap, and such a run proves nothing either way. So a
+        // run that stalled is tried again, and if none keeps up the test
+        // fails rather than passing having tested nothing.
         let clock = ContinuousClock()
-        let started = clock.now
-        let streamEnd = started + .seconds(4)
-        var lastDelivered: ContinuousClock.Instant?
-        var longestGap: Duration = .zero
         var n = 0
-        while clock.now < streamEnd, counter.reloads == 0 {
-            let before = model.changeCount([.vocabulary])
-            let name = "Band \(n)"
-            n += 1
-            try await library.writer.write { try TagCategory(name: name).insert($0) }
-            try await waitFor { model.changeCount([.vocabulary]) > before }
-            let now = clock.now
-            if let lastDelivered { longestGap = max(longestGap, now - lastDelivered) }
-            lastDelivered = now
-            try await settle(0.1)
+        for _ in 0..<3 {
+            let reloadsBefore = counter.reloads
+            let started = clock.now
+            let streamEnd = started + .seconds(4)
+            var lastDelivered: ContinuousClock.Instant?
+            var longestGap: Duration = .zero
+            while clock.now < streamEnd, counter.reloads == reloadsBefore {
+                let before = model.changeCount([.vocabulary])
+                let name = "Band \(n)"
+                n += 1
+                try await library.writer.write { try TagCategory(name: name).insert($0) }
+                try await waitFor { model.changeCount([.vocabulary]) > before }
+                let now = clock.now
+                if let lastDelivered { longestGap = max(longestGap, now - lastDelivered) }
+                lastDelivered = now
+                try await settle(0.1)
+            }
+            let reloadedAfter = clock.now - started
+            if longestGap < FollowsLibraryChanges.settle {
+                #expect(counter.reloads > reloadsBefore, "no reload while the changes kept coming")
+                #expect(reloadedAfter < .seconds(3), "the first reload came \(reloadedAfter) into the stream")
+                return
+            }
+            // Let this run's reload land before the next begins.
+            try await settle(2.5)
         }
-        let reloadedAfter = clock.now - started
-        // Only meaningful when the machine kept up: a gap as long as the
-        // plain settle lets it reload without the cap, and passing then
-        // would prove nothing. (The same holds the other way: such a run
-        // cannot fail.)
-        if longestGap < FollowsLibraryChanges.settle {
-            #expect(counter.reloads >= 1, "no reload while the changes kept coming")
-            #expect(reloadedAfter < .seconds(3), "the first reload came \(reloadedAfter) into the stream")
-        }
+        Issue.record("no run kept every gap under the settle: the cap was not tested")
     }
 }
