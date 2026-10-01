@@ -3,10 +3,12 @@ import GRDB
 
 /// What a file's new bytes are.
 enum FileChange {
-    /// The same streams, copied: a tag write, a restore, a remux.
+    /// The same streams, copied: a tag write, a restore, a remux to move
+    /// the index.
     case sameStreams
-    /// The streams themselves may differ: a repair (a re-encode, or a copy
-    /// that drops what will not decode or a stream), a size found changed
+    /// The streams themselves may differ: a repair (a re-encode, a copy
+    /// that drops what will not decode or a stream, or a new container
+    /// whose timing is what Media Signal reads), a size found changed
     /// on disk, a swap finished after a crash.
     case newStreams
 }

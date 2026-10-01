@@ -294,6 +294,25 @@ import Testing
         #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 
+    /// Remux as a repair writes a new container, and frame timing is read
+    /// off the container: the old one's readings went on describing it.
+    /// (Optimize only moves the index, and keeps them.)
+    @Test func aRemuxRepairForgetsWhatMediaSignalReadOfTheOldContainer() async throws {
+        let f = try await OpsFixture()
+        defer { f.tearDown() }
+        try await stampOldHash(f)
+
+        let record = try await RemuxJob.enqueue(on: f.runner, itemID: f.parent.id, mode: .repair)
+        try await f.runner.runPending()
+        let job = try await f.job(record.id)
+        #expect(job.state == .succeeded, "\(job.error ?? "")")
+
+        let state = try await hashState(f)
+        #expect(state.hash == nil)
+        #expect(state.signalRows == 0, "Media Signal still describes the old container")
+        #expect(state.failureMarks == 0)
+    }
+
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
         let f = try await OpsFixture()
         defer { f.tearDown() }

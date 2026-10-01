@@ -104,8 +104,11 @@ public struct RemuxJob: Job {
             updated.fileSize = newSize
             updated.bitrate = finalBitrate ?? updated.bitrate
             try updated.updateWithSegmentPaths(db)
-            // New bytes: the next sweeps hash and read it afresh.
-            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .sameStreams, in: db)
+            // New bytes: the next sweeps hash and read it afresh. A repair
+            // writes a new container, and frame timing is read off the
+            // container; optimize only moves the index.
+            try LibraryDatabase.forgetReadingsOfChangedFile(
+                item.id, payload.mode == .repair ? .newStreams : .sameStreams, in: db)
             try swap.clear(db)
         }
         await context.reportProgress(current: 3, total: 3)
