@@ -214,20 +214,39 @@ import Testing
                 fileSize: 1, contentHash: "old-bytes", needsReview: false)
             try twin.insert(db)
             try DuplicateCandidate(itemA: f.parent.id, itemB: twin.id, source: .contentHash, confidence: 1).insert(db)
+            // Pairs that must survive: one somebody answered (it blocks
+            // re-flagging for good), and one matched by sound, which a
+            // change of bytes keeps.
+            let answered = MediaItem(
+                sourceID: f.parent.sourceID, kind: .video, relativePath: "shows/answered.mp4",
+                fileSize: 1, contentHash: "old-bytes", needsReview: false)
+            let soundAlike = MediaItem(
+                sourceID: f.parent.sourceID, kind: .video, relativePath: "shows/sound-alike.mp4",
+                fileSize: 1, needsReview: false)
+            try answered.insert(db)
+            try soundAlike.insert(db)
+            var rejected = DuplicateCandidate(itemA: f.parent.id, itemB: answered.id, source: .contentHash, confidence: 1)
+            rejected.status = .rejected
+            try rejected.insert(db)
+            try DuplicateCandidate(itemA: f.parent.id, itemB: soundAlike.id, source: .fingerprint, confidence: 0.9).insert(db)
         }
     }
 
-    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int) {
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int) {
         try await f.library.writer.read { db in
             let item = try MediaItem.fetchOne(db, key: f.parent.id)!
             let failures = try ContentHashFailure
                 .filter(sql: "mediaItemID = ?", arguments: [f.parent.id]).fetchCount(db)
             let swept = try MetadataSweepState.fetchOne(db, key: f.parent.id) != nil
             let twinPairs = try DuplicateCandidate
-                .filter(sql: "source = 'contentHash' AND (itemAID = ? OR itemBID = ?)",
+                .filter(sql: "status = 'pending' AND source = 'contentHash' AND (itemAID = ? OR itemBID = ?)",
                         arguments: [f.parent.id, f.parent.id])
                 .fetchCount(db)
-            return (item.contentHash, failures, swept, twinPairs)
+            let kept = try DuplicateCandidate
+                .filter(sql: "(status <> 'pending' OR source <> 'contentHash') AND (itemAID = ? OR itemBID = ?)",
+                        arguments: [f.parent.id, f.parent.id])
+                .fetchCount(db)
+            return (item.contentHash, failures, swept, twinPairs, kept)
         }
     }
 
@@ -245,6 +264,7 @@ import Testing
         #expect(state.failures == 0)
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
+        #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
     }
 
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
@@ -263,6 +283,7 @@ import Testing
         #expect(state.failures == 0)
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
+        #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
     }
 
     /// The repair swaps the file first, then puts the flagged file back
@@ -295,6 +316,7 @@ import Testing
         #expect(state.failures == 0)
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
+        #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
     }
 
     @Test func remuxRefusesClipsAndMissingFiles() async throws {
