@@ -156,7 +156,9 @@ struct TagAnalysisView: View {
     }
 
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
-        guard let id = model.currentItemID,
+        // Not while this video's sweep is still waiting: it is unswept
+        // until that runs, and each walk away and back queued another.
+        guard let id = model.currentItemID, !model.isWaitingOnJob,
               (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
         else { return }
         model.beginSweep(for: id)
