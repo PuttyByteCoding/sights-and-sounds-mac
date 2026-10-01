@@ -238,8 +238,43 @@ final class TagAnalysisModel {
 
     /// The sweep runs on the job runner; the model only tracks that one
     /// is in flight.
-    func beginSweep() { isLoading = true }
-    func finishSweep() { reload() }
+    /// A scan or rescan is waiting for its own job — unlike `isLoading`,
+    /// which every reload sets, and clears, for analysis that never touches
+    /// the queue: a reload landing mid-sweep (opening the companion, walking
+    /// to the next video) used to end the wait on screen. Counted per video:
+    /// two sweeps of one video can overlap, and a minutes-long OCR scan of
+    /// one video must not hold every video walked to after it.
+    var isWaitingOnJob: Bool {
+        guard let item = currentItemID else { return false }
+        return Wait.allCases.contains { jobsWaitedOn[WaitKey(item: item, wait: $0)] != nil }
+    }
+
+    /// A metadata sweep of this video is waiting — what holds back the
+    /// automatic one. A text scan does not: when a tag write cleared the
+    /// video's sweep mid-scan, nothing asked for the sweep again.
+    var isWaitingOnMetadataSweep: Bool {
+        currentItemID.map { jobsWaitedOn[WaitKey(item: $0, wait: .metadataSweep)] != nil } ?? false
+    }
+
+    enum Wait: CaseIterable { case metadataSweep, textScan }
+    private struct WaitKey: Hashable {
+        let item: UUID
+        let wait: Wait
+    }
+    private var jobsWaitedOn: [WaitKey: Int] = [:]
+
+    func beginSweep(for itemID: UUID, _ wait: Wait = .metadataSweep) {
+        isLoading = true
+        jobsWaitedOn[WaitKey(item: itemID, wait: wait), default: 0] += 1
+    }
+
+    func finishSweep(for itemID: UUID, _ wait: Wait = .metadataSweep) {
+        let key = WaitKey(item: itemID, wait: wait)
+        let left = (jobsWaitedOn[key] ?? 0) - 1
+        jobsWaitedOn[key] = left > 0 ? left : nil
+        // Its results are only on screen if its video is.
+        if itemID == currentItemID { reload() }
+    }
 
     func select(_ id: AnalysisCandidate.ID?) {
         selectedCandidateID = id

@@ -210,6 +210,38 @@ public actor JobRunner {
         }
     }
 
+    /// Start the queue and wait for these jobs — not the whole queue —
+    /// to settle. For a caller that shows its own work in progress: one
+    /// that waited for `runPending` also waited for every job queued after
+    /// its own. (Jobs queued before it still run first; `runNext` moves a
+    /// job somebody is waiting on to the front.) Observed, not polled. On
+    /// a paused runner it waits until Resume, as the jobs do. A cancelled
+    /// wait throws rather than reporting the jobs settled.
+    public func waitUntilSettled(_ jobIDs: [UUID]) async throws {
+        guard !jobIDs.isEmpty else { return }
+        try await waitUntilNonePending(JobRecord.filter(jobIDs.contains(Column("id"))))
+    }
+
+    /// The same, for a request `enqueueUnlessPending` folded into one
+    /// already queued: it has no job of its own, so it waits for the
+    /// kind's pending job instead.
+    public func waitUntilNonePending(of kind: String) async throws {
+        try await waitUntilNonePending(JobRecord.filter(Column("kind") == kind))
+    }
+
+    private func waitUntilNonePending(_ jobs: QueryInterfaceRequest<JobRecord>) async throws {
+        startDraining()
+        let pending = [JobState.queued.rawValue, JobState.running.rawValue]
+        let counts = ValueObservation
+            .tracking { try jobs.filter(pending.contains(Column("state"))).fetchCount($0) }
+            .removeDuplicates()
+            .values(in: library.writer)
+        for try await count in counts where count == 0 { return }
+        // The observation ends quietly when the task is cancelled; that
+        // is not the jobs settling.
+        try Task.checkCancellation()
+    }
+
     private func drainQueue() async throws -> [UUID] {
         // Cleared in the same actor turn that finds the queue empty, so
         // a caller either joins a loop that will look again or starts

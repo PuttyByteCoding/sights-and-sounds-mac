@@ -125,3 +125,24 @@ public struct MetadataSweepJob: Job {
                 : "\(swept) items, \(pairsFound) pairs, \(failed) failed")
     }
 }
+
+extension LibraryDatabase {
+    /// The scoped sweep naming this item queued or running, if there is
+    /// one — from the queue itself, so a Tag Analysis window reopened while
+    /// its sweep waits waits on that sweep rather than queueing another.
+    /// A library-wide sweep (no payload) does not count: it can take days,
+    /// and the scoped one is moved ahead of it.
+    public func pendingMetadataSweep(of itemID: UUID) throws -> UUID? {
+        try writer.read { db in
+            let pending = [JobState.queued.rawValue, JobState.running.rawValue]
+            let rows = try JobRecord
+                .filter(Column("kind") == MetadataSweepJob.kind && pending.contains(Column("state")))
+                .fetchAll(db)
+            return rows.first { row in
+                row.payload
+                    .flatMap { try? JSONDecoder().decode(MetadataSweepJob.Payload.self, from: $0) }?
+                    .itemIDs.contains(itemID) == true
+            }?.id
+        }
+    }
+}

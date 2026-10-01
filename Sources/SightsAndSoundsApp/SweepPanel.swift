@@ -15,7 +15,17 @@ struct SweepPanel: View {
 
     @State private var libraryID: UUID?
     @State private var statuses: [SweepKind: SweepStatus] = [:]
-    @State private var running: Set<SweepKind> = []
+    /// Per library: the picker can switch libraries while a sweep runs,
+    /// and a row showed another library's sweep as its own (and the pause
+    /// watch read the wrong library's queue).
+    @State private var running: [UUID: Set<SweepKind>] = [:]
+    @State private var queuePaused = false
+    /// Only the newest read lands: an older one — another library before
+    /// the picker changed, or a slower read of this one — finished last
+    /// and put its counts under the library on screen.
+    @State private var statusGeneration = 0
+
+    private var runningHere: Set<SweepKind> { libraryID.flatMap { running[$0] } ?? [] }
     @State private var confirmRecalc: SweepKind?
     @State private var errorText: String?
 
@@ -89,6 +99,7 @@ struct SweepPanel: View {
             refreshStatuses()
         }
         .onChange(of: libraryID) { _, _ in refreshStatuses() }
+        .watchingQueuePause($queuePaused, while: !runningHere.isEmpty, libraryID: libraryID)
         .confirmationDialog(
             "Recalculate \(confirmRecalc?.title ?? "")?",
             isPresented: Binding(
@@ -131,8 +142,14 @@ struct SweepPanel: View {
                         status.failed == 0 ? Theme.Text.zeroCount : Theme.Status.red)
             }
 
-            if running.contains(kind) {
-                ProgressView().controlSize(.small)
+            if runningHere.contains(kind) {
+                if queuePaused {
+                    Text("tasks paused")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.disabled)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
             }
             Button("Verify") { verify(kind) }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
@@ -150,13 +167,15 @@ struct SweepPanel: View {
                     ? "Forget every item's stored data for this kind, then rebuild"
                     : "Rejected pairs stay rejected — rerunning the check is Verify")
         }
-        .disabled(running.contains(kind))
+        .disabled(runningHere.contains(kind))
         .padding(.vertical, 4)
     }
 
     // MARK: - Actions
 
     private func refreshStatuses() {
+        statusGeneration += 1
+        let generation = statusGeneration
         guard let libraryID, let library = try? app.library(for: libraryID) else {
             statuses = [:]
             return
@@ -168,7 +187,10 @@ struct SweepPanel: View {
             next[.metadata] = try? library.metadataSweepStatus()
             next[.signal] = try? library.signalStatus()
             next[.thumbnails] = try? library.thumbnailStatus(libraryID: libraryID)
-            await MainActor.run { statuses = next }
+            await MainActor.run {
+                guard generation == statusGeneration else { return }
+                statuses = next
+            }
         }
     }
 
@@ -177,31 +199,40 @@ struct SweepPanel: View {
               let library = try? app.library(for: libraryID),
               let runner = try? app.runner(for: libraryID)
         else { return }
-        running.insert(kind)
+        running[libraryID, default: []].insert(kind)
         errorText = nil
         Task {
             do {
                 try prepare(library)
+                let kinds: [String]
                 switch kind {
                 case .contentHash:
                     _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+                    kinds = [ContentHashJob.kind]
                 case .fingerprint:
                     _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
+                    kinds = [FingerprintCaptureJob.kind]
                 case .metadata:
                     _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                    kinds = [MetadataSweepJob.kind]
                 case .signal:
                     _ = try await runner.enqueueUnlessPending(MediaSignalJob.self)
+                    kinds = [MediaSignalJob.kind]
                 case .thumbnails:
                     _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
+                    kinds = [ThumbnailBatchJob.kind]
                 case .duplicates:
                     _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
                     _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
+                    kinds = [HashDuplicateSweepJob.kind, FingerprintMatchSweepJob.kind]
                 }
-                try await runner.runPending()
+                // This row's sweep, not the whole queue: each row stayed
+                // "running" until every other sweep queued had finished.
+                for kind in kinds { try await runner.waitUntilNonePending(of: kind) }
             } catch {
                 errorText = "\(error)"
             }
-            running.remove(kind)
+            running[libraryID]?.remove(kind)
             refreshStatuses()
         }
     }

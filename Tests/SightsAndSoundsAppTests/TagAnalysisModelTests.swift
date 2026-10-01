@@ -70,6 +70,95 @@ import Testing
         #expect(names.contains("New Person"))
     }
 
+    /// "Waiting — tasks are paused" is for a scan waiting on its own job.
+    /// Every reload sets `isLoading` too, for analysis that never touches
+    /// the queue; keyed on that, a paused queue flashed the message on each
+    /// item change and decision.
+    @Test func onlyAScanCountsAsWaitingOnAJob() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!model.isWaitingOnJob, "an ordinary reload counted as waiting on a job")
+        try await settle(model)
+
+        model.beginSweep(for: items[0].id)
+        #expect(model.isWaitingOnJob)
+        model.finishSweep(for: items[0].id)
+        #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
+    /// A reload ends by clearing `isLoading`, and opening the companion or
+    /// walking to the next video reloads at the same moment as the
+    /// automatic sweep begins: the wait was hidden, the header showed the
+    /// unswept counts and Rescan came back on, mid-sweep. And one flag
+    /// could not hold two sweeps: the first to finish cleared it for both.
+    @Test func aWaitOutlastsReloadsAndCountsEachSweep() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        model.beginSweep(for: items[0].id)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(model.isWaitingOnJob, "a reload ended the wait for a sweep still queued")
+
+        model.beginSweep(for: items[0].id)
+        model.finishSweep(for: items[0].id)
+        #expect(model.isWaitingOnJob, "the first sweep to finish ended the wait for both")
+        model.finishSweep(for: items[0].id)
+        #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
+    /// A wait is the video's it was begun for. Counted for the window, a
+    /// minutes-long OCR scan of one video held every video walked to after
+    /// it on "scanning…", with both scan buttons off.
+    @Test func aWaitBelongsToItsVideo() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        model.beginSweep(for: items[0].id)
+
+        session.playerDidShow(itemID: items[1].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(!model.isWaitingOnJob, "another video's scan held this one")
+
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(model.isWaitingOnJob, "back on the video, its scan is still waiting")
+        model.finishSweep(for: items[0].id)
+        try await settle(model)
+    }
+
+    /// The automatic metadata sweep is held back only by a metadata sweep
+    /// of that video still waiting. A text scan held it back too, and when
+    /// a tag write cleared the video's sweep mid-scan, nothing asked for
+    /// the sweep again: the tags from before the write stayed on screen.
+    @Test func aTextScanDoesNotHoldBackTheMetadataSweep() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+
+        model.beginSweep(for: items[0].id, .textScan)
+        #expect(model.isWaitingOnJob, "the header and buttons still show the scan")
+        #expect(!model.isWaitingOnMetadataSweep, "a text scan held back the metadata sweep")
+        model.beginSweep(for: items[0].id, .metadataSweep)
+        #expect(model.isWaitingOnMetadataSweep)
+        model.finishSweep(for: items[0].id, .metadataSweep)
+        #expect(!model.isWaitingOnMetadataSweep)
+        #expect(model.isWaitingOnJob, "the text scan is still waiting")
+        model.finishSweep(for: items[0].id, .textScan)
+        #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
     @Test func movingToAnotherItemCountsAVisitAndClearsTheSelection() async throws {
         let (session, items, _) = try await makeSession()
         let model = TagAnalysisModel(session: session)

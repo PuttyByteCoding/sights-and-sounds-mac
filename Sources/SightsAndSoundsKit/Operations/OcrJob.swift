@@ -258,3 +258,21 @@ public struct OcrJob: Job {
         }
     }
 }
+
+extension LibraryDatabase {
+    /// The scan of this item queued or running, if there is one — from the
+    /// queue itself, so a view rebuilt while a scan waits (the player's
+    /// text drawer closed and reopened) still knows about it rather than
+    /// offering a second full scan.
+    public func pendingOcrScan(of itemID: UUID) throws -> UUID? {
+        try writer.read { db in
+            let pending = [JobState.queued.rawValue, JobState.running.rawValue]
+            let rows = try JobRecord
+                .filter(Column("kind") == OcrJob.kind && pending.contains(Column("state")))
+                .fetchAll(db)
+            return rows.first { row in
+                row.payload.flatMap { try? JSONDecoder().decode(OcrJob.Payload.self, from: $0) }?.itemID == itemID
+            }?.id
+        }
+    }
+}

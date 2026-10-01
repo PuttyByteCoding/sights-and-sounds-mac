@@ -798,7 +798,9 @@ final class BrowseModel {
         Task {
             do {
                 let record = try await ImportJob.enqueue(on: jobRunner, sourceID: source.id)
-                let drain = Task { try await jobRunner.runPending() }
+                // Started, not joined: the row polled below says when this
+                // import is done; the drain ends only with the whole queue.
+                await jobRunner.startDraining()
 
                 // Poll the job row for progress until it settles.
                 var settled = false
@@ -823,7 +825,6 @@ final class BrowseModel {
                         }
                     }
                 }
-                _ = try? await drain.value
             } catch {
                 errorMessage = "\(error)"
             }
@@ -1260,8 +1261,11 @@ final class BrowseModel {
         let runner = jobRunner
         Task {
             do {
-                _ = try await OcrJob.enqueue(on: runner, itemID: itemID)
-                try await runner.runPending()
+                let job = try await OcrJob.enqueue(on: runner, itemID: itemID)
+                // Somebody is waiting on it: next after the job running,
+                // not behind every sweep queued before it.
+                try await runner.runNext(job.id)
+                try await runner.waitUntilSettled([job.id])
             } catch {
                 errorMessage = "\(error)"
             }
@@ -1294,8 +1298,11 @@ final class BrowseModel {
 
     func runValidation() async {
         do {
-            _ = try await jobRunner.enqueueUnlessPending(ValidationJob.self)
-            try await jobRunner.runPending()
+            if let job = try await jobRunner.enqueueUnlessPending(ValidationJob.self) {
+                try await jobRunner.waitUntilSettled([job.id])
+            } else {
+                try await jobRunner.waitUntilNonePending(of: ValidationJob.kind)
+            }
         } catch {
             errorMessage = "\(error)"
         }
@@ -1320,15 +1327,21 @@ final class BrowseModel {
         let runner = jobRunner
         Task {
             do {
+                // Waits for its own sweep, never for jobs queued after it.
                 if let itemIDs {
                     // Scoped: plain enqueue — dedupe is by kind, and a
                     // pending library sweep must not swallow the small
-                    // one the operator is waiting on.
-                    _ = try await MetadataSweepJob.enqueue(on: runner, itemIDs: itemIDs)
+                    // one the operator is waiting on. It goes next after
+                    // the job running, rather than behind every sweep
+                    // queued before it, which left Tag Analysis loading.
+                    let job = try await MetadataSweepJob.enqueue(on: runner, itemIDs: itemIDs)
+                    try await runner.runNext(job.id)
+                    try await runner.waitUntilSettled([job.id])
+                } else if let job = try await runner.enqueueUnlessPending(MetadataSweepJob.self) {
+                    try await runner.waitUntilSettled([job.id])
                 } else {
-                    _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                    try await runner.waitUntilNonePending(of: MetadataSweepJob.kind)
                 }
-                try await runner.runPending()
             } catch {
                 errorMessage = "\(error)"
             }
@@ -1354,7 +1367,7 @@ final class BrowseModel {
         Task {
             do {
                 _ = try await MediaSignalJob.enqueue(on: runner, itemIDs: Array(ids))
-                try await runner.runPending()
+                await runner.startDraining()
             } catch {
                 errorMessage = "\(error)"
             }
@@ -1366,7 +1379,7 @@ final class BrowseModel {
         Task {
             do {
                 try await enqueue(runner)
-                try await runner.runPending()
+                await runner.startDraining()
             } catch {
                 errorMessage = "\(error)"
             }

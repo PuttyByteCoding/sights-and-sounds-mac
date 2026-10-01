@@ -20,7 +20,14 @@ struct OcrLinesPanel: View {
     var height: CGFloat = 112
 
     @State private var lines: [OcrTextLine] = []
-    @State private var scanQueued = false
+    /// The items with a scan waiting. Per item: a scan of one finishing
+    /// while another's waits cleared the other's "Scan queued", brought its
+    /// Scan button back, and a second click queued a second full scan. And
+    /// filled from the queue on each reload, since closing the drawer loses
+    /// this view's state while the scan still waits.
+    @State private var queuedScans: Set<UUID> = []
+    private var scanQueued: Bool { model.item.map { queuedScans.contains($0.id) } ?? false }
+    @State private var queuePaused = false
     @State private var tagSheetLine: OcrTextLine?
     @State private var aliasSheetLine: OcrTextLine?
 
@@ -29,6 +36,7 @@ struct OcrLinesPanel: View {
             header
             if lines.isEmpty {
                 empty
+                    .watchingQueuePause($queuePaused, while: scanQueued, libraryID: model.libraryID)
             } else {
                 ScrollView {
                     VStack(spacing: 1) {
@@ -80,7 +88,9 @@ struct OcrLinesPanel: View {
     private var empty: some View {
         HStack(spacing: 10) {
             Text(scanQueued
-                ? "Scan queued — reopen this panel when it finishes."
+                ? (queuePaused
+                    ? "Scan queued — tasks are paused."
+                    : "Scan queued — the lines appear here when it finishes.")
                 : "No scanned text for this item yet.")
                 .font(Theme.ui(12))
                 .foregroundStyle(Theme.Text.disabled)
@@ -98,8 +108,14 @@ struct OcrLinesPanel: View {
             lines = []
             return
         }
-        scanQueued = false
         let library = model.library
+        let pending = try? await Task.detached(operation: { try library.pendingOcrScan(of: itemID) }).value
+        // Checked after the read: two reloads in flight must not both wait.
+        if let jobID = pending ?? nil, !queuedScans.contains(itemID),
+           let runner = try? app.runner(for: model.libraryID) {
+            queuedScans.insert(itemID)
+            wait(for: jobID, of: itemID, on: runner)
+        }
         // Explicit return type — the async `read` overload's inference
         // is ambiguous to the CI toolchain (Xcode 16).
         let fetched: [OcrTextLine] = (try? await library.writer.read { db -> [OcrTextLine] in
@@ -115,11 +131,28 @@ struct OcrLinesPanel: View {
         guard let itemID = model.item?.id,
               let runner = try? app.runner(for: model.libraryID)
         else { return }
-        scanQueued = true
+        queuedScans.insert(itemID)
         Task {
-            _ = try? await OcrJob.enqueue(on: runner, itemID: itemID)
-            _ = try? await runner.runPending()
-            await reload()
+            // Its own scan, next after the job running: waiting for the
+            // whole queue, the panel said "scan queued" until every sweep
+            // queued before or after it had ended.
+            guard let job = try? await OcrJob.enqueue(on: runner, itemID: itemID) else {
+                queuedScans.remove(itemID)
+                return
+            }
+            wait(for: job.id, of: itemID, on: runner)
+        }
+    }
+
+    /// Moves the scan ahead too — one found in the queue may have been
+    /// retried from Background Tasks, at the back — then waits for it.
+    private func wait(for jobID: UUID, of itemID: UUID, on runner: JobRunner) {
+        Task {
+            _ = try? await runner.runNext(jobID)
+            try? await runner.waitUntilSettled([jobID])
+            queuedScans.remove(itemID)
+            // Its lines are only on screen if its item is.
+            if model.item?.id == itemID { await reload() }
         }
     }
 

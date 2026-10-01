@@ -42,6 +42,7 @@ struct MaintenanceView: View {
     @State private var stagedCount = 0
     @State private var reclaimable: Int64 = 0
     @State private var sweeping = false
+    @State private var sweepPaused = false
     @State private var status: String?
     @State private var errorText: String?
     @State private var confirmPurge = false
@@ -525,9 +526,12 @@ struct MaintenanceView: View {
                     Button("Delete \(stagedCount) Items", role: .destructive) { purge() }
                     Button("Cancel", role: .cancel) {}
                 }
-                Button(sweeping ? "Sweeping…" : "Run Sweep") { runSweep() }
+                Button(sweeping ? (sweepPaused ? "Waiting — tasks are paused" : "Sweeping…") : "Run Sweep") {
+                    runSweep()
+                }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(sweeping)
+                    .watchingQueuePause($sweepPaused, while: sweeping, libraryID: model.libraryID)
             }
         }
         .padding(.horizontal, 14)

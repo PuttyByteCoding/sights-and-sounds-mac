@@ -23,6 +23,9 @@ struct TagAnalysisView: View {
     @State private var rules: RulesTabModel?
     @State private var schemas: SchemasTabModel?
     @State private var mode: Mode = .candidates
+    /// A scan or rescan waits for its own job, and on a paused queue that
+    /// is until Resume: the header says so rather than "scanning…".
+    @State private var queuePaused = false
     @FocusState private var focused: Bool
     /// The rail opens at its saved width; a drag records the new one and
     /// persists it once the drag settles, so settings.json is not
@@ -153,11 +156,26 @@ struct TagAnalysisView: View {
     }
 
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
-        guard let id = model.currentItemID,
+        // Not while this video's sweep is still waiting: it is unswept
+        // until that runs, and each walk away and back queued another.
+        guard let id = model.currentItemID, !model.isWaitingOnMetadataSweep,
               (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
         else { return }
-        model.beginSweep()
-        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
+        model.beginSweep(for: id)
+        // A sweep of it already waiting (queued before this window was
+        // reopened) is waited on, not queued again.
+        if let waiting = try? browse.library.pendingMetadataSweep(of: id),
+           let runner = try? app.runner(for: browse.libraryID) {
+            Task {
+                // Moved ahead as a sweep queued here would be: a retried
+                // one (from Background Tasks) waits at the back otherwise.
+                _ = try? await runner.runNext(waiting)
+                try? await runner.waitUntilSettled([waiting])
+                model.finishSweep(for: id)
+            }
+            return
+        }
+        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
     }
 
     private var header: some View {
@@ -202,20 +220,27 @@ struct TagAnalysisView: View {
                     // not the seconds a load can afford). Budgeted and
                     // resumable: a long video may take several clicks.
                     guard let id = model.currentItemID else { return }
-                    model.beginSweep()
-                    browse.scanText(itemID: id) { model.finishSweep() }
+                    model.beginSweep(for: id, .textScan)
+                    browse.scanText(itemID: id) {
+                        model.finishSweep(for: id, .textScan)
+                        // A scan takes minutes; a tag write may have cleared
+                        // the video's sweep meanwhile. (Only after a scan: a
+                        // sweep that failed leaves the video unswept, and
+                        // asking again there would loop.)
+                        sweepCurrentIfNeeded(model)
+                    }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                .disabled(model.isLoading || model.currentItemID == nil)
+                .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
                 .help("Read on-screen text with Vision — resumable; click again to scan further")
                 Button("Rescan This Video") {
                     guard let id = model.currentItemID else { return }
                     try? browse.library.resetMetadataSweep(itemIDs: [id])
-                    model.beginSweep()
-                    browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
+                    model.beginSweep(for: id)
+                    browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                .disabled(model.isLoading || model.currentItemID == nil)
+                .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
             }
         }
         .padding(.horizontal, 14)
@@ -224,9 +249,12 @@ struct TagAnalysisView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
+        .watchingQueuePause($queuePaused, while: model?.isWaitingOnJob == true, libraryID: browse.libraryID)
     }
 
     private func headline(_ model: TagAnalysisModel) -> String {
+        // The wait first: a reload ends `isLoading` while a sweep still waits.
+        if model.isWaitingOnJob { return queuePaused ? "waiting — tasks are paused" : "scanning…" }
         if model.isLoading { return "scanning…" }
         let strings = model.allRows.count
         let undecided = model.count(status: .undecided)
