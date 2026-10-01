@@ -82,9 +82,9 @@ import Testing
         #expect(!model.isWaitingOnJob, "an ordinary reload counted as waiting on a job")
         try await settle(model)
 
-        model.beginSweep()
+        model.beginSweep(for: items[0].id)
         #expect(model.isWaitingOnJob)
-        model.finishSweep()
+        model.finishSweep(for: items[0].id)
         #expect(!model.isWaitingOnJob)
         try await settle(model)
     }
@@ -97,17 +97,41 @@ import Testing
     @Test func aWaitOutlastsReloadsAndCountsEachSweep() async throws {
         let (session, items, _) = try await makeSession()
         let model = TagAnalysisModel(session: session)
-        model.beginSweep()
+        model.beginSweep(for: items[0].id)
         session.playerDidShow(itemID: items[0].id, position: nil)
         try await Task.sleep(for: .milliseconds(50))
         try await settle(model)
         #expect(model.isWaitingOnJob, "a reload ended the wait for a sweep still queued")
 
-        model.beginSweep()
-        model.finishSweep()
+        model.beginSweep(for: items[0].id)
+        model.finishSweep(for: items[0].id)
         #expect(model.isWaitingOnJob, "the first sweep to finish ended the wait for both")
-        model.finishSweep()
+        model.finishSweep(for: items[0].id)
         #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
+    /// A wait is the video's it was begun for. Counted for the window, a
+    /// minutes-long OCR scan of one video held every video walked to after
+    /// it on "scanning…", with both scan buttons off.
+    @Test func aWaitBelongsToItsVideo() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        model.beginSweep(for: items[0].id)
+
+        session.playerDidShow(itemID: items[1].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(!model.isWaitingOnJob, "another video's scan held this one")
+
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(model.isWaitingOnJob, "back on the video, its scan is still waiting")
+        model.finishSweep(for: items[0].id)
         try await settle(model)
     }
 

@@ -159,8 +159,8 @@ struct TagAnalysisView: View {
         guard let id = model.currentItemID,
               (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
         else { return }
-        model.beginSweep()
-        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
+        model.beginSweep(for: id)
+        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
     }
 
     private var header: some View {
@@ -205,8 +205,8 @@ struct TagAnalysisView: View {
                     // not the seconds a load can afford). Budgeted and
                     // resumable: a long video may take several clicks.
                     guard let id = model.currentItemID else { return }
-                    model.beginSweep()
-                    browse.scanText(itemID: id) { model.finishSweep() }
+                    model.beginSweep(for: id)
+                    browse.scanText(itemID: id) { model.finishSweep(for: id) }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
@@ -214,8 +214,8 @@ struct TagAnalysisView: View {
                 Button("Rescan This Video") {
                     guard let id = model.currentItemID else { return }
                     try? browse.library.resetMetadataSweep(itemIDs: [id])
-                    model.beginSweep()
-                    browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
+                    model.beginSweep(for: id)
+                    browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)

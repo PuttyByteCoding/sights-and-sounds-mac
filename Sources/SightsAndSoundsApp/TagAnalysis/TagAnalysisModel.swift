@@ -241,19 +241,22 @@ final class TagAnalysisModel {
     /// A scan or rescan is waiting for its own job — unlike `isLoading`,
     /// which every reload sets, and clears, for analysis that never touches
     /// the queue: a reload landing mid-sweep (opening the companion, walking
-    /// to the next video) used to end the wait on screen. Counted, since an
-    /// automatic sweep can begin for the next video before the last ends.
-    var isWaitingOnJob: Bool { jobsWaitedOn > 0 }
-    private var jobsWaitedOn = 0
+    /// to the next video) used to end the wait on screen. Counted per video:
+    /// two sweeps of one video can overlap, and a minutes-long OCR scan of
+    /// one video must not hold every video walked to after it.
+    var isWaitingOnJob: Bool { currentItemID.map { (jobsWaitedOn[$0] ?? 0) > 0 } ?? false }
+    private var jobsWaitedOn: [UUID: Int] = [:]
 
-    func beginSweep() {
+    func beginSweep(for itemID: UUID) {
         isLoading = true
-        jobsWaitedOn += 1
+        jobsWaitedOn[itemID, default: 0] += 1
     }
 
-    func finishSweep() {
-        jobsWaitedOn = max(0, jobsWaitedOn - 1)
-        reload()
+    func finishSweep(for itemID: UUID) {
+        let left = (jobsWaitedOn[itemID] ?? 0) - 1
+        jobsWaitedOn[itemID] = left > 0 ? left : nil
+        // Its results are only on screen if its video is.
+        if itemID == currentItemID { reload() }
     }
 
     func select(_ id: AnalysisCandidate.ID?) {
