@@ -621,14 +621,24 @@ public enum SignalSamples {
 
     /// Write one sample. ffmpeg writes to a working name and it is moved
     /// into place whole, so a failed sample leaves nothing half-written.
-    static func write(_ sample: SignalSample, into folder: URL, ffmpeg: String) throws -> URL {
+    /// Through the async call: the blocking one held a pool thread for
+    /// every encode of a generation that takes minutes, and a cancelled
+    /// generation ran each encode to its end.
+    static func write(_ sample: SignalSample, into folder: URL, ffmpeg: String) async throws -> URL {
         let url = folder.appendingPathComponent(sample.relativePath)
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let working = url.deletingLastPathComponent()
             .appendingPathComponent(".\(UUID().uuidString).\(sample.fileExtension)")
         defer { try? FileManager.default.removeItem(at: working) }
-        try FfmpegTool.run(sample.arguments + [working.path], tool: ffmpeg)
+        // The tool's watcher asks from a task of its own, where
+        // `Task.isCancelled` is never this one's: the flag carries it.
+        let cancelled = ProcessRunner.Canceller()
+        try await withTaskCancellationHandler {
+            try await FfmpegTool.run(sample.arguments + [working.path], tool: ffmpeg) { cancelled.wasCancelled }
+        } onCancel: {
+            cancelled.cancel()
+        }
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
@@ -671,7 +681,7 @@ public enum SignalSamples {
             tagIDs[area] = try library.ensureTag(named: area.rawValue, inCategory: topic.id).id
         }
         for (index, sample) in all.enumerated() {
-            let url = try write(sample, into: mediaFolder, ffmpeg: ffmpeg)
+            let url = try await write(sample, into: mediaFolder, ffmpeg: ffmpeg)
             let probe = await MediaProbe.probe(url: url)
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
             var item = MediaItem(
