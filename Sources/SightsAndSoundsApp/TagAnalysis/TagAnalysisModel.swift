@@ -238,8 +238,19 @@ final class TagAnalysisModel {
 
     /// The sweep runs on the job runner; the model only tracks that one
     /// is in flight.
-    func beginSweep() { isLoading = true }
-    func finishSweep() { reload() }
+    /// A scan or rescan is waiting for its own job — unlike `isLoading`,
+    /// which every reload sets for analysis that never touches the queue.
+    private(set) var isWaitingOnJob = false
+
+    func beginSweep() {
+        isLoading = true
+        isWaitingOnJob = true
+    }
+
+    func finishSweep() {
+        isWaitingOnJob = false
+        reload()
+    }
 
     func select(_ id: AnalysisCandidate.ID?) {
         selectedCandidateID = id

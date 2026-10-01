@@ -34,7 +34,11 @@ private struct QueuePauseWatch: ViewModifier {
                 return
             }
             while !Task.isCancelled {
-                paused = await runner.isPaused
+                let isPaused = await runner.isPaused
+                // A read the key change cancelled must not land after the
+                // new watch's own first read.
+                guard !Task.isCancelled else { return }
+                paused = isPaused
                 try? await Task.sleep(for: .seconds(2))
             }
         }

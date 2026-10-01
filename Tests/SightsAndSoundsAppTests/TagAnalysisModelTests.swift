@@ -70,6 +70,25 @@ import Testing
         #expect(names.contains("New Person"))
     }
 
+    /// "Waiting — tasks are paused" is for a scan waiting on its own job.
+    /// Every reload sets `isLoading` too, for analysis that never touches
+    /// the queue; keyed on that, a paused queue flashed the message on each
+    /// item change and decision.
+    @Test func onlyAScanCountsAsWaitingOnAJob() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!model.isWaitingOnJob, "an ordinary reload counted as waiting on a job")
+        try await settle(model)
+
+        model.beginSweep()
+        #expect(model.isWaitingOnJob)
+        model.finishSweep()
+        #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
     @Test func movingToAnotherItemCountsAVisitAndClearsTheSelection() async throws {
         let (session, items, _) = try await makeSession()
         let model = TagAnalysisModel(session: session)

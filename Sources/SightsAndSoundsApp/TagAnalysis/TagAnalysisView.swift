@@ -227,11 +227,13 @@ struct TagAnalysisView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
-        .watchingQueuePause($queuePaused, while: model?.isLoading == true, libraryID: browse.libraryID)
+        .watchingQueuePause($queuePaused, while: model?.isWaitingOnJob == true, libraryID: browse.libraryID)
     }
 
     private func headline(_ model: TagAnalysisModel) -> String {
-        if model.isLoading { return queuePaused ? "waiting — tasks are paused" : "scanning…" }
+        if model.isLoading {
+            return model.isWaitingOnJob && queuePaused ? "waiting — tasks are paused" : "scanning…"
+        }
         let strings = model.allRows.count
         let undecided = model.count(status: .undecided)
         return "\(strings) strings · \(undecided) undecided"

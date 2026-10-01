@@ -15,8 +15,13 @@ struct SweepPanel: View {
 
     @State private var libraryID: UUID?
     @State private var statuses: [SweepKind: SweepStatus] = [:]
-    @State private var running: Set<SweepKind> = []
+    /// Per library: the picker can switch libraries while a sweep runs,
+    /// and a row showed another library's sweep as its own (and the pause
+    /// watch read the wrong library's queue).
+    @State private var running: [UUID: Set<SweepKind>] = [:]
     @State private var queuePaused = false
+
+    private var runningHere: Set<SweepKind> { libraryID.flatMap { running[$0] } ?? [] }
     @State private var confirmRecalc: SweepKind?
     @State private var errorText: String?
 
@@ -90,7 +95,7 @@ struct SweepPanel: View {
             refreshStatuses()
         }
         .onChange(of: libraryID) { _, _ in refreshStatuses() }
-        .watchingQueuePause($queuePaused, while: !running.isEmpty, libraryID: libraryID)
+        .watchingQueuePause($queuePaused, while: !runningHere.isEmpty, libraryID: libraryID)
         .confirmationDialog(
             "Recalculate \(confirmRecalc?.title ?? "")?",
             isPresented: Binding(
@@ -133,7 +138,7 @@ struct SweepPanel: View {
                         status.failed == 0 ? Theme.Text.zeroCount : Theme.Status.red)
             }
 
-            if running.contains(kind) {
+            if runningHere.contains(kind) {
                 if queuePaused {
                     Text("tasks paused")
                         .font(Theme.mono(10))
@@ -158,7 +163,7 @@ struct SweepPanel: View {
                     ? "Forget every item's stored data for this kind, then rebuild"
                     : "Rejected pairs stay rejected — rerunning the check is Verify")
         }
-        .disabled(running.contains(kind))
+        .disabled(runningHere.contains(kind))
         .padding(.vertical, 4)
     }
 
@@ -185,7 +190,7 @@ struct SweepPanel: View {
               let library = try? app.library(for: libraryID),
               let runner = try? app.runner(for: libraryID)
         else { return }
-        running.insert(kind)
+        running[libraryID, default: []].insert(kind)
         errorText = nil
         Task {
             do {
@@ -218,7 +223,7 @@ struct SweepPanel: View {
             } catch {
                 errorText = "\(error)"
             }
-            running.remove(kind)
+            running[libraryID]?.remove(kind)
             refreshStatuses()
         }
     }
