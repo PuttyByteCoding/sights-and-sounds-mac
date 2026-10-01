@@ -112,3 +112,67 @@ import Testing
         #expect(Set(paths).count == paths.count)  // no path collisions
     }
 }
+
+/// The Demo Concerts library was opened with `open(at:)`: choosing the same
+/// folder twice opened the existing library, migrated it and seeded a
+/// second source into it before the template collided, leaving it changed.
+/// A failed run left a half-made file that blocked every retry. It is made
+/// like every other new library now: never over a file, whole or not at all.
+@Suite struct DemoLibraryCreationTests {
+    private func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-demo-create-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @Test func aSecondDemoInTheSameFolderLeavesTheFirstAlone() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Demo Concerts.sqlite")
+        let media = dir.appendingPathComponent("Demo Media", isDirectory: true)
+        let first = try await DemoLibrarySeeder.makeLibrary(at: url, mediaFolder: media)
+        let before = try await first.writer.read { try Source.fetchCount($0) }
+        try first.close()
+
+        await #expect(throws: LibraryCreationError.fileExists("Demo Concerts.sqlite")) {
+            try await DemoLibrarySeeder.makeLibrary(at: url, mediaFolder: media)
+        }
+        let reopened = try LibraryDatabase.open(at: url)
+        defer { try? reopened.close() }
+        #expect(try await reopened.writer.read { try Source.fetchCount($0) } == before)
+    }
+
+    @Test func aFailedDemoLeavesNoFileBehind() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Demo Concerts.sqlite")
+        struct Broken: Error {}
+        await #expect(throws: Broken.self) {
+            try await DemoLibrarySeeder.makeLibrary(
+                at: url, mediaFolder: dir.appendingPathComponent("Demo Media")
+            ) { _, _ in throw Broken() }
+        }
+        #expect(!FileManager.default.fileExists(atPath: url.path), "a failed run left its file")
+    }
+}
+
+/// A demo run that failed part-way removed its library file but left the
+/// videos it had made, and a retry in the same folder writes the same
+/// paths: the video writer refused a file that was already there, so
+/// every retry failed at its first video ("startWriting") until the media
+/// folder was found and deleted by hand.
+@Suite struct DemoMediaRewriteTests {
+    @Test func aVideoIsWrittenOverOneAlreadyThere() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-demo-rewrite-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("show/clip.mp4")
+        try await DemoMediaFactory.writeVideo(to: url, seconds: 1)
+        try await DemoMediaFactory.writeVideo(to: url, seconds: 1, variant: 1)
+        let probe = await MediaProbe.probe(url: url)
+        #expect(probe.durationSeconds != nil, "the rewritten video does not play")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+        #expect(leftovers == ["clip.mp4"], "a working file was left behind: \(leftovers)")
+    }
+}
