@@ -28,6 +28,9 @@ struct MaintenanceView: View {
     @State private var reloadAgain = false
 
     @State private var reloadWantsBackups = false
+    /// What to do once a reload has landed — after the follow-up, if one
+    /// was asked for meanwhile, since only that one read after the write.
+    @State private var whenReloaded: [() -> Void] = []
     @State private var tab: Tab = .writeback
     @State private var preview: WritebackPreview?
     @State private var previewing = false
@@ -612,8 +615,9 @@ struct MaintenanceView: View {
         Task {
             await model.runValidation()
             sweeping = false
-            reload()
-            status = "\(findings.count) findings"
+            // Counted once the findings it found have landed: counted here,
+            // straight after asking, it was the count from before the sweep.
+            reload { status = "\(findings.count) findings" }
         }
     }
 
@@ -670,8 +674,9 @@ struct MaintenanceView: View {
     /// a time: one asked for while another runs is folded into a single
     /// run after it (a slow volume made them pile up, each opening every
     /// backup), so the last asked for is still the last to land.
-    private func reload(includingBackups: Bool = true) {
+    private func reload(includingBackups: Bool = true, then landed: (() -> Void)? = nil) {
         reloadWantsBackups = reloadWantsBackups || includingBackups
+        if let landed { whenReloaded.append(landed) }
         guard !reloading else {
             reloadAgain = true
             return
@@ -709,6 +714,10 @@ struct MaintenanceView: View {
             if reloadAgain {
                 reloadAgain = false
                 reload(includingBackups: false)
+            } else {
+                let landed = whenReloaded
+                whenReloaded = []
+                for action in landed { action() }
             }
         }
     }
