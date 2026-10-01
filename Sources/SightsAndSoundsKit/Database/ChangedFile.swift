@@ -18,7 +18,19 @@ extension LibraryDatabase {
     /// bytes still match, the next hash sweep pairs them again. A pair
     /// somebody answered stays; fingerprint pairs compare the sound, which
     /// these changes keep.
+    ///
+    /// And what Media Signal read and concluded goes, with its stage marks,
+    /// so the next examine reads the file afresh: a repaired file went on
+    /// showing the broken one's timing and the conclusions drawn from it,
+    /// and Examine skipped it as done. (As the full reset, evidence and
+    /// inferences go with the readings they were drawn from.)
     static func forgetReadingsOfChangedFile(_ itemID: UUID, in db: Database) throws {
+        for table in [
+            "mediaSignalInference", "mediaSignalEvidence", "mediaSignalMeasurement",
+            "mediaSignalSeries", "mediaSignalDeclared", "mediaSignalStage",
+        ] {
+            try db.execute(sql: "DELETE FROM \(table) WHERE mediaItemID = ?", arguments: [itemID])
+        }
         try db.execute(sql: "UPDATE mediaItem SET contentHash = NULL WHERE id = ?", arguments: [itemID])
         try db.execute(sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?", arguments: [itemID])
         try db.execute(sql: "DELETE FROM metadataSweepState WHERE mediaItemID = ?", arguments: [itemID])

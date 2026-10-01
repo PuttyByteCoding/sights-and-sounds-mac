@@ -230,9 +230,14 @@ import Testing
             try rejected.insert(db)
             try DuplicateCandidate(itemA: f.parent.id, itemB: soundAlike.id, source: .fingerprint, confidence: 0.9).insert(db)
         }
+        // Examined: Media Signal read the old file's declarations and timing.
+        var findings = SignalFindings()
+        findings.declare("video.codecTag", "avc1")
+        findings.measure("timing.frameCount", 10)
+        try f.library.recordSignalStage(itemID: f.parent.id, stage: "declared", version: 1, findings: findings)
     }
 
-    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int) {
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int, signalRows: Int) {
         try await f.library.writer.read { db in
             let item = try MediaItem.fetchOne(db, key: f.parent.id)!
             let failures = try ContentHashFailure
@@ -246,7 +251,12 @@ import Testing
                 .filter(sql: "(status <> 'pending' OR source <> 'contentHash') AND (itemAID = ? OR itemBID = ?)",
                         arguments: [f.parent.id, f.parent.id])
                 .fetchCount(db)
-            return (item.contentHash, failures, swept, twinPairs, kept)
+            var signalRows = 0
+            for table in ["mediaSignalStage", "mediaSignalDeclared", "mediaSignalMeasurement"] {
+                signalRows += try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM \(table) WHERE mediaItemID = ?", arguments: [f.parent.id]) ?? 0
+            }
+            return (item.contentHash, failures, swept, twinPairs, kept, signalRows)
         }
     }
 
@@ -265,6 +275,7 @@ import Testing
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
+        #expect(state.signalRows == 0, "Media Signal still describes the old file")
     }
 
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
@@ -284,6 +295,7 @@ import Testing
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
+        #expect(state.signalRows == 0, "Media Signal still describes the old file")
     }
 
     /// The repair swaps the file first, then puts the flagged file back
@@ -317,6 +329,7 @@ import Testing
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
+        #expect(state.signalRows == 0, "Media Signal still describes the old file")
     }
 
     @Test func remuxRefusesClipsAndMissingFiles() async throws {
