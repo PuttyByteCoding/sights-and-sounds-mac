@@ -240,6 +240,11 @@ import Testing
         findings.declare("video.codecTag", "avc1")
         findings.measure("timing.frameCount", 10)
         try f.library.recordSignalStage(itemID: f.parent.id, stage: "declared", version: 1, findings: findings)
+        // And one stage failed on the old bytes: Examine skips an item with
+        // a stage marked, failed or not.
+        try f.library.recordSignalStage(
+            itemID: f.parent.id, stage: "frameTiming", version: 1, findings: SignalFindings(),
+            failure: "the old container's timestamps could not be read")
     }
 
     private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int, signalRows: Int, failureMarks: Int) {
@@ -263,7 +268,10 @@ import Testing
             }
             let failureMarks = try FingerprintFailure.filter(key: f.parent.id).fetchCount(db)
                 + ThumbnailState.filter(sql: "mediaItemID = ? AND failureMessage IS NOT NULL", arguments: [f.parent.id]).fetchCount(db)
-            return (item.contentHash, failures, swept, twinPairs, kept, signalRows, failureMarks)
+            let signalFailures = try Int.fetchOne(
+                db, sql: "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ? AND failureMessage IS NOT NULL",
+                arguments: [f.parent.id]) ?? 0
+            return (item.contentHash, failures, swept, twinPairs, kept, signalRows, failureMarks + signalFailures)
         }
     }
 

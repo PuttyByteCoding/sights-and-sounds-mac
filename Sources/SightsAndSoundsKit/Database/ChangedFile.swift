@@ -5,8 +5,9 @@ import GRDB
 enum FileChange {
     /// The same streams, copied: a tag write, a restore, a remux.
     case sameStreams
-    /// The streams themselves may be new: a repair, a size found changed on
-    /// disk, a swap finished after a crash.
+    /// The streams themselves may differ: a repair (a re-encode, or a copy
+    /// that drops what will not decode or a stream), a size found changed
+    /// on disk, a swap finished after a crash.
     case newStreams
 }
 
@@ -32,15 +33,23 @@ extension LibraryDatabase {
     /// the old bytes' (a broken file, repaired, was never fingerprinted or
     /// thumbnailed again), and the sweeps skip an item marked failed.
     ///
-    /// What Media Signal read goes only when the streams are new (a repair
-    /// re-encodes; a size found changed on disk, or a swap finished after a
-    /// crash, may be one): a repaired file went on showing the broken one's
-    /// timing, and Examine skipped it as done. A tag write, a restore and a
-    /// remux copy the streams untouched, so those readings stand — and
-    /// examined again, the file would show this app's own muxer stamp as
-    /// its transcoder.
+    /// What Media Signal read goes only when the streams may differ (every
+    /// repair recipe changes what is in them — re-encoding, or dropping
+    /// what will not decode — and a size found changed on disk, or a swap
+    /// finished after a crash, may be one): a repaired file went on showing
+    /// the broken one's timing, and Examine skipped it as done. A tag
+    /// write, a restore and a remux copy the streams untouched, so those
+    /// readings stand — and examined again, the file would show this app's
+    /// own muxer stamp as its transcoder. A stage that failed goes either
+    /// way: it failed on the old bytes, and Examine skips an item with a
+    /// stage marked, failed or not; run again, it replaces only its own
+    /// rows.
     static func forgetReadingsOfChangedFile(_ itemID: UUID, _ change: FileChange, in db: Database) throws {
-        if change == .newStreams {
+        if change == .sameStreams {
+            try db.execute(
+                sql: "DELETE FROM mediaSignalStage WHERE mediaItemID = ? AND failureMessage IS NOT NULL",
+                arguments: [itemID])
+        } else {
             // As the full reset: evidence and inferences go with the
             // readings they were drawn from.
             for table in [
