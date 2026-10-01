@@ -264,7 +264,9 @@ struct BackgroundTasksView: View {
             Task {
                 guard let runner = try? app.runner(for: libraryID) else { return }
                 _ = try? await runner.retry(job.id)
-                _ = try? await runner.runPending()
+                // Started, not waited for: the toast and the list waited
+                // for the whole queue to empty.
+                await runner.startDraining()
                 show("Queued again")
             }
         case .copyError:
@@ -299,7 +301,7 @@ struct BackgroundTasksView: View {
         Task {
             guard let runner = try? app.runner(for: lane.id) else { return }
             await runner.setPaused(paused)
-            if !paused { _ = try? await runner.runPending() }
+            if !paused { await runner.startDraining() }
             await refresh()
         }
     }

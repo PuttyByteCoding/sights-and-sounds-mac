@@ -182,22 +182,31 @@ struct SweepPanel: View {
         Task {
             do {
                 try prepare(library)
+                let kinds: [String]
                 switch kind {
                 case .contentHash:
                     _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+                    kinds = [ContentHashJob.kind]
                 case .fingerprint:
                     _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
+                    kinds = [FingerprintCaptureJob.kind]
                 case .metadata:
                     _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
+                    kinds = [MetadataSweepJob.kind]
                 case .signal:
                     _ = try await runner.enqueueUnlessPending(MediaSignalJob.self)
+                    kinds = [MediaSignalJob.kind]
                 case .thumbnails:
                     _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
+                    kinds = [ThumbnailBatchJob.kind]
                 case .duplicates:
                     _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
                     _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
+                    kinds = [HashDuplicateSweepJob.kind, FingerprintMatchSweepJob.kind]
                 }
-                try await runner.runPending()
+                // This row's sweep, not the whole queue: each row stayed
+                // "running" until every other sweep queued had finished.
+                for kind in kinds { try await runner.waitUntilNonePending(of: kind) }
             } catch {
                 errorText = "\(error)"
             }

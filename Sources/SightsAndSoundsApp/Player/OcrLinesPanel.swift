@@ -117,8 +117,11 @@ struct OcrLinesPanel: View {
         else { return }
         scanQueued = true
         Task {
-            _ = try? await OcrJob.enqueue(on: runner, itemID: itemID)
-            _ = try? await runner.runPending()
+            // Its own scan, not the whole queue: behind a sweep the panel
+            // said "scan queued" until the sweep ended.
+            if let job = try? await OcrJob.enqueue(on: runner, itemID: itemID) {
+                try? await runner.waitUntilSettled([job.id])
+            }
             await reload()
         }
     }
