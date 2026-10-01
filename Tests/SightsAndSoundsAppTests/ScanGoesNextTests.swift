@@ -71,11 +71,15 @@ import Testing
 
         var finished = false
         model.scanText(itemID: UUID()) { finished = true }
-        // The scan is queued (behind the sweep, by age) before the running
-        // job is let go.
+        // The scan has been queued and moved forward before the running job
+        // is let go: let go earlier, the drain could pick the older sweep
+        // first on a slow machine, with correct code. Without the move this
+        // waits out its budget, and the sweep then holds the scan back.
         for _ in 0..<400 {
-            let queued = try await library.writer.read { try JobRecord.filter(sql: "kind = ?", arguments: [OcrJob.kind]).fetchCount($0) }
-            if queued > 0 { break }
+            let moved = try await library.writer.read {
+                try JobRecord.filter(sql: "kind = ? AND priority > 0", arguments: [OcrJob.kind]).fetchCount($0)
+            }
+            if moved > 0 { break }
             try await Task.sleep(for: .milliseconds(5))
         }
         Gates.shared.open("running")
