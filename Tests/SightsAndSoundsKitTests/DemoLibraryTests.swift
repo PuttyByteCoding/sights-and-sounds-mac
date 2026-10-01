@@ -112,3 +112,47 @@ import Testing
         #expect(Set(paths).count == paths.count)  // no path collisions
     }
 }
+
+/// The Demo Concerts library was opened with `open(at:)`: choosing the same
+/// folder twice opened the existing library, migrated it and seeded a
+/// second source into it before the template collided, leaving it changed.
+/// A failed run left a half-made file that blocked every retry. It is made
+/// like every other new library now: never over a file, whole or not at all.
+@Suite struct DemoLibraryCreationTests {
+    private func folder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-demo-create-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @Test func aSecondDemoInTheSameFolderLeavesTheFirstAlone() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Demo Concerts.sqlite")
+        let media = dir.appendingPathComponent("Demo Media", isDirectory: true)
+        let first = try await DemoLibrarySeeder.makeLibrary(at: url, mediaFolder: media)
+        let before = try await first.writer.read { try Source.fetchCount($0) }
+        try first.close()
+
+        await #expect(throws: LibraryCreationError.fileExists("Demo Concerts.sqlite")) {
+            try await DemoLibrarySeeder.makeLibrary(at: url, mediaFolder: media)
+        }
+        let reopened = try LibraryDatabase.open(at: url)
+        defer { try? reopened.close() }
+        #expect(try await reopened.writer.read { try Source.fetchCount($0) } == before)
+    }
+
+    @Test func aFailedDemoLeavesNoFileBehind() async throws {
+        let dir = try folder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("Demo Concerts.sqlite")
+        struct Broken: Error {}
+        await #expect(throws: Broken.self) {
+            try await DemoLibrarySeeder.makeLibrary(
+                at: url, mediaFolder: dir.appendingPathComponent("Demo Media")
+            ) { _, _ in throw Broken() }
+        }
+        #expect(!FileManager.default.fileExists(atPath: url.path), "a failed run left its file")
+    }
+}

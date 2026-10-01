@@ -18,6 +18,24 @@ public struct DemoSeedReport: Sendable {
 /// caller (the app's demo flow) can synthesize a real media file at the
 /// item's path before the row is written.
 public enum DemoLibrarySeeder {
+    /// The Demo Concerts library, made like every new library: never over
+    /// a file, and a run that fails — registering included — leaves none
+    /// (see createFresh). It was opened with `open(at:)`, so choosing the
+    /// same folder twice seeded a second source into the existing library
+    /// before the template collided, and a failed run blocked every retry.
+    @discardableResult
+    public static func makeLibrary(
+        at libraryURL: URL, mediaFolder: URL, registerIn app: AppDatabase? = nil,
+        makeFile: (@Sendable (_ relativePath: String, _ kind: MediaKind) async throws -> Int64?)? = nil
+    ) async throws -> LibraryDatabase {
+        try await LibraryDatabase.createFresh(at: libraryURL) { library in
+            try library.ensureInfo(name: "Demo Concerts")
+            let source = Source(name: "Demo Media", rootPath: mediaFolder.path)
+            try await seed(library: library, source: source, makeFile: makeFile)
+            try app?.register(library)
+        }
+    }
+
     @discardableResult
     public static func seed(
         library: LibraryDatabase,

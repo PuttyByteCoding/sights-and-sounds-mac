@@ -708,11 +708,9 @@ struct DemoLibraryButton: View {
             do {
                 let libraryURL = folder.appendingPathComponent("Demo Concerts.sqlite")
                 let mediaRoot = folder.appendingPathComponent("Demo Media", isDirectory: true)
-                let library = try LibraryDatabase.open(at: libraryURL)
-                try library.ensureInfo(name: "Demo Concerts")
-                let source = Source(name: "Demo Media", rootPath: mediaRoot.path)
-
-                try await DemoLibrarySeeder.seed(library: library, source: source) { path, kind in
+                try await DemoLibrarySeeder.makeLibrary(
+                    at: libraryURL, mediaFolder: mediaRoot, registerIn: appDatabase
+                ) { path, kind in
                     let fileURL = mediaRoot.appendingPathComponent(path)
                     // Variant from the path bytes: deterministic, no shared
                     // counter to capture.
@@ -726,7 +724,6 @@ struct DemoLibraryButton: View {
                     let size = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size]
                     return (size as? Int64) ?? 0
                 }
-                if let appDatabase { _ = try await MainActor.run { try appDatabase.register(library) } }
             } catch {
                 failure = "\(error)"
             }
