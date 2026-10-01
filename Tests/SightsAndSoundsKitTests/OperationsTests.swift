@@ -230,6 +230,11 @@ import Testing
             try rejected.insert(db)
             try DuplicateCandidate(itemA: f.parent.id, itemB: soundAlike.id, source: .fingerprint, confidence: 0.9).insert(db)
         }
+        // Failed to fingerprint and to thumbnail — the old bytes did.
+        try await f.library.writer.write { db in
+            try FingerprintFailure(mediaItemID: f.parent.id, message: "fpcalc could not decode").insert(db)
+            try ThumbnailState(mediaItemID: f.parent.id, generated: false, failureMessage: "no frame").upsert(db)
+        }
         // Examined: Media Signal read the old file's declarations and timing.
         var findings = SignalFindings()
         findings.declare("video.codecTag", "avc1")
@@ -237,7 +242,7 @@ import Testing
         try f.library.recordSignalStage(itemID: f.parent.id, stage: "declared", version: 1, findings: findings)
     }
 
-    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int, signalRows: Int) {
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int, signalRows: Int, failureMarks: Int) {
         try await f.library.writer.read { db in
             let item = try MediaItem.fetchOne(db, key: f.parent.id)!
             let failures = try ContentHashFailure
@@ -256,7 +261,9 @@ import Testing
                 signalRows += try Int.fetchOne(
                     db, sql: "SELECT COUNT(*) FROM \(table) WHERE mediaItemID = ?", arguments: [f.parent.id]) ?? 0
             }
-            return (item.contentHash, failures, swept, twinPairs, kept, signalRows)
+            let failureMarks = try FingerprintFailure.filter(key: f.parent.id).fetchCount(db)
+                + ThumbnailState.filter(sql: "mediaItemID = ? AND failureMessage IS NOT NULL", arguments: [f.parent.id]).fetchCount(db)
+            return (item.contentHash, failures, swept, twinPairs, kept, signalRows, failureMarks)
         }
     }
 
@@ -275,7 +282,8 @@ import Testing
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
-        #expect(state.signalRows == 0, "Media Signal still describes the old file")
+        #expect(state.signalRows > 0, "a stream copy threw away Media Signal's readings of the same streams")
+        #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
@@ -296,6 +304,7 @@ import Testing
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
         #expect(state.signalRows == 0, "Media Signal still describes the old file")
+        #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 
     /// The repair swaps the file first, then puts the flagged file back
@@ -330,6 +339,7 @@ import Testing
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
         #expect(state.signalRows == 0, "Media Signal still describes the old file")
+        #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 
     @Test func remuxRefusesClipsAndMissingFiles() async throws {

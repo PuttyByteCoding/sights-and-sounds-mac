@@ -166,7 +166,7 @@ extension LibraryDatabase {
                     item.fileSize = size
                     try item.updateWithSegmentPaths(db)
                     // The bytes are new; what was read off them is the old file's.
-                    try LibraryDatabase.forgetReadingsOfChangedFile(item.id, in: db)
+                    try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .newStreams, in: db)
                 }
                 _ = try PendingMove.deleteOne(db, key: move.id)
             }

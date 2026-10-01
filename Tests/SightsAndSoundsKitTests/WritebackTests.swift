@@ -99,6 +99,9 @@ import Testing
             try MediaItemTag(mediaItemID: item.id, tagID: larks.id).insert(db)
             try MetadataSweepState(mediaItemID: item.id, failureMessage: nil).insert(db)
         }
+        var findings = SignalFindings()
+        findings.measure("timing.frameCount", 10)
+        try library.recordSignalStage(itemID: item.id, stage: "declared", version: 1, findings: findings)
         let runner = JobRunner(library: library)
         await runner.register(WritebackJob.self)
         _ = try await WritebackJob.enqueue(on: runner, itemIDs: [item.id], scopeDescription: "test")
@@ -113,6 +116,13 @@ import Testing
         // reads the file again.
         let swept = try await library.writer.read { try MetadataSweepState.fetchOne($0, key: item.id) }
         #expect(swept == nil, "the tags read before the write still count as swept")
+        // The streams are copied, not touched: what Media Signal read of
+        // them stands. Examined again, it would read this app's own muxer
+        // stamp as the file's transcoder.
+        let examined = try await library.writer.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ?", arguments: [item.id]) ?? 0
+        }
+        #expect(examined == 1, "a tag write threw away Media Signal's readings")
         let onDisk = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64
         #expect(refreshed.fileSize == onDisk)
     }

@@ -100,7 +100,7 @@ public struct RepairJob: Job {
             updated.bitrate = probe.bitrate ?? updated.bitrate
             try updated.update(db)
             // New bytes: the next sweeps hash and read it afresh.
-            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, in: db)
+            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .newStreams, in: db)
             try PlaybackIssueEvidence
                 .filter(sql: "mediaItemID = ?", arguments: [item.id])
                 .deleteAll(db)

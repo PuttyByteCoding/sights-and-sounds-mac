@@ -1,6 +1,15 @@
 import Foundation
 import GRDB
 
+/// What a file's new bytes are.
+enum FileChange {
+    /// The same streams, copied: a tag write, a restore, a remux.
+    case sameStreams
+    /// The streams themselves may be new: a repair, a size found changed on
+    /// disk, a swap finished after a crash.
+    case newStreams
+}
+
 extension LibraryDatabase {
     /// An item's file has new bytes — a tag write, a restore, a remux, a
     /// repair, or a size found changed on disk: forget what was read off
@@ -19,18 +28,32 @@ extension LibraryDatabase {
     /// somebody answered stays; fingerprint pairs compare the sound, which
     /// these changes keep.
     ///
-    /// And what Media Signal read and concluded goes, with its stage marks,
-    /// so the next examine reads the file afresh: a repaired file went on
-    /// showing the broken one's timing and the conclusions drawn from it,
-    /// and Examine skipped it as done. (As the full reset, evidence and
-    /// inferences go with the readings they were drawn from.)
-    static func forgetReadingsOfChangedFile(_ itemID: UUID, in db: Database) throws {
-        for table in [
-            "mediaSignalInference", "mediaSignalEvidence", "mediaSignalMeasurement",
-            "mediaSignalSeries", "mediaSignalDeclared", "mediaSignalStage",
-        ] {
-            try db.execute(sql: "DELETE FROM \(table) WHERE mediaItemID = ?", arguments: [itemID])
+    /// The old file's fingerprint and thumbnail failures go too: they were
+    /// the old bytes' (a broken file, repaired, was never fingerprinted or
+    /// thumbnailed again), and the sweeps skip an item marked failed.
+    ///
+    /// What Media Signal read goes only when the streams are new (a repair
+    /// re-encodes; a size found changed on disk, or a swap finished after a
+    /// crash, may be one): a repaired file went on showing the broken one's
+    /// timing, and Examine skipped it as done. A tag write, a restore and a
+    /// remux copy the streams untouched, so those readings stand — and
+    /// examined again, the file would show this app's own muxer stamp as
+    /// its transcoder.
+    static func forgetReadingsOfChangedFile(_ itemID: UUID, _ change: FileChange, in db: Database) throws {
+        if change == .newStreams {
+            // As the full reset: evidence and inferences go with the
+            // readings they were drawn from.
+            for table in [
+                "mediaSignalInference", "mediaSignalEvidence", "mediaSignalMeasurement",
+                "mediaSignalSeries", "mediaSignalDeclared", "mediaSignalStage",
+            ] {
+                try db.execute(sql: "DELETE FROM \(table) WHERE mediaItemID = ?", arguments: [itemID])
+            }
         }
+        try db.execute(sql: "DELETE FROM fingerprintFailure WHERE mediaItemID = ?", arguments: [itemID])
+        try db.execute(
+            sql: "DELETE FROM thumbnailState WHERE mediaItemID = ? AND failureMessage IS NOT NULL",
+            arguments: [itemID])
         try db.execute(sql: "UPDATE mediaItem SET contentHash = NULL WHERE id = ?", arguments: [itemID])
         try db.execute(sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?", arguments: [itemID])
         try db.execute(sql: "DELETE FROM metadataSweepState WHERE mediaItemID = ?", arguments: [itemID])

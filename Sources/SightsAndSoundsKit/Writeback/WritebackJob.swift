@@ -146,7 +146,7 @@ public struct WritebackJob: Job {
                     try db.execute(
                         sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
                         arguments: [newSize, itemID])
-                    try LibraryDatabase.forgetReadingsOfChangedFile(itemID, in: db)
+                    try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .sameStreams, in: db)
                 }
             } else {
                 failed += 1
@@ -229,7 +229,7 @@ public struct RestoreTagsJob: Job {
             try db.execute(
                 sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
                 arguments: [newSize, item.id])
-            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, in: db)
+            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .sameStreams, in: db)
         }
         // A restore that could hold none of the fields still succeeded: the
         // file is as near the snapshot as its format allows (see

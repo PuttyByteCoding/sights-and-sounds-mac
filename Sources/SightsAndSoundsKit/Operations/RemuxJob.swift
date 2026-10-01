@@ -105,7 +105,7 @@ public struct RemuxJob: Job {
             updated.bitrate = finalBitrate ?? updated.bitrate
             try updated.updateWithSegmentPaths(db)
             // New bytes: the next sweeps hash and read it afresh.
-            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, in: db)
+            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .sameStreams, in: db)
             try swap.clear(db)
         }
         await context.reportProgress(current: 3, total: 3)
