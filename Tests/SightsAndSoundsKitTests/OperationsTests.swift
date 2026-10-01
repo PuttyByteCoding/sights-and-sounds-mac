@@ -290,7 +290,10 @@ import Testing
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
         #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
         #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
-        #expect(state.signalRows > 0, "a stream copy threw away Media Signal's readings of the same streams")
+        // Optimize rebuilds the container too (a passthrough export to a
+        // new MP4: new brand, sample table, edit lists), and frame timing
+        // is read off the container.
+        #expect(state.signalRows == 0, "Media Signal still describes the old container")
         #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 

@@ -3,12 +3,13 @@ import GRDB
 
 /// What a file's new bytes are.
 enum FileChange {
-    /// The same streams, copied: a tag write, a restore, a remux to move
-    /// the index.
+    /// The same streams in the same container, its tags rewritten: a tag
+    /// write, a restore.
     case sameStreams
-    /// The streams themselves may differ: a repair (a re-encode, a copy
-    /// that drops what will not decode or a stream, or a new container
-    /// whose timing is what Media Signal reads), a size found changed
+    /// The streams or their container may differ: a repair (a re-encode,
+    /// or a copy that drops what will not decode or a stream), a remux (a
+    /// new container, whose timing is what Media Signal reads), a size
+    /// found changed
     /// on disk, a swap finished after a crash.
     case newStreams
 }
@@ -35,14 +36,15 @@ extension LibraryDatabase {
     /// the old bytes' (a broken file, repaired, was never fingerprinted or
     /// thumbnailed again), and the sweeps skip an item marked failed.
     ///
-    /// What Media Signal read goes only when the streams may differ (every
-    /// repair recipe changes what is in them — re-encoding, or dropping
-    /// what will not decode — and a size found changed on disk, or a swap
-    /// finished after a crash, may be one): a repaired file went on showing
-    /// the broken one's timing, and Examine skipped it as done. A tag
-    /// write, a restore and a remux copy the streams untouched, so those
-    /// readings stand — and examined again, the file would show this app's
-    /// own muxer stamp as its transcoder. A stage that failed goes either
+    /// What Media Signal read goes only when the streams or their container
+    /// may differ (every repair recipe changes what is in the streams; a
+    /// remux writes a new container, and frame timing is read off it; a
+    /// size found changed on disk, or a swap finished after a crash, may be
+    /// either): a repaired file went on showing the broken one's timing,
+    /// and Examine skipped it as done. A tag write and a restore rewrite
+    /// only the tags, so those readings stand — and examined again, the
+    /// file would show this app's own muxer stamp as its transcoder. A
+    /// stage that failed goes either
     /// way: it failed on the old bytes, and Examine skips an item with a
     /// stage marked, failed or not; run again, it replaces only its own
     /// rows.
