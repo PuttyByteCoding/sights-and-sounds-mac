@@ -142,11 +142,8 @@ extension LibraryDatabase {
         else { throw MoveError.itemNotFound }
         let diskSize = try fileAccess.fileSize(at: url)
         try writer.write { db in
-            try db.execute(
-                sql: "UPDATE mediaItem SET fileSize = ?, contentHash = NULL WHERE id = ?",
-                arguments: [diskSize, itemID])
-            try db.execute(
-                sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?", arguments: [itemID])
+            try db.execute(sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?", arguments: [diskSize, itemID])
+            try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .newStreams, in: db)
             try db.execute(
                 sql: "DELETE FROM validationFinding WHERE mediaItemID = ? AND kind = 'sizeMismatch'",
                 arguments: [itemID])

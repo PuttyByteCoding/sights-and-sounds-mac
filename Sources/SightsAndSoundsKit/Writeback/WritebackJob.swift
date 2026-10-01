@@ -144,13 +144,9 @@ public struct WritebackJob: Job {
                 let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
                 try await library.writer.write { db in
                     try db.execute(
-                        sql: """
-                        UPDATE mediaItem SET contentHash = NULL, fileSize = ? WHERE id = ?
-                        """,
+                        sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
                         arguments: [newSize, itemID])
-                    try db.execute(
-                        sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
-                        arguments: [itemID])
+                    try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .sameStreams, in: db)
                 }
             } else {
                 failed += 1
@@ -231,11 +227,9 @@ public struct RestoreTagsJob: Job {
         let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
         try await library.writer.write { db in
             try db.execute(
-                sql: "UPDATE mediaItem SET contentHash = NULL, fileSize = ? WHERE id = ?",
+                sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
                 arguments: [newSize, item.id])
-            try db.execute(
-                sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?",
-                arguments: [item.id])
+            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .sameStreams, in: db)
         }
         // A restore that could hold none of the fields still succeeded: the
         // file is as near the snapshot as its format allows (see

@@ -206,15 +206,72 @@ import Testing
                 sql: "UPDATE mediaItem SET contentHash = 'old-bytes' WHERE id = ?",
                 arguments: [f.parent.id])
             try ContentHashFailure(mediaItemID: f.parent.id, message: "an earlier timeout").insert(db)
+            // Swept: its embedded metadata was read off the old bytes.
+            try MetadataSweepState(mediaItemID: f.parent.id, failureMessage: nil).insert(db)
+            // And paired, unreviewed, with a byte-identical twin.
+            let twin = MediaItem(
+                sourceID: f.parent.sourceID, kind: .video, relativePath: "shows/twin.mp4",
+                fileSize: 1, contentHash: "old-bytes", needsReview: false)
+            try twin.insert(db)
+            try DuplicateCandidate(itemA: f.parent.id, itemB: twin.id, source: .contentHash, confidence: 1).insert(db)
+            // Pairs that must survive: one somebody answered (it blocks
+            // re-flagging for good), and one matched by sound, which a
+            // change of bytes keeps.
+            let answered = MediaItem(
+                sourceID: f.parent.sourceID, kind: .video, relativePath: "shows/answered.mp4",
+                fileSize: 1, contentHash: "old-bytes", needsReview: false)
+            let soundAlike = MediaItem(
+                sourceID: f.parent.sourceID, kind: .video, relativePath: "shows/sound-alike.mp4",
+                fileSize: 1, needsReview: false)
+            try answered.insert(db)
+            try soundAlike.insert(db)
+            var rejected = DuplicateCandidate(itemA: f.parent.id, itemB: answered.id, source: .contentHash, confidence: 1)
+            rejected.status = .rejected
+            try rejected.insert(db)
+            try DuplicateCandidate(itemA: f.parent.id, itemB: soundAlike.id, source: .fingerprint, confidence: 0.9).insert(db)
         }
+        // Failed to fingerprint and to thumbnail — the old bytes did.
+        try await f.library.writer.write { db in
+            try FingerprintFailure(mediaItemID: f.parent.id, message: "fpcalc could not decode").insert(db)
+            try ThumbnailState(mediaItemID: f.parent.id, generated: false, failureMessage: "no frame").upsert(db)
+        }
+        // Examined: Media Signal read the old file's declarations and timing.
+        var findings = SignalFindings()
+        findings.declare("video.codecTag", "avc1")
+        findings.measure("timing.frameCount", 10)
+        try f.library.recordSignalStage(itemID: f.parent.id, stage: "declared", version: 1, findings: findings)
+        // And one stage failed on the old bytes: Examine skips an item with
+        // a stage marked, failed or not.
+        try f.library.recordSignalStage(
+            itemID: f.parent.id, stage: "frameTiming", version: 1, findings: SignalFindings(),
+            failure: "the old container's timestamps could not be read")
     }
 
-    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int) {
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int, kept: Int, signalRows: Int, failureMarks: Int) {
         try await f.library.writer.read { db in
             let item = try MediaItem.fetchOne(db, key: f.parent.id)!
             let failures = try ContentHashFailure
                 .filter(sql: "mediaItemID = ?", arguments: [f.parent.id]).fetchCount(db)
-            return (item.contentHash, failures)
+            let swept = try MetadataSweepState.fetchOne(db, key: f.parent.id) != nil
+            let twinPairs = try DuplicateCandidate
+                .filter(sql: "status = 'pending' AND source = 'contentHash' AND (itemAID = ? OR itemBID = ?)",
+                        arguments: [f.parent.id, f.parent.id])
+                .fetchCount(db)
+            let kept = try DuplicateCandidate
+                .filter(sql: "(status <> 'pending' OR source <> 'contentHash') AND (itemAID = ? OR itemBID = ?)",
+                        arguments: [f.parent.id, f.parent.id])
+                .fetchCount(db)
+            var signalRows = 0
+            for table in ["mediaSignalStage", "mediaSignalDeclared", "mediaSignalMeasurement"] {
+                signalRows += try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM \(table) WHERE mediaItemID = ?", arguments: [f.parent.id]) ?? 0
+            }
+            let failureMarks = try FingerprintFailure.filter(key: f.parent.id).fetchCount(db)
+                + ThumbnailState.filter(sql: "mediaItemID = ? AND failureMessage IS NOT NULL", arguments: [f.parent.id]).fetchCount(db)
+            let signalFailures = try Int.fetchOne(
+                db, sql: "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ? AND failureMessage IS NOT NULL",
+                arguments: [f.parent.id]) ?? 0
+            return (item.contentHash, failures, swept, twinPairs, kept, signalRows, failureMarks + signalFailures)
         }
     }
 
@@ -230,6 +287,33 @@ import Testing
         let state = try await hashState(f)
         #expect(state.hash == nil)
         #expect(state.failures == 0)
+        #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
+        #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
+        #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
+        // Optimize rebuilds the container too (a passthrough export to a
+        // new MP4: new brand, sample table, edit lists), and frame timing
+        // is read off the container.
+        #expect(state.signalRows == 0, "Media Signal still describes the old container")
+        #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
+    }
+
+    /// Remux as a repair writes a new container, and frame timing is read
+    /// off the container: the old one's readings went on describing it.
+    /// (Optimize writes a new container too, and forgets them as well.)
+    @Test func aRemuxRepairForgetsWhatMediaSignalReadOfTheOldContainer() async throws {
+        let f = try await OpsFixture()
+        defer { f.tearDown() }
+        try await stampOldHash(f)
+
+        let record = try await RemuxJob.enqueue(on: f.runner, itemID: f.parent.id, mode: .repair)
+        try await f.runner.runPending()
+        let job = try await f.job(record.id)
+        #expect(job.state == .succeeded, "\(job.error ?? "")")
+
+        let state = try await hashState(f)
+        #expect(state.hash == nil)
+        #expect(state.signalRows == 0, "Media Signal still describes the old container")
+        #expect(state.failureMarks == 0)
     }
 
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
@@ -246,6 +330,11 @@ import Testing
         let state = try await hashState(f)
         #expect(state.hash == nil)
         #expect(state.failures == 0)
+        #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
+        #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
+        #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
+        #expect(state.signalRows == 0, "Media Signal still describes the old file")
+        #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 
     /// The repair swaps the file first, then puts the flagged file back
@@ -276,6 +365,11 @@ import Testing
         let state = try await hashState(f)
         #expect(state.hash == nil)
         #expect(state.failures == 0)
+        #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
+        #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
+        #expect(state.kept == 2, "an answered pair or a sound-matched pair was dropped too")
+        #expect(state.signalRows == 0, "Media Signal still describes the old file")
+        #expect(state.failureMarks == 0, "the old file's fingerprint or thumbnail failure still blocks the new one")
     }
 
     @Test func remuxRefusesClipsAndMissingFiles() async throws {

@@ -231,11 +231,14 @@ import Testing
                 mediaItemID: item.id, sourceID: source.id, fileName: "a.mkv",
                 fromPath: "shows/a.mkv", toPath: "shows/a.mp4", sessionID: nil,
                 archivePath: "_Replaced/shows/a.mkv").insert(db)
+            try MetadataSweepState(mediaItemID: item.id, failureMessage: nil).insert(db)
         }
         try f.moveOnDisk("shows/a.mkv", "_Replaced/shows/a.mkv")
         try Data("remuxed, and longer".utf8).write(to: f.root.appendingPathComponent("shows/a.mp4"))
 
         let outcome = try f.library.reconcileInterruptedMoves()
+        // New bytes: what the sweep read off the old file is read again.
+        #expect(try f.library.writer.read { try MetadataSweepState.fetchOne($0, key: item.id) } == nil)
 
         #expect(outcome.finished == 1)
         #expect(try f.path(of: item) == "shows/a.mp4")

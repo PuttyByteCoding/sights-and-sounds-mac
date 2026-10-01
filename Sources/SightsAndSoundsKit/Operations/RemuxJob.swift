@@ -103,11 +103,12 @@ public struct RemuxJob: Job {
             updated.setRelativePath(finalRelative)
             updated.fileSize = newSize
             updated.bitrate = finalBitrate ?? updated.bitrate
-            // New bytes: the old hash would pair this file with its old
-            // twin as byte-identical. The next sweep hashes it afresh.
-            updated.contentHash = nil
             try updated.updateWithSegmentPaths(db)
-            try ContentHashFailure.filter(sql: "mediaItemID = ?", arguments: [item.id]).deleteAll(db)
+            // New bytes: the next sweeps hash and read it afresh. Either
+            // mode is a passthrough export to a new MP4 — new brand, sample
+            // table and edit lists — and Media Signal reads frame timing
+            // off the container, so it reads this one afresh too.
+            try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .newStreams, in: db)
             try swap.clear(db)
         }
         await context.reportProgress(current: 3, total: 3)

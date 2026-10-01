@@ -214,11 +214,14 @@ import Testing
         #expect(findings.first { $0.kind == .orphanFile }?.path == "shows/orphan.mp4")
         #expect(findings.first { $0.kind == .sizeMismatch }?.path == "shows/shrunk.mp4")
 
-        // Fix the mismatch: disk wins, hash clears, finding leaves.
+        // Fix the mismatch: disk wins, hash clears, finding leaves — and
+        // what was read off the file before it changed is read again.
+        try await library.writer.write { try MetadataSweepState(mediaItemID: shrunk.id, failureMessage: nil).insert($0) }
         try library.acceptDiskSize(for: shrunk.id)
         let fixed = try await library.writer.read { try MediaItem.fetchOne($0, key: shrunk.id)! }
         #expect(fixed.fileSize == 10)
         #expect(fixed.contentHash == nil)
+        #expect(try await library.writer.read { try MetadataSweepState.fetchOne($0, key: shrunk.id) } == nil)
         #expect(try library.validationFindings().count == 2)
 
         // A rerun replaces findings (mismatch stays gone; the others remain).
