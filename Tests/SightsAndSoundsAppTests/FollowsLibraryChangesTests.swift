@@ -96,4 +96,38 @@ import Testing
         try await settle(0.6)
         #expect(counter.reloads == 1)
     }
+    /// An import commits several times a second, and each change put the
+    /// settle back: Review, Maintenance and Tag Manager did not reload until
+    /// the import stopped — a mark made in the player missing from Review
+    /// for the length of it. A burst now reloads within `longestSettle`.
+    @Test func aSteadyStreamOfChangesStillReloads() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Stream")
+        let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
+        let counter = Counter()
+        let window = NSWindow(
+            contentRect: NSRect(x: -4000, y: -4000, width: 40, height: 40),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = NSHostingController(rootView: Probe(model: model, counter: counter))
+        window.orderFront(nil)
+        defer { window.close() }
+        try await settle(1.0)
+        #expect(counter.reloads == 0)
+
+        // A change every ~150 ms — well inside the 400 ms settle — for
+        // longer than `longestSettle` plus slack; each one waited for, so
+        // the hub cannot merge the stream into one delivery.
+        let streamEnd = Date().addingTimeInterval(4.0)
+        var n = 0
+        while Date() < streamEnd, counter.reloads == 0 {
+            let before = model.changeCount([.vocabulary])
+            let name = "Band \(n)"
+            n += 1
+            try await library.writer.write { try TagCategory(name: name).insert($0) }
+            try await waitFor { model.changeCount([.vocabulary]) > before }
+            try await settle(0.15)
+        }
+        #expect(counter.reloads >= 1, "no reload while the changes kept coming")
+    }
 }
