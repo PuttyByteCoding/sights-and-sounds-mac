@@ -66,7 +66,7 @@ struct SignalSampleCorpusTests {
         var problems: [String] = []
         let url: URL
         do {
-            url = try SignalSamples.write(sample, into: folder, ffmpeg: ffmpeg)
+            url = try await SignalSamples.write(sample, into: folder, ffmpeg: ffmpeg)
         } catch {
             try? await report?.write { db in
                 try db.execute(
