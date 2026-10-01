@@ -20,8 +20,15 @@ private struct QueuePauseWatch: ViewModifier {
     let active: Bool
     let libraryID: UUID?
 
+    /// Both: a library picked while waiting (the sweep panel's picker)
+    /// must be watched from then on, not the one the wait began on.
+    private struct Key: Hashable {
+        let active: Bool
+        let libraryID: UUID?
+    }
+
     func body(content: Content) -> some View {
-        content.task(id: active) {
+        content.task(id: Key(active: active, libraryID: libraryID)) {
             guard active, let libraryID, let runner = try? app.runner(for: libraryID) else {
                 paused = false
                 return

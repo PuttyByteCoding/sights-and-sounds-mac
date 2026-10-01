@@ -23,6 +23,9 @@ struct TagAnalysisView: View {
     @State private var rules: RulesTabModel?
     @State private var schemas: SchemasTabModel?
     @State private var mode: Mode = .candidates
+    /// A scan or rescan waits for its own job, and on a paused queue that
+    /// is until Resume: the header says so rather than "scanning…".
+    @State private var queuePaused = false
     @FocusState private var focused: Bool
     /// The rail opens at its saved width; a drag records the new one and
     /// persists it once the drag settles, so settings.json is not
@@ -224,10 +227,11 @@ struct TagAnalysisView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
+        .watchingQueuePause($queuePaused, while: model?.isLoading == true, libraryID: browse.libraryID)
     }
 
     private func headline(_ model: TagAnalysisModel) -> String {
-        if model.isLoading { return "scanning…" }
+        if model.isLoading { return queuePaused ? "waiting — tasks are paused" : "scanning…" }
         let strings = model.allRows.count
         let undecided = model.count(status: .undecided)
         return "\(strings) strings · \(undecided) undecided"
