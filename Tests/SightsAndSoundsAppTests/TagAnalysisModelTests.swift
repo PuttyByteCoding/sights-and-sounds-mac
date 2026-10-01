@@ -89,6 +89,28 @@ import Testing
         try await settle(model)
     }
 
+    /// A reload ends by clearing `isLoading`, and opening the companion or
+    /// walking to the next video reloads at the same moment as the
+    /// automatic sweep begins: the wait was hidden, the header showed the
+    /// unswept counts and Rescan came back on, mid-sweep. And one flag
+    /// could not hold two sweeps: the first to finish cleared it for both.
+    @Test func aWaitOutlastsReloadsAndCountsEachSweep() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        model.beginSweep()
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(model.isWaitingOnJob, "a reload ended the wait for a sweep still queued")
+
+        model.beginSweep()
+        model.finishSweep()
+        #expect(model.isWaitingOnJob, "the first sweep to finish ended the wait for both")
+        model.finishSweep()
+        #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
     @Test func movingToAnotherItemCountsAVisitAndClearsTheSelection() async throws {
         let (session, items, _) = try await makeSession()
         let model = TagAnalysisModel(session: session)

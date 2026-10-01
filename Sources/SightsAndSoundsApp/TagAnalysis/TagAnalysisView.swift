@@ -209,7 +209,7 @@ struct TagAnalysisView: View {
                     browse.scanText(itemID: id) { model.finishSweep() }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                .disabled(model.isLoading || model.currentItemID == nil)
+                .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
                 .help("Read on-screen text with Vision — resumable; click again to scan further")
                 Button("Rescan This Video") {
                     guard let id = model.currentItemID else { return }
@@ -218,7 +218,7 @@ struct TagAnalysisView: View {
                     browse.sweepMetadata(itemIDs: [id]) { model.finishSweep() }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                .disabled(model.isLoading || model.currentItemID == nil)
+                .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
             }
         }
         .padding(.horizontal, 14)
@@ -231,9 +231,9 @@ struct TagAnalysisView: View {
     }
 
     private func headline(_ model: TagAnalysisModel) -> String {
-        if model.isLoading {
-            return model.isWaitingOnJob && queuePaused ? "waiting — tasks are paused" : "scanning…"
-        }
+        // The wait first: a reload ends `isLoading` while a sweep still waits.
+        if model.isWaitingOnJob { return queuePaused ? "waiting — tasks are paused" : "scanning…" }
+        if model.isLoading { return "scanning…" }
         let strings = model.allRows.count
         let undecided = model.count(status: .undecided)
         return "\(strings) strings · \(undecided) undecided"

@@ -239,16 +239,20 @@ final class TagAnalysisModel {
     /// The sweep runs on the job runner; the model only tracks that one
     /// is in flight.
     /// A scan or rescan is waiting for its own job — unlike `isLoading`,
-    /// which every reload sets for analysis that never touches the queue.
-    private(set) var isWaitingOnJob = false
+    /// which every reload sets, and clears, for analysis that never touches
+    /// the queue: a reload landing mid-sweep (opening the companion, walking
+    /// to the next video) used to end the wait on screen. Counted, since an
+    /// automatic sweep can begin for the next video before the last ends.
+    var isWaitingOnJob: Bool { jobsWaitedOn > 0 }
+    private var jobsWaitedOn = 0
 
     func beginSweep() {
         isLoading = true
-        isWaitingOnJob = true
+        jobsWaitedOn += 1
     }
 
     func finishSweep() {
-        isWaitingOnJob = false
+        jobsWaitedOn = max(0, jobsWaitedOn - 1)
         reload()
     }
 

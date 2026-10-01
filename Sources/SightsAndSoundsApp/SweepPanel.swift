@@ -20,6 +20,10 @@ struct SweepPanel: View {
     /// watch read the wrong library's queue).
     @State private var running: [UUID: Set<SweepKind>] = [:]
     @State private var queuePaused = false
+    /// Only the newest read lands: an older one — another library before
+    /// the picker changed, or a slower read of this one — finished last
+    /// and put its counts under the library on screen.
+    @State private var statusGeneration = 0
 
     private var runningHere: Set<SweepKind> { libraryID.flatMap { running[$0] } ?? [] }
     @State private var confirmRecalc: SweepKind?
@@ -170,6 +174,8 @@ struct SweepPanel: View {
     // MARK: - Actions
 
     private func refreshStatuses() {
+        statusGeneration += 1
+        let generation = statusGeneration
         guard let libraryID, let library = try? app.library(for: libraryID) else {
             statuses = [:]
             return
@@ -181,7 +187,10 @@ struct SweepPanel: View {
             next[.metadata] = try? library.metadataSweepStatus()
             next[.signal] = try? library.signalStatus()
             next[.thumbnails] = try? library.thumbnailStatus(libraryID: libraryID)
-            await MainActor.run { statuses = next }
+            await MainActor.run {
+                guard generation == statusGeneration else { return }
+                statuses = next
+            }
         }
     }
 
