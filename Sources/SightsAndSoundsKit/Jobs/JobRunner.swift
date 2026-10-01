@@ -212,9 +212,11 @@ public actor JobRunner {
 
     /// Start the queue and wait for these jobs — not the whole queue —
     /// to settle. For a caller that shows its own work in progress: one
-    /// that waited for `runPending` waited for every job queued ahead or
-    /// after its own, behind a library-wide sweep for days. Observed, not
-    /// polled. On a paused runner it waits until Resume, as the jobs do.
+    /// that waited for `runPending` also waited for every job queued after
+    /// its own. (Jobs queued before it still run first; `runNext` moves a
+    /// job somebody is waiting on to the front.) Observed, not polled. On
+    /// a paused runner it waits until Resume, as the jobs do. A cancelled
+    /// wait throws rather than reporting the jobs settled.
     public func waitUntilSettled(_ jobIDs: [UUID]) async throws {
         guard !jobIDs.isEmpty else { return }
         try await waitUntilNonePending(JobRecord.filter(jobIDs.contains(Column("id"))))
@@ -235,6 +237,9 @@ public actor JobRunner {
             .removeDuplicates()
             .values(in: library.writer)
         for try await count in counts where count == 0 { return }
+        // The observation ends quietly when the task is cancelled; that
+        // is not the jobs settling.
+        try Task.checkCancellation()
     }
 
     private func drainQueue() async throws -> [UUID] {

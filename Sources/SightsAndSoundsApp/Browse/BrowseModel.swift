@@ -1262,6 +1262,9 @@ final class BrowseModel {
         Task {
             do {
                 let job = try await OcrJob.enqueue(on: runner, itemID: itemID)
+                // Somebody is waiting on it: next after the job running,
+                // not behind every sweep queued before it.
+                try await runner.runNext(job.id)
                 try await runner.waitUntilSettled([job.id])
             } catch {
                 errorMessage = "\(error)"
@@ -1324,14 +1327,15 @@ final class BrowseModel {
         let runner = jobRunner
         Task {
             do {
-                // Waits for its own sweep, never the rest of the queue:
-                // behind a library-wide sweep a scoped one left Tag
-                // Analysis loading for as long as that ran.
+                // Waits for its own sweep, never for jobs queued after it.
                 if let itemIDs {
                     // Scoped: plain enqueue — dedupe is by kind, and a
                     // pending library sweep must not swallow the small
-                    // one the operator is waiting on.
+                    // one the operator is waiting on. It goes next after
+                    // the job running, rather than behind every sweep
+                    // queued before it, which left Tag Analysis loading.
                     let job = try await MetadataSweepJob.enqueue(on: runner, itemIDs: itemIDs)
+                    try await runner.runNext(job.id)
                     try await runner.waitUntilSettled([job.id])
                 } else if let job = try await runner.enqueueUnlessPending(MetadataSweepJob.self) {
                     try await runner.waitUntilSettled([job.id])

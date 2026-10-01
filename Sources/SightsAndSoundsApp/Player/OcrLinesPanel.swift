@@ -21,6 +21,7 @@ struct OcrLinesPanel: View {
 
     @State private var lines: [OcrTextLine] = []
     @State private var scanQueued = false
+    @State private var queuePaused = false
     @State private var tagSheetLine: OcrTextLine?
     @State private var aliasSheetLine: OcrTextLine?
 
@@ -29,6 +30,7 @@ struct OcrLinesPanel: View {
             header
             if lines.isEmpty {
                 empty
+                    .watchingQueuePause($queuePaused, while: scanQueued, libraryID: model.libraryID)
             } else {
                 ScrollView {
                     VStack(spacing: 1) {
@@ -80,7 +82,9 @@ struct OcrLinesPanel: View {
     private var empty: some View {
         HStack(spacing: 10) {
             Text(scanQueued
-                ? "Scan queued — reopen this panel when it finishes."
+                ? (queuePaused
+                    ? "Scan queued — tasks are paused."
+                    : "Scan queued — reopen this panel when it finishes.")
                 : "No scanned text for this item yet.")
                 .font(Theme.ui(12))
                 .foregroundStyle(Theme.Text.disabled)
@@ -117,9 +121,11 @@ struct OcrLinesPanel: View {
         else { return }
         scanQueued = true
         Task {
-            // Its own scan, not the whole queue: behind a sweep the panel
-            // said "scan queued" until the sweep ended.
+            // Its own scan, next after the job running: waiting for the
+            // whole queue, the panel said "scan queued" until every sweep
+            // queued before or after it had ended.
             if let job = try? await OcrJob.enqueue(on: runner, itemID: itemID) {
+                _ = try? await runner.runNext(job.id)
                 try? await runner.waitUntilSettled([job.id])
             }
             await reload()

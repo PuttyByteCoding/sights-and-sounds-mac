@@ -16,6 +16,7 @@ struct SweepPanel: View {
     @State private var libraryID: UUID?
     @State private var statuses: [SweepKind: SweepStatus] = [:]
     @State private var running: Set<SweepKind> = []
+    @State private var queuePaused = false
     @State private var confirmRecalc: SweepKind?
     @State private var errorText: String?
 
@@ -89,6 +90,7 @@ struct SweepPanel: View {
             refreshStatuses()
         }
         .onChange(of: libraryID) { _, _ in refreshStatuses() }
+        .watchingQueuePause($queuePaused, while: !running.isEmpty, libraryID: libraryID)
         .confirmationDialog(
             "Recalculate \(confirmRecalc?.title ?? "")?",
             isPresented: Binding(
@@ -132,7 +134,13 @@ struct SweepPanel: View {
             }
 
             if running.contains(kind) {
-                ProgressView().controlSize(.small)
+                if queuePaused {
+                    Text("tasks paused")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.disabled)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
             }
             Button("Verify") { verify(kind) }
                 .buttonStyle(SecondaryButtonStyle(compact: true))

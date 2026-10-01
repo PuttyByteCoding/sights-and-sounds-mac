@@ -99,3 +99,25 @@ import Testing
         try await runner.waitUntilNonePending(of: Quick.kind)
     }
 }
+
+/// A cancelled wait used to return as if its jobs had settled: the
+/// observation ends quietly on cancellation, and the caller went on to
+/// reload and clear its busy state with the job still queued.
+@Suite struct JobWaitCancellationTests {
+    struct Quick: Job {
+        static let kind = "test.job-wait-cancel.quick"
+        init(payload: Data?) throws {}
+        func run(_ context: JobContext) async throws {}
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aCancelledWaitThrows() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        let runner = JobRunner(library: library, jobTypes: [Quick.self], paused: true)
+        let job = try await runner.enqueue(Quick.self)
+        let waiting = Task { try await runner.waitUntilSettled([job.id]) }
+        try await Task.sleep(for: .milliseconds(100))
+        waiting.cancel()
+        await #expect(throws: CancellationError.self) { try await waiting.value }
+    }
+}
