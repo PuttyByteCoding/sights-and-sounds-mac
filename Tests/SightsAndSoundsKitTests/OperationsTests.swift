@@ -208,16 +208,26 @@ import Testing
             try ContentHashFailure(mediaItemID: f.parent.id, message: "an earlier timeout").insert(db)
             // Swept: its embedded metadata was read off the old bytes.
             try MetadataSweepState(mediaItemID: f.parent.id, failureMessage: nil).insert(db)
+            // And paired, unreviewed, with a byte-identical twin.
+            let twin = MediaItem(
+                sourceID: f.parent.sourceID, kind: .video, relativePath: "shows/twin.mp4",
+                fileSize: 1, contentHash: "old-bytes", needsReview: false)
+            try twin.insert(db)
+            try DuplicateCandidate(itemA: f.parent.id, itemB: twin.id, source: .contentHash, confidence: 1).insert(db)
         }
     }
 
-    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool) {
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool, twinPairs: Int) {
         try await f.library.writer.read { db in
             let item = try MediaItem.fetchOne(db, key: f.parent.id)!
             let failures = try ContentHashFailure
                 .filter(sql: "mediaItemID = ?", arguments: [f.parent.id]).fetchCount(db)
             let swept = try MetadataSweepState.fetchOne(db, key: f.parent.id) != nil
-            return (item.contentHash, failures, swept)
+            let twinPairs = try DuplicateCandidate
+                .filter(sql: "source = 'contentHash' AND (itemAID = ? OR itemBID = ?)",
+                        arguments: [f.parent.id, f.parent.id])
+                .fetchCount(db)
+            return (item.contentHash, failures, swept, twinPairs)
         }
     }
 
@@ -234,6 +244,7 @@ import Testing
         #expect(state.hash == nil)
         #expect(state.failures == 0)
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
+        #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
     }
 
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
@@ -251,6 +262,7 @@ import Testing
         #expect(state.hash == nil)
         #expect(state.failures == 0)
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
+        #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
     }
 
     /// The repair swaps the file first, then puts the flagged file back
@@ -282,6 +294,7 @@ import Testing
         #expect(state.hash == nil)
         #expect(state.failures == 0)
         #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
+        #expect(state.twinPairs == 0, "still offered as byte-identical to its old twin")
     }
 
     @Test func remuxRefusesClipsAndMissingFiles() async throws {
