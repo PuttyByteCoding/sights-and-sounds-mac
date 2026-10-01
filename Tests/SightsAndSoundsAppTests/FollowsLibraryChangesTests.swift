@@ -115,19 +115,34 @@ import Testing
         try await settle(1.0)
         #expect(counter.reloads == 0)
 
-        // A change every ~150 ms — well inside the 400 ms settle — for
-        // longer than `longestSettle` plus slack; each one waited for, so
-        // the hub cannot merge the stream into one delivery.
-        let streamEnd = Date().addingTimeInterval(4.0)
+        // Changes closer together than the plain settle, for longer than
+        // `longestSettle`; each one waited for, so the hub cannot merge the
+        // stream into one delivery. Only the cap can reload inside it.
+        let clock = ContinuousClock()
+        let started = clock.now
+        let streamEnd = started + .seconds(4)
+        var lastDelivered: ContinuousClock.Instant?
+        var longestGap: Duration = .zero
         var n = 0
-        while Date() < streamEnd, counter.reloads == 0 {
+        while clock.now < streamEnd, counter.reloads == 0 {
             let before = model.changeCount([.vocabulary])
             let name = "Band \(n)"
             n += 1
             try await library.writer.write { try TagCategory(name: name).insert($0) }
             try await waitFor { model.changeCount([.vocabulary]) > before }
-            try await settle(0.15)
+            let now = clock.now
+            if let lastDelivered { longestGap = max(longestGap, now - lastDelivered) }
+            lastDelivered = now
+            try await settle(0.1)
         }
-        #expect(counter.reloads >= 1, "no reload while the changes kept coming")
+        let reloadedAfter = clock.now - started
+        // Only meaningful when the machine kept up: a gap as long as the
+        // plain settle lets it reload without the cap, and passing then
+        // would prove nothing. (The same holds the other way: such a run
+        // cannot fail.)
+        if longestGap < FollowsLibraryChanges.settle {
+            #expect(counter.reloads >= 1, "no reload while the changes kept coming")
+            #expect(reloadedAfter < .seconds(3), "the first reload came \(reloadedAfter) into the stream")
+        }
     }
 }
