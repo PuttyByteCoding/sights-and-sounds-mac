@@ -135,6 +135,30 @@ import Testing
         try await settle(model)
     }
 
+    /// The automatic metadata sweep is held back only by a metadata sweep
+    /// of that video still waiting. A text scan held it back too, and when
+    /// a tag write cleared the video's sweep mid-scan, nothing asked for
+    /// the sweep again: the tags from before the write stayed on screen.
+    @Test func aTextScanDoesNotHoldBackTheMetadataSweep() async throws {
+        let (session, items, _) = try await makeSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+
+        model.beginSweep(for: items[0].id, .textScan)
+        #expect(model.isWaitingOnJob, "the header and buttons still show the scan")
+        #expect(!model.isWaitingOnMetadataSweep, "a text scan held back the metadata sweep")
+        model.beginSweep(for: items[0].id, .metadataSweep)
+        #expect(model.isWaitingOnMetadataSweep)
+        model.finishSweep(for: items[0].id, .metadataSweep)
+        #expect(!model.isWaitingOnMetadataSweep)
+        #expect(model.isWaitingOnJob, "the text scan is still waiting")
+        model.finishSweep(for: items[0].id, .textScan)
+        #expect(!model.isWaitingOnJob)
+        try await settle(model)
+    }
+
     @Test func movingToAnotherItemCountsAVisitAndClearsTheSelection() async throws {
         let (session, items, _) = try await makeSession()
         let model = TagAnalysisModel(session: session)

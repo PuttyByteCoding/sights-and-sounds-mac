@@ -158,7 +158,7 @@ struct TagAnalysisView: View {
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
         // Not while this video's sweep is still waiting: it is unswept
         // until that runs, and each walk away and back queued another.
-        guard let id = model.currentItemID, !model.isWaitingOnJob,
+        guard let id = model.currentItemID, !model.isWaitingOnMetadataSweep,
               (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
         else { return }
         model.beginSweep(for: id)
@@ -207,8 +207,15 @@ struct TagAnalysisView: View {
                     // not the seconds a load can afford). Budgeted and
                     // resumable: a long video may take several clicks.
                     guard let id = model.currentItemID else { return }
-                    model.beginSweep(for: id)
-                    browse.scanText(itemID: id) { model.finishSweep(for: id) }
+                    model.beginSweep(for: id, .textScan)
+                    browse.scanText(itemID: id) {
+                        model.finishSweep(for: id, .textScan)
+                        // A scan takes minutes; a tag write may have cleared
+                        // the video's sweep meanwhile. (Only after a scan: a
+                        // sweep that failed leaves the video unswept, and
+                        // asking again there would loop.)
+                        sweepCurrentIfNeeded(model)
+                    }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
