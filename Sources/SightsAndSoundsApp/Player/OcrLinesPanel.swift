@@ -22,7 +22,9 @@ struct OcrLinesPanel: View {
     @State private var lines: [OcrTextLine] = []
     /// The items with a scan waiting. Per item: a scan of one finishing
     /// while another's waits cleared the other's "Scan queued", brought its
-    /// Scan button back, and a second click queued a second full scan.
+    /// Scan button back, and a second click queued a second full scan. And
+    /// filled from the queue on each reload, since closing the drawer loses
+    /// this view's state while the scan still waits.
     @State private var queuedScans: Set<UUID> = []
     private var scanQueued: Bool { model.item.map { queuedScans.contains($0.id) } ?? false }
     @State private var queuePaused = false
@@ -88,7 +90,7 @@ struct OcrLinesPanel: View {
             Text(scanQueued
                 ? (queuePaused
                     ? "Scan queued — tasks are paused."
-                    : "Scan queued — reopen this panel when it finishes.")
+                    : "Scan queued — the lines appear here when it finishes.")
                 : "No scanned text for this item yet.")
                 .font(Theme.ui(12))
                 .foregroundStyle(Theme.Text.disabled)
@@ -107,6 +109,13 @@ struct OcrLinesPanel: View {
             return
         }
         let library = model.library
+        let pending = try? await Task.detached(operation: { try library.pendingOcrScan(of: itemID) }).value
+        // Checked after the read: two reloads in flight must not both wait.
+        if let jobID = pending ?? nil, !queuedScans.contains(itemID),
+           let runner = try? app.runner(for: model.libraryID) {
+            queuedScans.insert(itemID)
+            wait(for: jobID, of: itemID, on: runner)
+        }
         // Explicit return type — the async `read` overload's inference
         // is ambiguous to the CI toolchain (Xcode 16).
         let fetched: [OcrTextLine] = (try? await library.writer.read { db -> [OcrTextLine] in
@@ -127,10 +136,18 @@ struct OcrLinesPanel: View {
             // Its own scan, next after the job running: waiting for the
             // whole queue, the panel said "scan queued" until every sweep
             // queued before or after it had ended.
-            if let job = try? await OcrJob.enqueue(on: runner, itemID: itemID) {
-                _ = try? await runner.runNext(job.id)
-                try? await runner.waitUntilSettled([job.id])
+            guard let job = try? await OcrJob.enqueue(on: runner, itemID: itemID) else {
+                queuedScans.remove(itemID)
+                return
             }
+            _ = try? await runner.runNext(job.id)
+            wait(for: job.id, of: itemID, on: runner)
+        }
+    }
+
+    private func wait(for jobID: UUID, of itemID: UUID, on runner: JobRunner) {
+        Task {
+            try? await runner.waitUntilSettled([jobID])
             queuedScans.remove(itemID)
             // Its lines are only on screen if its item is.
             if model.item?.id == itemID { await reload() }
