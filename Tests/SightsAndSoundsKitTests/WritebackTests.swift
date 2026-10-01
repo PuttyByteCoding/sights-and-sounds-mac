@@ -98,10 +98,16 @@ import Testing
             try item.insert(db)
             try MediaItemTag(mediaItemID: item.id, tagID: larks.id).insert(db)
             try MetadataSweepState(mediaItemID: item.id, failureMessage: nil).insert(db)
+            // Failures on the old bytes, which the sweeps would skip it for.
+            try FingerprintFailure(mediaItemID: item.id, message: "fpcalc could not decode").insert(db)
+            try ThumbnailState(mediaItemID: item.id, generated: false, failureMessage: "no frame").upsert(db)
         }
         var findings = SignalFindings()
         findings.measure("timing.frameCount", 10)
         try library.recordSignalStage(itemID: item.id, stage: "declared", version: 1, findings: findings)
+        try library.recordSignalStage(
+            itemID: item.id, stage: "frameTiming", version: 1, findings: SignalFindings(),
+            failure: "the old file's timestamps could not be read")
         let runner = JobRunner(library: library)
         await runner.register(WritebackJob.self)
         _ = try await WritebackJob.enqueue(on: runner, itemIDs: [item.id], scopeDescription: "test")
@@ -122,7 +128,12 @@ import Testing
         let examined = try await library.writer.read {
             try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ?", arguments: [item.id]) ?? 0
         }
-        #expect(examined == 1, "a tag write threw away Media Signal's readings")
+        #expect(examined == 1, "a tag write threw away Media Signal's readings, or kept the stage that failed")
+        let failureMarks = try await library.writer.read { db in
+            try FingerprintFailure.filter(key: item.id).fetchCount(db)
+                + ThumbnailState.filter(sql: "mediaItemID = ? AND failureMessage IS NOT NULL", arguments: [item.id]).fetchCount(db)
+        }
+        #expect(failureMarks == 0, "the old bytes' fingerprint or thumbnail failure still blocks the file")
         let onDisk = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64
         #expect(refreshed.fileSize == onDisk)
     }

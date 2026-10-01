@@ -299,7 +299,7 @@ import Testing
 
     /// Remux as a repair writes a new container, and frame timing is read
     /// off the container: the old one's readings went on describing it.
-    /// (Optimize only moves the index, and keeps them.)
+    /// (Optimize writes a new container too, and forgets them as well.)
     @Test func aRemuxRepairForgetsWhatMediaSignalReadOfTheOldContainer() async throws {
         let f = try await OpsFixture()
         defer { f.tearDown() }
