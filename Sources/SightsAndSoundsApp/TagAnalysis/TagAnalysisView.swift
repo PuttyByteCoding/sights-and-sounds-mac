@@ -167,6 +167,9 @@ struct TagAnalysisView: View {
         if let waiting = try? browse.library.pendingMetadataSweep(of: id),
            let runner = try? app.runner(for: browse.libraryID) {
             Task {
+                // Moved ahead as a sweep queued here would be: a retried
+                // one (from Background Tasks) waits at the back otherwise.
+                _ = try? await runner.runNext(waiting)
                 try? await runner.waitUntilSettled([waiting])
                 model.finishSweep(for: id)
             }

@@ -140,13 +140,15 @@ struct OcrLinesPanel: View {
                 queuedScans.remove(itemID)
                 return
             }
-            _ = try? await runner.runNext(job.id)
             wait(for: job.id, of: itemID, on: runner)
         }
     }
 
+    /// Moves the scan ahead too — one found in the queue may have been
+    /// retried from Background Tasks, at the back — then waits for it.
     private func wait(for jobID: UUID, of itemID: UUID, on runner: JobRunner) {
         Task {
+            _ = try? await runner.runNext(jobID)
             try? await runner.waitUntilSettled([jobID])
             queuedScans.remove(itemID)
             // Its lines are only on screen if its item is.
