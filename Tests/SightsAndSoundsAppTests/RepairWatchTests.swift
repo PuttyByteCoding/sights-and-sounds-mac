@@ -1,4 +1,5 @@
 import Foundation
+import SightsAndSoundsKit
 import Testing
 
 @testable import SightsAndSoundsApp
@@ -92,5 +93,62 @@ import Testing
         #expect(watch.isRepairing(a), "another item's queued repair looked done")
         #expect(watch.isRepairing(b))
         #expect(watch.settle(stillFlagged: [a, b]) == 0)
+    }
+}
+
+/// A repair queued before a quit has nothing draining it after relaunch:
+/// a runner does not start its queue when the library opens, and Review
+/// only watched the pending set, so the issue said "Repair queued" with
+/// Run fix disabled until something unrelated started the queue. Watching
+/// starts it, as Organise's watch does — unless tasks are paused.
+@Suite @MainActor struct RepairWatchQueueTests {
+    private func recipe() -> RepairRecipe {
+        RepairRecipe(name: "remux", matchPattern: nil, tool: "ffmpeg",
+                     argumentTemplate: ["{input}", "{output}"], estimate: "seconds")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func watchingPendingRepairsStartsAQueueNobodyStarted() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "RepairLeftQueued")
+        let runner = JobRunner(library: library)
+        // Queued, and nothing drains it. Its item does not exist, so the
+        // repair settles (as failed) as soon as it runs.
+        let item = UUID()
+        _ = try await RepairJob.enqueue(on: runner, itemID: item, recipe: recipe())
+
+        var seen: [Set<UUID>] = []
+        let watching = Task { @MainActor in
+            for try await items in RepairWatch.pending(in: library, runner: runner) {
+                seen.append(items)
+                if items.isEmpty, seen.contains(where: { !$0.isEmpty }) { return }
+            }
+        }
+        defer { watching.cancel() }
+        for _ in 0..<400 where !(seen.last == [] && seen.contains { !$0.isEmpty }) {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(seen.first == [item])
+        #expect(seen.last == [], "the queued repair never ran: \(seen)")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func watchingNeverRunsAPausedQueue() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "RepairPaused")
+        let runner = JobRunner(library: library, paused: true)
+        let item = UUID()
+        let job = try await RepairJob.enqueue(on: runner, itemID: item, recipe: recipe())
+
+        var seen: [Set<UUID>] = []
+        let watching = Task { @MainActor in
+            for try await items in RepairWatch.pending(in: library, runner: runner) { seen.append(items) }
+        }
+        defer { watching.cancel() }
+        for _ in 0..<400 where seen.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
+        #expect(seen == [[item]])
+        try await Task.sleep(for: .milliseconds(300))
+        let state = try await library.writer.read { try JobRecord.fetchOne($0, key: job.id)?.state }
+        #expect(state == .queued, "a paused queue was started")
     }
 }

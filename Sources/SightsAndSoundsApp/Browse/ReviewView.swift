@@ -111,9 +111,10 @@ struct ReviewView: View {
             // Restarted if it fails: one error used to end it, and every
             // item held then or queued later stayed held until the window
             // was rebuilt.
+            guard let runner = try? app.runner(for: model.libraryID) else { return }
             while !Task.isCancelled {
                 do {
-                    for try await items in model.library.pendingRepairItems() {
+                    for try await items in RepairWatch.pending(in: model.library, runner: runner) {
                         if repairs.pendingChanged(to: items) { reload() }
                     }
                 } catch {}
