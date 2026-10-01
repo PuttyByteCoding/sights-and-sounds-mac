@@ -567,7 +567,10 @@ struct CategoryManagerView: View {
                 }
                 reloadTags()
                 reloadItemFields()
-                reloadAllTags()
+                // With a category selected, reloadTags rebuilds the all-tags
+                // index when its tags land; asking here too made every
+                // reload read the whole library's tags twice in a row.
+                if case .category = selection {} else { reloadAllTags() }
             } catch { errorText = "\(error)" }
         }
     }
