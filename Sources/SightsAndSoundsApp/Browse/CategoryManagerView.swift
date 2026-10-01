@@ -39,6 +39,12 @@ struct CategoryManagerView: View {
     @State private var allQuery = ""
     @State private var allIndex: [TagSearchEntry] = []
     @State private var allUsage: [UUID: Int] = [:]
+    /// One library-wide read at a time; one asked for meanwhile runs once
+    /// after it. Library changes reload this every two seconds through an
+    /// import or bulk tagging, and a slow count overlapped the next — and,
+    /// landing last, put its older counts over the newer.
+    @State private var readingAllTags = false
+    @State private var readAllTagsAgain = false
     @State private var similarOnly = false
     @State private var sortSpec: [TagSort] = [TagSort(column: .name, ascending: true)]
     @State private var mergeMode = false
@@ -621,8 +627,20 @@ struct CategoryManagerView: View {
     /// usage. Rebuilt with the tags, so a rename or a new alias is
     /// findable at once.
     private func reloadAllTags() {
+        guard !readingAllTags else {
+            readAllTagsAgain = true
+            return
+        }
+        readingAllTags = true
         let library = model.library
         Task {
+            defer {
+                readingAllTags = false
+                if readAllTagsAgain {
+                    readAllTagsAgain = false
+                    reloadAllTags()
+                }
+            }
             do {
                 // The whole vocabulary and a library-wide usage count: off
                 // the main actor. This task is the view's, so the
