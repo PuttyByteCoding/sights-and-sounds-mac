@@ -206,15 +206,18 @@ import Testing
                 sql: "UPDATE mediaItem SET contentHash = 'old-bytes' WHERE id = ?",
                 arguments: [f.parent.id])
             try ContentHashFailure(mediaItemID: f.parent.id, message: "an earlier timeout").insert(db)
+            // Swept: its embedded metadata was read off the old bytes.
+            try MetadataSweepState(mediaItemID: f.parent.id, failureMessage: nil).insert(db)
         }
     }
 
-    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int) {
+    private func hashState(_ f: OpsFixture) async throws -> (hash: String?, failures: Int, swept: Bool) {
         try await f.library.writer.read { db in
             let item = try MediaItem.fetchOne(db, key: f.parent.id)!
             let failures = try ContentHashFailure
                 .filter(sql: "mediaItemID = ?", arguments: [f.parent.id]).fetchCount(db)
-            return (item.contentHash, failures)
+            let swept = try MetadataSweepState.fetchOne(db, key: f.parent.id) != nil
+            return (item.contentHash, failures, swept)
         }
     }
 
@@ -230,6 +233,7 @@ import Testing
         let state = try await hashState(f)
         #expect(state.hash == nil)
         #expect(state.failures == 0)
+        #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
     }
 
     @Test func aRepairedFileForgetsTheOldFilesHash() async throws {
@@ -246,6 +250,7 @@ import Testing
         let state = try await hashState(f)
         #expect(state.hash == nil)
         #expect(state.failures == 0)
+        #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
     }
 
     /// The repair swaps the file first, then puts the flagged file back
@@ -276,6 +281,7 @@ import Testing
         let state = try await hashState(f)
         #expect(state.hash == nil)
         #expect(state.failures == 0)
+        #expect(!state.swept, "the metadata read off the old bytes still counts as swept")
     }
 
     @Test func remuxRefusesClipsAndMissingFiles() async throws {

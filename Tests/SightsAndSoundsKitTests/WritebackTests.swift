@@ -97,6 +97,7 @@ import Testing
             try larks.insert(db)
             try item.insert(db)
             try MediaItemTag(mediaItemID: item.id, tagID: larks.id).insert(db)
+            try MetadataSweepState(mediaItemID: item.id, failureMessage: nil).insert(db)
         }
         let runner = JobRunner(library: library)
         await runner.register(WritebackJob.self)
@@ -108,6 +109,10 @@ import Testing
         #expect(!fileRow.usedRemuxFallback)  // metaflac did it
         let refreshed = try await library.writer.read { try MediaItem.fetchOne($0, key: item.id)! }
         #expect(refreshed.contentHash == nil)
+        // The tags it read are the ones just replaced: the next sweep
+        // reads the file again.
+        let swept = try await library.writer.read { try MetadataSweepState.fetchOne($0, key: item.id) }
+        #expect(swept == nil, "the tags read before the write still count as swept")
         let onDisk = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int64
         #expect(refreshed.fileSize == onDisk)
     }
@@ -172,10 +177,13 @@ import Testing
 
         // Restore the pre-write snapshot: the artist tag is gone again.
         let preWrite = snapshots.first { $0.source == .preWrite }!
+        try await library.writer.write { try MetadataSweepState(mediaItemID: item.id, failureMessage: nil).upsert($0) }
         let restore = try await RestoreTagsJob.enqueue(on: runner, snapshotID: preWrite.id)
         try await runner.runPending()
         let restoreRow = try await library.writer.read { try JobRecord.fetchOne($0, key: restore.id)! }
         #expect(restoreRow.state == .succeeded)
+        let sweptAfterRestore = try await library.writer.read { try MetadataSweepState.fetchOne($0, key: item.id) }
+        #expect(sweptAfterRestore == nil, "the tags read before the restore still count as swept")
 
         let restored = try TagWriters.readTagsJSON(url: root.appendingPathComponent("t.m4a"))
         #expect(!restored.localizedCaseInsensitiveContains("Meadow Larks"))

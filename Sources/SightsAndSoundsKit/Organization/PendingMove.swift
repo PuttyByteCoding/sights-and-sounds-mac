@@ -164,9 +164,9 @@ extension LibraryDatabase {
                 if var item = try MediaItem.fetchOne(db, key: move.mediaItemID) {
                     item.setRelativePath(move.toPath)
                     item.fileSize = size
-                    // The bytes are new; the stored hash is the old file's.
-                    item.contentHash = nil
                     try item.updateWithSegmentPaths(db)
+                    // The bytes are new; what was read off them is the old file's.
+                    try LibraryDatabase.forgetReadingsOfChangedFile(item.id, in: db)
                 }
                 _ = try PendingMove.deleteOne(db, key: move.id)
             }
