@@ -3,8 +3,11 @@ import GRDB
 
 /// What a file's new bytes are.
 enum FileChange {
-    /// The same streams in the same container, its tags rewritten: a tag
-    /// write, a restore.
+    /// The same streams, their tags rewritten: a tag write, a restore.
+    /// Usually in place; for some formats (and an MP4 when AtomicParsley is
+    /// missing or fails) the tool is an ffmpeg stream copy into a fresh
+    /// container of the same format, which is still counted here — see
+    /// `forgetReadingsOfChangedFile`.
     case sameStreams
     /// The streams or their container may differ: a repair (a re-encode,
     /// or a copy that drops what will not decode or a stream), a remux (a
@@ -41,9 +44,14 @@ extension LibraryDatabase {
     /// remux writes a new container, and frame timing is read off it; a
     /// size found changed on disk, or a swap finished after a crash, may be
     /// either): a repaired file went on showing the broken one's timing,
-    /// and Examine skipped it as done. A tag write and a restore rewrite
-    /// only the tags, so those readings stand — and examined again, the
-    /// file would show this app's own muxer stamp as its transcoder. A
+    /// and Examine skipped it as done. A tag write and a restore change
+    /// the tags, and Media Signal's readings stand. That holds outright for
+    /// an in-place write; the ffmpeg fallback copies the streams with their
+    /// timestamps into a fresh container of the same format, so container
+    /// readings (its brand, edit lists) may now be the old file's. They are
+    /// kept anyway: examined again, the file would show the muxer's own
+    /// stamp as its transcoder, which is worse. Which way that should go is
+    /// an open decision, not settled here. A
     /// stage that failed goes either
     /// way: it failed on the old bytes, and Examine skips an item with a
     /// stage marked, failed or not; run again, it replaces only its own
