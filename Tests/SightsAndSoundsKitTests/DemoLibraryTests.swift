@@ -156,3 +156,23 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: url.path), "a failed run left its file")
     }
 }
+
+/// A demo run that failed part-way removed its library file but left the
+/// videos it had made, and a retry in the same folder writes the same
+/// paths: the video writer refused a file that was already there, so
+/// every retry failed at its first video ("startWriting") until the media
+/// folder was found and deleted by hand.
+@Suite struct DemoMediaRewriteTests {
+    @Test func aVideoIsWrittenOverOneAlreadyThere() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-demo-rewrite-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("show/clip.mp4")
+        try await DemoMediaFactory.writeVideo(to: url, seconds: 1)
+        try await DemoMediaFactory.writeVideo(to: url, seconds: 1, variant: 1)
+        let probe = await MediaProbe.probe(url: url)
+        #expect(probe.durationSeconds != nil, "the rewritten video does not play")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+        #expect(leftovers == ["clip.mp4"], "a working file was left behind: \(leftovers)")
+    }
+}

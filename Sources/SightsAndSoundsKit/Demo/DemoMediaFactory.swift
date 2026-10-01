@@ -24,10 +24,20 @@ public enum DemoMediaFactory {
     public static func writeVideo(
         to url: URL, seconds: Double = 4, variant: Int = 0, overlayText: String? = nil
     ) async throws {
+        // To a working name, moved into place whole. The writer refuses a
+        // file that is already there, and a demo run that failed part-way
+        // leaves its videos behind: a retry in the same folder failed at
+        // its first video, every time, until the folder was cleared by hand.
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let working = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(UUID().uuidString).\(url.pathExtension)")
+        defer { try? FileManager.default.removeItem(at: working) }
         try await SerialGate.shared.withTurn {
             try await writeVideoUnserialized(
-                to: url, seconds: seconds, variant: variant, overlayText: overlayText)
+                to: working, seconds: seconds, variant: variant, overlayText: overlayText)
         }
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: working)
     }
 
     private static func writeVideoUnserialized(
