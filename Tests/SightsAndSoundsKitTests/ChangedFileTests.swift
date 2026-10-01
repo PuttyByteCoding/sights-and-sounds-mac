@@ -32,10 +32,16 @@ import Testing
             try ThumbnailState(mediaItemID: item.id, generated: false, failureMessage: "no frame").upsert(db)
             try DuplicateCandidate(itemA: item.id, itemB: twin.id, source: .contentHash, confidence: 1).insert(db)
         }
+        // A stage that read the file well, with a curve, and conclusions
+        // drawn from it: every Media Signal table holds a row.
         var good = SignalFindings()
-        good.declare("video.codecTag", "avc1")
-        good.measure("timing.frameCount", 10)
+        good.declare("container.writingApplication", "HandBrake 1.7.0")
+        good.measure("geometry.pillarboxed", 1)
+        good.measure("geometry.pillarboxFraction", 0.25)
+        good.measure("geometry.activeAspectRatio", 1.333)
+        good.keep("audio.spectrum", spectrum: [1, 2, 3, 4], at: nil)
         try library.recordSignalStage(itemID: item.id, stage: "declared", version: 1, findings: good)
+        try MediaSignalJob.drawConclusions(for: item.id, in: library)
         try library.recordSignalStage(
             itemID: item.id, stage: "frameTiming", version: 1, findings: SignalFindings(),
             failure: "the old file's timestamps could not be read")
@@ -46,8 +52,25 @@ import Testing
         try await library.writer.read { try Int.fetchOne($0, sql: sql, arguments: [id]) ?? 0 }
     }
 
+    private static let readings = [
+        "mediaSignalDeclared", "mediaSignalMeasurement", "mediaSignalSeries",
+        "mediaSignalEvidence", "mediaSignalInference",
+    ]
+
+    /// Rows per Media Signal table, each required to be there to begin
+    /// with, so every check after can fail.
+    private func readingCounts(_ s: Seeded) async throws -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for table in Self.readings + ["mediaSignalStage"] {
+            counts[table] = try await count(s.library, "SELECT COUNT(*) FROM \(table) WHERE mediaItemID = ?", s.item.id)
+        }
+        return counts
+    }
+
     @Test func aTagWriteForgetsTheOldBytesButKeepsWhatMediaSignalRead() async throws {
         let s = try await seeded()
+        let before = try await readingCounts(s)
+        for (table, rows) in before { try #require(rows > 0, "\(table) was not seeded") }
         try await s.library.writer.write { db in
             try LibraryDatabase.forgetReadingsOfChangedFile(s.item.id, .sameStreams, in: db)
         }
@@ -59,16 +82,20 @@ import Testing
         #expect(try await count(s.library, "SELECT COUNT(*) FROM thumbnailState WHERE mediaItemID = ?", id) == 0)
         #expect(try await count(s.library, "SELECT COUNT(*) FROM duplicateCandidate WHERE itemAID = ? OR itemBID = ?1", id) == 0)
         // The stage that read the same streams stays; the one that failed goes.
-        #expect(try await count(s.library, "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ?", id) == 1)
+        #expect(try await count(s.library, "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ?", id)
+                == before["mediaSignalStage"]! - 1)
         #expect(try await count(s.library, "SELECT COUNT(*) FROM mediaSignalStage WHERE mediaItemID = ? AND failureMessage IS NOT NULL", id) == 0)
-        #expect(try await count(s.library, "SELECT COUNT(*) FROM mediaSignalDeclared WHERE mediaItemID = ?", id) == 1)
-        #expect(try await count(s.library, "SELECT COUNT(*) FROM mediaSignalMeasurement WHERE mediaItemID = ?", id) == 1)
+        let after = try await readingCounts(s)
+        for table in Self.readings {
+            #expect(after[table] == before[table], "a tag write dropped \(table)")
+        }
         // The twin is untouched.
         #expect(try await s.library.writer.read { try MediaItem.fetchOne($0, key: s.twin.id)?.contentHash } == "old-bytes")
     }
 
     @Test func newStreamsForgetEverythingMediaSignalRead() async throws {
         let s = try await seeded()
+        for (table, rows) in try await readingCounts(s) { try #require(rows > 0, "\(table) was not seeded") }
         try await s.library.writer.write { db in
             try LibraryDatabase.forgetReadingsOfChangedFile(s.item.id, .newStreams, in: db)
         }
