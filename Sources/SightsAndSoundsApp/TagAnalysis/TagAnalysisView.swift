@@ -162,6 +162,16 @@ struct TagAnalysisView: View {
               (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
         else { return }
         model.beginSweep(for: id)
+        // A sweep of it already waiting (queued before this window was
+        // reopened) is waited on, not queued again.
+        if let waiting = try? browse.library.pendingMetadataSweep(of: id),
+           let runner = try? app.runner(for: browse.libraryID) {
+            Task {
+                try? await runner.waitUntilSettled([waiting])
+                model.finishSweep(for: id)
+            }
+            return
+        }
         browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
     }
 
