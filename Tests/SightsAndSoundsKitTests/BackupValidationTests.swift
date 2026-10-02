@@ -232,6 +232,45 @@ import Testing
         #expect(!rerun.contains { $0.kind == .sizeMismatch })
     }
 
+    /// An orphan finding names the source the file is in: Maintenance's
+    /// "Import Now" imported the library's first source instead. And the
+    /// orphan check used the app-wide extension lists, not this library's
+    /// override, so it flagged files an import would skip and missed ones
+    /// it would take.
+    @Test func orphansNameTheirSourceAndFollowTheLibrarysExtensions() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-validate-sources-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = root.appendingPathComponent("first", isDirectory: true)
+        let second = root.appendingPathComponent("second", isDirectory: true)
+        try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+        // The library imports only .mkv: the .mp4 is not an orphan, the
+        // import would never take it.
+        try Data(repeating: 1, count: 10).write(to: first.appendingPathComponent("skipped.mp4"))
+        try Data(repeating: 2, count: 10).write(to: second.appendingPathComponent("clip.mkv"))
+
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "V")
+        try library.setExtensionOverrides(video: ["mkv"], audio: [])
+        let a = Source(name: "A", rootPath: first.path)
+        let b = Source(name: "B", rootPath: second.path)
+        try await library.writer.write { db in
+            try a.insert(db)
+            try b.insert(db)
+        }
+        let runner = JobRunner(library: library)
+        _ = try await runner.enqueue(ValidationJob.self)
+        try await runner.runPending()
+
+        let findings = try library.validationFindings()
+        #expect(findings.count == 1, "\(findings.map(\.path))")
+        let orphan = try #require(findings.first)
+        #expect(orphan.kind == .orphanFile)
+        #expect(orphan.path == "clip.mkv")
+        #expect(orphan.sourceID == b.id, "the orphan does not name the source it is in")
+    }
+
     @Test func offlineSourcesAreSkippedWhole() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "V")

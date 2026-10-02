@@ -1019,6 +1019,15 @@ public final class LibraryDatabase: Sendable {
                 """)
         }
 
+        // A finding names its source: an orphan file has no row to say
+        // which source it is in. Findings are the latest sweep's only, so
+        // existing rows are left nil and replaced by the next run.
+        migrator.registerMigration("validationFindingSource") { db in
+            try db.alter(table: "validationFinding") { t in
+                t.add(column: "sourceID", .blob)
+            }
+        }
+
         return migrator
     }
 

@@ -405,10 +405,12 @@ struct MaintenanceView: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             }
         case .orphanFile:
-            Button("Import Now") {
-                if let source = model.sources.first { model.importSource(source) }
+            // The source the file is in — it used to import the library's
+            // first source, whichever that was.
+            if let source = model.sources.first(where: { $0.id == finding.sourceID }) {
+                Button("Import Now") { model.importSource(source) }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
             }
-            .buttonStyle(SecondaryButtonStyle(compact: true))
         case .sizeMismatch:
             if let itemID = finding.mediaItemID {
                 Button("Accept Disk Size") {
