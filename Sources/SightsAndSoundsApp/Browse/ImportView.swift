@@ -30,7 +30,11 @@ struct ImportView: View {
     @State private var step: Step = .source
     @State private var selectedSource: Source?
     @State private var outcome: ScanOutcome?
-    @State private var scanError: String?
+    /// What went wrong, on whichever step the window is on. It used to be
+    /// drawn only on the Scan step, and every place that set it had just
+    /// left that step: a failed scan bounced to Source, a failed import
+    /// sat on Review, both without a word.
+    @State private var notice: String?
     @State private var scanTask: Task<Void, Never>?
     /// The window is open. A run carries on after the window closes, and
     /// its finish must not start a rescan for a window that is gone.
@@ -54,7 +58,7 @@ struct ImportView: View {
     // Running
     @State private var run: ImportRun?
     private var progress: (current: Int, total: Int)? { run?.progress }
-    @State private var finished: String?
+    @State private var finished: FinishedSummary?
     /// The item-scope fields, read once per reload. They were read from
     /// the database inside `body`, once per staging box per render, and
     /// this view re-renders on every keystroke in any of its fields.
@@ -84,6 +88,9 @@ struct ImportView: View {
     var body: some View {
         VStack(spacing: 0) {
             StepStrip(step: step, scanPath: selectedSource?.rootPath)
+            if let notice {
+                noticeBanner(notice)
+            }
             switch step {
             case .source: sourceStep
             case .scan: scanStep
@@ -103,11 +110,9 @@ struct ImportView: View {
                     try? model.library.setImportBoxes(saved)
                 })
         }
-        .sheet(item: Binding(
-            get: { finished.map { FinishedSummary(text: $0) } },
-            set: { if $0 == nil { finished = nil } })
-        ) { summary in
+        .sheet(item: $finished) { summary in
             FinishedSheet(
+                title: summary.title,
                 summary: summary.text,
                 onMore: {
                     finished = nil
@@ -212,11 +217,6 @@ struct ImportView: View {
             Text("Scanning \(selectedSource?.name ?? "")…")
                 .font(Theme.ui(12.5))
                 .foregroundStyle(Theme.Text.tertiary)
-            if let scanError {
-                Text(scanError)
-                    .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Status.red)
-            }
             Button("Cancel") {
                 scanTask?.cancel()
                 step = .source
@@ -224,6 +224,35 @@ struct ImportView: View {
             .buttonStyle(SecondaryButtonStyle(compact: true))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func noticeBanner(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Status.orange)
+            Text(text)
+                .font(Theme.ui(12))
+                .foregroundStyle(Theme.Text.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+            Button {
+                notice = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(Theme.ui(9))
+                    .foregroundStyle(Theme.Text.disabled)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Theme.Status.warnBadgeFill)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
     }
 
     // MARK: - Step 3 · Review & Stage
@@ -667,7 +696,7 @@ struct ImportView: View {
 
     private func beginScan(_ source: Source) {
         selectedSource = source
-        scanError = nil
+        notice = nil
         step = .scan
         scanTask?.cancel()
         let library = model.library
@@ -692,7 +721,7 @@ struct ImportView: View {
                 selectedPaths = Set(result.candidates.filter { !$0.isKnown }.map(\.relativePath))
                 step = .review
             } catch {
-                scanError = "\(error)"
+                notice = "Scan of \(source.name) failed: \(error)"
                 step = .source
             }
         }
@@ -714,7 +743,7 @@ struct ImportView: View {
                 video: (video.union([ext])).sorted(), audio: audio.sorted())
             if let selectedSource { beginScan(selectedSource) }
         } catch {
-            scanError = "\(error)"
+            notice = "Could not enable .\(ext): \(error)"
         }
     }
 
@@ -728,7 +757,7 @@ struct ImportView: View {
         // The step changes only once there is a runner to import with:
         // it used to switch first and strand the window on Import.
         guard let runner = try? app.runner(for: model.libraryID) else {
-            scanError = "Could not start the import: the library's task runner is unavailable."
+            notice = "Could not start the import: the library's task runner is unavailable."
             return
         }
         let library = model.library
@@ -748,16 +777,22 @@ struct ImportView: View {
         let run = ImportRun(runner: runner, library: library)
         self.run = run
         step = .importing
-        run.start(sourceID: source.id, groups: groups) { tally in
-            if let error = run.error { scanError = error }
+        run.start(sourceID: source.id, groups: groups) { result in
+            let tally = result.tally
             // Sticky boxes keep their values for the next import.
             persistSticky()
             let extensionSkips = outcome?.skippedByExtension.values.reduce(0, +) ?? 0
-            finished = """
-                \(tally.inserted) media items inserted
-                \(tally.skipped) skipped — already in library
-                \(extensionSkips) skipped — extension not enabled
-                """
+            var lines = [
+                "\(tally.inserted) media items inserted",
+                "\(tally.skipped) skipped — already in library",
+                "\(extensionSkips) skipped — extension not enabled",
+            ]
+            if result.cancelled { lines.append("stopped before the rest") }
+            lines += result.failures.map { "failed: \($0)" }
+            finished = FinishedSummary(
+                title: result.cancelled ? "Import cancelled"
+                    : result.failures.isEmpty ? "Import finished" : "Import finished with errors",
+                text: lines.joined(separator: "\n"))
             step = .review
             // Import finishing is a worker signal: new rows want hashes
             // and thumbnails.
@@ -898,9 +933,10 @@ struct StagingDraft: Equatable {
     }
 }
 
-private struct FinishedSummary: Identifiable {
+private struct FinishedSummary: Identifiable, Equatable {
+    var title: String
     var text: String
-    var id: String { text }
+    var id: String { title + text }
 }
 
 private struct StepStrip: View {
@@ -1104,13 +1140,14 @@ private struct ImportHistoryRow: View {
 }
 
 private struct FinishedSheet: View {
+    let title: String
     let summary: String
     let onMore: () -> Void
     let onOpen: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import finished")
+            Text(title)
                 .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
                 .foregroundStyle(Theme.Text.primary)
             Text(summary)

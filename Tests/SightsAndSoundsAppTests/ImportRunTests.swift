@@ -186,4 +186,62 @@ import Testing
         let states = try await library.writer.read { try JobRecord.fetchAll($0).map(\.state) }
         #expect(states == [.cancelled])
     }
+    /// The window said "Import finished · 0 inserted" for a run whose job
+    /// failed (the drive unplugged between Scan and Import) or that was
+    /// cancelled: a settled row's error was never read, and a cancel was
+    /// not told apart from a finish.
+    @Test(.timeLimit(.minutes(1)))
+    func aFailedJobIsReportedAsAFailure() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunFailed")
+        // A root that does not exist: the job refuses it as offline.
+        let source = Source(name: "Gone", rootPath: "/tmp/sas-import-gone-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
+        for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+        let got = try #require(outcome)
+        #expect(!got.cancelled)
+        #expect(got.failures.count == 1, "\(got.failures)")
+        #expect(got.failures.first?.contains("offline") == true, "\(got.failures)")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aCancelledRunIsReportedAsCancelled() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunCancelled")
+        let source = Source(name: "Here", rootPath: "/tmp/sas-import-cancel-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
+        run.cancel()
+        for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+        #expect(try #require(outcome).cancelled)
+    }
+
+    /// Per-folder imports are one job each, and the overlay restarted at
+    /// "0 of 12" for every folder with no sense of the whole.
+    @Test(.timeLimit(.minutes(1)))
+    func progressCountsAcrossFolders() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-run-folders-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try DemoMediaFactory.writeAudio(to: root.appendingPathComponent("one/a.m4a"), seconds: 1)
+        try DemoMediaFactory.writeAudio(to: root.appendingPathComponent("two/b.m4a"), seconds: 1)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunFolders")
+        let source = Source(name: "Here", rootPath: root.path)
+        try await library.writer.write { try source.insert($0) }
+        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, groups: [.init(paths: ["one/a.m4a"]), .init(paths: ["two/b.m4a"])]) {
+            outcome = $0
+        }
+        for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+        #expect(try #require(outcome).tally.inserted == 2)
+        #expect(run.progress?.total == 2, "the total is the run's, not the folder's: \(String(describing: run.progress))")
+        #expect(run.progress?.current == 2)
+    }
 }

@@ -16,9 +16,21 @@ final class ImportRun {
         var skipped = 0
     }
 
+    /// What a run came to. The window showed "Import finished · 0 inserted"
+    /// for a run whose job failed, or that was cancelled: a settled row's
+    /// error was never read, and a cancel was not told apart from a finish.
+    struct Outcome: Equatable {
+        var tally = Tally()
+        var cancelled = false
+        /// One line per job that failed, or could not be queued.
+        var failures: [String] = []
+    }
+
     private(set) var running: JobRecord?
+    /// Across the whole run: a per-folder import is one job per folder,
+    /// and the overlay restarted at "0 of 12" for each with no sense of
+    /// the whole.
     private(set) var progress: (current: Int, total: Int)?
-    private(set) var error: String?
     /// Cancel reaches the whole run, not just the job in flight: a
     /// per-folder import is one job per folder, and every later folder
     /// used to go ahead after Cancel.
@@ -40,12 +52,16 @@ final class ImportRun {
         self.library = library
     }
 
-    func start(sourceID: UUID, groups: [Group], onFinish: @escaping @MainActor (Tally) -> Void) {
+    func start(sourceID: UUID, groups: [Group], onFinish: @escaping @MainActor (Outcome) -> Void) {
         isRunning = true
         Task {
-            var tally = Tally()
-            for group in groups where !group.paths.isEmpty {
+            var outcome = Outcome()
+            let groups = groups.filter { !$0.paths.isEmpty }
+            let total = groups.reduce(0) { $0 + $1.paths.count }
+            var completedBefore = 0
+            for group in groups {
                 guard !isCancelled, !Task.isCancelled else { break }
+                defer { completedBefore += group.paths.count }
                 do {
                     let record = try await enqueue(runner, sourceID, group.paths, group.staging)
                     running = record
@@ -65,24 +81,27 @@ final class ImportRun {
                         guard let row = try await library.writer.read({
                             try JobRecord.fetchOne($0, key: record.id)
                         }) else { break }
-                        progress = (row.progressCurrent, row.progressTotal ?? group.paths.count)
+                        progress = (completedBefore + row.progressCurrent, total)
                         switch row.state {
                         case .queued, .running: break
                         case .succeeded, .failed, .cancelled:
                             settled = true
                             if let summary = row.summary {
                                 let numbers = summary.split(separator: " ").compactMap { Int($0) }
-                                tally.inserted += numbers.first ?? 0
-                                tally.skipped += numbers.count > 1 ? numbers[1] : 0
+                                outcome.tally.inserted += numbers.first ?? 0
+                                outcome.tally.skipped += numbers.count > 1 ? numbers[1] : 0
                             }
+                            if row.state == .failed { outcome.failures.append(row.error ?? "failed") }
+                            if row.state == .cancelled { outcome.cancelled = true }
                         }
                     }
                 } catch {
-                    self.error = "\(error)"
+                    outcome.failures.append("\(error)")
                 }
             }
+            if isCancelled { outcome.cancelled = true }
             isRunning = false
-            onFinish(tally)
+            onFinish(outcome)
         }
     }
 
