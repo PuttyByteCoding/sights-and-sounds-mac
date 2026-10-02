@@ -1028,6 +1028,21 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // What was removed from the library on purpose, so a later scan
+        // does not list it as new again — and can offer it back. One row
+        // per path, as the item index is, so a spelling cannot slip past.
+        migrator.registerMigration("removedItems") { db in
+            try db.create(table: "removedItem") { t in
+                t.primaryKey("id", .blob)
+                t.column("sourceID", .blob).notNull()
+                    .references("source", onDelete: .cascade)
+                t.column("relativePath", .text).notNull().collate(.nocase)
+                t.column("fileName", .text).notNull()
+                t.column("removedAt", .datetime).notNull()
+                t.uniqueKey(["sourceID", "relativePath"])
+            }
+        }
+
         return migrator
     }
 

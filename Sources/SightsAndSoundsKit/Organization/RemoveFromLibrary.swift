@@ -15,6 +15,60 @@ public struct RemovalOutcome: Equatable, Sendable {
     public init() {}
 }
 
+/// A file taken out of the library on purpose. The file is still under
+/// its source, so the next scan would list it as new; this row makes it
+/// "removed" instead — shown, not ticked, and importable again, which
+/// forgets the row.
+public struct RemovedItem: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
+    public static let databaseTableName = "removedItem"
+
+    public var id: UUID
+    public var sourceID: UUID
+    public var relativePath: String
+    public var fileName: String
+    public var removedAt: Date
+
+    public init(id: UUID = UUID(), sourceID: UUID, relativePath: String, fileName: String, removedAt: Date = Date()) {
+        self.id = id
+        self.sourceID = sourceID
+        self.relativePath = relativePath
+        self.fileName = fileName
+        self.removedAt = removedAt
+    }
+
+    /// Remember this item's path as removed — once per path, however the
+    /// path is spelled.
+    static func remember(_ item: MediaItem, in db: Database) throws {
+        try db.execute(
+            sql: "DELETE FROM removedItem WHERE sourceID = ? AND relativePath = ?",
+            arguments: [item.sourceID, item.relativePath])
+        try RemovedItem(sourceID: item.sourceID, relativePath: item.relativePath, fileName: item.fileName).insert(db)
+    }
+
+    /// The path is back in the library: nothing to remember.
+    static func forget(sourceID: UUID, relativePath: String, in db: Database) throws {
+        try db.execute(
+            sql: "DELETE FROM removedItem WHERE sourceID = ? AND relativePath = ?",
+            arguments: [sourceID, relativePath])
+    }
+}
+
+extension LibraryDatabase {
+    /// The removed paths of a source, folded for the NOCASE comparison the
+    /// scan and the import make.
+    public func removedPaths(in sourceID: UUID) throws -> Set<String> {
+        try writer.read { db in
+            Set(try String.fetchAll(
+                db, sql: "SELECT relativePath FROM removedItem WHERE sourceID = ?", arguments: [sourceID]
+            ).map { $0.lowercased() })
+        }
+    }
+
+    public func removedItems() throws -> [RemovedItem] {
+        try writer.read { try RemovedItem.order(sql: "removedAt DESC").fetchAll($0) }
+    }
+}
+
 extension LibraryDatabase {
     /// The segments of these items that are not saved as files of their
     /// own — what leaving the library would take with it. Unlike the
@@ -65,6 +119,9 @@ extension LibraryDatabase {
                         try db.execute(
                             sql: "DELETE FROM mediaItem WHERE parentMediaItemID = ?", arguments: [itemID])
                         segments = db.changesCount
+                        // Its file stays under the source: remembered, so
+                        // the next scan shows it as removed, not new.
+                        try RemovedItem.remember(item, in: db)
                     }
                     return (try MediaItem.deleteOne(db, key: itemID), segments)
                 }

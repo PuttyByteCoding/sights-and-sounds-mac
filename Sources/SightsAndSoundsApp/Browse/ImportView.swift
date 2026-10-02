@@ -534,6 +534,11 @@ struct ImportView: View {
                 Text("\(outcome.knownCount) already in library")
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.Text.disabled)
+                if outcome.removedCount > 0 {
+                    Text("\(outcome.removedCount) removed")
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.Text.disabled)
+                }
                 let skipped = outcome.skippedByExtension.values.reduce(0, +)
                 if skipped > 0 {
                     Text("\(skipped) extension off")
@@ -615,7 +620,7 @@ struct ImportView: View {
 
     private func newPaths(in folder: String) -> Set<String> {
         Set((outcome?.candidates ?? [])
-            .filter { $0.folderPath == folder && !$0.isKnown }
+            .filter { $0.folderPath == folder && $0.isNew }
             .map(\.relativePath))
     }
 
@@ -625,7 +630,7 @@ struct ImportView: View {
             guard checkedFolders.isEmpty || checkedFolders.contains(candidate.folderPath)
             else { return false }
             switch statusFilter {
-            case .newOnly: if candidate.isKnown { return false }
+            case .newOnly: if !candidate.isNew { return false }
             case .alreadyImported: if !candidate.isKnown { return false }
             case .all: break
             }
@@ -718,7 +723,9 @@ struct ImportView: View {
                 folderStaging = [:]
                 checkedFolders = Set(result.folders().map(\.path))
                 focusedFolder = result.folders().first?.path
-                selectedPaths = Set(result.candidates.filter { !$0.isKnown }.map(\.relativePath))
+                // Removed files are shown, not ticked: adding one back is a
+                // choice, made per file.
+                selectedPaths = Set(result.candidates.filter(\.isNew).map(\.relativePath))
                 step = .review
             } catch {
                 notice = "Scan of \(source.name) failed: \(error)"
@@ -1049,6 +1056,10 @@ private struct CandidateRow: View {
         if candidate.isKnown {
             ThemeBadge(
                 text: "in library", fill: Theme.Surface.iconTile,
+                foreground: Theme.Text.quaternary)
+        } else if candidate.isRemoved {
+            ThemeBadge(
+                text: "removed", fill: Theme.Surface.iconTile,
                 foreground: Theme.Text.quaternary)
         } else {
             ThemeBadge(
