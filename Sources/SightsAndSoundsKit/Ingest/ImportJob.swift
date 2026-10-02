@@ -115,6 +115,9 @@ public struct ImportJob: Job {
         let selected = requested.map { wanted in
             candidates.filter { wanted.contains($0.relative.lowercased()) }
         } ?? candidates
+        // Named, but not on disk any more: the list is a snapshot, and a
+        // file gone since is counted, not dropped without a word.
+        let gone = requested.map { $0.count - Set(selected.map { $0.relative.lowercased() }).count } ?? 0
 
         // The library's own spellings, read once. Folded once too, and
         // looked up per file: scanning every known path for every
@@ -143,15 +146,54 @@ public struct ImportJob: Job {
             exactKnown.map { ($0.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
         await context.reportProgress(current: 0, total: selected.count)
 
-        for (index, candidate) in selected.enumerated() {
-            try await context.checkCancellation()
-            defer { Task { await context.reportProgress(current: index + 1, total: selected.count) } }
+        /// The one-line outcome. The leading "N new, M already imported" is
+        /// read by the import window; notes go after it.
+        func summary(cancelledAfter reached: Int?) -> String {
+            var summary = "\(inserted) new, \(skipped) already imported"
+            if let reached {
+                summary += " — cancelled, \(selected.count - reached) not reached"
+            }
+            if gone > 0 {
+                summary += gone == 1 ? " — 1 no longer on disk" : " — \(gone) no longer on disk"
+            }
+            // Only when something was imported: with nothing new there was
+            // nothing to apply a staged value to, so none went unapplied.
+            let missingStaged = inserted > 0 ? (resolved.map { $0.missing.union(vanished).count } ?? 0) : 0
+            if missingStaged > 0 {
+                summary += missingStaged == 1
+                    ? " — 1 staged tag or field no longer exists and was not applied"
+                    : " — \(missingStaged) staged tags or fields no longer exist and were not applied"
+            }
+            if !caseTwins.isEmpty {
+                // Library paths ignore case, so only one spelling can be in.
+                summary += " — not imported, another spelling already came in (paths ignore case): "
+                    + caseTwins.joined(separator: ", ")
+            }
+            return summary
+        }
 
+        for (index, candidate) in selected.enumerated() {
+            do {
+                try await context.checkCancellation()
+            } catch is CancellationError {
+                // Cancelled between files: what went in before is in, and
+                // the summary says so — a cancelled job used to write none,
+                // and the window counted it as nothing inserted.
+                await context.setSummary(summary(cancelledAfter: index))
+                throw CancellationError()
+            }
+            try await insert(candidate)
+            // Awaited here, in order: reported from a task of its own, a
+            // count could land after a later one, or after the job was done.
+            await context.reportProgress(current: index + 1, total: selected.count)
+        }
+
+        func insert(_ candidate: (relative: String, url: URL, kind: MediaKind)) async throws {
             // NOCASE-unique paths: compare case-insensitively like the schema.
             let folded = candidate.relative.lowercased()
             if insertedFolded.contains(folded) {
                 caseTwins.append(candidate.relative)
-                continue
+                return
             }
             if existing.contains(folded) {
                 if !exactKnown.contains(candidate.relative),
@@ -160,7 +202,7 @@ public struct ImportJob: Job {
                 } else {
                     skipped += 1
                 }
-                continue
+                return
             }
 
             let size = (try? fileAccess.fileSize(at: candidate.url)) ?? 0
@@ -205,24 +247,9 @@ public struct ImportJob: Job {
                 sql: "UPDATE source SET lastSeenAt = ? WHERE id = ?",
                 arguments: [Date(), source.id])
         }
-        // The leading "N new, M already imported" is read by the import
-        // window; a note goes after it.
-        var summary = "\(inserted) new, \(skipped) already imported"
-        // Only when something was imported: with nothing new there was
-        // nothing to apply a staged value to, so none went unapplied.
-        let missingStaged = inserted > 0 ? (resolved.map { $0.missing.union(vanished).count } ?? 0) : 0
-        if missingStaged > 0 {
-            summary += missingStaged == 1
-                ? " — 1 staged tag or field no longer exists and was not applied"
-                : " — \(missingStaged) staged tags or fields no longer exist and were not applied"
-        }
-        if !caseTwins.isEmpty {
-            // Library paths ignore case, so only one spelling can be in.
-            summary += " — not imported, another spelling already came in (paths ignore case): "
-                + caseTwins.joined(separator: ", ")
-        }
-        if missingStaged > 0 || !caseTwins.isEmpty { AppLog.shared.warning("import", summary) }
-        await context.setSummary(summary)
+        let finalSummary = summary(cancelledAfter: nil)
+        if finalSummary.contains(" — ") { AppLog.shared.warning("import", finalSummary) }
+        await context.setSummary(finalSummary)
     }
 }
 
