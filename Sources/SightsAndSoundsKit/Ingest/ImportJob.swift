@@ -226,7 +226,11 @@ public struct ImportJob: Job {
                 contentCreatedAt: probe.contentCreatedAt,
                 ingestDate: Date(),
                 needsReview: true)  // auto-set on import; the user clears it
-            try await library.writer.write { try item.insert($0) }
+            try await library.writer.write { db in
+                try item.insert(db)
+                // Back in: a removal remembered for this path is over.
+                try RemovedItem.forget(sourceID: source.id, relativePath: item.relativePath, in: db)
+            }
             // A case-sensitive volume can hold `a.mp4` and `A.mp4`; the
             // library holds one path per spelling-ignoring-case, and the
             // second insert used to fail the whole run on the index.

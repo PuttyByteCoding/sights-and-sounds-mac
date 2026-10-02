@@ -19,6 +19,12 @@ public struct ScanCandidate: Sendable, Equatable, Identifiable {
     /// folder is 19-of-23 known IS the information; hiding the known
     /// rows makes a partial re-scan look empty.
     public var isKnown: Bool
+    /// Removed from the library on purpose, file left in place. Shown as
+    /// such, not ticked by default, and importable again.
+    public var isRemoved: Bool
+
+    /// Neither in the library nor removed from it: what a scan is for.
+    public var isNew: Bool { !isKnown && !isRemoved }
 
     public var id: String { relativePath }
 }
@@ -33,14 +39,16 @@ public struct ScanOutcome: Sendable, Equatable {
     public var skippedByExtension: [String: Int]
     public var scannedAt: Date
 
-    public var newCount: Int { candidates.count { !$0.isKnown } }
+    public var newCount: Int { candidates.count(where: \.isNew) }
     public var knownCount: Int { candidates.count { $0.isKnown } }
+    public var removedCount: Int { candidates.count { $0.isRemoved } }
 
     /// Folders in the scan, with their new/known split — the scope rail.
+    /// A removed file counts as neither.
     public func folders() -> [(path: String, new: Int, known: Int)] {
         Dictionary(grouping: candidates, by: \.folderPath)
             .map { path, rows in
-                (path, rows.count { !$0.isKnown }, rows.count { $0.isKnown })
+                (path, rows.count(where: \.isNew), rows.count { $0.isKnown })
             }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
@@ -80,6 +88,8 @@ public enum MediaScanner {
             ).map { $0.lowercased() })
         }
 
+        let removed = try library.removedPaths(in: source.id)
+
         let rootPath = root.standardizedFileURL.path
         var candidates: [ScanCandidate] = []
         var skipped: [String: Int] = [:]
@@ -106,7 +116,8 @@ public enum MediaScanner {
                 fileExtension: ext,
                 kind: kind,
                 fileSize: (try? fileAccess.fileSize(at: url)) ?? 0,
-                isKnown: existing.contains(relative.lowercased())))
+                isKnown: existing.contains(relative.lowercased()),
+                isRemoved: !existing.contains(relative.lowercased()) && removed.contains(relative.lowercased())))
         }
 
         candidates.sort { $0.relativePath < $1.relativePath }
