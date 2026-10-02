@@ -85,9 +85,12 @@ public struct SignalConclusion: Equatable, Sendable {
 public struct SignalFacts: Sendable {
     public var declared: [String: String]
     var measured: [String: Double]
+    /// What this app did to the file, newest first.
+    public var rewrites: [FileRewrite] = []
 
-    public init(declared: [String: String], measurements: [SignalMeasurement]) {
+    public init(declared: [String: String], measurements: [SignalMeasurement], rewrites: [FileRewrite] = []) {
         self.declared = declared
+        self.rewrites = rewrites
         measured = [:]
         for row in measurements where row.scope != .frame && row.scope != .window {
             measured["\(row.key)|\(row.scope.rawValue)"] = row.value
@@ -117,7 +120,8 @@ extension LibraryDatabase {
     public func signalFacts(itemID: UUID) throws -> SignalFacts {
         SignalFacts(
             declared: try signalDeclared(itemID: itemID),
-            measurements: try signalMeasurements(itemID: itemID))
+            measurements: try signalMeasurements(itemID: itemID),
+            rewrites: try rewrites(of: itemID))
     }
 
     /// Replace an item's evidence and inferences, and the links between

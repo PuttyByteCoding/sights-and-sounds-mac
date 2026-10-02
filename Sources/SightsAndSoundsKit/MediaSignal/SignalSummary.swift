@@ -33,6 +33,12 @@ public struct SignalSummary: Equatable, Sendable {
 }
 
 extension LibraryDatabase {
+    /// Read from the file's own metadata or from this app's own record of
+    /// what it did — not inferred, so worded without "probably".
+    static let factCategories: Set<String> = [
+        "Re-encoded by a transcoder", "Re-encoded here", "Rewritten here, streams copied",
+    ]
+
     /// Nil when the item has not been through the sweep. A segment is a
     /// range of its parent's file, so it is given its parent's summary.
     public func signalSummary(for item: MediaItem) throws -> SignalSummary? {
@@ -42,7 +48,7 @@ extension LibraryDatabase {
         let lines = try signalInferences(itemID: itemID).map { entry in
             (entry.inference.kind, SignalSummary.Line(
                 category: entry.inference.category, confidence: entry.inference.confidence,
-                isFact: entry.inference.category == "Re-encoded by a transcoder",
+                isFact: Self.factCategories.contains(entry.inference.category),
                 evidence: entry.evidence.map(\.detail)))
         }
         return SignalSummary(

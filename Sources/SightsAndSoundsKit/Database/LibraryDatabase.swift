@@ -1031,6 +1031,23 @@ public final class LibraryDatabase: Sendable {
         // What was removed from the library on purpose, so a later scan
         // does not list it as new again — and can offer it back. One row
         // per path, as the item index is, so a spelling cannot slip past.
+        // What this app did to a file, and when: Media Signal reads an
+        // encoder stamp as a transcode, and every ffmpeg path here leaves
+        // one, so a file only copied read as re-encoded.
+        migrator.registerMigration("fileRewrites") { db in
+            try db.create(table: "fileRewrite") { t in
+                t.primaryKey("id", .blob)
+                t.column("mediaItemID", .blob).notNull()
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("happenedAt", .datetime).notNull()
+                t.column("operation", .text).notNull()
+                t.column("tool", .text)
+                t.column("reencoded", .boolean).notNull()
+                t.column("note", .text)
+            }
+            try db.create(indexOn: "fileRewrite", columns: ["mediaItemID"])
+        }
+
         migrator.registerMigration("removedItems") { db in
             try db.create(table: "removedItem") { t in
                 t.primaryKey("id", .blob)

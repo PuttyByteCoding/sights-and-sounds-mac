@@ -167,6 +167,7 @@ extension LibraryDatabase {
                     try item.updateWithSegmentPaths(db)
                     // The bytes are new; what was read off them is the old file's.
                     try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .newStreams, in: db)
+                    try LibraryDatabase.recordRewrite(item.id, .swapRecovered, tool: nil, reencoded: false, in: db)
                 }
                 _ = try PendingMove.deleteOne(db, key: move.id)
             }

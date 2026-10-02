@@ -28,7 +28,24 @@ public enum SignalEvidenceRules {
             facts.declared["mediainfo.video.Encoded_Library_Name"],
         ].compactMap { $0 }
         let transcoders = ["handbrake", "lavf", "x264", "x265", "ffmpeg", "libav", "mencoder", "vidcoder"]
-        if let named = writers.first(where: { writer in transcoders.contains { writer.lowercased().contains($0) } }) {
+        // What this app did to the file is history, not a reading. A
+        // re-encode here is said as such. And every ffmpeg path here stamps
+        // the file "Lavf…": after a copy made here, that stamp is ours, not
+        // proof of a transcode. (Whether an earlier stamp was already there
+        // cannot be told; the file's own history is the better fact.)
+        let ffmpegStamps = ["lavf", "ffmpeg", "libav"]
+        let ownStamp = facts.rewrites.contains(where: \.stampsLavf)
+        if let reencoded = facts.rewrites.first(where: \.reencoded) {
+            add("reencodedHere", .processing, 1, reencoded.summary)
+        }
+        if let copied = facts.rewrites.first(where: { !$0.reencoded }) {
+            add("rewrittenHere", .processing, 1, copied.summary)
+        }
+        if let named = writers.first(where: { writer in
+            transcoders.contains { stamp in
+                writer.lowercased().contains(stamp) && !(ownStamp && ffmpegStamps.contains(stamp))
+            }
+        }) {
             // The one thing here that is a fact and not a reading.
             add("transcoderNamed", .processing, 1, "written by \(named.prefix(60))")
         }

@@ -139,6 +139,8 @@ public struct WritebackJob: Job {
                 sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
                 arguments: [newSize, itemID])
             try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .sameStreams, in: db)
+            try LibraryDatabase.recordRewrite(
+                itemID, .tagWrite, tool: result.usedRemuxFallback ? "ffmpeg" : nil, reencoded: false, in: db)
         }
         return outcome
     }
@@ -256,6 +258,8 @@ public struct RestoreTagsJob: Job {
                 sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
                 arguments: [newSize, item.id])
             try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .sameStreams, in: db)
+            try LibraryDatabase.recordRewrite(
+                item.id, .tagRestore, tool: result.usedRemuxFallback ? "ffmpeg" : nil, reencoded: false, in: db)
         }
         // A restore that could hold none of the fields still succeeded: the
         // file is as near the snapshot as its format allows (see

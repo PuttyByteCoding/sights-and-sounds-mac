@@ -109,6 +109,9 @@ public struct RemuxJob: Job {
             // table and edit lists — and Media Signal reads frame timing
             // off the container, so it reads this one afresh too.
             try LibraryDatabase.forgetReadingsOfChangedFile(item.id, .newStreams, in: db)
+            try LibraryDatabase.recordRewrite(
+                item.id, .remux, tool: "AVFoundation", reencoded: false,
+                note: payload.mode == .repair ? "repair container" : "optimize", in: db)
             try swap.clear(db)
         }
         await context.reportProgress(current: 3, total: 3)

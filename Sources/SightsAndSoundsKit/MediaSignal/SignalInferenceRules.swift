@@ -6,7 +6,9 @@ public enum SignalRules {
     /// decoded again.
     /// 2: video levels in a file tagged full range are evidence.
     /// 3: bob flutter is a share of flipping blocks (ramp 0.1–0.3).
-    public static let version = 3
+    /// 4: the file's own rewrite history; an ffmpeg stamp after a copy made
+    ///    here is not a transcode.
+    public static let version = 4
 
     /// Below this a category is not worth saying.
     static let reportable = 0.35
@@ -93,6 +95,9 @@ public enum SignalInferenceRules {
         // MARK: What has been done to it
 
         Rule(kind: .history, category: "Re-encoded by a transcoder", supports: ["transcoderNamed": 1],
+             forSoundAlone: true),
+        Rule(kind: .history, category: "Re-encoded here", supports: ["reencodedHere": 1], forSoundAlone: true),
+        Rule(kind: .history, category: "Rewritten here, streams copied", supports: ["rewrittenHere": 1],
              forSoundAlone: true),
         Rule(kind: .history, category: "Scaled up", supports: [
             "detailBelowFrame": 0.75, "noiseScaledWithPicture": 0.5, "barsScaledWithPicture": 0.4,
