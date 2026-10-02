@@ -775,13 +775,13 @@ final class BrowseModel {
     // MARK: - Sources & import
 
     @discardableResult
+    /// Register a folder as a source; refused, with the reason shown, when
+    /// it already is one or overlaps one.
     func addSource(at url: URL) -> Source? {
         do {
-            let source = Source(name: url.lastPathComponent, rootPath: url.path)
-            try library.writer.write { try source.insert($0) }
-            return source
+            return try library.addSource(named: url.lastPathComponent, rootPath: url.path)
         } catch {
-            errorMessage = "\(error)"
+            errorMessage = "Could not add \(url.lastPathComponent): \(error)"
             return nil
         }
     }
