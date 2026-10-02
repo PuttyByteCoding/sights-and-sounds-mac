@@ -36,20 +36,120 @@ public struct WritebackJob: Job {
             payload: JSONEncoder().encode(Payload(itemIDs: itemIDs, scopeDescription: scopeDescription)))
     }
 
-    public func run(_ context: JobContext) async throws {
-        guard TagWriters.ffprobePath() != nil, FfmpegTool.path() != nil else {
-            await context.setSummary(FfmpegTool.installHint)
-            return
-        }
-        let library = context.library
+    /// What one file's write came to; the run's file row says the same.
+    public enum FileOutcome: Equatable, Sendable {
+        case written
+        case failed(String?)
+        /// Nothing to write, or nowhere to write it.
+        case skipped(String)
+    }
 
-        let mappings = try await library.writer.read { db -> [CategoryMapping] in
+    /// The library's write-back mappings, read once per run.
+    public static func mappings(in library: LibraryDatabase) throws -> [CategoryMapping] {
+        try library.writer.read { db in
             try TagCategory.order(sql: "sortOrder, name").fetchAll(db).map {
                 CategoryMapping(
                     categoryName: $0.name, enabled: $0.writebackEnabled,
                     writebackField: $0.writebackField)
             }
         }
+    }
+
+    /// Write one item's tags into its file, recording a file row on `runID`:
+    /// snapshot first, then the wipe-and-rewrite, then forget what the
+    /// library read off the old bytes. Shared with removing an item from
+    /// the library, which offers to write the tags out before the row goes.
+    public static func writeTags(
+        of item: MediaItem, mappings: [CategoryMapping], runID: UUID,
+        library: LibraryDatabase, fileAccess: any FileAccess
+    ) async throws -> FileOutcome {
+        let itemID = item.id
+        func record(_ status: WriteRunFileStatus, error: String? = nil, fallback: Bool = false) async throws {
+            let file = TagWriteRunFile(
+                tagWriteRunID: runID, mediaItemID: itemID, filePath: item.relativePath,
+                status: status, error: error, usedRemuxFallback: fallback)
+            try await library.writer.write { try file.insert($0) }
+        }
+
+        guard let url = try library.resolvedFileURL(for: item, fileAccess: fileAccess),
+              fileAccess.isReachable(url)
+        else {
+            try await record(.skipped, error: "source offline or file missing")
+            return .skipped("source offline or file missing")
+        }
+
+        // Resolve this item's fields.
+        let tags = try await library.writer.read { db -> [String: [String]] in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT tagCategory.name AS category, tag.name AS tag FROM tag \
+                JOIN tagCategory ON tagCategory.id = tag.tagCategoryID \
+                JOIN mediaItemTag ON mediaItemTag.tagID = tag.id \
+                WHERE mediaItemTag.mediaItemID = ? ORDER BY tag.name
+                """,
+                arguments: [itemID])
+            var byCategory: [String: [String]] = [:]
+            for row in rows {
+                byCategory[row["category"] as String, default: []].append(row["tag"] as String)
+            }
+            return byCategory
+        }
+        let fields = WritebackMapping.resolve(mappings: mappings, tagsByCategory: tags)
+        guard !fields.isEmpty else {
+            try await record(.skipped, error: "no write-back-enabled tags")
+            return .skipped("no write-back-enabled tags")
+        }
+
+        // Snapshot BEFORE the wipe-and-rewrite — non-negotiable.
+        do {
+            let json = try await Blocking.run { try TagWriters.readTagsJSON(url: url) }
+            try await library.writer.write { db in
+                try EmbeddedTagSnapshot(
+                    mediaItemID: itemID, source: .preWrite, tagsJSON: json).insert(db)
+            }
+        } catch {
+            let reason = "snapshot failed: \(error) — write refused"
+            try await record(.failed, error: reason)
+            return .failed(reason)
+        }
+
+        let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
+        guard result.success else {
+            try await record(.failed, error: result.error, fallback: result.usedRemuxFallback)
+            return .failed(result.error)
+        }
+        let outcome: FileOutcome
+        if result.keptNothing(of: fields.count) {
+            // The old tags were replaced by nothing: not a write. The
+            // pre-write snapshot can put them back.
+            try await record(.failed, error: result.writtenNote, fallback: result.usedRemuxFallback)
+            outcome = .failed(result.writtenNote)
+        } else {
+            // A write that took the slow path keeps the reason with it.
+            try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
+            outcome = .written
+        }
+        // Bytes changed, whichever tool wrote them: the hash is of the
+        // whole file, so an in-place tag rewrite stales it as surely as a
+        // remux does, and the size may differ.
+        let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
+        try await library.writer.write { db in
+            try db.execute(
+                sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
+                arguments: [newSize, itemID])
+            try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .sameStreams, in: db)
+        }
+        return outcome
+    }
+
+    public func run(_ context: JobContext) async throws {
+        guard TagWriters.ffprobePath() != nil, FfmpegTool.path() != nil else {
+            await context.setSummary(FfmpegTool.installHint)
+            return
+        }
+        let library = context.library
+        let mappings = try Self.mappings(in: library)
 
         var run = TagWriteRun(
             scopeDescription: payload.scopeDescription, totalFiles: payload.itemIDs.count)
@@ -63,95 +163,21 @@ public struct WritebackJob: Job {
 
         for (index, itemID) in payload.itemIDs.enumerated() {
             try await context.checkCancellation()
-            defer {
-                Task { await context.reportProgress(current: index + 1, total: payload.itemIDs.count) }
-            }
             guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: itemID) }),
                   item.parentMediaItemID == nil
             else {
                 skipped += 1
+                await context.reportProgress(current: index + 1, total: payload.itemIDs.count)
                 continue
             }
-            let runID = run.id
-
-            func record(_ status: WriteRunFileStatus, error: String? = nil, fallback: Bool = false) async throws {
-                let file = TagWriteRunFile(
-                    tagWriteRunID: runID, mediaItemID: itemID, filePath: item.relativePath,
-                    status: status, error: error, usedRemuxFallback: fallback)
-                try await library.writer.write { try file.insert($0) }
+            switch try await Self.writeTags(
+                of: item, mappings: mappings, runID: run.id, library: library, fileAccess: fileAccess
+            ) {
+            case .written: written += 1
+            case .failed: failed += 1
+            case .skipped: skipped += 1
             }
-
-            guard let url = try library.resolvedFileURL(for: item, fileAccess: fileAccess),
-                  fileAccess.isReachable(url)
-            else {
-                skipped += 1
-                try await record(.skipped, error: "source offline or file missing")
-                continue
-            }
-
-            // Resolve this item's fields.
-            let tags = try await library.writer.read { db -> [String: [String]] in
-                let rows = try Row.fetchAll(
-                    db,
-                    sql: """
-                    SELECT tagCategory.name AS category, tag.name AS tag FROM tag \
-                    JOIN tagCategory ON tagCategory.id = tag.tagCategoryID \
-                    JOIN mediaItemTag ON mediaItemTag.tagID = tag.id \
-                    WHERE mediaItemTag.mediaItemID = ? ORDER BY tag.name
-                    """,
-                    arguments: [itemID])
-                var byCategory: [String: [String]] = [:]
-                for row in rows {
-                    byCategory[row["category"] as String, default: []].append(row["tag"] as String)
-                }
-                return byCategory
-            }
-            let fields = WritebackMapping.resolve(mappings: mappings, tagsByCategory: tags)
-            guard !fields.isEmpty else {
-                skipped += 1
-                try await record(.skipped, error: "no write-back-enabled tags")
-                continue
-            }
-
-            // Snapshot BEFORE the wipe-and-rewrite — non-negotiable.
-            do {
-                let json = try await Blocking.run { try TagWriters.readTagsJSON(url: url) }
-                try await library.writer.write { db in
-                    try EmbeddedTagSnapshot(
-                        mediaItemID: itemID, source: .preWrite, tagsJSON: json).insert(db)
-                }
-            } catch {
-                failed += 1
-                try await record(.failed, error: "snapshot failed: \(error) — write refused")
-                continue
-            }
-
-            let result = try await Blocking.run { TagWriters.write(fields: fields, to: url) }
-            if result.success {
-                if result.keptNothing(of: fields.count) {
-                    // The old tags were replaced by nothing: not a write.
-                    // The pre-write snapshot can put them back.
-                    failed += 1
-                    try await record(.failed, error: result.writtenNote, fallback: result.usedRemuxFallback)
-                } else {
-                    written += 1
-                    // A write that took the slow path keeps the reason with it.
-                    try await record(.written, error: result.writtenNote, fallback: result.usedRemuxFallback)
-                }
-                // Bytes changed, whichever tool wrote them: the hash is of
-                // the whole file, so an in-place tag rewrite stales it as
-                // surely as a remux does, and the size may differ.
-                let newSize = (try? fileAccess.fileSize(at: url)) ?? item.fileSize
-                try await library.writer.write { db in
-                    try db.execute(
-                        sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?",
-                        arguments: [newSize, itemID])
-                    try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .sameStreams, in: db)
-                }
-            } else {
-                failed += 1
-                try await record(.failed, error: result.error, fallback: result.usedRemuxFallback)
-            }
+            await context.reportProgress(current: index + 1, total: payload.itemIDs.count)
         }
 
         run.finishedAt = Date()
