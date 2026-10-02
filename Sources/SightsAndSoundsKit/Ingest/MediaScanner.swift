@@ -43,6 +43,80 @@ public struct ScanOutcome: Sendable, Equatable {
     public var knownCount: Int { candidates.count { $0.isKnown } }
     public var removedCount: Int { candidates.count { $0.isRemoved } }
 
+    /// One folder of the source, with its subfolders, counted over the
+    /// whole subtree: ticking a folder imports what is under it.
+    public struct FolderNode: Equatable, Sendable, Identifiable {
+        public var path: String
+        public var name: String
+        public var new: Int
+        public var known: Int
+        public var removed: Int
+        public var children: [FolderNode]
+        public var id: String { path }
+    }
+
+    /// The source's folders as a tree — the Update flow's rail. With
+    /// `newOnly`, only folders holding something new, so a drive that is
+    /// mostly imported shows just what is left to do.
+    public func folderTree(newOnly: Bool) -> [FolderNode] {
+        var byPath: [String: FolderNode] = [:]
+        func node(_ path: String) -> FolderNode {
+            byPath[path] ?? FolderNode(
+                path: path, name: path.isEmpty ? "(root)" : MediaPath.fileName(of: path),
+                new: 0, known: 0, removed: 0, children: [])
+        }
+        for candidate in candidates {
+            // Each ancestor counts the file, the root folder included.
+            var folder = candidate.folderPath
+            while true {
+                var n = node(folder)
+                if candidate.isNew { n.new += 1 } else if candidate.isKnown { n.known += 1 } else { n.removed += 1 }
+                byPath[folder] = n
+                guard !folder.isEmpty else { break }
+                folder = MediaPath.folder(of: folder)
+                if folder.isEmpty { break }
+            }
+        }
+        func children(of parent: String) -> [FolderNode] {
+            byPath.values
+                .filter { $0.path != parent && MediaPath.folder(of: $0.path) == parent && !$0.path.isEmpty }
+                .filter { !newOnly || $0.new > 0 }
+                .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                .map { var n = $0; n.children = children(of: $0.path); return n }
+        }
+        var top = children(of: "")
+        if let root = byPath[""], !newOnly || root.new > 0 {
+            var rootNode = root
+            rootNode.children = []
+            top.insert(rootNode, at: 0)
+        }
+        return top
+    }
+
+    /// The new files in a folder and its subfolders — what ticking the
+    /// folder selects. The root folder means its own files only.
+    public func newPaths(under folder: String) -> Set<String> {
+        Set(candidates.filter { $0.isNew && Self.isUnder($0.folderPath, folder) }.map(\.relativePath))
+    }
+
+    public static func isUnder(_ folderPath: String, _ folder: String) -> Bool {
+        folder.isEmpty ? folderPath.isEmpty : (folderPath == folder || folderPath.hasPrefix(folder + "/"))
+    }
+
+    /// The scan with these files now in the library — what the window
+    /// shows once an import lands, in place of a rescan that threw away
+    /// every tick and staged value. Paths compare without case, as the
+    /// library's do.
+    public func markingKnown(_ paths: Set<String>) -> ScanOutcome {
+        let folded = Set(paths.map { $0.lowercased() })
+        var copy = self
+        for index in copy.candidates.indices where folded.contains(copy.candidates[index].relativePath.lowercased()) {
+            copy.candidates[index].isKnown = true
+            copy.candidates[index].isRemoved = false
+        }
+        return copy
+    }
+
     /// Folders in the scan, with their new/known split — the scope rail.
     /// A removed file counts as neither.
     public func folders() -> [(path: String, new: Int, known: Int)] {

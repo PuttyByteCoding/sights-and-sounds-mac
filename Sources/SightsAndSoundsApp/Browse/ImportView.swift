@@ -36,23 +36,25 @@ struct ImportView: View {
     /// sat on Review, both without a word.
     @State private var notice: String?
     @State private var scanTask: Task<Void, Never>?
-    /// The window is open. A run carries on after the window closes, and
-    /// its finish must not start a rescan for a window that is gone.
-    @State private var isShown = false
-
-    // Review state
+    // Review state. The rail is a tree of the source's folders; ticking
+    // one selects the new files under it. Nothing is ticked to begin
+    // with: the flow is pick a folder, stage its tags, import it, then the
+    // next — so the window must not decide the first folder for you.
     @State private var checkedFolders: Set<String> = []
+    @State private var collapsedFolders: Set<String> = []
     @State private var focusedFolder: String?
     @State private var selectedPaths: Set<String> = []
     @State private var statusFilter: StatusFilter = .newOnly
     @State private var nameFilter = ""
+    /// Per source: a path under one source says nothing about the same
+    /// path under another, and a rescan of the same source keeps them.
     @State private var probes: [String: ProbeResult] = [:]
+    @State private var probedSource: UUID?
 
-    // Staging
+    // Staging: one set of boxes, for the import in hand. Sticky boxes
+    // keep their values for the next one; the rest clear once it lands.
     @State private var boxes: [ImportBox] = []
-    @State private var perFolderScope = false
-    @State private var wholeStaging = StagingDraft()
-    @State private var folderStaging: [String: StagingDraft] = [:]
+    @State private var staging = StagingDraft()
     @State private var showConfigure = false
 
     // Running
@@ -116,9 +118,6 @@ struct ImportView: View {
                 summary: summary.text,
                 onMore: {
                     finished = nil
-                    // The post-import rescan must not pull the window back
-                    // to Review after you have moved on.
-                    scanTask?.cancel()
                     step = .source
                 },
                 onOpen: {
@@ -129,11 +128,7 @@ struct ImportView: View {
                     dismiss()
                 })
         }
-        .onAppear { isShown = true }
-        .onDisappear {
-            isShown = false
-            scanTask?.cancel()
-        }
+        .onDisappear { scanTask?.cancel() }
     }
 
     // MARK: - Step 1 · Source
@@ -325,13 +320,24 @@ struct ImportView: View {
 
     private var scopeRail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Scan scope").modifier(Theme.sectionLabel())
+            Text(statusFilter == .newOnly ? "Folders with new files" : "Folders").modifier(Theme.sectionLabel())
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
             ScrollView {
                 VStack(spacing: 1) {
-                    ForEach(folders, id: \.path) { folder in
-                        folderRow(folder)
+                    if folderTree.isEmpty {
+                        Text(statusFilter == .newOnly
+                            ? "Nothing new under this source."
+                            : "No media files under this source.")
+                            .font(Theme.ui(11.5))
+                            .foregroundStyle(Theme.Text.disabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                    }
+                    ForEach(folderTree) { node in
+                        FolderTreeRows(node: node, depth: 0, collapsed: collapsedFolders) {
+                            AnyView(folderRow($0, depth: $1))
+                        }
                     }
                 }
             }
@@ -359,18 +365,17 @@ struct ImportView: View {
         .background(Theme.Surface.raised)
     }
 
-    private func folderRow(_ folder: (path: String, new: Int, known: Int)) -> some View {
-        let checked = checkedFolders.contains(folder.path)
-        let staged = folderStaging[folder.path]?.isEmpty == false
-        return HStack(spacing: 8) {
+    private func folderRow(_ node: ScanOutcome.FolderNode, depth: Int) -> some View {
+        let checked = checkedFolders.contains(node.path)
+        let collapsed = collapsedFolders.contains(node.path)
+        var counts = "\(node.new) new"
+        if statusFilter != .newOnly { counts += " · \(node.known) known" }
+        if node.removed > 0 { counts += " · \(node.removed) removed" }
+        return HStack(spacing: 6) {
+            // Ticking a folder selects the new files under it, subfolders
+            // included; unticking it drops them.
             Button {
-                if checked {
-                    checkedFolders.remove(folder.path)
-                    selectedPaths.subtract(paths(in: folder.path))
-                } else {
-                    checkedFolders.insert(folder.path)
-                    selectedPaths.formUnion(newPaths(in: folder.path))
-                }
+                toggleFolder(node.path)
             } label: {
                 RoundedRectangle(cornerRadius: Theme.Radius.chip)
                     .fill(checked ? Theme.Accent.amber : .clear)
@@ -379,27 +384,57 @@ struct ImportView: View {
                     .frame(width: 13, height: 13)
             }
             .buttonStyle(.plain)
+            .disabled(node.new == 0)
+            .help(node.new == 0 ? "Nothing new here" : "Select the new files in this folder and its subfolders")
+            if node.children.isEmpty {
+                Color.clear.frame(width: 10, height: 10)
+            } else {
+                Button {
+                    if collapsed { collapsedFolders.remove(node.path) } else { collapsedFolders.insert(node.path) }
+                } label: {
+                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                        .font(Theme.ui(9, .semibold))
+                        .foregroundStyle(Theme.Text.disabled)
+                        .frame(width: 10, height: 10)
+                }
+                .buttonStyle(.plain)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text(folder.path.isEmpty ? "(root)" : folder.path)
+                Text(node.name)
                     .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.primary)
+                    .foregroundStyle(node.new > 0 ? Theme.Text.primary : Theme.Text.quaternary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text("\(folder.new) new · \(folder.known) known")
+                Text(counts)
                     .font(Theme.mono(9.5))
                     .foregroundStyle(Theme.Text.disabled)
             }
             Spacer(minLength: 0)
-            if staged {
-                Circle().fill(Theme.Accent.amber).frame(width: 6, height: 6)
-                    .help("This folder carries staging of its own")
-            }
         }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 12)
-        .background(focusedFolder == folder.path ? Theme.Surface.selectedRow : .clear)
+        .padding(.vertical, 6)
+        .padding(.leading, 12 + CGFloat(depth) * 14)
+        .padding(.trailing, 12)
+        .background(focusedFolder == node.path ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
-        .onTapAsButton { focusedFolder = folder.path }
+        // Clicking the name focuses the folder (its words become tag
+        // suggestions) and, with nothing ticked yet, ticks it: the common
+        // case is one folder at a time.
+        .onTapAsButton {
+            focusedFolder = node.path
+            if checkedFolders.isEmpty, node.new > 0 { toggleFolder(node.path) }
+        }
+    }
+
+    private func toggleFolder(_ path: String) {
+        guard let outcome else { return }
+        if checkedFolders.contains(path) {
+            checkedFolders.remove(path)
+            selectedPaths.subtract(outcome.candidates
+                .filter { ScanOutcome.isUnder($0.folderPath, path) }.map(\.relativePath))
+        } else {
+            checkedFolders.insert(path)
+            selectedPaths.formUnion(outcome.newPaths(under: path))
+        }
     }
 
     private var fileTable: some View {
@@ -420,7 +455,9 @@ struct ImportView: View {
             }
 
             if visibleCandidates.isEmpty {
-                Text("No files match this scope and filter.")
+                Text(checkedFolders.isEmpty
+                    ? "Tick a folder on the left to see its files."
+                    : "No files match this scope and filter.")
                     .font(Theme.ui(12.5))
                     .foregroundStyle(Theme.Text.disabled)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -460,19 +497,12 @@ struct ImportView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 9)
-            ThemeSegmentedControl(
-                selection: $perFolderScope,
-                options: [(false, "Whole import"), (true, "Per folder")],
-                emphasis: .neutral)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            Text(perFolderScope
-                ? "Staging applies to the highlighted folder only. Pick a folder on the left."
-                : "Staging applies to every selected file in this import.")
+            Text("Applies to every selected file in this import. Sticky boxes keep their values for the next one; the rest clear once it lands.")
                 .font(Theme.ui(11))
                 .foregroundStyle(Theme.Text.disabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
+                .padding(.vertical, 8)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -488,18 +518,18 @@ struct ImportView: View {
                             vocabulary: model.vocabulary,
                             fields: itemFields,
                             folderWords: folderWords,
-                            draft: draftBinding,
+                            draft: $staging,
                             onSticky: { sticky in
                                 setSticky(box, sticky)
                             })
                     }
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Flags").modifier(Theme.sectionLabel())
-                        Toggle(isOn: draftBinding.clearsNeedsReview) {
+                        Toggle(isOn: $staging.clearsNeedsReview) {
                             Text("Already reviewed").font(Theme.ui(12))
                         }
                         .toggleStyle(.checkbox)
-                        Toggle(isOn: draftBinding.marksFavorite) {
+                        Toggle(isOn: $staging.marksFavorite) {
                             Text("Favourite").font(Theme.ui(12))
                         }
                         .toggleStyle(.checkbox)
@@ -608,26 +638,16 @@ struct ImportView: View {
 
     // MARK: - Derived
 
-    private var folders: [(path: String, new: Int, known: Int)] {
-        outcome?.folders() ?? []
+    private var folderTree: [ScanOutcome.FolderNode] {
+        outcome?.folderTree(newOnly: statusFilter == .newOnly) ?? []
     }
 
-    private func paths(in folder: String) -> Set<String> {
-        Set((outcome?.candidates ?? [])
-            .filter { $0.folderPath == folder }
-            .map(\.relativePath))
-    }
-
-    private func newPaths(in folder: String) -> Set<String> {
-        Set((outcome?.candidates ?? [])
-            .filter { $0.folderPath == folder && $0.isNew }
-            .map(\.relativePath))
-    }
-
+    /// The files under the ticked folders. None ticked, none shown: the
+    /// rail is the scope, and an empty scope used to show everything.
     private var visibleCandidates: [ScanCandidate] {
         let query = nameFilter.trimmingCharacters(in: .whitespaces)
         return (outcome?.candidates ?? []).filter { candidate in
-            guard checkedFolders.isEmpty || checkedFolders.contains(candidate.folderPath)
+            guard checkedFolders.contains(where: { ScanOutcome.isUnder(candidate.folderPath, $0) })
             else { return false }
             switch statusFilter {
             case .newOnly: if !candidate.isNew { return false }
@@ -652,24 +672,23 @@ struct ImportView: View {
             .filter { $0.count > 2 }
     }
 
-    private var draftBinding: Binding<StagingDraft> {
-        Binding(
-            get: {
-                perFolderScope
-                    ? folderStaging[focusedFolder ?? "", default: StagingDraft()]
-                    : wholeStaging
-            },
-            set: { draft in
-                if perFolderScope {
-                    folderStaging[focusedFolder ?? ""] = draft
-                } else {
-                    wholeStaging = draft
-                }
-            })
+    /// What the sticky boxes kept from the last import — only values that
+    /// still exist: a sticky tag since deleted left a dead id in the draft
+    /// that showed as an empty "Will apply" with no pill to remove.
+    private func stickyDraft() -> StagingDraft {
+        let present = Set(model.vocabulary.flatMap(\.tags).map(\.id))
+        return StagingDraft(
+            tagIDs: boxes.filter(\.sticky).flatMap(\.stickyTagIDs).filter { present.contains($0) },
+            fieldValues: Dictionary(
+                uniqueKeysWithValues: boxes.compactMap { box in
+                    guard box.sticky, let fieldID = box.fieldID,
+                          let value = box.stickyValue else { return nil }
+                    return (fieldID, value)
+                }))
     }
 
     private var willApplySummary: String {
-        let draft = draftBinding.wrappedValue
+        let draft = staging
         guard !draft.isEmpty else { return "Nothing staged yet — files import untagged." }
         var parts: [String] = []
         let names = draft.tagIDs.compactMap { id in
@@ -712,20 +731,16 @@ struct ImportView: View {
                 outcome = result
                 boxes = (try? library.importBoxes()) ?? []
                 // Sticky boxes arrive already filled.
-                wholeStaging = StagingDraft(
-                    tagIDs: boxes.filter(\.sticky).flatMap(\.stickyTagIDs),
-                    fieldValues: Dictionary(
-                        uniqueKeysWithValues: boxes.compactMap { box in
-                            guard box.sticky, let fieldID = box.fieldID,
-                                  let value = box.stickyValue else { return nil }
-                            return (fieldID, value)
-                        }))
-                folderStaging = [:]
-                checkedFolders = Set(result.folders().map(\.path))
-                focusedFolder = result.folders().first?.path
-                // Removed files are shown, not ticked: adding one back is a
-                // choice, made per file.
-                selectedPaths = Set(result.candidates.filter(\.isNew).map(\.relativePath))
+                staging = stickyDraft()
+                if probedSource != source.id {
+                    probes = [:]
+                    probedSource = source.id
+                }
+                // Nothing ticked, nothing selected: pick a folder first.
+                checkedFolders = []
+                collapsedFolders = []
+                selectedPaths = []
+                focusedFolder = result.folderTree(newOnly: true).first?.path
                 step = .review
             } catch {
                 notice = "Scan of \(source.name) failed: \(error)"
@@ -768,18 +783,10 @@ struct ImportView: View {
             return
         }
         let library = model.library
-        // Per-folder staging is several payloads, one per folder — the
-        // job does not learn a second shape.
-        let groups: [ImportRun.Group] = perFolderScope
-            ? Dictionary(grouping: selectedPaths) { path in MediaPath.folder(of: path) }
-                .map { folder, paths in
-                    let staging = (folderStaging[folder] ?? StagingDraft()).staging(in: library)
-                    return ImportRun.Group(paths: paths.sorted(), staging: staging.isEmpty ? nil : staging)
-                }
-            : [{
-                let staging = wholeStaging.staging(in: library)
-                return ImportRun.Group(paths: selectedPaths.sorted(), staging: staging.isEmpty ? nil : staging)
-            }()]
+        let imported = selectedPaths
+        let sent = staging
+        let resolved = staging.staging(in: library)
+        let groups = [ImportRun.Group(paths: imported.sorted(), staging: resolved.isEmpty ? nil : resolved)]
 
         let run = ImportRun(runner: runner, library: library)
         self.run = run
@@ -804,10 +811,24 @@ struct ImportView: View {
             // Import finishing is a worker signal: new rows want hashes
             // and thumbnails.
             app.signalMaintenance(for: model.libraryID)
-            // The scan on screen predates the import: rescan, so what was
-            // just imported shows as known and is no longer ticked — while
-            // there is a window to show it in.
-            if isShown, let selectedSource { beginScan(selectedSource) }
+            // The scan on screen is updated in place — a rescan threw away
+            // every tick and staged value typed since, and a folder ticked
+            // for the next import while this one ran in the background is
+            // kept. What went in is known now; a cancelled or failed run
+            // rescans instead, since what landed is not known here.
+            guard !result.cancelled, result.failures.isEmpty else {
+                if let selectedSource { beginScan(selectedSource) }
+                return
+            }
+            let updated = outcome?.markingKnown(imported)
+            outcome = updated
+            selectedPaths.subtract(imported)
+            if let updated {
+                checkedFolders = checkedFolders.filter { !updated.newPaths(under: $0).isEmpty }
+            }
+            // The boxes keep only their sticky values — unless they were
+            // changed since Import was pressed, which is the next import's.
+            if staging == sent { staging = stickyDraft() }
         }
     }
 
@@ -825,7 +846,7 @@ struct ImportView: View {
     }
 
     private func persistSticky() {
-        let draft = wholeStaging
+        let draft = staging
         for index in boxes.indices where boxes[index].sticky {
             if let categoryID = boxes[index].categoryID {
                 let inCategory = model.vocabulary
@@ -937,6 +958,24 @@ struct StagingDraft: Equatable {
         return ImportStaging(
             tagIDs: ids, fieldValues: fieldValues,
             clearsNeedsReview: clearsNeedsReview, marksFavorite: marksFavorite)
+    }
+}
+
+/// A folder and, unless collapsed, its subfolders beneath it. A struct,
+/// because a function returning `some View` may not call itself.
+private struct FolderTreeRows: View {
+    let node: ScanOutcome.FolderNode
+    let depth: Int
+    let collapsed: Set<String>
+    let row: (ScanOutcome.FolderNode, Int) -> AnyView
+
+    var body: some View {
+        row(node, depth)
+        if !collapsed.contains(node.path) {
+            ForEach(node.children) { child in
+                FolderTreeRows(node: child, depth: depth + 1, collapsed: collapsed, row: row)
+            }
+        }
     }
 }
 
