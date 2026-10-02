@@ -18,16 +18,21 @@ public struct ValidationFinding: Codable, Equatable, Identifiable, Sendable, Fet
     public var id: UUID
     public var kind: ValidationFindingKind
     public var mediaItemID: UUID?
+    /// The source the finding is about. An orphan file has no row to
+    /// name its source, and "Import Now" imported the first source in the
+    /// library instead of the one the file is in.
+    public var sourceID: UUID?
     public var path: String
     public var detail: String
 
     public init(
         id: UUID = UUID(), kind: ValidationFindingKind,
-        mediaItemID: UUID? = nil, path: String, detail: String
+        mediaItemID: UUID? = nil, sourceID: UUID? = nil, path: String, detail: String
     ) {
         self.id = id
         self.kind = kind
         self.mediaItemID = mediaItemID
+        self.sourceID = sourceID
         self.path = path
         self.detail = detail
     }
@@ -52,6 +57,15 @@ public struct ValidationJob: Job {
             try Source.fetchAll(db)
         }
         let online = sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }
+        // The library's extension lists, as the import uses them: with the
+        // app-wide lists, the orphan check flagged files an import would
+        // skip and missed ones it would take.
+        let info = try await library.writer.read { try LibraryInfo.fetchOne($0) }
+        let appSettings = AppSettingsStore.shared.current
+        let videoSet = info?.effectiveVideoExtensions(appWide: appSettings.videoExtensions)
+            ?? MediaProbe.videoExtensions
+        let audioSet = info?.effectiveAudioExtensions(appWide: appSettings.audioExtensions)
+            ?? MediaProbe.audioExtensions
 
         try await library.writer.write { db in
             try db.execute(sql: "DELETE FROM validationFinding")
@@ -82,7 +96,7 @@ public struct ValidationJob: Job {
                 let url = root.appendingPathComponent(item.relativePath)
                 guard fileAccess.isReachable(url) else {
                     findings.append(ValidationFinding(
-                        kind: .missingFile, mediaItemID: item.id,
+                        kind: .missingFile, mediaItemID: item.id, sourceID: source.id,
                         path: item.relativePath,
                         detail: "the row exists but the file is gone (source '\(source.name)')"))
                     continue
@@ -90,7 +104,7 @@ public struct ValidationJob: Job {
                 let diskSize = (try? fileAccess.fileSize(at: url)) ?? -1
                 if diskSize >= 0, item.fileSize > 0, diskSize != item.fileSize {
                     findings.append(ValidationFinding(
-                        kind: .sizeMismatch, mediaItemID: item.id,
+                        kind: .sizeMismatch, mediaItemID: item.id, sourceID: source.id,
                         path: item.relativePath,
                         detail: "row says \(item.fileSize) bytes, disk says \(diskSize)"))
                 }
@@ -99,14 +113,15 @@ public struct ValidationJob: Job {
             // Disk → rows (media extensions only).
             let rootPath = root.standardizedFileURL.path
             for url in (try? fileAccess.allFiles(under: root)) ?? [] {
-                guard MediaProbe.kind(forExtension: url.pathExtension) != nil else { continue }
+                guard MediaProbe.kind(forExtension: url.pathExtension, video: videoSet, audio: audioSet) != nil
+                else { continue }
                 let full = url.standardizedFileURL.path
                 guard full.hasPrefix(rootPath + "/") else { continue }
                 let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))
                 guard !MediaPath.isArchived(relative) else { continue }
                 if !knownPaths.contains(relative.lowercased()) {
                     findings.append(ValidationFinding(
-                        kind: .orphanFile,
+                        kind: .orphanFile, sourceID: source.id,
                         path: relative,
                         detail: "on disk in '\(source.name)' but not in the library — import picks it up"))
                 }
