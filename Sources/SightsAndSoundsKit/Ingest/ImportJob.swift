@@ -93,31 +93,47 @@ public struct ImportJob: Job {
         let audioSet = info?.effectiveAudioExtensions(appWide: appSettings.audioExtensions)
             ?? MediaProbe.audioExtensions
 
-        // Discover media files, source-relative, stable order.
+        // What this run looks at. A named list — one folder of a drive
+        // that may hold forty thousand files, one job per folder — is
+        // checked file by file; it used to walk the whole source for each.
+        // The same rules as the walk: a file under the archive, or with an
+        // extension no list claims, is not importable and is left out. A
+        // named file gone from disk is counted, not dropped without a word.
         let rootPath = root.standardizedFileURL.path
-        let candidates = try fileAccess.allFiles(under: root)
-            .compactMap { url -> (relative: String, url: URL, kind: MediaKind)? in
-                guard let kind = MediaProbe.kind(
-                    forExtension: url.pathExtension, video: videoSet, audio: audioSet)
-                else { return nil }
-                let full = url.standardizedFileURL.path
-                guard full.hasPrefix(rootPath + "/") else { return nil }
-                let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))
-                guard !MediaPath.isArchived(relative) else { return nil }
-                return (relative, url, kind)
+        var gone = 0
+        let selected: [(relative: String, url: URL, kind: MediaKind)]
+        if let names = payload.relativePaths {
+            var found: [(relative: String, url: URL, kind: MediaKind)] = []
+            var seen: Set<String> = []
+            for name in names {
+                let relative = MediaPath.normalize(name)
+                guard seen.insert(relative.lowercased()).inserted else { continue }
+                guard !MediaPath.isArchived(relative),
+                      let kind = MediaProbe.kind(
+                        forExtension: (relative as NSString).pathExtension, video: videoSet, audio: audioSet)
+                else { continue }
+                let url = root.appendingPathComponent(relative)
+                guard fileAccess.isReachable(url) else {
+                    gone += 1
+                    continue
+                }
+                found.append((relative, url, kind))
             }
-            .sorted { $0.relative < $1.relative }
-
-        // A named list narrows what this run inserts. The comparison is
-        // NOCASE like the schema's unique index, so a list written from
-        // one case can't miss the file it named.
-        let requested = payload.relativePaths.map { Set($0.map { $0.lowercased() }) }
-        let selected = requested.map { wanted in
-            candidates.filter { wanted.contains($0.relative.lowercased()) }
-        } ?? candidates
-        // Named, but not on disk any more: the list is a snapshot, and a
-        // file gone since is counted, not dropped without a word.
-        let gone = requested.map { $0.count - Set(selected.map { $0.relative.lowercased() }).count } ?? 0
+            selected = found.sorted { $0.relative < $1.relative }
+        } else {
+            selected = try fileAccess.allFiles(under: root)
+                .compactMap { url -> (relative: String, url: URL, kind: MediaKind)? in
+                    guard let kind = MediaProbe.kind(
+                        forExtension: url.pathExtension, video: videoSet, audio: audioSet)
+                    else { return nil }
+                    let full = url.standardizedFileURL.path
+                    guard full.hasPrefix(rootPath + "/") else { return nil }
+                    let relative = MediaPath.normalize(String(full.dropFirst(rootPath.count + 1)))
+                    guard !MediaPath.isArchived(relative) else { return nil }
+                    return (relative, url, kind)
+                }
+                .sorted { $0.relative < $1.relative }
+        }
 
         // The library's own spellings, read once. Folded once too, and
         // looked up per file: scanning every known path for every
