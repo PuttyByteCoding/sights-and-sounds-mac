@@ -12,7 +12,7 @@ public enum JobCatalog {
         HashDuplicateSweepJob.self, FingerprintCaptureJob.self,
         FingerprintMatchSweepJob.self, ClipExportJob.self, RemuxJob.self,
         EncodeJob.self, BlockRemovalJob.self, OcrJob.self, JoinJob.self,
-        ReorganizeJob.self, WritebackJob.self, RestoreTagsJob.self,
+        ReorganizeJob.self, WritebackJob.self, RestoreTagsJob.self, RemoveFromLibraryJob.self,
         ValidationJob.self, MetadataSweepJob.self, MediaSignalJob.self,
         RepairJob.self,
     ]

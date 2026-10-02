@@ -237,12 +237,15 @@ private struct EmptyGridState: View {
 
 private struct ItemCell: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(AppModel.self) private var app
     let item: MediaItem
     /// The keyboard is on this tile (and the grid has the keyboard).
     var hasKeyboardFocus = false
     @State private var thumbnail: NSImage?
     /// The tag action a right-click on one of this tile's pills picked.
     @State private var pending: TagAction?
+    /// "Remove from Library…" asked, not yet answered.
+    @State private var removal: RemovalRequest?
 
     var body: some View {
         TileCard(
@@ -289,6 +292,17 @@ private struct ItemCell: View {
                 },
                 double: { play() })
             .contextMenu { menu }
+            .sheet(item: $removal) { request in
+                RemoveFromLibrarySheet(
+                    request: request,
+                    onRemove: { writingTagsFirst in
+                        removal = nil
+                        if let runner = try? app.runner(for: model.libraryID) {
+                            model.removeFromLibrary(request, writingTagsFirst: writingTagsFirst, runner: runner)
+                        }
+                    },
+                    onCancel: { removal = nil })
+            }
             // Out to the Finder or another app, as the file itself. A clip
             // or an offline item hands over nothing.
             .onDrag {
@@ -366,6 +380,9 @@ private struct ItemCell: View {
             Button("Clear Playback Issue on \(count)", systemImage: "play.circle") { model.unmarkSelectionWontPlay() }
         }
         Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") { model.markSelectionReviewed() }
+        Button("Remove \(count) from Library…", systemImage: "minus.circle") {
+            removal = model.removalRequest(for: selected)
+        }
         Divider()
         Button("Write Tags to \(count) Files", systemImage: "square.and.pencil") {
             model.writeTags(itemIDs: selected.map(\.id), scope: "\(count) selected items")
@@ -419,6 +436,11 @@ private struct ItemCell: View {
             Button("Clear Playback Issue", systemImage: "play.circle") {
                 model.setStaging(.playbackIssue, on: false, for: [item])
             }
+        }
+        // Out of the library, file left alone — deletion staging is for
+        // files that should go too.
+        Button("Remove from Library…", systemImage: "minus.circle") {
+            removal = model.removalRequest(for: [item])
         }
         if item.parentMediaItemID == nil {
             Divider()
