@@ -43,14 +43,13 @@ struct ImportView: View {
     /// sat on Review, both without a word.
     @State private var notice: String?
     @State private var scanTask: Task<Void, Never>?
-    // Review state. The rail is a tree of the source's folders; ticking
-    // one selects the new files under it. Nothing is ticked to begin
-    // with: the flow is pick a folder, stage its tags, import it, then the
-    // next — so the window must not decide the first folder for you.
-    @State private var checkedFolders: Set<String> = []
+    // Review state. The rail is a tree of the source's folders; clicking
+    // one shows and selects the new files under it, ticking adds another.
+    // Nothing is chosen to begin with: the flow is pick a folder, stage
+    // its tags, import it, then the next — so the window must not decide
+    // the first folder for you.
+    @State private var selection = ImportFolderSelection()
     @State private var collapsedFolders: Set<String> = []
-    @State private var focusedFolder: String?
-    @State private var selectedPaths: Set<String> = []
     @State private var statusFilter: StatusFilter = .newOnly
     @State private var nameFilter = ""
     /// Per source: a path under one source says nothing about the same
@@ -381,7 +380,7 @@ struct ImportView: View {
     }
 
     private func folderRow(_ node: ScanOutcome.FolderNode, depth: Int) -> some View {
-        let checked = checkedFolders.contains(node.path)
+        let checked = selection.checked.contains(node.path)
         let collapsed = collapsedFolders.contains(node.path)
         var counts = "\(node.new) new"
         if statusFilter != .newOnly { counts += " · \(node.known) known" }
@@ -429,27 +428,20 @@ struct ImportView: View {
         .padding(.vertical, 6)
         .padding(.leading, 12 + CGFloat(depth) * 14)
         .padding(.trailing, 12)
-        .background(focusedFolder == node.path ? Theme.Surface.selectedRow : .clear)
+        .background(selection.focused == node.path ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
-        // Clicking the name focuses the folder (its words become tag
-        // suggestions) and, with nothing ticked yet, ticks it: the common
-        // case is one folder at a time.
+        // Clicking the name makes this folder the scope: its files in the
+        // table, its new ones selected, its words as tag suggestions. It
+        // used to tick the folder only while nothing else was ticked, so
+        // the second folder clicked showed the first folder's files.
         .onTapAsButton {
-            focusedFolder = node.path
-            if checkedFolders.isEmpty, node.new > 0 { toggleFolder(node.path) }
+            if let outcome { selection.click(node.path, in: outcome) }
         }
     }
 
     private func toggleFolder(_ path: String) {
         guard let outcome else { return }
-        if checkedFolders.contains(path) {
-            checkedFolders.remove(path)
-            selectedPaths.subtract(outcome.candidates
-                .filter { ScanOutcome.isUnder($0.folderPath, path) }.map(\.relativePath))
-        } else {
-            checkedFolders.insert(path)
-            selectedPaths.formUnion(outcome.newPaths(under: path))
-        }
+        selection.toggle(path, in: outcome)
     }
 
     private var fileTable: some View {
@@ -470,8 +462,8 @@ struct ImportView: View {
             }
 
             if visibleCandidates.isEmpty {
-                Text(checkedFolders.isEmpty
-                    ? "Tick a folder on the left to see its files."
+                Text(selection.checked.isEmpty
+                    ? "Click a folder on the left to see its files."
                     : "No files match this scope and filter.")
                     .font(Theme.ui(12.5))
                     .foregroundStyle(Theme.Text.disabled)
@@ -483,15 +475,11 @@ struct ImportView: View {
                             CandidateRow(
                                 candidate: candidate,
                                 probe: probes[candidate.relativePath],
-                                isSelected: selectedPaths.contains(candidate.relativePath),
+                                isSelected: selection.paths.contains(candidate.relativePath),
                                 sourceRoot: selectedSource?.rootPath ?? "",
                                 onToggle: {
                                     guard !candidate.isKnown else { return }
-                                    if selectedPaths.contains(candidate.relativePath) {
-                                        selectedPaths.remove(candidate.relativePath)
-                                    } else {
-                                        selectedPaths.insert(candidate.relativePath)
-                                    }
+                                    selection.toggleFile(candidate.relativePath)
                                 },
                                 onProbed: { result in
                                     probes[candidate.relativePath] = result
@@ -592,7 +580,7 @@ struct ImportView: View {
                 }
             }
             Spacer()
-            Text("\(selectedPaths.count) selected")
+            Text("\(selection.paths.count) selected")
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.quaternary)
             Button(importButtonTitle) {
@@ -602,7 +590,7 @@ struct ImportView: View {
             // Off while ANY run is live, not just while the overlay shows:
             // "Run in background" left it armed, and a second press
             // imported the same files again.
-            .disabled(selectedPaths.isEmpty || run?.isRunning == true)
+            .disabled(selection.paths.isEmpty || run?.isRunning == true)
         }
         .padding(.horizontal, 14)
         .frame(height: 62)
@@ -657,12 +645,12 @@ struct ImportView: View {
         outcome?.folderTree(newOnly: statusFilter == .newOnly) ?? []
     }
 
-    /// The files under the ticked folders. None ticked, none shown: the
-    /// rail is the scope, and an empty scope used to show everything.
+    /// The files under the folders in scope. None chosen, none shown:
+    /// the rail is the scope, and an empty scope used to show everything.
     private var visibleCandidates: [ScanCandidate] {
         let query = nameFilter.trimmingCharacters(in: .whitespaces)
         return (outcome?.candidates ?? []).filter { candidate in
-            guard checkedFolders.contains(where: { ScanOutcome.isUnder(candidate.folderPath, $0) })
+            guard selection.checked.contains(where: { ScanOutcome.isUnder(candidate.folderPath, $0) })
             else { return false }
             switch statusFilter {
             case .newOnly: if !candidate.isNew { return false }
@@ -680,7 +668,7 @@ struct ImportView: View {
     /// never applied. A filename parser that silently invents tags is
     /// unpickable-apart later.
     private var folderWords: [String] {
-        guard let focusedFolder, !focusedFolder.isEmpty else { return [] }
+        guard let focusedFolder = selection.focused, !focusedFolder.isEmpty else { return [] }
         return focusedFolder
             .split(whereSeparator: { "/-_. ".contains($0) })
             .map(String.init)
@@ -760,11 +748,9 @@ struct ImportView: View {
                     probes = [:]
                     probedSource = source.id
                 }
-                // Nothing ticked, nothing selected: pick a folder first.
-                checkedFolders = []
+                // Nothing chosen, nothing selected: pick a folder first.
+                selection.reset(focusing: result.folderTree(newOnly: true).first?.path)
                 collapsedFolders = []
-                selectedPaths = []
-                focusedFolder = result.folderTree(newOnly: true).first?.path
                 step = .review
             } catch {
                 notice = "Scan of \(source.name) failed: \(error)"
@@ -795,7 +781,7 @@ struct ImportView: View {
 
     private var importButtonTitle: String {
         if run?.isRunning == true { return "Importing…" }
-        return selectedPaths.isEmpty ? "Nothing selected" : "Import \(selectedPaths.count) Files"
+        return selection.paths.isEmpty ? "Nothing selected" : "Import \(selection.paths.count) Files"
     }
 
     private func beginImport() {
@@ -807,7 +793,7 @@ struct ImportView: View {
             return
         }
         let library = model.library
-        let imported = selectedPaths
+        let imported = selection.paths
         let sent = staging
         let resolved = staging.staging(in: library)
         let groups = [ImportRun.Group(paths: imported.sorted(), staging: resolved.isEmpty ? nil : resolved)]
@@ -846,10 +832,7 @@ struct ImportView: View {
             }
             let updated = outcome?.markingKnown(imported)
             outcome = updated
-            selectedPaths.subtract(imported)
-            if let updated {
-                checkedFolders = checkedFolders.filter { !updated.newPaths(under: $0).isEmpty }
-            }
+            if let updated { selection.afterImport(imported, updated: updated) }
             // The boxes keep only their sticky values — unless they were
             // changed since Import was pressed, which is the next import's.
             if staging == sent { staging = stickyDraft() }
