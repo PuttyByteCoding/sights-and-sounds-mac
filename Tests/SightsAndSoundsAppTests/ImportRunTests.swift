@@ -8,7 +8,14 @@ import Testing
 /// folder; Cancel used to stop only the job in flight, and every later
 /// folder was enqueued and imported anyway.
 @Suite @MainActor struct ImportRunTests {
-    @Test func cancelDuringTheFirstFolderImportsNoLaterFolder() async throws {
+    /// Cancel reaches the whole run: a per-folder import is one job per
+    /// folder, and every later folder used to go ahead after Cancel. The
+    /// second folder's queueing is held at a gate until Cancel has been
+    /// pressed — cancelling on a timer caught the first job still queued
+    /// (cancelled before it ran: the first folder imported nothing) or
+    /// already finished (the second had begun: it imported too).
+    @Test(.timeLimit(.minutes(1)))
+    func cancelAfterTheFirstFolderImportsNoLaterFolder() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("import-run-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -20,27 +27,40 @@ import Testing
         let source = Source(name: "Here", rootPath: root.path)
         try await library.writer.write { try source.insert($0) }
         let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let gate = Gate()
+        defer { gate.open() }
+        let enqueue = run.enqueue
+        let counter = Counter()
+        run.enqueue = { runner, sourceID, paths, staging in
+            // The first folder queues at once; the second waits for the gate.
+            if counter.next() > 1 { await gate.hold() }
+            return try await enqueue(runner, sourceID, paths, staging)
+        }
 
         var finished = false
         run.start(
             sourceID: source.id,
             groups: [.init(paths: ["one/a.mp4"]), .init(paths: ["two/b.mp4"]), .init(paths: ["three/c.mp4"])]
         ) { _ in finished = true }
-        for _ in 0..<400 where run.running == nil { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<800 where !gate.arrived { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(gate.arrived, "the second folder never came to be queued")
         run.cancel()
+        gate.open()
         for _ in 0..<400 where !finished { try await Task.sleep(for: .milliseconds(25)) }
 
         #expect(finished)
         let imported = try await library.writer.read { try MediaItem.fetchAll($0).map(\.relativePath) }
-        #expect(!imported.contains("two/b.mp4"))
-        #expect(!imported.contains("three/c.mp4"))
-        // The first folder's import really ran: a job that failed to start
-        // imports nothing, and the checks above would pass with Cancel
-        // broken — and so would they with the first job cancelled before it
-        // started, which is why its own file must be in.
-        #expect(imported.contains("one/a.mp4"), "the first folder did not import: \(imported)")
+        #expect(imported == ["one/a.mp4"], "\(imported)")
         let jobs = try await library.writer.read { try JobRecord.order(sql: "createdAt").fetchAll($0) }
         #expect(jobs.first?.state == .succeeded, "\(jobs.map { ($0.state, $0.error ?? "") })")
+        #expect(!jobs.contains { $0.state == .failed })
+    }
+
+    /// Counts calls from any task.
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        func next() -> Int { lock.withLock { count += 1; return count } }
     }
 
     /// Cancel pressed before the first job exists still stops the run —
