@@ -23,6 +23,20 @@ public struct ScanCandidate: Sendable, Equatable, Identifiable {
     /// such, not ticked by default, and importable again.
     public var isRemoved: Bool
 
+    public init(
+        relativePath: String, folderPath: String, fileName: String, fileExtension: String,
+        kind: MediaKind, fileSize: Int64, isKnown: Bool, isRemoved: Bool
+    ) {
+        self.relativePath = relativePath
+        self.folderPath = folderPath
+        self.fileName = fileName
+        self.fileExtension = fileExtension
+        self.kind = kind
+        self.fileSize = fileSize
+        self.isKnown = isKnown
+        self.isRemoved = isRemoved
+    }
+
     /// Neither in the library nor removed from it: what a scan is for.
     public var isNew: Bool { !isKnown && !isRemoved }
 
@@ -38,6 +52,12 @@ public struct ScanOutcome: Sendable, Equatable {
     /// here?
     public var skippedByExtension: [String: Int]
     public var scannedAt: Date
+
+    public init(candidates: [ScanCandidate], skippedByExtension: [String: Int], scannedAt: Date) {
+        self.candidates = candidates
+        self.skippedByExtension = skippedByExtension
+        self.scannedAt = scannedAt
+    }
 
     public var newCount: Int { candidates.count(where: \.isNew) }
     public var knownCount: Int { candidates.count { $0.isKnown } }
