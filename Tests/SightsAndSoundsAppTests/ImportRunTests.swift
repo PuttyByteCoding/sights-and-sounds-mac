@@ -35,10 +35,12 @@ import Testing
         #expect(!imported.contains("two/b.mp4"))
         #expect(!imported.contains("three/c.mp4"))
         // The first folder's import really ran: a job that failed to start
-        // imports nothing, and the checks above would pass with Cancel broken.
-        let jobs = try await library.writer.read { try JobRecord.fetchAll($0) }
-        #expect(!jobs.isEmpty)
-        #expect(jobs.allSatisfy { $0.state != .failed }, "\(jobs.compactMap(\.error))")
+        // imports nothing, and the checks above would pass with Cancel
+        // broken — and so would they with the first job cancelled before it
+        // started, which is why its own file must be in.
+        #expect(imported.contains("one/a.mp4"), "the first folder did not import: \(imported)")
+        let jobs = try await library.writer.read { try JobRecord.order(sql: "createdAt").fetchAll($0) }
+        #expect(jobs.first?.state == .succeeded, "\(jobs.map { ($0.state, $0.error ?? "") })")
     }
 
     /// Cancel pressed before the first job exists still stops the run —
