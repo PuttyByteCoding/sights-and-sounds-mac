@@ -14,6 +14,13 @@ struct ImportView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
 
+    /// Opened on a source: scan it at once. "Import New Files" on a source
+    /// and "Import Now" on an orphan both land here — the one way in,
+    /// with the list to review and the tags to stage — in place of an
+    /// import that took everything unseen.
+    var initialSourceID: UUID? = nil
+    @State private var openedOnSource = false
+
     enum Step: Int, CaseIterable {
         case source, scan, review, importing
 
@@ -101,8 +108,16 @@ struct ImportView: View {
         }
         .frame(minWidth: 900, minHeight: 560)
         .background(Theme.Surface.content)
-        .task { await reload() }
-        .onChange(of: model.sources) { Task { await reload() } }
+        .task {
+            await reload()
+            scanInitialSource()
+        }
+        .onChange(of: model.sources) {
+            Task {
+                await reload()
+                scanInitialSource()
+            }
+        }
         .sheet(isPresented: $showConfigure) {
             ConfigureBoxesSheet(
                 boxes: $boxes,
@@ -716,6 +731,15 @@ struct ImportView: View {
         if let source = model.addSource(at: url) {
             beginScan(source)
         }
+    }
+
+    /// Once, as soon as the source list holds the one asked for.
+    private func scanInitialSource() {
+        guard !openedOnSource, let id = initialSourceID,
+              let source = model.sources.first(where: { $0.id == id })
+        else { return }
+        openedOnSource = true
+        beginScan(source)
     }
 
     private func beginScan(_ source: Source) {

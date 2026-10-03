@@ -10,6 +10,7 @@ import SightsAndSoundsKit
 struct MaintenanceView: View {
     @Environment(BrowseModel.self) private var model
     @Environment(AppModel.self) private var app
+    @Environment(\.openWindow) private var openWindow
 
     enum Tab: String, CaseIterable {
         case writeback, backup, validation
@@ -405,11 +406,15 @@ struct MaintenanceView: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             }
         case .orphanFile:
-            // The source the file is in — it used to import the library's
-            // first source, whichever that was.
+            // The Import window, scanned to the source the file is in: the
+            // orphan is listed as new, to tick and stage like any other.
             if let source = model.sources.first(where: { $0.id == finding.sourceID }) {
-                Button("Import Now") { model.importSource(source) }
-                    .buttonStyle(SecondaryButtonStyle(compact: true))
+                Button("Import…") {
+                    var request = model.auxRequest(.importMedia)
+                    request.sourceID = source.id
+                    openWindow(id: "aux", value: request)
+                }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
             }
         case .sizeMismatch:
             if let itemID = finding.mediaItemID {

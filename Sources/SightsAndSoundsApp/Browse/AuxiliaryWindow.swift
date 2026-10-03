@@ -64,6 +64,10 @@ struct AuxWindowRequest: Codable, Hashable {
     /// on the whole library. Nil (a window saved before this existed)
     /// is the whole library, and says so.
     var scopeItemIDs: [UUID]? = nil
+    /// Import: the source to scan as the window opens — "Import New
+    /// Files" on a source, or Maintenance's "Import Now" on an orphan.
+    /// Optional so saved window state decodes.
+    var sourceID: UUID? = nil
 }
 
 /// Hosts one auxiliary surface in its own window, with its own
@@ -143,7 +147,7 @@ struct AuxiliaryWindowView: View {
             case .review: ReviewView()
             case .organise: OrganiseView(scope: request.scopeItemIDs)
             case .maintenance: MaintenanceView(scope: request.scopeItemIDs)
-            case .importMedia: ImportView()
+            case .importMedia: ImportView(initialSourceID: request.sourceID)
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()
             case .tagAnalysis:

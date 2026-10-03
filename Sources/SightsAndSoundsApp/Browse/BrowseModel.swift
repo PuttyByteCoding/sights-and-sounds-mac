@@ -208,7 +208,6 @@ final class BrowseModel {
     // `libraryChanged`.
 
     /// Sources with an import in flight, and their progress line.
-    private(set) var importStatus: [UUID: String] = [:]
 
     /// The thumbnail sweep's live progress for this library — non-nil
     /// only while a sweep is queued or running. Read by the footer bar
@@ -783,55 +782,6 @@ final class BrowseModel {
         } catch {
             errorMessage = "Could not add \(url.lastPathComponent): \(error)"
             return nil
-        }
-    }
-
-    /// Scan a source and import everything new under it, unreviewed.
-    ///
-    /// This is the whole-source path — "Scan" from a source row, or a
-    /// mount waking up. Reviewing a list before anything enters the
-    /// library is the Import window's job; this one is for when you
-    /// already know what is on the drive.
-    func importSource(_ source: Source) {
-        guard importStatus[source.id] == nil else { return }
-        importStatus[source.id] = "queued…"
-        Task {
-            do {
-                let record = try await ImportJob.enqueue(on: jobRunner, sourceID: source.id)
-                // Started, not joined: the row polled below says when this
-                // import is done; the drain ends only with the whole queue.
-                await jobRunner.startDraining()
-
-                // Poll the job row for progress until it settles.
-                var settled = false
-                while !settled {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    guard let row = try await library.writer.read({
-                        try JobRecord.fetchOne($0, key: record.id)
-                    }) else { break }
-                    switch row.state {
-                    case .queued:
-                        importStatus[source.id] = "queued…"
-                    case .running:
-                        if let total = row.progressTotal, total > 0 {
-                            importStatus[source.id] = "\(row.progressCurrent)/\(total)"
-                        } else {
-                            importStatus[source.id] = "scanning…"
-                        }
-                    case .succeeded, .failed, .cancelled:
-                        settled = true
-                        if row.state == .failed, let error = row.error {
-                            errorMessage = "Import failed: \(error)"
-                        }
-                    }
-                }
-            } catch {
-                errorMessage = "\(error)"
-            }
-            importStatus[source.id] = nil
-            // Import finishing is a worker signal: new rows want hashes
-            // and thumbnails.
-            onWorkFinished()
         }
     }
 
