@@ -159,6 +159,7 @@ extension LibraryDatabase {
         try writer.write { db in
             try db.execute(sql: "UPDATE mediaItem SET fileSize = ? WHERE id = ?", arguments: [diskSize, itemID])
             try LibraryDatabase.forgetReadingsOfChangedFile(itemID, .newStreams, in: db)
+            try LibraryDatabase.recordRewrite(itemID, .changedOutside, tool: nil, reencoded: false, in: db)
             try db.execute(
                 sql: "DELETE FROM validationFinding WHERE mediaItemID = ? AND kind = 'sizeMismatch'",
                 arguments: [itemID])

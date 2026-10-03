@@ -17,6 +17,6 @@ enum ExpectedMigrations {
         "tagAnalysisIgnore", "searchRecipe", "segmentsFollowTheirFile",
         "segmentLookupIndex", "moveJournal",
         "moveJournalRevertsAndSwaps", "searchIndex", "mediaSignal", "mediaSignalSeries",
-        "foreignKeyIndexes", "validationFindingSource", "removedItems",
+        "foreignKeyIndexes", "validationFindingSource", "fileRewrites", "removedItems",
     ]
 }
