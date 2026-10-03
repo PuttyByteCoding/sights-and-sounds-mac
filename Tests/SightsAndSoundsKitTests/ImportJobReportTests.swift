@@ -116,4 +116,61 @@ import Testing
         #expect(lastProgress != nil && summary != nil && lastProgress! < summary!,
                 "progress landed after the summary: \(events)")
     }
+    /// Counts the walks a job makes over the source.
+    final class CountingAccess: FileAccess, @unchecked Sendable {
+        private let live = LiveFileAccess()
+        private let lock = NSLock()
+        private var walks = 0
+        var walkCount: Int { lock.withLock { walks } }
+        func isReachable(_ url: URL) -> Bool { live.isReachable(url) }
+        func contentsOfDirectory(at url: URL) throws -> [URL] { try live.contentsOfDirectory(at: url) }
+        func allFiles(under url: URL) throws -> [URL] {
+            lock.withLock { walks += 1 }
+            return try live.allFiles(under: url)
+        }
+        func fileSize(at url: URL) throws -> Int64 { try live.fileSize(at: url) }
+        func readFile(at url: URL, chunk: (Data) throws -> Void) throws { try live.readFile(at: url, chunk: chunk) }
+        func moveFile(at url: URL, to destination: URL) throws { try live.moveFile(at: url, to: destination) }
+        func removeFile(at url: URL) throws { try live.removeFile(at: url) }
+    }
+
+    /// A named import is one folder of a drive that may hold forty
+    /// thousand files, and a per-folder import is one job per folder: each
+    /// walked the whole source again. A named list is checked file by
+    /// file instead, with the same rules as the walk.
+    @Test func aNamedImportDoesNotWalkTheSource() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        // Named: one real file, one gone, one under the archive, one whose
+        // extension no list claims.
+        try Data("x".utf8).write(to: f.root.appendingPathComponent("set/notes.txt"))
+        try FileManager.default.createDirectory(
+            at: f.root.appendingPathComponent("_Replaced/set"), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: f.root.appendingPathComponent("_Replaced/set/old.m4a"))
+        let access = CountingAccess()
+        let report = Report()
+        let job = ImportJob(
+            payload: .init(sourceID: f.source.id, relativePaths: [
+                "set/a.m4a", "set/ghost.m4a", "_Replaced/set/old.m4a", "set/notes.txt",
+            ]),
+            fileAccess: access)
+        try await job.run(report.context(f.library))
+
+        #expect(access.walkCount == 0, "a named import walked the source \(access.walkCount) times")
+        let paths = try await f.library.writer.read { try MediaItem.fetchAll($0).map(\.relativePath) }
+        #expect(paths == ["set/a.m4a"], "\(paths)")
+        let summary = try #require(report.summaryText)
+        #expect(summary.hasPrefix("1 new, 0 already imported"), Comment(rawValue: summary))
+        #expect(summary.contains("1 no longer on disk"), Comment(rawValue: summary))
+    }
+
+    @Test func anUnnamedImportStillWalksOnce() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let access = CountingAccess()
+        let job = ImportJob(payload: .init(sourceID: f.source.id), fileAccess: access)
+        try await job.run(Report().context(f.library))
+        #expect(access.walkCount == 1)
+        #expect(try await f.library.writer.read { try MediaItem.fetchCount($0) } == 3)
+    }
 }
