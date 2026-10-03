@@ -907,6 +907,7 @@ private struct TagQueryField: View {
 
 private struct SourceRow: View {
     @Environment(BrowseModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     let source: Source
     let expanded: Bool
     let toggle: () -> Void
@@ -926,11 +927,7 @@ private struct SourceRow: View {
                 .foregroundStyle(source.enabled ? Theme.Text.primary : Theme.Text.disabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if let status = model.importStatus[source.id] {
-                Text(status)
-                    .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Accent.amber)
-            } else if !source.enabled {
+            if !source.enabled {
                 ThemeBadge(
                     text: "disabled", fill: Theme.Surface.iconTile,
                     foreground: Theme.Text.disabled)
@@ -943,10 +940,15 @@ private struct SourceRow: View {
             CountText(model.counts.bySource[source.id] ?? 0, size: 11)
         }
         .contextMenu {
-            Button("Import New Files") { model.importSource(source) }
-                .disabled(!source.enabled
-                    || !model.onlineSourceIDs.contains(source.id)
-                    || model.importStatus[source.id] != nil)
+            // The Import window, scanned to this source: a tree of what is
+            // new, to tick folder by folder and stage tags for — not an
+            // import of everything unseen.
+            Button("Import New Files…") {
+                var request = model.auxRequest(.importMedia)
+                request.sourceID = source.id
+                openWindow(id: "aux", value: request)
+            }
+            .disabled(!source.enabled || !model.onlineSourceIDs.contains(source.id))
             Button(source.enabled ? "Disable" : "Enable") {
                 model.setSourceEnabled(source, !source.enabled)
             }
