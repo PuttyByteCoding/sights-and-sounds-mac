@@ -83,3 +83,42 @@ extension LocalLibraryService {
         }
     }
 }
+
+// MARK: - PlayerWriting
+
+extension LocalLibraryService {
+    public func recordPlayback(_ event: PlaybackEvent) async throws {
+        switch event {
+        case .started(let itemID, let date):
+            try library.recordPlaybackStart(itemID: itemID, at: date)
+        case .stopped(let itemID, let position, let duration, let date):
+            try library.recordPlaybackStop(
+                itemID: itemID, positionSeconds: position, durationSeconds: duration, at: date)
+        case .completed(let itemID, let date):
+            try library.recordPlaybackCompletion(itemID: itemID, at: date)
+        }
+    }
+
+    public func setFlag(_ flag: PlayerToggleFlag, _ on: Bool, itemID: UUID) async throws -> Playable {
+        // Deletion and playback-issue marks stage the file physically
+        // (and unstage on the way back); the other flags are plain. The
+        // move can take a while on a busy or network volume, which is why
+        // none of this is on the main actor.
+        switch flag {
+        case .markedForDeletion:
+            on ? try library.stage(.toDelete, itemID: itemID, fileAccess: fileAccess)
+                : try library.unstage(.toDelete, itemID: itemID, fileAccess: fileAccess)
+        case .playbackIssue:
+            on ? try library.stage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
+                : try library.unstage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
+        case .favorite, .needsReview:
+            try await library.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE mediaItem SET \(flag.column) = ? WHERE id = ?", arguments: [on, itemID])
+            }
+        }
+        // A staging move gives the file a new path: the row and its URL
+        // as they are now.
+        return try await playable(itemID: itemID)
+    }
+}

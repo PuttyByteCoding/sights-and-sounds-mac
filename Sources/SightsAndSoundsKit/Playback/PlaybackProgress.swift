@@ -64,7 +64,7 @@ extension LibraryDatabase {
 
 /// The flags the player can toggle from the keyboard. Column names are a
 /// fixed vocabulary — never interpolated from user input.
-public enum PlayerToggleFlag: Sendable {
+public enum PlayerToggleFlag: String, Codable, Sendable, CaseIterable {
     case favorite, needsReview, markedForDeletion, playbackIssue
 
     var column: String {

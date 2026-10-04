@@ -595,11 +595,19 @@ final class PlayerModel {
         // and every History queue over this library hears about it —
         // except this player's own, which never reorders on its plays.
         if loaded.clipStartSeconds == nil {
-            try? library.recordPlaybackStart(itemID: loaded.id)
+            record(.started(itemID: loaded.id, at: Date()))
         }
-        NotificationCenter.default.post(
-            name: .sasPlaybackDidLoad, object: nil,
-            userInfo: ["libraryID": libraryID, "sender": playerToken])
+        // Told once the stamp has landed: the queues that hear this
+        // re-read the history, and must find this watch in it. Queued
+        // behind the stamp, so it follows it whether or not there was one.
+        let libraryID = libraryID, sender = playerToken
+        writes.send({
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .sasPlaybackDidLoad, object: nil,
+                    userInfo: ["libraryID": libraryID, "sender": sender])
+            }
+        })
 
         let playerItem = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: playerItem)
@@ -888,10 +896,19 @@ final class PlayerModel {
         tagFieldCategoryID = Self.universalFieldFocusID
     }
 
-    /// The flag work still running, in press order: each toggle waits for
-    /// the one before, so a quick mark-then-unmark stages and unstages in
-    /// that order.
-    private var flagWork: Task<Void, Never>?
+    /// This player's writes, in the order they were asked for: a quick
+    /// mark-then-unmark stages and unstages in that order, and where the
+    /// video stopped is recorded after the load it follows.
+    private let writes = WriteQueue()
+
+    /// One thing that happened here, for the library's history. Nobody
+    /// waits on it, and it is not said when it fails: the history is a
+    /// convenience, and a line on the player about it would be noise.
+    private func record(_ event: PlaybackEvent) {
+        let service = service
+        writes.send({ try await service.recordPlayback(event) })
+    }
+
     /// Presses whose write has not finished. A finished write shows the
     /// row only when it was the last one — an earlier write must not
     /// overwrite a later press already on screen.
@@ -914,41 +931,19 @@ final class PlayerModel {
         }
         item = shown
 
-        let library = library, fileAccess = fileAccess, previous = flagWork
+        // Decided from the press, not from whatever the row says by the
+        // time the write runs; and queued at the press, so two presses
+        // are carried out in the order they were made.
+        let service = service
         flagWritesInFlight += 1
-        flagWork = Task { [weak self] in
-            await previous?.value
-            let outcome = await Task.detached(priority: .userInitiated) { () -> Result<(MediaItem?, URL?), Error> in
-                Result {
-                    // Deletion and playback-issue marks stage the file
-                    // physically (and unstage on the way back); the other
-                    // flags are plain. Decided from the press, not from
-                    // whatever the row says by the time this runs.
-                    switch flag {
-                    case .markedForDeletion:
-                        on ? try library.stage(.toDelete, itemID: itemID, fileAccess: fileAccess)
-                            : try library.unstage(.toDelete, itemID: itemID, fileAccess: fileAccess)
-                    case .playbackIssue:
-                        on ? try library.stage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
-                            : try library.unstage(.playbackIssue, itemID: itemID, fileAccess: fileAccess)
-                    case .favorite, .needsReview:
-                        try library.writer.write { db in
-                            try db.execute(
-                                sql: "UPDATE mediaItem SET \(flag == .favorite ? "isFavorite" : "needsReview") = ? WHERE id = ?",
-                                arguments: [on, itemID])
-                        }
-                    }
-                    let fresh = try library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
-                    // A staging move gives the file a new path; resolve it
-                    // here, off the main actor, like a load does.
-                    let url = try fresh.flatMap { try library.resolvedFileURL(for: $0, fileAccess: fileAccess) }
-                    return (fresh, url)
-                }
-            }.value
+        let write = writes.submit { try await service.setFlag(flag, on, itemID: itemID) }
+        Task { [weak self] in
+            let outcome = await write.value
             guard let self else { return }
             self.flagWritesInFlight -= 1
             switch outcome {
-            case .success(let (fresh, url)):
+            case .success(let playable):
+                let fresh = playable.item, url = playable.url
                 // The row as it now is (a staged file has a new path) —
                 // for the item still showing, once no later press waits.
                 // `fileURL` follows it: Save a Copy, Live Text, the screen
@@ -963,8 +958,12 @@ final class PlayerModel {
                 }
             case .failure(let error):
                 self.loadError = "\(error)"
-                if self.item?.id == itemID {
-                    self.item = try? await self.library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+                // The mark was shown before it was made; show the row as
+                // it is. If that cannot be read either, the mark stays
+                // and the line above says it did not take.
+                if self.item?.id == itemID, let actual = try? await service.playable(itemID: itemID),
+                   self.item?.id == itemID, self.flagWritesInFlight == 0 {
+                    self.item = actual.item
                 }
             }
         }
@@ -1552,7 +1551,7 @@ final class PlayerModel {
                    time.seconds > self.durationSeconds * 0.9 {
                     self.completionRecorded = true
                     if let id = self.item?.id {
-                        try? self.library.recordPlaybackCompletion(itemID: id)
+                        self.record(.completed(itemID: id, at: Date()))
                     }
                 }
             }
@@ -1587,9 +1586,11 @@ final class PlayerModel {
     /// and window close; clips never record resume state.
     func persistProgress() {
         guard let item, item.clipStartSeconds == nil, currentSeconds > 0 else { return }
-        try? library.recordPlaybackStop(
+        // Stamped now: it is on its way when this returns, and may land
+        // after the window has gone.
+        record(.stopped(
             itemID: item.id, positionSeconds: currentSeconds,
-            durationSeconds: durationSeconds > 0 ? durationSeconds : nil)
+            durationSeconds: durationSeconds > 0 ? durationSeconds : nil, at: Date()))
     }
 
     func shutdown() {
