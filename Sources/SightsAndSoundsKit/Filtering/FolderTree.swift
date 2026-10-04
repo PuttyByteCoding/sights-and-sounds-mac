@@ -3,7 +3,7 @@ import Foundation
 /// One node of the browse sidebar's folder tree. `path` is the full
 /// source-relative folder path ("" = the library root); `directCount` is
 /// the number of visible items whose files sit directly in this folder.
-public struct FolderNode: Identifiable, Sendable, Equatable {
+public struct FolderNode: Identifiable, Sendable, Equatable, Codable {
     public var id: String { path }
     public let path: String
     public let name: String

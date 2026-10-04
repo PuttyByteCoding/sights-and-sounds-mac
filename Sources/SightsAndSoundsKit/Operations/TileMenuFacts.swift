@@ -4,7 +4,7 @@ import GRDB
 /// A snapshot as a menu needs it: when, from what, and the id to restore
 /// — never the tag payload, which can be large and is only read by the
 /// restore itself.
-public struct SnapshotRef: Identifiable, Sendable, Equatable {
+public struct SnapshotRef: Identifiable, Sendable, Equatable, Codable {
     public let id: UUID
     public let capturedAt: Date
     public let source: SnapshotSource

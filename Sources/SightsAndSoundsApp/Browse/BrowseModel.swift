@@ -3,13 +3,6 @@ import GRDB
 import SwiftUI
 import SightsAndSoundsKit
 
-/// Per-category tags for the filter panel.
-struct CategoryTags: Identifiable {
-    var id: UUID { category.id }
-    let category: TagCategory
-    let tags: [Tag]
-}
-
 /// One library window's state: the active filter, its results, and the
 /// sidebar data. All reads go through the library's own handle — nothing
 /// here can see another library.
@@ -189,6 +182,10 @@ final class BrowseModel {
 
     private let fileAccess: any FileAccess
     private let jobRunner: JobRunner
+    /// What this window asks of its library. The reads and writes are
+    /// moving onto it from `library` a group at a time; once they all
+    /// have, a window can be given a library held by another Mac.
+    let service: any LibraryService
     private let onWorkFinished: () -> Void
     // Observer tokens live in a bag whose own deinit removes them —
     // sidestepping actor-isolated-deinit rules entirely.
@@ -213,44 +210,18 @@ final class BrowseModel {
     /// only while a sweep is queued or running. Read by the footer bar
     /// under the grid; counts come from the job row and thumbnailState,
     /// the sweep's own progress bookkeeping, never re-derived from disk.
-    struct ThumbnailQueueStatus: Equatable {
-        var current: Int
-        var total: Int?
-        var failed: Int
-    }
+    typealias ThumbnailQueueStatus = SightsAndSoundsKit.ThumbnailQueueStatus
     private(set) var thumbnailQueue: ThumbnailQueueStatus?
 
     /// Poll while the browse UI is on screen — the view owns the task,
     /// so nothing runs while the player has the window or after close.
     /// Same one-second cadence as the tasks dashboard; two cheap reads.
     func watchThumbnailQueue() async {
+        let service = service
         while !Task.isCancelled {
-            thumbnailQueue = await Self.thumbnailQueueStatus(in: library)
+            // A read that fails shows no progress line, as it always has.
+            thumbnailQueue = (try? await service.thumbnailQueueStatus()) ?? nil
             try? await Task.sleep(for: .seconds(1))
-        }
-    }
-
-    private static func thumbnailQueueStatus(
-        in library: LibraryDatabase
-    ) async -> ThumbnailQueueStatus? {
-        do {
-            return try await library.writer.read { db in
-                guard
-                    let row = try JobRecord.fetchOne(
-                        db,
-                        sql: "SELECT * FROM job WHERE kind = ? ORDER BY createdAt DESC LIMIT 1",
-                        arguments: [ThumbnailBatchJob.kind]),
-                    row.state == .queued || row.state == .running
-                else { return nil }
-                let failed = try Int.fetchOne(
-                    db,
-                    sql: "SELECT COUNT(*) FROM thumbnailState WHERE failureMessage IS NOT NULL"
-                ) ?? 0
-                return ThumbnailQueueStatus(
-                    current: row.progressCurrent, total: row.progressTotal, failed: failed)
-            }
-        } catch {
-            return nil
         }
     }
 
@@ -264,6 +235,7 @@ final class BrowseModel {
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
         self.jobRunner = runner
+        self.service = LocalLibraryService(library: library, runner: runner, fileAccess: fileAccess)
         self.onWorkFinished = onWorkFinished
         refreshAll()
 
@@ -272,8 +244,9 @@ final class BrowseModel {
         // and this window follows. It replaces a broadcast that meant "a
         // browse model refreshed", which the player and the jobs never
         // sent and a kind toggle sent for nothing.
-        changeSubscription = library.changes.subscribe { [weak self] change in
-            Task { @MainActor in self?.libraryChanged(change) }
+        let changes = service.changes()
+        changeWatch.task = Task { [weak self] in
+            for await change in changes { self?.libraryChanged(change) }
         }
 
         // Mount/unmount drives online-state transitions and wakes the
@@ -303,7 +276,14 @@ final class BrowseModel {
     /// sources check cannot overwrite newer counts.
     private var refreshGenerations: [Int: Int] = [:]
 
-    private var changeSubscription: LibraryChangeHub.Subscription?
+    /// The task reading the service's change stream, cancelled with the
+    /// model: held in a bag whose own deinit cancels it, like the mount
+    /// observers, so nothing actor-isolated is touched in a deinit.
+    private final class ChangeWatch: @unchecked Sendable {
+        var task: Task<Void, Never>?
+        deinit { task?.cancel() }
+    }
+    private let changeWatch = ChangeWatch()
 
     /// How many hub deliveries have touched each domain. The windows that
     /// keep reads of their own — Tag Manager, Review, Maintenance,
@@ -341,10 +321,7 @@ final class BrowseModel {
             refreshGenerations[bit, default: 0] += 1
             generations[bit] = refreshGenerations[bit]
         }
-        let library = library, kinds = kinds, fileAccess = fileAccess
-        // The trees hang off the enabled sources; when the sources are not
-        // being reloaded, the ones already on screen are the ones to use.
-        let knownSources = sources
+        let service = service, kinds = kinds
         Task.detached(priority: .userInitiated) { [weak self] in
             // Each part loads on its own. They shared one `do`: a throw
             // in any of them (the saved filters, the duplicate count)
@@ -357,50 +334,42 @@ final class BrowseModel {
             var failures: [String] = []
             if parts.contains(.sources) {
                 do {
-                    let sources = try library.sources()
-                    loaded.sources = sources
-                    loaded.onlineIDs = Set(
-                        sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }.map(\.id))
+                    let states = try await service.sourceStates()
+                    loaded.sources = states.map(\.source)
+                    loaded.onlineIDs = Set(states.filter(\.isOnline).map(\.id))
                 } catch { failures.append("sources: \(error)") }
             }
             if parts.contains(.vocabulary) {
                 do {
-                    loaded.vocabulary = try library.vocabulary()
-                        .filter { !$0.category.hiddenFromBrowse }
-                        .map { CategoryTags(category: $0.category, tags: $0.tags) }
-                    loaded.aliases = Dictionary(
-                        grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
-                        by: \.tagID
-                    ).mapValues { $0.map(\.alias) }
+                    let vocabulary = try await service.browseVocabulary()
+                    loaded.vocabulary = vocabulary.categories
+                    loaded.aliases = vocabulary.aliases
                 } catch { failures.append("tags: \(error)") }
             }
             if parts.contains(.counts) {
                 do {
-                    var trees: [UUID: [FolderNode]] = [:]
-                    for source in loaded.sources ?? knownSources where source.enabled {
-                        trees[source.id] = FolderTreeBuilder.build(
-                            from: try library.folderCounts(kinds: kinds, sourceID: source.id))
-                    }
-                    loaded.trees = trees
-                    // Every sidebar number in one batch (#96) — the counts
-                    // and the listing they label share one baseline, so
-                    // they cannot disagree.
-                    loaded.counts = try library.browseCounts(kinds: kinds)
+                    // The trees and every sidebar number in one answer
+                    // (#96) — the counts and the listing they label share
+                    // one baseline, so they cannot disagree.
+                    let sidebar = try await service.sidebarCounts(kinds: kinds)
+                    loaded.trees = sidebar.trees
+                    loaded.counts = sidebar.counts
                 } catch { failures.append("counts: \(error)") }
             }
             if parts.contains(.duplicates) {
-                do { loaded.pendingDuplicates = try library.pendingCandidates().count }
+                do { loaded.pendingDuplicates = try await service.pendingDuplicateCount() }
                 catch { failures.append("duplicates: \(error)") }
             }
             if parts.contains(.savedFilters) {
-                do { loaded.savedFilters = try library.savedFilters() }
+                do { loaded.savedFilters = try await service.savedFilters() }
                 catch { failures.append("saved filters: \(error)") }
             }
             if parts.contains(.menuFacts), !parts.contains(.listing) {
                 // With the listing these ride along in its payload.
                 do {
-                    loaded.hideBlockItemIDs = try library.itemIDsWithHideBlocks()
-                    loaded.snapshotRefs = try library.recentSnapshotRefs(perItem: 10)
+                    let facts = try await service.tileMenuFacts(snapshotsPerItem: 10)
+                    loaded.hideBlockItemIDs = facts.hideBlockItemIDs
+                    loaded.snapshotRefs = facts.snapshotRefs
                 } catch { failures.append("item details: \(error)") }
             }
             let result = loaded, failed = failures
@@ -691,18 +660,13 @@ final class BrowseModel {
     /// of indexed counts, recomputed whenever the vocabulary refresh
     /// runs so tagging keeps the numbers honest.
     func refreshSavedFilterCounts() {
-        let library = library, kinds = kinds, filters = savedFilters
+        let service = service, kinds = kinds
         Task {
-            let counts = await Task.detached(priority: .utility) { () -> [UUID: Int] in
-                var counts: [UUID: Int] = [:]
-                for saved in filters {
-                    guard let filter = saved.filter else { continue }
-                    counts[saved.id] = (try? library.mediaItemCount(
-                        matching: filter, kinds: kinds)) ?? 0
-                }
-                return counts
+            let counts = await Task.detached(priority: .utility) {
+                try? await service.savedFilterCounts(kinds: kinds)
             }.value
-            self.savedFilterCounts = counts
+            // Counts that could not be read leave the ones on screen.
+            if let counts { self.savedFilterCounts = counts }
         }
     }
 
