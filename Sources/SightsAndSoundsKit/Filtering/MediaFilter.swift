@@ -97,7 +97,7 @@ public struct MediaFilter: Hashable, Sendable, Codable {
 /// `numericValue` ("10" after "2"); everything else sorts as NOCASE text.
 /// Items without a value for the field sort last; `relativePath` breaks
 /// ties so ordering is total and stable.
-public enum MediaOrdering: Hashable, Sendable {
+public enum MediaOrdering: Hashable, Sendable, Codable {
     case relativePath
     case fileName
     case fieldValue(UUID, ascending: Bool = true)

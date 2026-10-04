@@ -1,17 +1,6 @@
 import SwiftUI
 import SightsAndSoundsKit
 
-/// A tag as a tile draws it. Batched with the listing (never a query per
-/// cell) and carrying the category's stored hue, so a pill is the same
-/// colour here, in the sidebar and in the player.
-struct TagPill: Hashable, Sendable, Identifiable {
-    var id: UUID
-    var name: String
-    var categoryID: UUID
-    var categoryName: String
-    var colorIndex: Int
-}
-
 /// Everything a tile needs that is not on the item row itself.
 struct TileContext {
     var isOnline = true
