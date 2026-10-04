@@ -130,4 +130,11 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     ) async throws -> [StagingFailure] {
         try await run { try await base.setStaging(folder, on: on, itemIDs: itemIDs) }
     }
+
+    // MARK: JobRequesting
+
+    @discardableResult
+    func run(_ request: JobRequest, wait: JobWait) async throws -> JobRecord? {
+        try await run { try await base.run(request, wait: wait) }
+    }
 }
