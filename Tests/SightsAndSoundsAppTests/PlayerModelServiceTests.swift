@@ -72,13 +72,13 @@ import Testing
         defer { model.shutdown() }
         try await waitUntil("the first item") { model.fileURL != nil }
 
-        f.stub.fail("playable(itemID:)")
+        f.stub.fail("opened(itemID:)")
         model.load(itemID: f.b.id)
 
         try await waitUntil("the error") { model.loadError != nil }
         #expect(model.item == nil, "the last item is still the one keys act on")
         #expect(model.fileURL == nil)
-        #expect(model.loadError?.contains("playable") == true)
+        #expect(model.loadError?.contains("opened") == true)
     }
 
     @Test func anItemWithNoPlaybackURLShowsWhyAndStopsTheLast() async throws {
@@ -103,13 +103,13 @@ import Testing
         let model = f.player([f.a, f.b])
         defer { model.shutdown() }
         try await waitUntil("the first item") { model.item?.id == f.a.id }
-        let before = f.stub.answered("playable(itemID:)")
+        let before = f.stub.answered("opened(itemID:)")
 
-        f.stub.delay("playable(itemID:)", by: .milliseconds(400))
+        f.stub.delay("opened(itemID:)", by: .milliseconds(400))
         model.load(itemID: f.b.id)
-        try await waitUntil("b was asked for") { f.stub.calls("playable(itemID:)") == before + 1 }
+        try await waitUntil("b was asked for") { f.stub.calls("opened(itemID:)") == before + 1 }
         model.load(itemID: f.a.id)
-        try await waitUntil("both answered") { f.stub.answered("playable(itemID:)") == before + 2 }
+        try await waitUntil("both answered") { f.stub.answered("opened(itemID:)") == before + 2 }
         try await Task.sleep(for: .milliseconds(100))
 
         #expect(model.item?.id == f.a.id)
@@ -161,5 +161,142 @@ import Testing
         model.shutdown()
 
         try await waitUntil("the stream was let go of") { f.stub.openChangeStreams == 0 }
+    }
+
+    // MARK: - The panels
+
+    private func settled(_ model: PlayerModel) async throws {
+        try await waitUntil("the panels settled") { model.panelLoadsInFlight == 0 }
+    }
+
+    /// The item and its panel arrive together: the moment the next item
+    /// is the one on screen, the tags drawn are its own. Asked for after
+    /// the item had been set, there was a moment when a click on the
+    /// panel edited the last item's tags under the new one's name.
+    @Test func aNewItemArrivesWithItsOwnPanel() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.assignTag(f.tag.id, to: [f.a.id])
+        _ = try f.library.createEmbeddedClip(parentID: f.a.id, name: "Song", startSeconds: 1, endSeconds: 2)
+        let model = f.player([f.a, f.b])
+        defer { model.shutdown() }
+        try await waitUntil("a, tagged, with its segment") {
+            model.item?.id == f.a.id && model.hasTag(f.tag.id) && model.segments.count == 1
+        }
+
+        model.load(itemID: f.b.id)
+        var sawTheLastItemsPanel = false
+        for _ in 0..<400 where model.item?.id != f.b.id {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // Checked in the same turn the item was seen to change.
+        if model.item?.id == f.b.id, model.hasTag(f.tag.id) || !model.segments.isEmpty {
+            sawTheLastItemsPanel = true
+        }
+        #expect(model.item?.id == f.b.id)
+        #expect(!sawTheLastItemsPanel)
+    }
+
+    /// The panel is re-read for a (a change elsewhere), the answer is
+    /// slow, and meanwhile the player has stepped to b.
+    @Test func anAnswerForTheLastItemIsNotShownUnderTheNext() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.assignTag(f.tag.id, to: [f.a.id])
+        let model = f.player([f.a, f.b])
+        defer { model.shutdown() }
+        try await waitUntil("a, tagged") { model.item?.id == f.a.id && model.hasTag(f.tag.id) }
+        try await settled(model)
+
+        f.stub.holdAnswer("tagging(itemID:)", by: .milliseconds(400))
+        f.stub.holdAnswer("segments(parentID:)", by: .milliseconds(400))
+        model.refreshTagging()
+        model.refreshSegments()
+        model.load(itemID: f.b.id)
+        try await waitUntil("b") { model.item?.id == f.b.id }
+        try await settled(model)
+
+        #expect(!model.hasTag(f.tag.id), "a's tags are drawn under b")
+        #expect(model.itemTags.flatMap(\.tags).isEmpty)
+    }
+
+    /// Tagged and untagged at once. The read after the first press is
+    /// answered late, with what was true then; the read after the second
+    /// has already said the tag is off, and must not be overruled.
+    @Test func aLateOlderTagReadDoesNotUndoANewerOne() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+        try await settled(model)
+
+        f.stub.holdAnswer("itemTags(itemID:)", by: .milliseconds(400))
+        model.toggleTag(f.tag.id)   // on; its read is held
+        try await waitUntil("the first read was made") { f.stub.calls("itemTags(itemID:)") >= 1 }
+        try await Task.sleep(for: .milliseconds(50))
+        model.toggleTag(f.tag.id)   // off; its read is answered at once
+        try await settled(model)
+
+        #expect(!model.hasTag(f.tag.id))
+    }
+
+    @Test func aFailedPanelReadSaysSoAndKeepsWhatIsShown() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.assignTag(f.tag.id, to: [f.a.id])
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, tagged") { model.item?.id == f.a.id && model.hasTag(f.tag.id) }
+        try await settled(model)
+
+        f.stub.fail("itemTags(itemID:)")
+        model.refreshItemTags()
+        try await settled(model)
+
+        #expect(model.loadError?.contains("itemTags") == true)
+        #expect(model.hasTag(f.tag.id))
+    }
+
+    @Test func thePanelFollowsAnEditMadeHere() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+        try await settled(model)
+
+        model.toggleTag(f.tag.id)
+        try await settled(model)
+        #expect(model.hasTag(f.tag.id))
+
+        model.openSegmentMark()
+        _ = try f.library.createEmbeddedClip(parentID: f.a.id, name: "Song", startSeconds: 1, endSeconds: 2)
+        model.refreshSegments()
+        try await settled(model)
+        #expect(model.segments.map(\.name) == ["Song"])
+        #expect(model.songCount + model.clipCount == 1)
+    }
+
+    @Test func historyAndSearchAreReadForTheItemShowing() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a, f.b])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+
+        model.refreshHistory()
+        model.refreshSearch()
+        try await settled(model)
+        #expect(model.historyRows.map(\.id) == [f.a.id], "a load is a watch")
+        #expect(model.searchSubject?.fileName == "a.mp4")
+
+        // The search values never name the last item under the next.
+        model.load(itemID: f.b.id)
+        try await waitUntil("b") { model.item?.id == f.b.id }
+        #expect(model.searchSubject?.fileName != "a.mp4")
+        model.refreshSearch()
+        try await settled(model)
+        #expect(model.searchSubject?.fileName == "b.mp4")
     }
 }

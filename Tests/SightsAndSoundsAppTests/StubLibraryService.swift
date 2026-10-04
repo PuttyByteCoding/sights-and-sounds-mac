@@ -18,6 +18,7 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     private let lock = NSLock()
     private var failing: Set<String> = []
     private var delays: [String: Duration] = [:]
+    private var lateAnswers: [String: Duration] = [:]
     private var started: [String: Int] = [:]
     private var finished: [String: Int] = [:]
     private var streams = 0
@@ -31,6 +32,10 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     /// The next call of this operation waits this long before it is
     /// answered; calls after it are answered at once.
     func delay(_ operation: String, by duration: Duration) { lock.withLock { delays[operation] = duration } }
+    /// The next call of this operation is carried out at once and its
+    /// answer held this long: what it read is already out of date by the
+    /// time it arrives.
+    func holdAnswer(_ operation: String, by duration: Duration) { lock.withLock { lateAnswers[operation] = duration } }
     /// How many calls of this operation have been made.
     func calls(_ operation: String) -> Int { lock.withLock { started[operation, default: 0] } }
     /// How many calls of this operation have returned or thrown.
@@ -39,14 +44,18 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     var openChangeStreams: Int { lock.withLock { streams } }
 
     private func run<T>(_ operation: String = #function, _ body: () async throws -> T) async throws -> T {
-        let (fails, delay) = lock.withLock { () -> (Bool, Duration?) in
+        let (fails, delay, late) = lock.withLock { () -> (Bool, Duration?, Duration?) in
             started[operation, default: 0] += 1
-            return (failing.contains(operation), delays.removeValue(forKey: operation))
+            return (
+                failing.contains(operation), delays.removeValue(forKey: operation),
+                lateAnswers.removeValue(forKey: operation))
         }
         defer { lock.withLock { finished[operation, default: 0] += 1 } }
         if let delay { try? await Task.sleep(for: delay) }
         if fails { throw Failure(operation: operation) }
-        return try await body()
+        let answer = try await body()
+        if let late { try? await Task.sleep(for: late) }
+        return answer
     }
 
     func changes() -> AsyncStream<LibraryChange> {
@@ -153,5 +162,19 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     }
     func textLines(itemID: UUID) async throws -> [OcrTextLine] {
         try await run { try await base.textLines(itemID: itemID) }
+    }
+    func opened(itemID: UUID) async throws -> OpenedItem { try await run { try await base.opened(itemID: itemID) } }
+    func itemTags(itemID: UUID) async throws -> [CategoryTags] {
+        try await run { try await base.itemTags(itemID: itemID) }
+    }
+    func tagging(itemID: UUID) async throws -> PlayerTagging { try await run { try await base.tagging(itemID: itemID) } }
+    func segments(parentID: UUID) async throws -> PlayerSegments {
+        try await run { try await base.segments(parentID: parentID) }
+    }
+    func searchContext(itemID: UUID) async throws -> SearchContext {
+        try await run { try await base.searchContext(itemID: itemID) }
+    }
+    func recentlyWatched(limit: Int) async throws -> [MediaItem] {
+        try await run { try await base.recentlyWatched(limit: limit) }
     }
 }
