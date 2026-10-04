@@ -13,7 +13,7 @@ import GRDB
 /// Zero is a value, not an absence: a tag with no items under the current
 /// kinds renders dimmed rather than disappearing, because "exists but
 /// unused for this kind" is exactly the information (#96).
-public struct BrowseCounts: Sendable, Equatable {
+public struct BrowseCounts: Sendable, Equatable, Codable {
     public var total: Int = 0
     public var bySource: [UUID: Int] = [:]
     public var byTag: [UUID: Int] = [:]

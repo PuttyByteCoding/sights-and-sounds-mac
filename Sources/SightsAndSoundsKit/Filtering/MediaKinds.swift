@@ -66,3 +66,17 @@ extension MediaKind: CustomStringConvertible {
 
     public var description: String { displayName }
 }
+
+/// Encoded as the list of kinds. Decoding goes through `init(_:)`, so a
+/// value from a file or from another machine keeps the rule that the
+/// selection is never empty.
+extension MediaKinds: Codable {
+    public init(from decoder: any Decoder) throws {
+        self.init(try decoder.singleValueContainer().decode([MediaKind].self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(ordered)
+    }
+}
