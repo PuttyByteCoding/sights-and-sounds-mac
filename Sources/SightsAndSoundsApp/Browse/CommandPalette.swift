@@ -401,7 +401,7 @@ struct CommandPalette: View {
             PaletteCommand(
                 group: .tag, title: "Mark reviewed", symbol: "checkmark.circle",
                 keyEquivalent: "R", requiresSelection: 1
-            ) { model.markSelectionReviewed() },
+            ) { Task { await model.markSelectionReviewed() } },
             PaletteCommand(
                 group: .tag, title: "Mark for deletion", symbol: "trash",
                 keyEquivalent: "D", requiresSelection: 1
@@ -428,7 +428,7 @@ struct CommandPalette: View {
                 arguments: {
                     model.tagsOnSelection.map { pill in
                         PaletteCommand(group: .tag, title: "\(pill.name) (\(pill.categoryName))", symbol: "tag") {
-                            model.removeTagFromSelection(pill.id)
+                            Task { await model.removeTagFromSelection(pill.id) }
                         }
                     }
                 }),
@@ -440,7 +440,7 @@ struct CommandPalette: View {
                 arguments: {
                     entry.tags.map { tag in
                         PaletteCommand(group: .tag, title: tag.name, symbol: "tag") {
-                            model.applyTagToSelection(tag.id)
+                            Task { await model.applyTagToSelection(tag.id) }
                         }
                     }
                 }))

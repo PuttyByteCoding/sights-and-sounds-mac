@@ -19,7 +19,7 @@ import Testing
         var saved = MediaFilter()
         saved.searchText = "encore"
         model.filter = saved
-        model.saveCurrentFilter(named: "Encores")
+        await model.saveCurrentFilter(named: "Encores")
         let filter = try #require(model.savedFilters.first { $0.name == "Encores" })
         model.clearFilter()
 

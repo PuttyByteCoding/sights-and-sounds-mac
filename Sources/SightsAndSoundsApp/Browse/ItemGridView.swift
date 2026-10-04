@@ -363,7 +363,7 @@ private struct ItemCell: View {
         Button(
             selected.contains { !$0.isFavorite } ? "Add \(count) to Favourites" : "Remove \(count) from Favourites",
             systemImage: selected.contains { !$0.isFavorite } ? "star" : "star.slash"
-        ) { model.toggleSelectionFavorite() }
+        ) { Task { await model.toggleSelectionFavorite() } }
         Divider()
         if selected.contains(where: { !$0.markedForDeletion }) {
             Button("Mark \(count) for Deletion", systemImage: "trash") { model.markSelectionForDeletion() }
@@ -379,7 +379,7 @@ private struct ItemCell: View {
         if selected.contains(where: \.playbackIssue) {
             Button("Clear Playback Issue on \(count)", systemImage: "play.circle") { model.unmarkSelectionWontPlay() }
         }
-        Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") { model.markSelectionReviewed() }
+        Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") { Task { await model.markSelectionReviewed() } }
         Button("Remove \(count) from Library…", systemImage: "minus.circle") {
             removal = model.removalRequest(for: selected)
         }
@@ -550,7 +550,7 @@ private struct BulkBar: View {
                 .popover(isPresented: $showTagRemover, arrowEdge: .top) {
                     BulkTagRemover()
                 }
-            Button("Mark reviewed") { model.markSelectionReviewed() }
+            Button("Mark reviewed") { Task { await model.markSelectionReviewed() } }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             divider
             // Mark and unmark as a pair, so a mixed selection can be
@@ -629,7 +629,7 @@ private struct BulkTagRemover: View {
                         ForEach(pills) { pill in
                             let hue = Theme.categoryHue(pill.colorIndex)
                             Button {
-                                model.removeTagFromSelection(pill.id)
+                                Task { await model.removeTagFromSelection(pill.id) }
                             } label: {
                                 HStack(spacing: 4) {
                                     Text(pill.name)
@@ -690,7 +690,7 @@ private struct BulkTagPicker: View {
                                 FlowRow(spacing: 5) {
                                     ForEach(tags) { tag in
                                         Button {
-                                            model.applyTagToSelection(tag.id)
+                                            Task { await model.applyTagToSelection(tag.id) }
                                         } label: {
                                             Text(tag.name)
                                                 .font(Theme.ui(11.5))

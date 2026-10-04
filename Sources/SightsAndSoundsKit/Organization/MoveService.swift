@@ -23,7 +23,7 @@ public enum MoveError: Error, CustomStringConvertible {
 
 /// The staging folders. Named with a leading underscore so they sort
 /// apart and read as machinery, exactly as in the old app.
-public enum StagingFolder: String, Sendable {
+public enum StagingFolder: String, Sendable, Codable {
     case toDelete = "_ToDelete"
     case playbackIssue = "_PlaybackIssue"
 }
