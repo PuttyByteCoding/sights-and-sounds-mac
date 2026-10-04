@@ -17,6 +17,7 @@ import Testing
         let b: MediaItem
         let unmounted: MediaItem
         let tag: SightsAndSoundsKit.Tag
+        let band: TagCategory
 
         init() async throws {
             root = FileManager.default.temporaryDirectory
@@ -47,6 +48,7 @@ import Testing
             self.b = b
             self.unmounted = unmounted
             self.tag = tag
+            self.band = band
             stub = StubLibraryService(LocalLibraryService(library: library))
         }
 
@@ -166,7 +168,7 @@ import Testing
     // MARK: - The panels
 
     private func settled(_ model: PlayerModel) async throws {
-        try await waitUntil("the panels settled") { model.panelLoadsInFlight == 0 }
+        try await waitUntil("the player settled") { model.isSettled }
     }
 
     /// The item and its panel arrive together: the moment the next item
@@ -403,6 +405,169 @@ import Testing
 
         try await waitUntil("the new path") { model.fileURL?.path.hasSuffix("_ToDelete/a.mp4") == true }
         #expect(model.item?.markedForDeletion == true)
+    }
+
+    // MARK: - The tag panel's writes
+
+    private func isTagged(_ f: Fixture, _ item: MediaItem) throws -> Bool {
+        try f.library.writer.read { db in
+            try Int.fetchOne(
+                db, sql: "SELECT COUNT(*) FROM mediaItemTag WHERE mediaItemID = ? AND tagID = ?",
+                arguments: [item.id, f.tag.id]) ?? 0
+        } > 0
+    }
+
+    /// The key is a toggle. Pressed three times it ends on, however long
+    /// the first press takes to land.
+    @Test func aBoundKeyPressedThreeTimesEndsOn() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.setKeyBinding("1", tagID: f.tag.id)
+        let model = f.player([f.b])
+        defer { model.shutdown() }
+        try await waitUntil("b, with its keys") { model.item?.id == f.b.id && model.boundKeys["1"] != nil }
+        try await settled(model)
+
+        f.stub.delay("toggleTag(_:on:)", by: .milliseconds(250))
+        for _ in 0..<3 { #expect(model.handleBoundKey("1")) }
+        #expect(!model.handleBoundKey("9"), "an unbound key is not handled")
+        try await settled(model)
+
+        #expect(try isTagged(f, f.b))
+        #expect(model.hasTag(f.tag.id))
+        #expect(f.stub.calls("toggleTag(_:on:)") == 3)
+    }
+
+    /// Tagged, and stepped on before the tag has landed: it belongs to
+    /// the item it was pressed on, and the next item's panel does not
+    /// show it.
+    @Test func aTagAppliedJustBeforeSteppingGoesToTheItemItWasPressedOn() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a, f.b])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+        try await settled(model)
+
+        f.stub.delay("toggleTag(_:on:)", by: .milliseconds(300))
+        model.toggleTag(f.tag.id)
+        model.load(itemID: f.b.id)
+        try await waitUntil("b") { model.item?.id == f.b.id }
+        try await settled(model)
+
+        #expect(try isTagged(f, f.a))
+        #expect(try !isTagged(f, f.b))
+        #expect(!model.hasTag(f.tag.id), "a's tag is drawn on b")
+    }
+
+    /// Taken off, then applied, with the first on its way: it ends on.
+    /// Any number of toggles alone would end the same in any order;
+    /// these two would not, so this is the one that shows the order is
+    /// kept.
+    @Test func aTagTakenOffThenAppliedEndsOn() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.assignTag(f.tag.id, to: [f.a.id])
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, tagged") { model.item?.id == f.a.id && model.hasTag(f.tag.id) }
+        try await settled(model)
+
+        f.stub.delay("toggleTag(_:on:)", by: .milliseconds(300))
+        model.toggleTag(f.tag.id)   // off, held up
+        model.applyTag(f.tag.id)    // on
+        try await settled(model)
+
+        #expect(try isTagged(f, f.a), "the apply overtook the toggle it followed")
+        #expect(model.hasTag(f.tag.id))
+    }
+
+    @Test func anAdvancingKeyStepsOnceItsTagIsOnAndNotWhenItTookItOff() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.setKeyBinding("1", tagID: f.tag.id, advance: true)
+        let model = f.player([f.a, f.b])
+        defer { model.shutdown() }
+        try await waitUntil("a, with its keys") { model.item?.id == f.a.id && model.boundKeys["1"] != nil }
+        try await settled(model)
+
+        #expect(model.handleBoundKey("1"))
+        try await waitUntil("stepped to b") { model.item?.id == f.b.id }
+        try await settled(model)
+        #expect(try isTagged(f, f.a))
+
+        // Back on a, which wears the tag: the key takes it off and stays.
+        model.load(itemID: f.a.id)
+        try await waitUntil("a again") { model.item?.id == f.a.id && model.hasTag(f.tag.id) }
+        try await settled(model)
+        #expect(model.handleBoundKey("1"))
+        try await settled(model)
+        #expect(try !isTagged(f, f.a))
+        #expect(model.item?.id == f.a.id)
+    }
+
+    @Test func aTagWriteThatFailsSaysSo() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+        try await settled(model)
+
+        f.stub.fail("toggleTag(_:on:)")
+        model.toggleTag(f.tag.id)
+        try await settled(model)
+
+        #expect(model.loadError?.contains("toggleTag") == true)
+        #expect(!model.hasTag(f.tag.id))
+    }
+
+    @Test func aTagAddedByNameIsMadeAppliedAndInThePanel() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+        try await settled(model)
+
+        model.addTag(named: "Gamma", categoryID: f.band.id)
+        try await settled(model)
+
+        let gamma = try #require(model.panelVocabulary.flatMap(\.tags).first { $0.name == "Gamma" })
+        #expect(model.hasTag(gamma.id))
+        #expect(model.tagSearchIndex.contains { $0.tag.id == gamma.id })
+
+        model.renameTag(gamma.id, to: "Gamma Ray")
+        model.addAlias("GR", to: gamma.id)
+        model.applyTag(f.tag.id)
+        try await settled(model)
+        #expect(model.panelVocabulary.flatMap(\.tags).contains { $0.name == "Gamma Ray" })
+        #expect(model.hasTag(f.tag.id))
+        #expect(model.recentlyAppliedTagIDs.first == f.tag.id)
+    }
+
+    /// The editor binds a key and moves to the next free one, which it
+    /// finds on the model: the bindings there are current when the call
+    /// returns.
+    @Test func aKeyBindingIsOnTheModelWhenTheCallReturns() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a") { model.item?.id == f.a.id }
+        try await settled(model)
+
+        #expect(await model.setKeyBinding("2", tagID: f.tag.id, advance: true) == nil)
+        #expect(model.boundKeys["2"]?.tagID == f.tag.id)
+        #expect(model.boundKeys["2"]?.advance == true)
+
+        #expect(await model.removeKeyBinding("2") == nil)
+        #expect(model.boundKeys["2"] == nil)
+
+        f.stub.fail("setKeyBinding(_:tagID:advance:)")
+        let problem = await model.setKeyBinding("3", tagID: f.tag.id, advance: false)
+        #expect(problem?.contains("setKeyBinding") == true)
+        #expect(model.boundKeys["3"] == nil)
     }
 }
 

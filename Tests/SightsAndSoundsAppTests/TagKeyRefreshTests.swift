@@ -48,17 +48,17 @@ import Testing
             for _ in 0..<20 { model.toggleTag(tag.id) }
         }
         #expect(elapsed < .seconds(0.5), "20 presses took \(elapsed)")
-        // The panel is re-read after each press, off the main thread;
-        // what it shows is checked once those reads have landed.
-        try await waitUntil { model.panelLoadsInFlight == 0 }
+        // Each press is a write on its way and then a re-read of the
+        // panel; what it shows is checked once those have landed.
+        try await waitUntil { model.isSettled }
         #expect(!model.hasTag(tag.id))  // an even number of toggles
         model.toggleTag(tag.id)
-        try await waitUntil { model.panelLoadsInFlight == 0 }
+        try await waitUntil { model.isSettled }
         #expect(model.hasTag(tag.id))
 
         // A brand-new tag still reaches the vocabulary and the search.
         model.addTag(named: "Brand New Band", categoryID: band.id)
-        try await waitUntil { model.panelLoadsInFlight == 0 }
+        try await waitUntil { model.isSettled }
         #expect(model.panelVocabulary.first?.tags.contains { $0.name == "Brand New Band" } == true)
         #expect(model.tagSearchIndex.contains { $0.tag.name == "Brand New Band" })
     }

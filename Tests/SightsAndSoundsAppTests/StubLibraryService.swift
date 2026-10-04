@@ -192,4 +192,25 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func setFlag(_ flag: PlayerToggleFlag, _ on: Bool, itemID: UUID) async throws -> Playable {
         try await run { try await base.setFlag(flag, on, itemID: itemID) }
     }
+    func toggleTag(_ tagID: UUID, on itemID: UUID) async throws -> Bool {
+        try await run { try await base.toggleTag(tagID, on: itemID) }
+    }
+    func renameTag(_ tagID: UUID, to name: String) async throws {
+        try await run { try await base.renameTag(tagID, to: name) }
+    }
+    func ensureTag(named name: String, inCategory categoryID: UUID) async throws -> SightsAndSoundsKit.Tag {
+        try await run { try await base.ensureTag(named: name, inCategory: categoryID) }
+    }
+    func addAlias(_ alias: String, toTag tagID: UUID) async throws {
+        try await run { try await base.addAlias(alias, toTag: tagID) }
+    }
+    func setCategoryOrder(_ categoryIDs: [UUID]) async throws {
+        try await run { try await base.setCategoryOrder(categoryIDs) }
+    }
+    func setKeyBinding(_ key: String, tagID: UUID, advance: Bool) async throws {
+        try await run { try await base.setKeyBinding(key, tagID: tagID, advance: advance) }
+    }
+    func removeKeyBinding(_ key: String) async throws {
+        try await run { try await base.removeKeyBinding(key) }
+    }
 }
