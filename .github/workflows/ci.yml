@@ -25,6 +25,8 @@ jobs:
         run: ./scripts/check-no-private-data.sh
       - name: Kit portability check
         run: ./scripts/check-kit-portable.sh
+      - name: Service boundary check
+        run: ./scripts/check-service-boundary.sh
 
   test:
     name: Build & test
