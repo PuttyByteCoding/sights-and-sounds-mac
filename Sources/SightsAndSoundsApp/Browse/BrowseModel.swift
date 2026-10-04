@@ -567,35 +567,19 @@ final class BrowseModel {
 
     // MARK: - Writes
 
-    /// The last write asked for; the next one waits for it.
-    private var lastWrite: Task<Void, Never>?
+    /// This window's writes, in the order they were asked for.
+    private let writes = WriteQueue()
 
-    /// Send one write to the service, after every write asked for before
-    /// it. A write used to be a call that had finished by the next line;
-    /// it is now a request that takes its time, and two sent side by side
-    /// can land in either order — untag overtaking the tagging it was
-    /// meant to undo. One at a time, in the order asked, is what the
-    /// buttons mean.
-    ///
-    /// Returns what the write returned, or nil — with the reason on the
-    /// error line — when it failed.
+    /// Send one write to the service, after every write this window
+    /// asked for before it. Returns what the write returned, or nil —
+    /// with the reason on the error line — when it failed.
     @discardableResult
     private func write<T: Sendable>(
         orSay describe: (any Error) -> String = { "\($0)" },
         _ work: @escaping @Sendable (any LibraryService) async throws -> T
     ) async -> T? {
-        let previous = lastWrite
         let service = service
-        let attempt = Task { () -> Result<T, any Error> in
-            await previous?.value
-            do {
-                return .success(try await work(service))
-            } catch {
-                return .failure(error)
-            }
-        }
-        lastWrite = Task { _ = await attempt.value }
-        switch await attempt.value {
+        switch await writes.run({ try await work(service) }) {
         case .success(let value):
             return value
         case .failure(let error):
