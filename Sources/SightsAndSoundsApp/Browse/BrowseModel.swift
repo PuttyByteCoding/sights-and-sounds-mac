@@ -228,6 +228,7 @@ final class BrowseModel {
     init(
         libraryID: UUID, library: LibraryDatabase, runner: JobRunner,
         fileAccess: any FileAccess = LiveFileAccess(),
+        service: (any LibraryService)? = nil,
         onWorkFinished: @escaping () -> Void = {}
     ) {
         self.fileAccess = fileAccess
@@ -235,7 +236,10 @@ final class BrowseModel {
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
         self.jobRunner = runner
-        self.service = LocalLibraryService(library: library, runner: runner, fileAccess: fileAccess)
+        // Given one, the window asks that; given none, it asks the
+        // library on this Mac.
+        self.service = service
+            ?? LocalLibraryService(library: library, runner: runner, fileAccess: fileAccess)
         self.onWorkFinished = onWorkFinished
         refreshAll()
 
@@ -244,7 +248,7 @@ final class BrowseModel {
         // and this window follows. It replaces a broadcast that meant "a
         // browse model refreshed", which the player and the jobs never
         // sent and a kind toggle sent for nothing.
-        let changes = service.changes()
+        let changes = self.service.changes()
         changeWatch.task = Task { [weak self] in
             for await change in changes { self?.libraryChanged(change) }
         }
@@ -474,17 +478,6 @@ final class BrowseModel {
     /// on library-wide numbers.
     private(set) var filteredMissingCounts: [UUID: Int] = [:]
 
-    private struct ListingPayload: Sendable {
-        var items: [MediaItem]
-        var tags: [UUID: [TagPill]]
-        var missingCategories: [UUID: [String]]
-        var duplicateIDs: Set<UUID>
-        var filteredTagCounts: [UUID: Int]
-        var filteredMissingCounts: [UUID: Int]
-        var hideBlockItemIDs: Set<UUID>
-        var snapshotRefs: [UUID: [SnapshotRef]]
-    }
-
     /// Everything a tile needs about one item that is not on its row.
     func tileContext(for item: MediaItem) -> TileContext {
         TileContext(
@@ -498,107 +491,35 @@ final class BrowseModel {
     func refreshItems() {
         refreshGeneration += 1
         let generation = refreshGeneration
-        let library = library, filter = filter, kinds = kinds, ordering = ordering
+        let service = service
         let grid = GridDisplaySettings.shared.grid
+        // The faceted counts and the tile menus' facts ride along with
+        // the listing they describe, on the same generation — so the
+        // numbers and the grid can never be from different filters.
+        let request = ListingRequest(
+            filter: filter, kinds: kinds, ordering: ordering,
+            includesTagData: grid.needsTagData, includesDuplicateData: grid.needsDuplicateData,
+            snapshotsPerItem: 10)
         Task.detached(priority: .userInitiated) { [weak self] in
-            let outcome: Result<ListingPayload, Error>
-            // Timed because how the grid should react to a filter change
-            // depends on how long the query actually takes, and that is a
-            // fact about a real library rather than a guess. Debug level:
-            // it is diagnostic, and the Log window can filter to it.
-            let started = ContinuousClock.now
+            let outcome: Result<BrowseListingAnswer, Error>
             do {
-                let rows = try library.mediaItems(
-                    matching: filter, kinds: kinds, orderedBy: ordering)
-                // Both components: `attoseconds` carries only the
-                // sub-second remainder, so seconds must be added or a
-                // 1.5s query reports as 500ms — the exact case worth
-                // knowing about.
-                let took = started.duration(to: .now).components
-                let elapsed = Double(took.seconds) * 1000
-                    + Double(took.attoseconds) / 1e15
-                AppLog.shared.debug(
-                    "browse",
-                    "listing query \(String(format: "%.1f", elapsed))ms — \(rows.count) items")
-                var payload = ListingPayload(
-                    items: rows, tags: [:], missingCategories: [:], duplicateIDs: [],
-                    // Faceted counts ride along with the listing they
-                    // describe, on the same generation — so the numbers
-                    // and the grid can never be from different filters.
-                    filteredTagCounts: try library.filteredTagCounts(
-                        kinds: kinds, filter: filter),
-                    filteredMissingCounts: try library.filteredMissingCategoryCounts(
-                        kinds: kinds, filter: filter),
-                    // What the tiles' context menus ask about, fetched
-                    // here once: a menu's items are built every time a
-                    // tile's body runs, so asking there is a read per
-                    // tile per render, on the main thread.
-                    hideBlockItemIDs: try library.itemIDsWithHideBlocks(),
-                    snapshotRefs: try library.recentSnapshotRefs(perItem: 10))
-                if grid.needsTagData {
-                    let vocabulary = try library.vocabulary()
-                        .filter { !$0.category.hiddenFromBrowse }
-                    // Category order decides pill order, so a tile reads
-                    // Band · Venue · Year the way the sidebar lists them.
-                    var categoryRank: [UUID: Int] = [:]
-                    var tagInfo: [UUID: TagPill] = [:]
-                    for (rank, entry) in vocabulary.enumerated() {
-                        categoryRank[entry.category.id] = rank
-                        for tag in entry.tags {
-                            tagInfo[tag.id] = TagPill(
-                                id: tag.id, name: tag.name, categoryID: entry.category.id,
-                                categoryName: entry.category.name,
-                                colorIndex: entry.category.colorIndex)
-                        }
-                    }
-                    // The ids leave the closure, never the rows: `Row` is
-                    // not Sendable, and Swift 6.4 resolves a read inside an
-                    // async context to the async overload. The explicit
-                    // closure type keeps the older CI toolchain's inference
-                    // unambiguous.
-                    let links = try await library.writer.read { db -> [(item: UUID, tag: UUID)] in
-                        try Row.fetchAll(db, sql: "SELECT mediaItemID, tagID FROM mediaItemTag")
-                            .map { (item: $0["mediaItemID"], tag: $0["tagID"]) }
-                    }
-                    var tagsByItem: [UUID: [UUID]] = [:]
-                    for link in links {
-                        tagsByItem[link.item, default: []].append(link.tag)
-                    }
-                    for item in rows {
-                        let tagIDs = tagsByItem[item.id] ?? []
-                        payload.tags[item.id] = tagIDs
-                            .compactMap { tagInfo[$0] }
-                            .sorted {
-                                (categoryRank[$0.categoryID] ?? 0, $0.name)
-                                    < (categoryRank[$1.categoryID] ?? 0, $1.name)
-                            }
-                        let covered = Set(tagIDs.compactMap { tagInfo[$0]?.categoryID })
-                        payload.missingCategories[item.id] = vocabulary
-                            .filter { !covered.contains($0.category.id) }
-                            .map(\.category.name)
-                    }
-                }
-                if grid.needsDuplicateData {
-                    payload.duplicateIDs = Set(
-                        try library.pendingCandidates().flatMap { [$0.itemAID, $0.itemBID] })
-                }
-                outcome = .success(payload)
+                outcome = .success(try await service.listing(request))
             } catch {
                 outcome = .failure(error)
             }
             await MainActor.run { [weak self] in
                 guard let self, self.refreshGeneration == generation else { return }
                 switch outcome {
-                case .success(let payload):
-                    self.items = payload.items
+                case .success(let answer):
+                    self.items = answer.items
                     self.pruneSelection()
-                    self.itemTags = payload.tags
-                    self.itemMissingCategories = payload.missingCategories
-                    self.duplicateFlaggedIDs = payload.duplicateIDs
-                    self.filteredTagCounts = payload.filteredTagCounts
-                    self.filteredMissingCounts = payload.filteredMissingCounts
-                    self.hideBlockItemIDs = payload.hideBlockItemIDs
-                    self.snapshotRefs = payload.snapshotRefs
+                    self.itemTags = answer.tags
+                    self.itemMissingCategories = answer.missingCategories
+                    self.duplicateFlaggedIDs = answer.duplicateIDs
+                    self.filteredTagCounts = answer.filteredTagCounts
+                    self.filteredMissingCounts = answer.filteredMissingCounts
+                    self.hideBlockItemIDs = answer.menuFacts.hideBlockItemIDs
+                    self.snapshotRefs = answer.menuFacts.snapshotRefs
                     self.listingError = nil
                 case .failure(let error):
                     self.listingError = "\(error)"
