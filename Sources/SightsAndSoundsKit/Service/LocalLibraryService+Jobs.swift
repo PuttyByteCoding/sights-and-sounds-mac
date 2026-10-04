@@ -5,6 +5,7 @@ import Foundation
 extension LocalLibraryService {
     @discardableResult
     public func run(_ request: JobRequest, wait: JobWait) async throws -> JobRecord? {
+        guard let runner else { throw ServiceError.noJobRunner }
         if request.isLibrarySweep {
             let sweep: any Job.Type = request == .validation ? ValidationJob.self : MetadataSweepJob.self
             let job = try await runner.enqueueUnlessPending(sweep)
@@ -23,7 +24,7 @@ extension LocalLibraryService {
             return job
         }
 
-        let job = try await enqueue(request)
+        let job = try await enqueue(request, on: runner)
         switch wait {
         case .none:
             await runner.startDraining()
@@ -36,7 +37,7 @@ extension LocalLibraryService {
 
     /// Through each job's own `enqueue`, so the payload is the one the
     /// job reads.
-    private func enqueue(_ request: JobRequest) async throws -> JobRecord {
+    private func enqueue(_ request: JobRequest, on runner: JobRunner) async throws -> JobRecord {
         switch request {
         case .recogniseText(let itemID):
             try await OcrJob.enqueue(on: runner, itemID: itemID)

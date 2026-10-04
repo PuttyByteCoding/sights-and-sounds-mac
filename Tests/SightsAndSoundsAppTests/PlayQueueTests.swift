@@ -27,10 +27,15 @@ import Testing
         return item
     }
 
+    /// A queue as a player opens it: the definition, run once.
+    private func make(_ definition: QueueDefinition, library: LibraryDatabase) throws -> PlayQueue {
+        PlayQueue(definition: definition, items: try library.queueItems(definition))
+    }
+
     @Test func aListingQueueIsASnapshotUntilRefreshed() async throws {
         let (library, source, _) = try await makeLibrary()
         try await insert(library, source, "a.mp4")
-        let queue = try PlayQueue.make(
+        let queue = try make(
             .listing(filter: MediaFilter(), kinds: .video, ordering: .relativePath),
             library: library)
         #expect(queue.items.map(\.relativePath) == ["a.mp4"])
@@ -38,7 +43,7 @@ import Testing
         try await insert(library, source, "b.mp4")
         #expect(queue.items.map(\.relativePath) == ["a.mp4"])  // untouched
 
-        queue.apply(try PlayQueue.run(queue.definition, library: library))
+        queue.apply(try library.queueItems(queue.definition))
         #expect(queue.items.map(\.relativePath) == ["a.mp4", "b.mp4"])
     }
 
@@ -50,7 +55,7 @@ import Testing
         try await insert(library, source, "other.mp4")
         try library.assignTag(phish.id, to: tagged.id)
 
-        let queue = try PlayQueue.make(.tag(id: phish.id, name: "Phish"), library: library)
+        let queue = try make(.tag(id: phish.id, name: "Phish"), library: library)
         #expect(queue.items.map(\.relativePath) == ["phish.mp4"])
         #expect(queue.title == "Tag: Phish")
     }
@@ -59,11 +64,11 @@ import Testing
         let (library, source, _) = try await makeLibrary()
         let a = try await insert(library, source, "a.mp4")
         let b = try await insert(library, source, "b.mp4")
-        let queue = try PlayQueue.make(.explicit(ids: [b.id, a.id], name: "Selection"), library: library)
+        let queue = try make(.explicit(ids: [b.id, a.id], name: "Selection"), library: library)
         #expect(queue.ids == [b.id, a.id])  // the given order, not the table's
 
         try await library.writer.write { db in _ = try MediaItem.deleteOne(db, key: a.id) }
-        queue.apply(try PlayQueue.run(queue.definition, library: library))
+        queue.apply(try library.queueItems(queue.definition))
         #expect(queue.ids == [b.id])
     }
 
@@ -77,7 +82,7 @@ import Testing
         try library.recordPlaybackStop(
             itemID: new.id, positionSeconds: 10, durationSeconds: 100, at: Date(timeIntervalSince1970: 2_000))
 
-        let queue = try PlayQueue.make(.history, library: library)
+        let queue = try make(.history, library: library)
         #expect(queue.items.map(\.relativePath) == ["new.mp4", "old.mp4"])
     }
 
@@ -85,14 +90,14 @@ import Testing
         let (library, source, _) = try await makeLibrary()
         try await insert(library, source, "b.mp4")
         try await insert(library, source, "a.mp4")
-        let queue = try PlayQueue.make(
+        let queue = try make(
             .listing(filter: MediaFilter(), kinds: .video, ordering: .relativePath),
             library: library)
         #expect(queue.items.map(\.relativePath) == ["a.mp4", "b.mp4"])
         queue.replaceDefinition(
             .listing(filter: MediaFilter(), kinds: .video, ordering: .fileSize(ascending: false)))
         #expect(queue.items.map(\.relativePath) == ["a.mp4", "b.mp4"])  // not until refresh
-        queue.apply(try PlayQueue.run(queue.definition, library: library))
+        queue.apply(try library.queueItems(queue.definition))
         #expect(queue.items.count == 2)
     }
 }

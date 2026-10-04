@@ -102,7 +102,8 @@ struct PlayerView: View {
                 let made = PlayerModel(
                     request: request,
                     library: try app.library(for: request.libraryID),
-                    appDatabase: app.appDatabase)
+                    appDatabase: app.appDatabase,
+                    service: browse.service)
                 // Refresh in the library window takes the grid's current
                 // filter and order, so the queue catches up with what the
                 // grid shows; elsewhere the stored definition re-runs.

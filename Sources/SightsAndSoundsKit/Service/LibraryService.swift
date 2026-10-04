@@ -13,7 +13,7 @@ import Foundation
 /// the groups arrive as the windows move onto the service.
 ///
 /// See docs/superpowers/specs/2026-10-03-remote-library-design.md.
-public protocol LibraryService: BrowseReading, BrowseListing, BrowseWriting, JobRequesting {
+public protocol LibraryService: BrowseReading, BrowseListing, BrowseWriting, JobRequesting, PlayerReading {
     /// What changed in the library, whoever wrote it. The subscription is
     /// made when the stream is, and ends when the stream is let go of.
     func changes() -> AsyncStream<LibraryChange>

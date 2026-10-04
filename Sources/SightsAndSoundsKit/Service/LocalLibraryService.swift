@@ -10,7 +10,9 @@ import GRDB
 /// runs for a remote library that does not run for a local one.
 public final class LocalLibraryService: LibraryService {
     let library: LibraryDatabase
-    let runner: JobRunner
+    /// nil for a service made to read and write only; see
+    /// `init(library:fileAccess:)`.
+    let runner: JobRunner?
     let fileAccess: any FileAccess
 
     public init(
@@ -19,6 +21,17 @@ public final class LocalLibraryService: LibraryService {
     ) {
         self.library = library
         self.runner = runner
+        self.fileAccess = fileAccess
+    }
+
+    /// A service that reads and writes but queues no jobs: asked for
+    /// one, it throws `ServiceError.noJobRunner`. A library has ONE
+    /// runner, and making a second settles the first one's running jobs
+    /// as interrupted — so whoever has no runner to hand must not make
+    /// one just to build a service.
+    public init(library: LibraryDatabase, fileAccess: any FileAccess = LiveFileAccess()) {
+        self.library = library
+        self.runner = nil
         self.fileAccess = fileAccess
     }
 

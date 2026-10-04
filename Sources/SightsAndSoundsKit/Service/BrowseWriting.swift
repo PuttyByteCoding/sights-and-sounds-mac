@@ -48,10 +48,13 @@ public struct StagingFailure: Codable, Equatable, Sendable {
 /// What a service refuses that no model type already has an error for.
 public enum ServiceError: Error, Equatable, Sendable, CustomStringConvertible {
     case emptyName
+    /// A job was asked of a service made without the library's runner.
+    case noJobRunner
 
     public var description: String {
         switch self {
         case .emptyName: "a name cannot be empty"
+        case .noJobRunner: "background tasks cannot be started from here"
         }
     }
 }
