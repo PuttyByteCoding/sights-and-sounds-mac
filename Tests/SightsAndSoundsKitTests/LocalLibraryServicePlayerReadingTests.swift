@@ -45,6 +45,17 @@ import Testing
             try library.assignTag(alpha.id, to: [a.id])
             segment = try library.createEmbeddedClip(
                 parentID: a.id, name: "Song", startSeconds: 10, endSeconds: 20, role: .song)
+            // What the panel shows beyond the item's own tags: a category
+            // hidden from Browse, another name for a tag, a bound key, and
+            // a hide block on the video.
+            let hidden = TagCategory(name: "Internal", sortOrder: 5, hiddenFromBrowse: true)
+            try await library.writer.write { db in
+                try hidden.insert(db)
+                try SightsAndSoundsKit.Tag(tagCategoryID: hidden.id, name: "Secret").insert(db)
+            }
+            try library.addAlias("A", toTag: alpha.id)
+            try library.setKeyBinding("1", tagID: alpha.id)
+            _ = try library.addBlock(to: a.id, startSeconds: 30, endSeconds: 40)
             self.library = library
             self.source = source
             self.a = a
@@ -87,6 +98,69 @@ import Testing
         let f = try await Fixture()
         defer { f.tearDown() }
         #expect(try await f.service.playable(itemID: UUID()) == Playable(item: nil, url: nil))
+    }
+
+    @Test func theTagPanelGetsEveryCategoryIncludingThoseHiddenFromBrowse() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let tagging = try await f.service.tagging(itemID: f.a.id)
+        #expect(tagging.vocabulary.map(\.category.name) == ["Band", "Internal"])
+        #expect(tagging.itemTags.flatMap(\.tags).map(\.name) == ["Alpha"])
+        #expect(tagging.aliases == [f.alpha.id: ["A"]])
+        #expect(tagging.keyBindings.map(\.key) == ["1"])
+        #expect(tagging.keyBindings == (try f.library.keyBindings()))
+        #expect(tagging.itemTags == (try await f.service.itemTags(itemID: f.a.id)))
+        #expect(try await f.service.itemTags(itemID: f.b.id).flatMap(\.tags).isEmpty)
+    }
+
+    @Test func segmentsAreTheClipsAndTheHideBlocks() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let segments = try await f.service.segments(parentID: f.a.id)
+        #expect(segments.clips.map(\.id) == [f.segment.id])
+        #expect(segments.hideBlocks.map(\.startSeconds) == [30])
+        #expect(segments.hideBlocks.allSatisfy { $0.kind == .hide })
+        #expect(try await f.service.segments(parentID: f.b.id) == PlayerSegments(clips: [], hideBlocks: []))
+    }
+
+    @Test func openingAnItemBringsItsPanelAndItsSegments() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let opened = try await f.service.opened(itemID: f.a.id)
+        #expect(opened.playable == (try await f.service.playable(itemID: f.a.id)))
+        #expect(opened.tagging == (try await f.service.tagging(itemID: f.a.id)))
+        #expect(opened.segments == (try await f.service.segments(parentID: f.a.id)))
+
+        // A segment shows its own tags and its parent video's segments.
+        let segment = try await f.service.opened(itemID: f.segment.id)
+        #expect(segment.tagging?.itemTags.flatMap(\.tags).isEmpty == true)
+        #expect(segment.segments?.clips.map(\.id) == [f.segment.id])
+
+        let gone = try await f.service.opened(itemID: UUID())
+        #expect(gone == OpenedItem(playable: Playable(item: nil, url: nil), tagging: nil, segments: nil))
+    }
+
+    @Test func theSearchContextIsTheFormatsAndTheItemsSubject() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        var formats = SearchFormats(formats: [SearchRecipe(name: "Web")])
+        formats.defaultID = formats.formats[0].id
+        try f.library.setSearchFormats(formats)
+        let context = try await f.service.searchContext(itemID: f.a.id)
+        #expect(context.formats == formats)
+        #expect(context.subject == (try f.library.searchSubject(for: f.a.id)))
+        #expect(context.subject?.fileName == "a.mp4")
+        #expect(context.subject?.tags.map(\.name) == ["Alpha"])
+        #expect(try await f.service.searchContext(itemID: UUID()).subject == nil)
+    }
+
+    @Test func historyIsLimited() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try f.library.recordPlaybackStart(itemID: f.a.id, at: Date(timeIntervalSince1970: 100))
+        try f.library.recordPlaybackStart(itemID: f.b.id, at: Date(timeIntervalSince1970: 200))
+        #expect(try await f.service.recentlyWatched(limit: 300).map(\.id) == [f.b.id, f.a.id])
+        #expect(try await f.service.recentlyWatched(limit: 1).map(\.id) == [f.b.id])
     }
 
     @Test func itemsComeBackInTheOrderAskedMinusTheMissing() async throws {
@@ -155,6 +229,9 @@ import Testing
         }
         try roundTrip(try await f.service.playable(itemID: f.a.id))
         try roundTrip(try await f.service.playable(itemID: f.unmounted.id))
+        try roundTrip(try await f.service.opened(itemID: f.a.id))
+        try roundTrip(try await f.service.opened(itemID: UUID()))
+        try roundTrip(try await f.service.searchContext(itemID: f.a.id))
         let definitions: [QueueDefinition] = [
             .listing(filter: MediaFilter(), kinds: .all, ordering: .random(seed: 3)),
             .tag(id: UUID(), name: "Alpha"), .history, .explicit(ids: [UUID(), UUID()], name: "Two"),

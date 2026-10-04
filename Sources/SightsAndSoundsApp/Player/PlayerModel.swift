@@ -190,9 +190,46 @@ final class PlayerModel {
     private(set) var searchSubject: SearchSubject?
 
     func refreshSearch() {
-        guard let item else { return }
-        searchFormats = (try? library.searchFormats()) ?? .empty
-        searchSubject = try? library.searchSubject(for: item.id)
+        guard let itemID = item?.id else { return }
+        searchGeneration += 1
+        let generation = searchGeneration, service = service
+        panelLoadsInFlight += 1
+        Task { [weak self] in
+            let answer = await Self.answer { try await service.searchContext(itemID: itemID) }
+            guard let self else { return }
+            self.panelLoadsInFlight -= 1
+            // Values that could not be read leave the ones on screen.
+            guard case .success(let context) = answer,
+                  self.item?.id == itemID, self.searchGeneration == generation
+            else { return }
+            self.searchFormats = context.formats
+            self.searchSubject = context.subject
+        }
+    }
+    private var searchGeneration = 0
+
+    // MARK: - Panel reads
+
+    /// Reads of the panels asked for and not yet answered. Zero means
+    /// what the panels show is everything that was asked of them.
+    ///
+    /// The panels are read off the main actor and shown when the answer
+    /// arrives — and only if it is still wanted: an answer about an item
+    /// no longer on screen, or one overtaken by a later read of the same
+    /// thing, is dropped. A read used to be finished by the next line; a
+    /// library on another Mac answers in its own time, and in no
+    /// promised order.
+    private(set) var panelLoadsInFlight = 0
+
+    /// One read, off the main actor, as a result.
+    private nonisolated static func answer<T: Sendable>(
+        _ read: @Sendable () async throws -> T
+    ) async -> Result<T, any Error> {
+        do {
+            return .success(try await read())
+        } catch {
+            return .failure(error)
+        }
     }
 
     /// The panel's editor: write one format back — in place when it
@@ -249,7 +286,21 @@ final class PlayerModel {
     var historySelectionID: UUID?
 
     func refreshHistory() {
-        historyRows = (try? library.recentlyWatched(limit: 300)) ?? []
+        historyGeneration += 1
+        let generation = historyGeneration, service = service
+        panelLoadsInFlight += 1
+        Task { [weak self] in
+            let answer = await Self.answer { try await service.recentlyWatched(limit: 300) }
+            guard let self else { return }
+            self.panelLoadsInFlight -= 1
+            guard case .success(let rows) = answer, self.historyGeneration == generation else { return }
+            self.show(history: rows)
+        }
+    }
+    private var historyGeneration = 0
+
+    private func show(history rows: [MediaItem]) {
+        historyRows = rows
         if let id = item?.id, historyRows.contains(where: { $0.id == id }) {
             historySelectionID = id
         }
@@ -475,19 +526,23 @@ final class PlayerModel {
         loadGeneration += 1
         let generation = loadGeneration
         let service = service
+        let asked = ContinuousClock.now
 
         Task.detached(priority: .userInitiated) { [weak self] in
-            // The item and where it plays from, in one answer.
-            let outcome: Result<Playable, Error>
+            // The item, where it plays from, and what its panel and rail
+            // show: one answer, applied in one turn. The panel used to be
+            // read after the item had been set, which was safe only while
+            // a read was finished by the next line.
+            let outcome: Result<OpenedItem, Error>
             do {
-                outcome = .success(try await service.playable(itemID: itemID))
+                outcome = .success(try await service.opened(itemID: itemID))
             } catch {
                 outcome = .failure(error)
             }
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 switch outcome {
-                case .success(let playable): self.apply(loaded: playable.item, url: playable.url)
+                case .success(let opened): self.apply(opened, asked: asked)
                 case .failure(let error):
                     self.stopForFailedLoad()
                     self.letGoOfItem()
@@ -497,8 +552,9 @@ final class PlayerModel {
         }
     }
 
-    private func apply(loaded: MediaItem?, url: URL?) {
-        guard let loaded else {
+    private func apply(_ opened: OpenedItem, asked: ContinuousClock.Instant) {
+        let url = opened.playable.url
+        guard let loaded = opened.playable.item else {
             stopForFailedLoad()
             letGoOfItem()
             loadError = "The item no longer exists."
@@ -510,14 +566,17 @@ final class PlayerModel {
             // The panel and the rail answer for the item on screen, even
             // one that cannot play: they kept the last item's tags and
             // segments, so a click here edited the wrong file.
-            refreshTagging()
-            refreshBlocks()
+            show(panelOf: opened, asked: asked)
             publishToSession()
             loadError = "The item's source is offline."
             return
         }
+        let changesItem = item?.id != loaded.id
         item = loaded
         fileURL = url
+        // The search values are the last item's until re-read: gone, so
+        // a search is never built from another item's name and tags.
+        if changesItem { searchSubject = nil }
         // A segment plays inside its parent's file, so the timeline is the
         // FILE's; the row's duration is only the segment's length. Taken
         // as the file's, it clamped every seek: a song at 40:00 started
@@ -558,8 +617,7 @@ final class PlayerModel {
         isBuffering = false
         installObserver()
         observeStatus(of: playerItem)
-        refreshTagging()
-        refreshBlocks()
+        show(panelOf: opened, asked: asked)
         publishToSession()
 
         // Clips start at their in-point; everything else starts at the
@@ -1033,40 +1091,84 @@ final class PlayerModel {
     /// press made tagging slow with the size of the library's vocabulary.
     func refreshItemTags() {
         lastTaggingRefreshBegan = .now
-        guard let item else { return }
-        do {
-            itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
-        } catch {
-            loadError = "\(error)"
+        guard let itemID = item?.id else { return }
+        itemTagsGeneration += 1
+        let generation = itemTagsGeneration, service = service
+        panelLoadsInFlight += 1
+        Task { [weak self] in
+            let answer = await Self.answer { try await service.itemTags(itemID: itemID) }
+            guard let self else { return }
+            self.panelLoadsInFlight -= 1
+            guard self.item?.id == itemID, self.itemTagsGeneration == generation else { return }
+            switch answer {
+            case .success(let tags): self.itemTags = tags
+            case .failure(let error): self.loadError = "\(error)"
+            }
         }
         if panels.search { refreshSearch() }
     }
+    /// The item's tags and the vocabulary are read together and apart;
+    /// each is shown only by the latest read of it.
+    private var itemTagsGeneration = 0
+    private var vocabularyGeneration = 0
 
     /// Everything the panel shows: the item's tags, the vocabulary, the
     /// aliases, the key bindings and the search index. For a load, and
     /// for a change to the vocabulary itself.
     func refreshTagging() {
         lastTaggingRefreshBegan = .now
-        guard let item else { return }
-        do {
-            itemTags = try library.tags(of: item.id).map { CategoryTags(category: $0.category, tags: $0.tags) }
-            panelVocabulary = try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) }
-            refreshPanelRows()
-            // An alias IS a name, so typing "SBD" must offer "Soundboard"
-            // — the browse sidebar has always matched them and the
-            // tagging field, where you are actually typing, did not.
-            panelAliases = Dictionary(
-                grouping: try library.writer.read { try TagAlias.fetchAll($0) },
-                by: \.tagID
-            ).mapValues { $0.map(\.alias) }
-            boundKeys = Dictionary(
-                uniqueKeysWithValues: try library.keyBindings().map { ($0.key, $0) })
-            tagSearchIndex = TagSearchEntry.index(
-                vocabulary: panelVocabulary.map { ($0.category, $0.tags) },
-                aliases: panelAliases)
-        } catch {
-            loadError = "\(error)"
+        guard let itemID = item?.id else { return }
+        itemTagsGeneration += 1
+        vocabularyGeneration += 1
+        let tagsGeneration = itemTagsGeneration, wordsGeneration = vocabularyGeneration
+        let service = service
+        panelLoadsInFlight += 1
+        Task { [weak self] in
+            let answer = await Self.answer { try await service.tagging(itemID: itemID) }
+            guard let self else { return }
+            self.panelLoadsInFlight -= 1
+            switch answer {
+            case .success(let tagging):
+                // The vocabulary is the library's, whichever item shows.
+                if self.vocabularyGeneration == wordsGeneration { self.show(vocabularyOf: tagging) }
+                if self.item?.id == itemID, self.itemTagsGeneration == tagsGeneration {
+                    self.itemTags = tagging.itemTags
+                }
+            case .failure(let error):
+                if self.item?.id == itemID { self.loadError = "\(error)" }
+            }
         }
+        if panels.search { refreshSearch() }
+    }
+
+    /// The vocabulary, the aliases, the key bindings and the search
+    /// index built from them.
+    private func show(vocabularyOf tagging: PlayerTagging) {
+        panelVocabulary = tagging.vocabulary
+        refreshPanelRows()
+        // An alias IS a name, so typing "SBD" must offer "Soundboard"
+        // — the browse sidebar has always matched them and the
+        // tagging field, where you are actually typing, did not.
+        panelAliases = tagging.aliases
+        boundKeys = Dictionary(tagging.keyBindings.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        tagSearchIndex = TagSearchEntry.index(
+            vocabulary: panelVocabulary.map { ($0.category, $0.tags) },
+            aliases: panelAliases)
+    }
+
+    /// What arrived with the item: its panel and its rail, shown in the
+    /// turn the item is. Any read still on its way was asked before this
+    /// one was answered, and is dropped.
+    private func show(panelOf opened: OpenedItem, asked: ContinuousClock.Instant) {
+        // When the read was ASKED: a change committed since then is not
+        // in it, and the hub's word of that change must not be skipped.
+        lastTaggingRefreshBegan = asked
+        itemTagsGeneration += 1
+        vocabularyGeneration += 1
+        segmentsGeneration += 1
+        itemTags = opened.tagging?.itemTags ?? []
+        if let tagging = opened.tagging { show(vocabularyOf: tagging) }
+        show(opened.segments ?? PlayerSegments(clips: [], hideBlocks: []))
         if panels.search { refreshSearch() }
     }
 
@@ -1197,9 +1299,25 @@ final class PlayerModel {
 
     func refreshSegments() {
         guard let item else { return }
-        let parentID = item.parentMediaItemID ?? item.id
-        let children = (try? library.clips(of: parentID)) ?? []
-        let blocks = (try? library.blocks(of: parentID).filter { $0.kind == .hide }) ?? []
+        let itemID = item.id, parentID = item.parentMediaItemID ?? item.id
+        segmentsGeneration += 1
+        let generation = segmentsGeneration, service = service
+        panelLoadsInFlight += 1
+        Task { [weak self] in
+            let answer = await Self.answer { try await service.segments(parentID: parentID) }
+            guard let self else { return }
+            self.panelLoadsInFlight -= 1
+            // A rail that could not be read keeps what it shows.
+            guard case .success(let found) = answer,
+                  self.item?.id == itemID, self.segmentsGeneration == generation
+            else { return }
+            self.show(found)
+        }
+    }
+    private var segmentsGeneration = 0
+
+    private func show(_ found: PlayerSegments) {
+        let children = found.clips, blocks = found.hideBlocks
         segments = (children.map { child in
             SegmentRow(
                 id: child.id,

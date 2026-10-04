@@ -1,7 +1,7 @@
 import Foundation
 
 /// One tag the subject wears, with the category it came from.
-public struct SearchSubjectTag: Equatable, Sendable {
+public struct SearchSubjectTag: Equatable, Sendable, Codable {
     public let categoryID: UUID
     public let name: String
 
@@ -12,7 +12,7 @@ public struct SearchSubjectTag: Equatable, Sendable {
 }
 
 /// What a recipe is built from: the item's file name and its tags.
-public struct SearchSubject: Equatable, Sendable {
+public struct SearchSubject: Equatable, Sendable, Codable {
     public let fileName: String
     public let tags: [SearchSubjectTag]
 

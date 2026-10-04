@@ -13,6 +13,49 @@ extension LocalLibraryService {
         return Playable(item: item, url: url)
     }
 
+    public func opened(itemID: UUID) async throws -> OpenedItem {
+        let playable = try await playable(itemID: itemID)
+        guard let item = playable.item else {
+            return OpenedItem(playable: playable, tagging: nil, segments: nil)
+        }
+        return OpenedItem(
+            playable: playable,
+            tagging: try await tagging(itemID: item.id),
+            segments: try await segments(parentID: item.parentMediaItemID ?? item.id))
+    }
+
+    public func itemTags(itemID: UUID) async throws -> [CategoryTags] {
+        try library.tags(of: itemID).map { CategoryTags(category: $0.category, tags: $0.tags) }
+    }
+
+    public func tagging(itemID: UUID) async throws -> PlayerTagging {
+        PlayerTagging(
+            itemTags: try await itemTags(itemID: itemID),
+            vocabulary: try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) },
+            // An alias IS a name, so typing "SBD" must offer "Soundboard".
+            aliases: Dictionary(
+                grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
+                by: \.tagID
+            ).mapValues { $0.map(\.alias) },
+            keyBindings: try library.keyBindings())
+    }
+
+    public func segments(parentID: UUID) async throws -> PlayerSegments {
+        PlayerSegments(
+            clips: try library.clips(of: parentID),
+            hideBlocks: try library.blocks(of: parentID).filter { $0.kind == .hide })
+    }
+
+    public func searchContext(itemID: UUID) async throws -> SearchContext {
+        SearchContext(
+            formats: try library.searchFormats(),
+            subject: try library.searchSubject(for: itemID))
+    }
+
+    public func recentlyWatched(limit: Int) async throws -> [MediaItem] {
+        try library.recentlyWatched(limit: limit)
+    }
+
     public func items(ids: [UUID]) async throws -> [MediaItem] {
         try library.items(ids: ids)
     }
