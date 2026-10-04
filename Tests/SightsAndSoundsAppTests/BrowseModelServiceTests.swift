@@ -221,4 +221,34 @@ import Testing
         #expect(added == nil)
         #expect(model.errorMessage?.hasPrefix("Could not add ") == true, "\(model.errorMessage ?? "nil")")
     }
+
+    // MARK: - Jobs
+
+    @Test func aJobAskedForIsQueuedOnTheLibrarysRunner() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("first listing") { model.items.count == 3 }
+        let item = try #require(model.items.first)
+
+        model.remux(item, mode: .optimize)
+
+        try await waitUntil("the job row") {
+            ((try? f.library.writer.read { db in
+                try JobRecord.filter(sql: "kind = ?", arguments: [RemuxJob.kind]).fetchCount(db)
+            }) ?? 0) == 1
+        }
+        #expect(f.stub.calls("run(_:wait:)") == 1)
+    }
+
+    @Test func aJobThatCannotBeQueuedSaysSo() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("first listing") { model.items.count == 3 }
+        let item = try #require(model.items.first)
+
+        f.stub.fail("run(_:wait:)")
+        model.scanText(item)
+
+        try await waitUntil("the error line") { model.errorMessage?.contains("run(_:wait:)") == true }
+    }
 }

@@ -181,7 +181,6 @@ final class BrowseModel {
     }
 
     private let fileAccess: any FileAccess
-    private let jobRunner: JobRunner
     /// What this window asks of its library. The reads and writes are
     /// moving onto it from `library` a group at a time; once they all
     /// have, a window can be given a library held by another Mac.
@@ -235,7 +234,6 @@ final class BrowseModel {
         self.libraryID = libraryID
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
-        self.jobRunner = runner
         // Given one, the window asks that; given none, it asks the
         // library on this Mac.
         self.service = service
@@ -1053,30 +1051,22 @@ final class BrowseModel {
     /// Save segments as files of their own — what the delete list offers
     /// before it will purge the video they play from.
     func saveSegmentsAsFiles(_ segmentIDs: [UUID]) {
-        runOperation { runner in
-            for id in segmentIDs { _ = try await ClipExportJob.enqueue(on: runner, clipID: id) }
-        }
+        start(segmentIDs.map { .exportClip(clipID: $0) })
     }
 
     func exportClip(_ item: MediaItem) {
-        runOperation { runner in
-            _ = try await ClipExportJob.enqueue(on: runner, clipID: item.id)
-        }
+        start(.exportClip(clipID: item.id))
     }
 
     func encode(_ item: MediaItem, preset: EncodeJob.Preset) {
-        runOperation { runner in
-            _ = try await EncodeJob.enqueue(on: runner, itemID: item.id, preset: preset)
-        }
+        start(.encode(itemID: item.id, preset: preset))
     }
 
     func removeBlocks(_ item: MediaItem) {
-        runOperation { runner in
-            _ = try await BlockRemovalJob.enqueue(on: runner, itemID: item.id)
-        }
+        start(.removeBlocks(itemID: item.id))
     }
 
-    /// Filled with each listing; see `ListingPayload`.
+    /// Filled with each listing; see `BrowseListingAnswer.menuFacts`.
     private var hideBlockItemIDs: Set<UUID> = []
     private var snapshotRefs: [UUID: [SnapshotRef]] = [:]
 
@@ -1085,22 +1075,18 @@ final class BrowseModel {
     }
 
     func scanText(_ item: MediaItem) {
-        runOperation { runner in
-            _ = try await OcrJob.enqueue(on: runner, itemID: item.id)
-        }
+        start(.recogniseText(itemID: item.id))
     }
 
     /// The same OCR scan, with a completion — Tag Analysis reloads its
     /// evidence when the scan lands rather than waiting for a broadcast.
     func scanText(itemID: UUID, then finished: @escaping @MainActor @Sendable () -> Void) {
-        let runner = jobRunner
+        let service = service
         Task {
             do {
-                let job = try await OcrJob.enqueue(on: runner, itemID: itemID)
                 // Somebody is waiting on it: next after the job running,
                 // not behind every sweep queued before it.
-                try await runner.runNext(job.id)
-                try await runner.waitUntilSettled([job.id])
+                try await service.run(.recogniseText(itemID: itemID), wait: .settled)
             } catch {
                 errorMessage = "\(error)"
             }
@@ -1109,22 +1095,15 @@ final class BrowseModel {
     }
 
     func joinFolder(of item: MediaItem) {
-        runOperation { runner in
-            _ = try await JoinJob.enqueue(
-                on: runner, sourceID: item.sourceID, folderPath: item.folderPath)
-        }
+        start(.joinFolder(sourceID: item.sourceID, folderPath: item.folderPath))
     }
 
     func writeTags(itemIDs: [UUID], scope: String) {
-        runOperation { runner in
-            _ = try await WritebackJob.enqueue(on: runner, itemIDs: itemIDs, scopeDescription: scope)
-        }
+        start(.writeTags(itemIDs: itemIDs, scope: scope))
     }
 
     func restoreSnapshot(_ snapshotID: UUID) {
-        runOperation { runner in
-            _ = try await RestoreTagsJob.enqueue(on: runner, snapshotID: snapshotID)
-        }
+        start(.restoreSnapshot(snapshotID))
     }
 
     func snapshots(of itemID: UUID) -> [SnapshotRef] {
@@ -1133,50 +1112,35 @@ final class BrowseModel {
 
     func runValidation() async {
         do {
-            if let job = try await jobRunner.enqueueUnlessPending(ValidationJob.self) {
-                try await jobRunner.waitUntilSettled([job.id])
-            } else {
-                try await jobRunner.waitUntilNonePending(of: ValidationJob.kind)
-            }
+            try await service.run(.validation, wait: .settled)
         } catch {
             errorMessage = "\(error)"
         }
     }
 
     func remux(_ item: MediaItem, mode: RemuxJob.Mode) {
-        runOperation { runner in
-            _ = try await RemuxJob.enqueue(on: runner, itemID: item.id, mode: mode)
-        }
+        start(.remux(itemID: item.id, mode: mode))
     }
 
     /// Sweep embedded metadata into `embeddedMetadataPair` — the tag
     /// analysis queue's largest source, and the only one that needs a
     /// pass over the files rather than a query.
     ///
-    /// `enqueueUnlessPending` rather than `enqueue`: the button is a
-    /// signal, not a command to run another sweep, and a second row would
-    /// re-probe every file the first is already probing.
+    /// With no items named it is a library sweep, which is a signal, not
+    /// a command to run another one: a second row would re-probe every
+    /// file the first is already probing. With items named it is a job
+    /// of its own, and goes next after the job running — a pending
+    /// library sweep must not swallow the small one the operator is
+    /// waiting on, and behind every sweep queued before it left Tag
+    /// Analysis loading.
     func sweepMetadata(
         itemIDs: [UUID]? = nil, then finished: @escaping @MainActor @Sendable () -> Void
     ) {
-        let runner = jobRunner
+        let service = service
         Task {
             do {
                 // Waits for its own sweep, never for jobs queued after it.
-                if let itemIDs {
-                    // Scoped: plain enqueue — dedupe is by kind, and a
-                    // pending library sweep must not swallow the small
-                    // one the operator is waiting on. It goes next after
-                    // the job running, rather than behind every sweep
-                    // queued before it, which left Tag Analysis loading.
-                    let job = try await MetadataSweepJob.enqueue(on: runner, itemIDs: itemIDs)
-                    try await runner.runNext(job.id)
-                    try await runner.waitUntilSettled([job.id])
-                } else if let job = try await runner.enqueueUnlessPending(MetadataSweepJob.self) {
-                    try await runner.waitUntilSettled([job.id])
-                } else {
-                    try await runner.waitUntilNonePending(of: MetadataSweepJob.kind)
-                }
+                try await service.run(.metadataSweep(itemIDs: itemIDs), wait: .settled)
             } catch {
                 errorMessage = "\(error)"
             }
@@ -1197,24 +1161,21 @@ final class BrowseModel {
     func examineSelection() {
         let ids = Set(selectedItems.map { $0.parentMediaItemID ?? $0.id })
         guard !ids.isEmpty else { return }
-        let runner = jobRunner
         clearSelection()
-        Task {
-            do {
-                _ = try await MediaSignalJob.enqueue(on: runner, itemIDs: Array(ids))
-                await runner.startDraining()
-            } catch {
-                errorMessage = "\(error)"
-            }
-        }
+        start(.examine(itemIDs: Array(ids)))
     }
 
-    private func runOperation(_ enqueue: @escaping @Sendable (JobRunner) async throws -> Void) {
-        let runner = jobRunner
+    /// Queue a job and start the queue, without waiting for it.
+    private func start(_ request: JobRequest) {
+        start([request])
+    }
+
+    /// Several, queued in the order given.
+    private func start(_ requests: [JobRequest]) {
+        let service = service
         Task {
             do {
-                try await enqueue(runner)
-                await runner.startDraining()
+                for request in requests { try await service.run(request, wait: .none) }
             } catch {
                 errorMessage = "\(error)"
             }
