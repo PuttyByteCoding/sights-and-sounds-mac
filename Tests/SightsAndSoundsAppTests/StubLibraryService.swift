@@ -22,6 +22,7 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     private var started: [String: Int] = [:]
     private var finished: [String: Int] = [:]
     private var streams = 0
+    private var events: [PlaybackEvent] = []
 
     init(_ base: LocalLibraryService) {
         self.base = base
@@ -40,6 +41,8 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func calls(_ operation: String) -> Int { lock.withLock { started[operation, default: 0] } }
     /// How many calls of this operation have returned or thrown.
     func answered(_ operation: String) -> Int { lock.withLock { finished[operation, default: 0] } }
+    /// Every playback event that reached the library, in order.
+    var playbackEvents: [PlaybackEvent] { lock.withLock { events } }
     /// Change streams handed out and not yet let go of.
     var openChangeStreams: Int { lock.withLock { streams } }
 
@@ -176,5 +179,17 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     }
     func recentlyWatched(limit: Int) async throws -> [MediaItem] {
         try await run { try await base.recentlyWatched(limit: limit) }
+    }
+
+    // MARK: PlayerWriting
+
+    func recordPlayback(_ event: PlaybackEvent) async throws {
+        try await run {
+            try await base.recordPlayback(event)
+            lock.withLock { events.append(event) }
+        }
+    }
+    func setFlag(_ flag: PlayerToggleFlag, _ on: Bool, itemID: UUID) async throws -> Playable {
+        try await run { try await base.setFlag(flag, on, itemID: itemID) }
     }
 }

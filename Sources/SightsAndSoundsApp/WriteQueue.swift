@@ -29,6 +29,16 @@ final class WriteQueue {
     func run<T: Sendable>(
         _ work: @escaping @Sendable () async throws -> T
     ) async -> Result<T, any Error> {
+        await submit(work).value
+    }
+
+    /// Queue `work` now and hand back its result to wait for later. For
+    /// a caller that is not asynchronous itself: the write takes its
+    /// place in the queue at the press, not whenever a task it started
+    /// gets to run.
+    func submit<T: Sendable>(
+        _ work: @escaping @Sendable () async throws -> T
+    ) -> Task<Result<T, any Error>, Never> {
         let previous = last
         let attempt = Task { () -> Result<T, any Error> in
             await previous?.value
@@ -39,7 +49,7 @@ final class WriteQueue {
             }
         }
         track(Task { _ = await attempt.value })
-        return await attempt.value
+        return attempt
     }
 
     /// Queue `work` and return at once, for a write nobody waits on.

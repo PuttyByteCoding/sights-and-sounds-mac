@@ -21,7 +21,7 @@
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
 3	Sources/SightsAndSoundsApp/Player/KeyBindingsEditor.swift
 2	Sources/SightsAndSoundsApp/Player/OcrLinesPanel.swift
-28	Sources/SightsAndSoundsApp/Player/PlayerModel.swift
+17	Sources/SightsAndSoundsApp/Player/PlayerModel.swift
 2	Sources/SightsAndSoundsApp/Search/BookmarkSearchView.swift
 2	Sources/SightsAndSoundsApp/Search/SearchCommands.swift
 6	Sources/SightsAndSoundsApp/Search/SearchSettingsPane.swift

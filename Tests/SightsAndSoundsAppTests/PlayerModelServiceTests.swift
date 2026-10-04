@@ -299,4 +299,117 @@ import Testing
         try await settled(model)
         #expect(model.searchSubject?.fileName == "b.mp4")
     }
+
+    // MARK: - Playback history and flags
+
+    private func row(_ f: Fixture, _ item: MediaItem) throws -> MediaItem {
+        try #require(try f.library.writer.read { try MediaItem.fetchOne($0, key: item.id) })
+    }
+
+    /// Where the video stopped is a request on its way when the window
+    /// closes. It must still land — and say when it happened, not when
+    /// it arrived.
+    @Test func closingThePlayerSavesWhereItStopped() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        try await waitUntil("a, playable") { model.fileURL != nil }
+        model.seek(to: 2)
+        try await waitUntil("the playhead moved") { model.currentSeconds > 0 }
+        await WriteQueue.settleAll()
+        let before = f.stub.playbackEvents.count
+
+        f.stub.delay("recordPlayback(_:)", by: .milliseconds(300))
+        let closed = Date()
+        model.shutdown()
+        #expect(f.stub.playbackEvents.count == before, "nothing can have landed yet")
+        await WriteQueue.settleAll()
+
+        let stops = f.stub.playbackEvents.dropFirst(before)
+        guard case .stopped(let itemID, let position, _, let at)? = stops.last else {
+            Issue.record("no stop was recorded: \(Array(stops))")
+            return
+        }
+        #expect(itemID == f.a.id)
+        #expect(position > 0)
+        #expect(abs(at.timeIntervalSince(closed)) < 0.2, "stamped \(at.timeIntervalSince(closed))s from the close")
+    }
+
+    @Test func aLoadIsRecordedAsAWatchAndASegmentIsNot() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let segment = try f.library.createEmbeddedClip(
+            parentID: f.a.id, name: "Song", startSeconds: 1, endSeconds: 2)
+        let model = f.player([f.b, segment])
+        defer { model.shutdown() }
+        try await waitUntil("b") { model.item?.id == f.b.id }
+        await WriteQueue.settleAll()
+        #expect(f.stub.playbackEvents.map(\.itemID) == [f.b.id])
+        #expect(try row(f, f.b).lastWatchedAt != nil)
+
+        model.load(itemID: segment.id)
+        try await waitUntil("the segment") { model.item?.id == segment.id }
+        await WriteQueue.settleAll()
+        #expect(!f.stub.playbackEvents.contains { $0.itemID == segment.id })
+    }
+
+    /// Favourite on, then off, with the first write held up. Sent side
+    /// by side the second would land first and the first would then turn
+    /// the flag back on.
+    @Test func theLastOfTwoFlagPressesWins() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.fileURL != nil }
+        await WriteQueue.settleAll()
+
+        f.stub.delay("setFlag(_:_:itemID:)", by: .milliseconds(300))
+        model.perform(.toggleFavorite)
+        #expect(model.item?.isFavorite == true, "the mark shows at once")
+        model.perform(.toggleFavorite)
+        #expect(model.item?.isFavorite == false)
+        await WriteQueue.settleAll()
+        try await waitUntil("both answers were shown") { f.stub.answered("setFlag(_:_:itemID:)") == 2 }
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(try row(f, f.a).isFavorite == false)
+        #expect(model.item?.isFavorite == false)
+    }
+
+    @Test func aFlagThatCannotBeSetSaysSoAndShowsTheRowAsItIs() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.fileURL != nil }
+
+        f.stub.fail("setFlag(_:_:itemID:)")
+        model.perform(.toggleFavorite)
+        #expect(model.item?.isFavorite == true, "the mark shows at once")
+
+        try await waitUntil("the error") { model.loadError?.contains("setFlag") == true }
+        try await waitUntil("the row as it is") { model.item?.isFavorite == false }
+    }
+
+    @Test func aMarkThatMovesTheFileLeavesThePlayerNamingItsNewPath() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.fileURL != nil }
+
+        model.perform(.toggleMarkedForDeletion)
+
+        try await waitUntil("the new path") { model.fileURL?.path.hasSuffix("_ToDelete/a.mp4") == true }
+        #expect(model.item?.markedForDeletion == true)
+    }
+}
+
+extension PlaybackEvent {
+    var itemID: UUID {
+        switch self {
+        case .started(let id, _), .stopped(let id, _, _, _), .completed(let id, _): id
+        }
+    }
 }

@@ -132,4 +132,20 @@ import Testing
         await WriteQueue.settleAll(within: .seconds(5))
         #expect(ContinuousClock.now - began < .seconds(2))
     }
+
+    /// Submitted from code that cannot wait: its place in the queue is
+    /// taken when it is submitted, ahead of whatever is sent next.
+    @Test func aSubmittedWriteTakesItsPlaceAtOnce() async {
+        let queue = WriteQueue()
+        let log = Log()
+        let first = queue.submit { () -> Int in
+            try await Task.sleep(for: .milliseconds(150))
+            log.add("submitted")
+            return 1
+        }
+        queue.send({ log.add("sent after") })
+        await WriteQueue.settleAll()
+        #expect(log.all == ["submitted", "sent after"])
+        #expect((try? await first.value.get()) == 1)
+    }
 }
