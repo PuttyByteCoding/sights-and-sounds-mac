@@ -137,4 +137,21 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func run(_ request: JobRequest, wait: JobWait) async throws -> JobRecord? {
         try await run { try await base.run(request, wait: wait) }
     }
+
+    // MARK: PlayerReading
+
+    func playable(itemID: UUID) async throws -> Playable { try await run { try await base.playable(itemID: itemID) } }
+    func items(ids: [UUID]) async throws -> [MediaItem] { try await run { try await base.items(ids: ids) } }
+    func queueItems(_ definition: QueueDefinition) async throws -> [MediaItem] {
+        try await run { try await base.queueItems(definition) }
+    }
+    func tagMembership(itemIDs: [UUID]) async throws -> [UUID: Set<UUID>] {
+        try await run { try await base.tagMembership(itemIDs: itemIDs) }
+    }
+    func pendingTextScan(itemID: UUID) async throws -> UUID? {
+        try await run { try await base.pendingTextScan(itemID: itemID) }
+    }
+    func textLines(itemID: UUID) async throws -> [OcrTextLine] {
+        try await run { try await base.textLines(itemID: itemID) }
+    }
 }

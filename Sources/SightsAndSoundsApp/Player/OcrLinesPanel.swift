@@ -108,23 +108,15 @@ struct OcrLinesPanel: View {
             lines = []
             return
         }
-        let library = model.library
-        let pending = try? await Task.detached(operation: { try library.pendingOcrScan(of: itemID) }).value
+        let service = model.service
+        let pending = try? await service.pendingTextScan(itemID: itemID)
         // Checked after the read: two reloads in flight must not both wait.
         if let jobID = pending ?? nil, !queuedScans.contains(itemID),
            let runner = try? app.runner(for: model.libraryID) {
             queuedScans.insert(itemID)
             wait(for: jobID, of: itemID, on: runner)
         }
-        // Explicit return type — the async `read` overload's inference
-        // is ambiguous to the CI toolchain (Xcode 16).
-        let fetched: [OcrTextLine] = (try? await library.writer.read { db -> [OcrTextLine] in
-            try OcrTextLine
-                .filter(sql: "mediaItemID = ?", arguments: [itemID])
-                .order(sql: "timeSeconds")
-                .fetchAll(db)
-        }) ?? []
-        lines = fetched
+        lines = (try? await service.textLines(itemID: itemID)) ?? []
     }
 
     private func enqueueScan() {

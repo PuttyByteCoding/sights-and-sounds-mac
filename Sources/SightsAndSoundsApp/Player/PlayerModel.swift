@@ -18,6 +18,9 @@ final class SessionAudio {
 @Observable @MainActor
 final class PlayerModel {
     let library: LibraryDatabase
+    /// What this player asks of its library. Its reads and writes are
+    /// moving onto it from `library` a group at a time.
+    let service: any LibraryService
     let libraryID: UUID
     /// This player's queue: a snapshot with a definition. Nothing outside
     /// the player replaces it; Refresh re-runs the definition.
@@ -298,11 +301,16 @@ final class PlayerModel {
     init(
         request: PlayerRequest, library: LibraryDatabase, appDatabase: AppDatabase?,
         fileAccess: any FileAccess = LiveFileAccess(),
+        service: (any LibraryService)? = nil,
         nowPlaying: NowPlaying = .shared
     ) {
         self.nowPlaying = nowPlaying
         self.library = library
         self.fileAccess = fileAccess
+        // The window's own service when it is given one. Otherwise one
+        // that reads and writes this library but starts no jobs: a
+        // player has no runner to hand, and must not make a second.
+        self.service = service ?? LocalLibraryService(library: library, fileAccess: fileAccess)
         self.libraryID = request.libraryID
         self.queue = PlayQueue(definition: request.definition, items: [])
         _ = appDatabase  // legacy pref migrates into settings.json at launch
@@ -338,12 +346,20 @@ final class PlayerModel {
         // used to hear only that a browse window had refreshed, and then
         // only recounted the queue — the tag panel kept the old names
         // until the next item.
-        changeSubscription = library.changes.subscribe { [weak self] change in
-            Task { @MainActor in self?.libraryChanged(change) }
+        let changes = self.service.changes()
+        changeWatch.task = Task { [weak self] in
+            for await change in changes { self?.libraryChanged(change) }
         }
     }
 
-    private var changeSubscription: LibraryChangeHub.Subscription?
+    /// The task reading the service's change stream. Cancelled by
+    /// `shutdown`, and by the bag's own deinit for a player let go of
+    /// without one, so nothing actor-isolated is touched in a deinit.
+    private final class ChangeWatch: @unchecked Sendable {
+        var task: Task<Void, Never>?
+        deinit { task?.cancel() }
+    }
+    private let changeWatch = ChangeWatch()
     /// When this player last re-read its tagging; its own edits do that
     /// at once, and the hub's echo of them is then skipped.
     private var lastTaggingRefreshBegan = ContinuousClock.now
@@ -370,13 +386,9 @@ final class PlayerModel {
     /// actor — the request carries ids so the player starts at once.
     private func loadSnapshot(_ ids: [UUID]) {
         guard !ids.isEmpty else { return }
-        let library = library
+        let service = service
         Task.detached(priority: .userInitiated) { [weak self] in
-            let rows: [MediaItem] = (try? await library.writer.read { db -> [MediaItem] in
-                try MediaItem.fetchAll(db, keys: ids)
-            }) ?? []
-            let position = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
-            let ordered = rows.sorted { (position[$0.id] ?? 0) < (position[$1.id] ?? 0) }
+            let ordered = (try? await service.items(ids: ids)) ?? []
             await MainActor.run { [weak self] in
                 self?.queue.apply(ordered)
                 self?.publishToSession()
@@ -388,13 +400,13 @@ final class PlayerModel {
     /// Which tags the snapshot's items wear, off the main actor — the
     /// rail's counts and the narrowing follow.
     func recountQueue() {
-        let library = library, ids = queue.items.map(\.id)
+        let service = service, ids = queue.items.map(\.id)
         guard !ids.isEmpty else {
             queue.apply(membership: [:])
             return
         }
         Task.detached(priority: .utility) { [weak self] in
-            let membership = (try? library.tagIDsByItem(forItems: ids)) ?? [:]
+            let membership = (try? await service.tagMembership(itemIDs: ids)) ?? [:]
             await MainActor.run { [weak self] in self?.queue.apply(membership: membership) }
         }
     }
@@ -417,9 +429,14 @@ final class PlayerModel {
             queue.replaceDefinition(listing)
         }
         isRefreshingQueue = true
-        let library = library, definition = queue.definition
+        let service = service, definition = queue.definition
         Task.detached(priority: .userInitiated) { [weak self] in
-            let result = Result { try PlayQueue.run(definition, library: library) }
+            let result: Result<[MediaItem], Error>
+            do {
+                result = .success(try await service.queueItems(definition))
+            } catch {
+                result = .failure(error)
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 switch result {
@@ -457,24 +474,20 @@ final class PlayerModel {
         loadError = nil
         loadGeneration += 1
         let generation = loadGeneration
-        let library = library, fileAccess = fileAccess
+        let service = service
 
         Task.detached(priority: .userInitiated) { [weak self] in
-            let outcome: Result<(MediaItem?, URL?), Error>
+            // The item and where it plays from, in one answer.
+            let outcome: Result<Playable, Error>
             do {
-                let loaded = try await library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
-                // Embedded clips resolve to the PARENT's file.
-                let url = try loaded.flatMap {
-                    try library.resolvedFileURL(for: $0, fileAccess: fileAccess)
-                }
-                outcome = .success((loaded, url))
+                outcome = .success(try await service.playable(itemID: itemID))
             } catch {
                 outcome = .failure(error)
             }
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 switch outcome {
-                case .success(let (loaded, url)): self.apply(loaded: loaded, url: url)
+                case .success(let playable): self.apply(loaded: playable.item, url: playable.url)
                 case .failure(let error):
                     self.stopForFailedLoad()
                     self.letGoOfItem()
@@ -1463,8 +1476,8 @@ final class PlayerModel {
 
     func shutdown() {
         itemShown(nil)
-        changeSubscription?.cancel()
-        changeSubscription = nil
+        changeWatch.task?.cancel()
+        changeWatch.task = nil
         if let loadObserver { NotificationCenter.default.removeObserver(loadObserver) }
         loadObserver = nil
         analysisSession?.playerDidClose()
