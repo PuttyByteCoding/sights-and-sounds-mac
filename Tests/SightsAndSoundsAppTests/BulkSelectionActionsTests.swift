@@ -90,7 +90,7 @@ import Testing
         let (model, library, items, tag) = try await makeModel()
         model.click(items[0].id, extend: false, range: false)
         model.click(items[2].id, extend: false, range: false)
-        model.applyTagToSelection(tag.id)
+        await model.applyTagToSelection(tag.id)
         func tagged(_ id: UUID) throws -> Bool {
             try library.writer.read {
                 try MediaItemTag.filter(sql: "mediaItemID = ? AND tagID = ?", arguments: [id, tag.id]).fetchCount($0) > 0
@@ -102,7 +102,7 @@ import Testing
         // The one in the middle has no such tag; removing from all three
         // is fine.
         model.click(items[1].id, extend: false, range: false)
-        model.removeTagFromSelection(tag.id)
+        await model.removeTagFromSelection(tag.id)
         #expect(try !tagged(items[0].id) && !tagged(items[1].id) && !tagged(items[2].id))
     }
 
@@ -131,13 +131,13 @@ import Testing
         model.click(items[0].id, extend: false, range: false)
         model.click(items[1].id, extend: false, range: false)
 
-        model.toggleSelectionFavorite()  // one is not yet: both become favourites
+        await model.toggleSelectionFavorite()  // one is not yet: both become favourites
         try await waitUntil {
             (try? self.stored(library, items[1].id)?.isFavorite) == true
                 && (try? self.stored(library, items[0].id)?.isFavorite) == true
         }
         try await waitUntil { model.selectedItems.allSatisfy(\.isFavorite) }
-        model.toggleSelectionFavorite()  // all are: both stop being
+        await model.toggleSelectionFavorite()  // all are: both stop being
         try await waitUntil {
             (try? self.stored(library, items[0].id)?.isFavorite) == false
                 && (try? self.stored(library, items[1].id)?.isFavorite) == false

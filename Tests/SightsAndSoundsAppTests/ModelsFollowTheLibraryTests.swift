@@ -63,7 +63,7 @@ import Testing
         try await waitUntil { model.items.count == 1 }
         model.click(item.id, extend: true, range: false)
 
-        model.applyTagToSelection(tag.id)
+        await model.applyTagToSelection(tag.id)
 
         try await waitUntil { (model.counts.byTag[tag.id] ?? 0) == 1 }
         try await waitUntil { model.itemTags[item.id]?.map(\.name) == ["Band A"] || !GridDisplaySettings.shared.grid.needsTagData }

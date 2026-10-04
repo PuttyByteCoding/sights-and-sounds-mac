@@ -13,6 +13,7 @@ import Testing
         let library: LibraryDatabase
         let runner: JobRunner
         let stub: StubLibraryService
+        let tag: SightsAndSoundsKit.Tag
 
         init() async throws {
             let library = try LibraryDatabase.openInMemory()
@@ -22,11 +23,14 @@ import Testing
             let items = ["alpha.mp4", "beta.mp4", "gamma.mp4"].map {
                 MediaItem(sourceID: source.id, kind: .video, relativePath: $0, needsReview: false)
             }
+            let tag = SightsAndSoundsKit.Tag(tagCategoryID: band.id, name: "Alpha")
             try await library.writer.write { db in
                 try source.insert(db)
                 try band.insert(db)
+                try tag.insert(db)
                 for item in items { try item.insert(db) }
             }
+            self.tag = tag
             self.library = library
             runner = JobRunner(library: library)
             stub = StubLibraryService(LocalLibraryService(library: library, runner: runner))
@@ -34,6 +38,14 @@ import Testing
 
         @MainActor func model() -> BrowseModel {
             BrowseModel(libraryID: UUID(), library: library, runner: runner, service: stub)
+        }
+
+        func isTagged(_ itemID: UUID) throws -> Bool {
+            try library.writer.read { db in
+                try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM mediaItemTag WHERE mediaItemID = ? AND tagID = ?",
+                    arguments: [itemID, tag.id]) ?? 0
+            } > 0
         }
     }
 
@@ -107,5 +119,106 @@ import Testing
         let added = MediaItem(sourceID: sourceID, kind: .video, relativePath: "delta.mp4", needsReview: false)
         try await f.library.writer.write { try added.insert($0) }
         try await waitUntil("the new item") { model.items.count == 4 }
+    }
+
+    // MARK: - Writes
+
+    /// Tag, then untag at once, with the tagging held up on its way. The
+    /// untagging was asked for second and must land second: sent side by
+    /// side, it would find nothing to remove and the tag would then
+    /// arrive and stay.
+    @Test func writesLandInTheOrderTheyWereAskedFor() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("first listing") { model.items.count == 3 }
+        let item = try #require(model.items.first)
+        model.click(item.id, extend: true, range: false)
+
+        f.stub.delay("assignTag(_:to:)", by: .milliseconds(300))
+        let tagging = Task { await model.applyTagToSelection(f.tag.id) }
+        try await waitUntil("the tagging was asked for") { f.stub.calls("assignTag(_:to:)") == 1 }
+        await model.removeTagFromSelection(f.tag.id)
+        await tagging.value
+
+        #expect(try !f.isTagged(item.id), "the removal overtook the tagging it followed")
+    }
+
+    @Test func aFailedWriteSaysSoAndKeepsTheSelection() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("first listing") { model.items.count == 3 }
+        let item = try #require(model.items.first)
+        model.click(item.id, extend: true, range: false)
+
+        f.stub.fail("setNeedsReview(_:_:)")
+        await model.markSelectionReviewed()
+
+        #expect(model.errorMessage?.contains("setNeedsReview") == true)
+        #expect(model.selection == [item.id], "the selection was cleared for an action that did not happen")
+    }
+
+    @Test func aWriteThatLandsClearsTheSelectionItActedOn() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("first listing") { model.items.count == 3 }
+        let item = try #require(model.items.first)
+        model.click(item.id, extend: true, range: false)
+
+        await model.markSelectionReviewed()
+
+        #expect(model.errorMessage == nil)
+        #expect(model.selection.isEmpty)
+    }
+
+    /// The list is the library's by the time the call returns, as it was
+    /// when the write was made in place.
+    @Test func savedFiltersAreInTheListWhenTheCallReturns() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("first listing") { model.items.count == 3 }
+
+        model.filter.searchText = "alpha"
+        await model.saveCurrentFilter(named: "Alphas")
+        let saved = try #require(model.savedFilters.first)
+        #expect(saved.name == "Alphas" && saved.filter?.searchText == "alpha")
+
+        model.filter.searchText = "beta"
+        await model.updateSavedFilter(saved)
+        #expect(model.savedFilters.first?.filter?.searchText == "beta")
+
+        await model.renameSavedFilter(saved, to: "Betas")
+        #expect(model.savedFilters.map(\.name) == ["Betas"])
+
+        await model.deleteSavedFilter(saved)
+        #expect(model.savedFilters.isEmpty)
+        #expect(try f.library.savedFilters().isEmpty)
+    }
+
+    /// An empty or unchanged name is not a write at all.
+    @Test func aSourceRenameThatChangesNothingAsksNothing() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("sources") { model.sources.count == 1 }
+        let source = try #require(model.sources.first)
+
+        await model.renameSource(source, to: "   ")
+        await model.renameSource(source, to: " S ")
+        #expect(f.stub.calls("renameSource(_:to:)") == 0)
+        #expect(model.errorMessage == nil)
+
+        await model.renameSource(source, to: " Shows ")
+        try await waitUntil("the new name") { model.sources.first?.name == "Shows" }
+    }
+
+    @Test func aSourceThatCannotBeAddedSaysWhich() async throws {
+        let f = try await Fixture()
+        let model = f.model()
+        try await waitUntil("sources") { model.sources.count == 1 }
+        let existing = try #require(model.sources.first)
+
+        let added = await model.addSource(at: URL(fileURLWithPath: existing.rootPath, isDirectory: true))
+
+        #expect(added == nil)
+        #expect(model.errorMessage?.hasPrefix("Could not add ") == true, "\(model.errorMessage ?? "nil")")
     }
 }

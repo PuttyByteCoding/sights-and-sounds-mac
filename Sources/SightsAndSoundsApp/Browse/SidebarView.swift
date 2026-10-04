@@ -110,17 +110,17 @@ struct SidebarView: View {
         .background { Theme.Surface.sidebar.ignoresSafeArea() }
 
         .sheet(isPresented: $showSaveFilter) {
-            SaveFilterSheet { name in model.saveCurrentFilter(named: name) }
+            SaveFilterSheet { name in Task { await model.saveCurrentFilter(named: name) } }
         }
         .confirmationDialog(deleteFilterTitle, isPresented: deletingFilterShown, presenting: deletingFilter) { saved in
-            Button("Delete", role: .destructive) { model.deleteSavedFilter(saved) }
+            Button("Delete", role: .destructive) { Task { await model.deleteSavedFilter(saved) } }
             Button("Cancel", role: .cancel) {}
         }
         .sheet(item: $renamingFilter) { saved in
             SaveFilterSheet(
                 title: "Rename Filter", initialName: saved.name,
                 hint: "Another filter's name is refused, not overwritten."
-            ) { name in model.renameSavedFilter(saved, to: name) }
+            ) { name in Task { await model.renameSavedFilter(saved, to: name) } }
         }
     }
 
@@ -335,7 +335,7 @@ struct SidebarView: View {
                     .contextMenu {
                         // Nothing to write when the screen is empty or
                         // already what the row says.
-                        Button("Update with Current Filter") { model.updateSavedFilter(saved) }
+                        Button("Update with Current Filter") { Task { await model.updateSavedFilter(saved) } }
                             .disabled(model.filter.isEmpty || saved.filter == model.filter)
                         Button("Rename…") { renamingFilter = saved }
                         Divider()
@@ -950,7 +950,7 @@ private struct SourceRow: View {
             }
             .disabled(!source.enabled || !model.onlineSourceIDs.contains(source.id))
             Button(source.enabled ? "Disable" : "Enable") {
-                model.setSourceEnabled(source, !source.enabled)
+                Task { await model.setSourceEnabled(source, !source.enabled) }
             }
             Divider()
             // A rename is a label change and nothing else — the library
@@ -960,7 +960,7 @@ private struct SourceRow: View {
             Button("Rename…") { renaming = true }
         }
         .sheet(isPresented: $renaming) {
-            SourceRenameSheet(source: source) { model.renameSource(source, to: $0) }
+            SourceRenameSheet(source: source) { name in Task { await model.renameSource(source, to: name) } }
         }
         .help(source.rootPath)
     }
@@ -1196,7 +1196,7 @@ extension SidebarView {
         panel.canChooseDirectories = true
         panel.prompt = "Add Source"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        model.addSource(at: url)
+        Task { await model.addSource(at: url) }
     }
 }
 

@@ -716,8 +716,10 @@ struct ImportView: View {
         // Registering a source SCANS it. Pointing at an unreviewed drive
         // should cost a file list, not four thousand rows you then have
         // to un-import — and there is no un-import.
-        if let source = model.addSource(at: url) {
-            beginScan(source)
+        Task {
+            if let source = await model.addSource(at: url) {
+                beginScan(source)
+            }
         }
     }
 

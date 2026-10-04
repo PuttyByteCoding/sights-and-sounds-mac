@@ -88,4 +88,46 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {
         try await run { try await base.listing(request) }
     }
+
+    // MARK: BrowseWriting
+
+    func renameSource(_ id: UUID, to name: String) async throws {
+        try await run { try await base.renameSource(id, to: name) }
+    }
+    func setSourceEnabled(_ id: UUID, _ enabled: Bool) async throws {
+        try await run { try await base.setSourceEnabled(id, enabled) }
+    }
+    func addSource(named name: String, rootPath: String) async throws -> Source {
+        try await run { try await base.addSource(named: name, rootPath: rootPath) }
+    }
+    @discardableResult
+    func saveFilter(named name: String, _ filter: MediaFilter) async throws -> SavedFilter {
+        try await run { try await base.saveFilter(named: name, filter) }
+    }
+    func updateSavedFilter(_ id: UUID, to filter: MediaFilter) async throws {
+        try await run { try await base.updateSavedFilter(id, to: filter) }
+    }
+    func renameSavedFilter(_ id: UUID, to name: String) async throws {
+        try await run { try await base.renameSavedFilter(id, to: name) }
+    }
+    func deleteSavedFilter(_ id: UUID) async throws {
+        try await run { try await base.deleteSavedFilter(id) }
+    }
+    func assignTag(_ tagID: UUID, to itemIDs: [UUID]) async throws {
+        try await run { try await base.assignTag(tagID, to: itemIDs) }
+    }
+    func removeTag(_ tagID: UUID, from itemIDs: [UUID]) async throws {
+        try await run { try await base.removeTag(tagID, from: itemIDs) }
+    }
+    func setFavorite(_ itemIDs: [UUID], _ isFavorite: Bool) async throws {
+        try await run { try await base.setFavorite(itemIDs, isFavorite) }
+    }
+    func setNeedsReview(_ itemIDs: [UUID], _ needsReview: Bool) async throws {
+        try await run { try await base.setNeedsReview(itemIDs, needsReview) }
+    }
+    func setStaging(
+        _ folder: StagingFolder, on: Bool, itemIDs: [UUID]
+    ) async throws -> [StagingFailure] {
+        try await run { try await base.setStaging(folder, on: on, itemIDs: itemIDs) }
+    }
 }

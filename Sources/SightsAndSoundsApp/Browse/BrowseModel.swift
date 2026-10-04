@@ -561,18 +561,56 @@ final class BrowseModel {
     /// a glance. Duplicates ARE allowed: the schema does not make the
     /// name unique, two folders can honestly have the same name, and the
     /// path in the tooltip is what tells them apart.
-    func renameSource(_ source: Source, to rawName: String) {
+    func renameSource(_ source: Source, to rawName: String) async {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != source.name else { return }
-        do {
-            try library.writer.write { db in
-                var updated = source
-                updated.name = name
-                try updated.update(db)
+        await write { try await $0.renameSource(source.id, to: name) }
+    }
+
+    // MARK: - Writes
+
+    /// The last write asked for; the next one waits for it.
+    private var lastWrite: Task<Void, Never>?
+
+    /// Send one write to the service, after every write asked for before
+    /// it. A write used to be a call that had finished by the next line;
+    /// it is now a request that takes its time, and two sent side by side
+    /// can land in either order — untag overtaking the tagging it was
+    /// meant to undo. One at a time, in the order asked, is what the
+    /// buttons mean.
+    ///
+    /// Returns what the write returned, or nil — with the reason on the
+    /// error line — when it failed.
+    @discardableResult
+    private func write<T: Sendable>(
+        orSay describe: (any Error) -> String = { "\($0)" },
+        _ work: @escaping @Sendable (any LibraryService) async throws -> T
+    ) async -> T? {
+        let previous = lastWrite
+        let service = service
+        let attempt = Task { () -> Result<T, any Error> in
+            await previous?.value
+            do {
+                return .success(try await work(service))
+            } catch {
+                return .failure(error)
             }
-        } catch {
-            errorMessage = "\(error)"
         }
+        lastWrite = Task { _ = await attempt.value }
+        switch await attempt.value {
+        case .success(let value):
+            return value
+        case .failure(let error):
+            errorMessage = describe(error)
+            return nil
+        }
+    }
+
+    /// The library's saved filters, re-read after this window changed
+    /// them, so the list is current when the call that changed it
+    /// returns. A read that fails keeps the list on screen.
+    private func reloadSavedFilters() async {
+        savedFilters = (try? await service.savedFilters()) ?? savedFilters
     }
 
     // MARK: - Saved filters
@@ -591,13 +629,10 @@ final class BrowseModel {
         }
     }
 
-    func saveCurrentFilter(named name: String) {
-        do {
-            _ = try library.saveFilter(named: name, filter)
-            savedFilters = (try? library.savedFilters()) ?? savedFilters
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func saveCurrentFilter(named name: String) async {
+        let filter = filter
+        guard await write({ try await $0.saveFilter(named: name, filter) }) != nil else { return }
+        await reloadSavedFilters()
     }
 
     /// Apply a saved filter — wholesale, replacing the current one. A
@@ -617,43 +652,24 @@ final class BrowseModel {
 
     /// Make a saved filter mean what is on screen now. Counts follow on
     /// the next refresh, so the sidebar's number changes with it.
-    func updateSavedFilter(_ saved: SavedFilter) {
-        do {
-            try library.updateSavedFilter(saved.id, to: filter)
-            savedFilters = (try? library.savedFilters()) ?? savedFilters
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func updateSavedFilter(_ saved: SavedFilter) async {
+        let filter = filter
+        guard await write({ try await $0.updateSavedFilter(saved.id, to: filter) }) != nil else { return }
+        await reloadSavedFilters()
     }
 
-    func renameSavedFilter(_ saved: SavedFilter, to name: String) {
-        do {
-            try library.renameSavedFilter(saved.id, to: name)
-            savedFilters = (try? library.savedFilters()) ?? savedFilters
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func renameSavedFilter(_ saved: SavedFilter, to name: String) async {
+        guard await write({ try await $0.renameSavedFilter(saved.id, to: name) }) != nil else { return }
+        await reloadSavedFilters()
     }
 
-    func deleteSavedFilter(_ saved: SavedFilter) {
-        do {
-            try library.deleteSavedFilter(saved.id)
-            savedFilters.removeAll { $0.id == saved.id }
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func deleteSavedFilter(_ saved: SavedFilter) async {
+        guard await write({ try await $0.deleteSavedFilter(saved.id) }) != nil else { return }
+        savedFilters.removeAll { $0.id == saved.id }
     }
 
-    func setSourceEnabled(_ source: Source, _ enabled: Bool) {
-        do {
-            try library.writer.write { db in
-                var updated = source
-                updated.enabled = enabled
-                try updated.update(db)
-            }
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func setSourceEnabled(_ source: Source, _ enabled: Bool) async {
+        await write { try await $0.setSourceEnabled(source.id, enabled) }
     }
 
     // MARK: - Sources & import
@@ -661,12 +677,10 @@ final class BrowseModel {
     @discardableResult
     /// Register a folder as a source; refused, with the reason shown, when
     /// it already is one or overlaps one.
-    func addSource(at url: URL) -> Source? {
-        do {
-            return try library.addSource(named: url.lastPathComponent, rootPath: url.path)
-        } catch {
-            errorMessage = "Could not add \(url.lastPathComponent): \(error)"
-            return nil
+    func addSource(at url: URL) async -> Source? {
+        let name = url.lastPathComponent, path = url.path
+        return await write(orSay: { "Could not add \(name): \($0)" }) {
+            try await $0.addSource(named: name, rootPath: path)
         }
     }
 
@@ -805,14 +819,13 @@ final class BrowseModel {
     /// Mark the selection reviewed. The flag is what the Needs Review
     /// worklist reads, so clearing it here is the same act as clearing
     /// it one item at a time.
-    func markSelectionReviewed() {
+    func markSelectionReviewed() async {
         let ids = selectedItems.map(\.id)
-        do {
-            try library.setNeedsReview(ids, false)
-            clearSelection()
-        } catch {
-            errorMessage = "\(error)"
-        }
+        // Cleared once the write has landed, not before: a selection
+        // cleared for an action that then failed would have to be made
+        // again to retry it.
+        guard await write({ try await $0.setNeedsReview(ids, false) }) != nil else { return }
+        clearSelection()
     }
 
     /// Stage the selection for deletion. This MOVES each file into the
@@ -854,24 +867,20 @@ final class BrowseModel {
             }
         }
         guard !items.isEmpty else { return }
-        let library = library, fileAccess = fileAccess
+        let service = service
         let verb = on ? "mark" : "restore"
+        // The service says which items; this window knows what they were
+        // called.
+        let names = Dictionary(items.map { ($0.id, $0.fileName) }, uniquingKeysWith: { first, _ in first })
         Task {
-            let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
-                var failures: [String] = []
-                for item in items {
-                    do {
-                        if on {
-                            try library.stage(folder, itemID: item.id, fileAccess: fileAccess)
-                        } else {
-                            try library.unstage(folder, itemID: item.id, fileAccess: fileAccess)
-                        }
-                    } catch {
-                        failures.append("\(item.fileName): \(error)")
-                    }
-                }
-                return failures
-            }.value
+            let failures: [String]
+            do {
+                failures = try await service.setStaging(folder, on: on, itemIDs: items.map(\.id))
+                    .map { "\(names[$0.itemID] ?? "an item"): \($0.reason)" }
+            } catch {
+                errorMessage = "Could not \(verb) the selection: \(error)"
+                return
+            }
             if let first = failures.first {
                 errorMessage = failures.count == 1
                     ? "Could not \(verb) \(first)"
@@ -895,35 +904,26 @@ final class BrowseModel {
     /// Apply one tag to everything selected. Goes through `assignTag`,
     /// so a single-select category replaces rather than accumulates —
     /// the rule cannot be skipped by tagging in bulk.
-    func applyTagToSelection(_ tagID: UUID) {
-        do {
-            // One transaction in the kit: the bulk edit lands whole or
-            // not at all.
-            try library.assignTag(tagID, to: selectedItems.map(\.id))
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func applyTagToSelection(_ tagID: UUID) async {
+        let ids = selectedItems.map(\.id)
+        // One transaction in the kit: the bulk edit lands whole or not
+        // at all.
+        await write { try await $0.assignTag(tagID, to: ids) }
     }
 
     /// Favourite the selection, or unfavourite it: on when any selected
     /// item is not yet a favourite, off when they all are.
-    func toggleSelectionFavorite() {
+    func toggleSelectionFavorite() async {
         let items = selectedItems
         let on = items.contains { !$0.isFavorite }
-        do {
-            try library.setFavorite(items.map(\.id), on)
-        } catch {
-            errorMessage = "\(error)"
-        }
+        let ids = items.map(\.id)
+        await write { try await $0.setFavorite(ids, on) }
     }
 
     /// Take one tag off everything selected that carries it.
-    func removeTagFromSelection(_ tagID: UUID) {
-        do {
-            try library.removeTag(tagID, from: selectedItems.map(\.id))
-        } catch {
-            errorMessage = "\(error)"
-        }
+    func removeTagFromSelection(_ tagID: UUID) async {
+        let ids = selectedItems.map(\.id)
+        await write { try await $0.removeTag(tagID, from: ids) }
     }
 
     /// The tags any selected item carries, in category order, for the
