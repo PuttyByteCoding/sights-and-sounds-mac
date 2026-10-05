@@ -90,7 +90,6 @@ final class PlayerModel {
     private var endObserver: (any NSObjectProtocol)?
     private var statusObserver: NSKeyValueObservation?
     private var completionRecorded = false
-    private let fileAccess: any FileAccess
 
     var title: String { item?.fileName ?? "Player" }
     var isAudio: Bool { item?.kind == .audio }
@@ -361,7 +360,6 @@ final class PlayerModel {
     ) {
         self.nowPlaying = nowPlaying
         self.library = library
-        self.fileAccess = fileAccess
         // The window's own service when it is given one. Otherwise one
         // that reads and writes this library but starts no jobs: a
         // player has no runner to hand, and must not make a second.
@@ -507,9 +505,9 @@ final class PlayerModel {
 
     /// The same lookup, to be run later and off the main actor; see
     /// `BrowseModel.fileResolver(for:)`.
-    func queueFileResolver(for item: MediaItem) -> @Sendable () -> URL? {
-        let library = library, fileAccess = fileAccess
-        return { (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil }
+    func queueFileResolver(for item: MediaItem) -> @Sendable () async -> URL? {
+        let service = service, itemID = item.id
+        return { (try? await service.playable(itemID: itemID))?.url }
     }
 
     // MARK: - Loading

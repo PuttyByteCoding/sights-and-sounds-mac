@@ -35,6 +35,8 @@ public final class LocalLibraryService: LibraryService {
         self.fileAccess = fileAccess
     }
 
+    public var filesAreOnThisMac: Bool { true }
+
     public func changes() -> AsyncStream<LibraryChange> {
         AsyncStream { continuation in
             let subscription = library.changes.subscribe { continuation.yield($0) }

@@ -17,10 +17,10 @@ import SightsAndSoundsKit
 ///
 /// What it is careful about, because a grid asks once per tile as tiles
 /// scroll past:
-///   - where the item's file is gets worked out only when a thumbnail has
-///     to be rendered, and then off the main actor. It is database reads
-///     and a reachability check; tiles used to pay for it on the main
-///     thread before the cache was even consulted;
+///   - where the item can be read from is asked only when a thumbnail has
+///     to be rendered, and then off the main actor. It is a question for
+///     the library; tiles used to pay for it on the main thread before
+///     the cache was even consulted;
 ///   - only a few renders run at once, newest request first, so the tiles
 ///     on screen are not queued behind everything a fast scroll passed;
 ///   - a request nobody is waiting for any more is dropped when its turn
@@ -53,7 +53,7 @@ actor ThumbnailProvider {
     /// there is nothing to render from.
     func thumbnailData(
         itemID: UUID, libraryID: UUID, durationSeconds: Double?,
-        resolveFile: @escaping @Sendable () -> URL?
+        resolveFile: @escaping @Sendable () async -> URL?
     ) async -> Data? {
         let key = "\(libraryID)/\(itemID)"
         if let cached = memory.object(forKey: key as NSString) { return cached as Data }
@@ -80,7 +80,7 @@ actor ThumbnailProvider {
 
     private func startLoad(
         key: String, itemID: UUID, libraryID: UUID, durationSeconds: Double?,
-        resolveFile: @escaping @Sendable () -> URL?
+        resolveFile: @escaping @Sendable () async -> URL?
     ) -> Task<Data?, Never> {
         let render = render
         let task = Task<Data?, Never> {
@@ -92,7 +92,7 @@ actor ThumbnailProvider {
             // The tile scrolled away while this waited: render nothing.
             guard self.waiting[key] != nil else { return nil }
 
-            guard let fileURL = await Self.offActor(resolveFile) else { return nil }
+            guard let fileURL = await resolveFile() else { return nil }
             guard let jpeg = await render(fileURL, durationSeconds) else { return nil }
             await Self.offActor {
                 try? FileManager.default.createDirectory(
@@ -125,6 +125,12 @@ actor ThumbnailProvider {
         }
         await withCheckedContinuation { turnQueue.append($0) }
     }
+
+    /// Requests standing in line for a render slot, and thumbnails
+    /// somebody is still waiting for. What a test waits on, in place of
+    /// guessing how long each takes to come about.
+    var queuedForATurn: Int { turnQueue.count }
+    var thumbnailsWaitedFor: Int { waiting.count }
 
     private func finishTurn() {
         if let next = turnQueue.popLast() {

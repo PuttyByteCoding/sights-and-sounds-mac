@@ -202,7 +202,7 @@ struct WatchedView: View {
     }
 
     private func reveal(_ item: MediaItem) {
-        guard let url = try? model.library.resolvedFileURL(for: item) else { return }
+        guard let url = model.fileURL(for: item) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
