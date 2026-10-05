@@ -582,6 +582,29 @@ import SightsAndSoundsKit
         #expect(DeviceStore.presentable(String(repeating: "x", count: 500)).count == 64)
     }
 
+    /// What cannot be seen and changes how the rest reads is taken out:
+    /// a name is shown as what it is made of.
+    @Test func whatCannotBeSeenIsTakenOutOfAName() {
+        // A direction override: written so that it reads backwards.
+        #expect(DeviceStore.presentable("Den\u{202E}caM oidutS") == "DencaM oidutS")
+        #expect(DeviceStore.presentable("\u{2066}Den\u{2069} Mac") == "Den Mac")
+        // Zero-width characters: two names that look the same and are not.
+        #expect(DeviceStore.presentable("Stu\u{200B}dio\u{200D} Mac\u{FEFF}") == "Studio Mac")
+        // Line and paragraph separators, which are not "newlines" to every API.
+        #expect(DeviceStore.presentable("Your Mac\u{2028}Allow\u{2029}now") == "Your MacAllownow")
+        // Private-use and unassigned code points draw as anything or nothing.
+        #expect(DeviceStore.presentable("Mac\u{E000}\u{F8FF}") == "Mac")
+        // Runs of space, and the wide and narrow kinds, are one space.
+        #expect(DeviceStore.presentable("Studio \u{00A0}\u{2003}  MacBook") == "Studio MacBook")
+        // Marks stacked without end on one letter.
+        let stacked = "M" + String(repeating: "\u{0301}", count: 5_000) + "ac"
+        #expect(DeviceStore.presentable(stacked).unicodeScalars.count <= 128)
+        // What an honest name has is all still there.
+        #expect(DeviceStore.presentable("Zoë\u{2019}s MacBook Pro (16-inch) #2") == "Zoë\u{2019}s MacBook Pro (16-inch) #2")
+        #expect(DeviceStore.presentable("書斎のMac") == "書斎のMac")
+        #expect(DeviceStore.presentable("\u{202E}\u{200B}") == "A Mac with no name")
+    }
+
     // MARK: - The client's hosts
 
     @Test func theClientsHostsAreKeptInAFileOfItsOwn() throws {

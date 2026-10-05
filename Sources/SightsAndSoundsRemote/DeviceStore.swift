@@ -21,6 +21,9 @@ public struct ApprovedDevice: Codable, Equatable, Identifiable, Sendable {
 public final class DeviceStore: @unchecked Sendable {
     private struct Contents: Codable {
         var port: UInt16?
+        /// Whether remote access was left on. Absent in a file from
+        /// before this was kept, which means off.
+        var enabled: Bool?
         var devices: [ApprovedDevice] = []
     }
 
@@ -43,6 +46,14 @@ public final class DeviceStore: @unchecked Sendable {
 
     func setPort(_ port: UInt16?) throws {
         try change { $0.port = port }
+    }
+
+    /// Whether remote access was left on, to be turned on again when
+    /// the app is next opened. Off until it has been turned on once.
+    public var isEnabled: Bool { lock.withLock { contents.enabled ?? false } }
+
+    public func setEnabled(_ enabled: Bool) throws {
+        try change { $0.enabled = enabled }
     }
 
     var keys: [ChannelKey] { lock.withLock { contents.devices.map(\.key) } }
@@ -109,12 +120,42 @@ public final class DeviceStore: @unchecked Sendable {
     }
 
     /// A name fit to show the host's user. It is the device's word for
-    /// itself, so it is not trusted to be short, or one line, or there.
-    static func presentable(_ name: String) -> String {
-        let scalars = name.unicodeScalars.filter {
-            !CharacterSet.controlCharacters.contains($0) && !CharacterSet.newlines.contains($0)
+    /// itself — whoever holds a pairing code chooses it — and it is put
+    /// in front of the person deciding whether to let that device in.
+    /// So it is not trusted to be short, or one line, or there, or to
+    /// read the way it is written.
+    ///
+    /// What is kept is what can be seen: letters, marks, digits,
+    /// punctuation, symbols, and single spaces. What is dropped is what
+    /// changes how the rest reads without showing itself: control
+    /// characters, line breaks, and the invisible ones — direction
+    /// overrides that make text read backwards, zero-width characters
+    /// that hide a difference between two names — along with private
+    /// and unassigned code points.
+    public static func presentable(_ name: String) -> String {
+        var kept = String.UnicodeScalarView()
+        var needsSpace = false
+        for scalar in name.unicodeScalars {
+            // Marks pile up on one letter without limit; a hundred or so
+            // code points is every honest name.
+            guard kept.count < 128 else { break }
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+                 .nonspacingMark, .spacingMark, .enclosingMark,
+                 .decimalNumber, .letterNumber, .otherNumber,
+                 .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation,
+                 .initialPunctuation, .finalPunctuation, .otherPunctuation,
+                 .mathSymbol, .currencySymbol, .modifierSymbol, .otherSymbol:
+                if needsSpace, !kept.isEmpty { kept.append(" ") }
+                needsSpace = false
+                kept.append(scalar)
+            case .spaceSeparator:
+                needsSpace = true
+            default:
+                break
+            }
         }
-        let cleaned = String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespaces)
+        let cleaned = String(kept)
         return cleaned.isEmpty ? "A Mac with no name" : String(cleaned.prefix(64))
     }
 
