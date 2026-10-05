@@ -12,17 +12,27 @@ public struct HostDirectory: Sendable {
     /// The service for one of those libraries, or nil when there is none
     /// of that id.
     public var service: @Sendable (_ libraryID: UUID) async -> (any LibraryService)?
+    /// Answer a Mac that asks to be approved, on the connection it asked
+    /// on: a grant or a refusal, to be sent back down it. Nil for a host
+    /// that pairs no one.
+    public var pair: (@Sendable (_ request: PairRequest, _ connection: FrameConnection) async -> Frame)?
+    /// Told each time an approved device is welcomed.
+    public var greeted: @Sendable (_ deviceID: UUID) -> Void
 
     public init(
         hostName: @escaping @Sendable () -> String,
         approves: @escaping @Sendable (_ deviceID: UUID, _ token: Data) async -> Bool,
         libraries: @escaping @Sendable () async -> [RemoteLibraryInfo],
-        service: @escaping @Sendable (_ libraryID: UUID) async -> (any LibraryService)?
+        service: @escaping @Sendable (_ libraryID: UUID) async -> (any LibraryService)?,
+        pair: (@Sendable (_ request: PairRequest, _ connection: FrameConnection) async -> Frame)? = nil,
+        greeted: @escaping @Sendable (_ deviceID: UUID) -> Void = { _ in }
     ) {
         self.hostName = hostName
         self.approves = approves
         self.libraries = libraries
         self.service = service
+        self.pair = pair
+        self.greeted = greeted
     }
 }
 
@@ -145,6 +155,10 @@ public final class ServiceHost: @unchecked Sendable {
         _ connection: FrameConnection, session: UUID
     ) async throws -> (Hello, any LibraryService)? {
         let first = try await connection.receive()
+        if first.kind == RemoteProtocol.Kind.pair {
+            await answerPairing(first, on: connection)
+            return nil
+        }
         guard first.kind == RemoteProtocol.Kind.hello else { return nil }
         let hello = try RemoteProtocol.decode(Hello.self, from: first.payload)
 
@@ -181,7 +195,25 @@ public final class ServiceHost: @unchecked Sendable {
         let welcome = Welcome(hostName: directory.hostName(), libraries: await directory.libraries())
         try await connection.send(
             Frame(kind: RemoteProtocol.Kind.welcome, payload: try RemoteProtocol.encode(welcome)))
+        directory.greeted(hello.deviceID)
         return service.map { (hello, $0) }
+    }
+
+    /// A Mac asking to be approved. Whatever is answered, nothing else is
+    /// said on this connection.
+    private func answerPairing(_ frame: Frame, on connection: FrameConnection) async {
+        var reply = Self.refusal(.notPaired, "The other Mac is not pairing a device just now.")
+        if let pair = directory.pair,
+           let request = try? RemoteProtocol.decode(PairRequest.self, from: frame.payload) {
+            reply = await pair(request, connection)
+        }
+        try? await connection.send(reply)
+    }
+
+    static func refusal(_ reason: Refusal.Reason, _ message: String) -> Frame {
+        Frame(
+            kind: RemoteProtocol.Kind.refusal,
+            payload: (try? RemoteProtocol.encode(Refusal(reason, message))) ?? Data())
     }
 
     private func answer(_ frame: Frame, _ service: any LibraryService) async -> Frame {

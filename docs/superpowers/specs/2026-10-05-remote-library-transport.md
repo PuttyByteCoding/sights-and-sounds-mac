@@ -51,6 +51,12 @@ the handshake on both ends. The key is 32 random bytes, one per paired device.
 The host's listener carries every approved device's key; a device's key is the
 only thing that completes a handshake with it.
 
+**Every connection proves its key.** TLS can resume an earlier session, and
+a resumed connection shows no key at all. Left on, a key that had been taken
+out of the listener connected on macOS 15 straight after a held one had.
+Neither end resumes or issues session tickets; every connection is a full
+handshake.
+
 **Not HTTP.** Both ends are this app, so between the Macs the messages are
 frames: a four-byte length, a one-byte kind, the bytes. Requests and answers
 are the `Codable` values of `LibraryService`, as JSON; a large answer is
@@ -82,7 +88,11 @@ key — and it is how both ends are tried on one Mac. Nothing is advertised.
    connects with the secret as its key, and says its own name.
 3. The host asks: *Allow "Studio MacBook" to use this Mac's libraries?* Only
    on a yes does it make that device a key and a token of its own and send
-   them back down the channel. The pairing secret stops working at once.
+   them back down the channel. The pairing secret stops working at once, on
+   a yes or a no, and the device's key is in the listener before the device
+   is told, so what it is given works the moment it has it. The request
+   carries proof that the device holds the secret, so a device already
+   approved cannot use its own connection to ask again under another name.
 4. The client keeps the host's address, its own device id, key and token.
    From then on it connects with its own key.
 
@@ -95,6 +105,13 @@ the host still has to say yes to the name it shows.
 they were approved and when they last connected, each with **Revoke**. Revoke
 refuses the device's token at once and rebuilds the listener without its key.
 Turning remote access off stops the listener and keeps the approvals.
+
+Changing the listener's keys — a code offered or withdrawn, a device approved
+or revoked — rebuilds the listener, and that closes every open connection:
+the listener cannot tell which connection was made with which key. Devices
+still welcome connect again. The host keeps one key that no device holds, so
+it listens on its port, which it keeps from one launch to the next, before
+any device is approved.
 
 ## Where the secrets are
 

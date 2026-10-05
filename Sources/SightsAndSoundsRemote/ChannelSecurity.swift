@@ -112,6 +112,8 @@ final class OneShot<Value: Sendable>: @unchecked Sendable {
         waiting?.resume(with: answer)
     }
 
+    var isResolved: Bool { lock.withLock { result != nil } }
+
     var value: Value {
         get async throws {
             try await withCheckedThrowingContinuation { continuation in
