@@ -51,10 +51,12 @@ public enum ChannelSecurity {
 
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
-        let parameters = NWParameters(tls: tls, tcp: tcp)
-        // A listener rebuilt with new keys comes back on the same port.
-        parameters.allowLocalEndpointReuse = true
-        return parameters
+        // The port is not shared. A listener rebuilt with new keys comes
+        // back on the same port only once the old one has let go of it:
+        // with the two listening side by side, even for a moment, a
+        // caller could be handed to the old one and complete a handshake
+        // with a key that had just been taken away.
+        return NWParameters(tls: tls, tcp: tcp)
     }
 
     /// The suite a connection was actually made on. Asking for one is not
