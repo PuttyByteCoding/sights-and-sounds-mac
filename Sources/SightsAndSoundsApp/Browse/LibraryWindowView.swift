@@ -208,11 +208,6 @@ struct BrowseView: View {
                 }
                 ToolbarItem {
                     Menu {
-                        if model.isRemote {
-                            // What is greyed out below still works on a
-                            // database, and this window has none.
-                            Text("Some of these are not available for a remote library yet")
-                        }
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
                         }

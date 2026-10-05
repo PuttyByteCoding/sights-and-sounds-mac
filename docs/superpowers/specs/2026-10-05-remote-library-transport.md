@@ -167,3 +167,51 @@ smaller, not cheap to encode and decode. Step 5 measures it on a synthetic
 library of fifty thousand items before anything is built on it; if it is too
 slow the listing gains pages, which changes `ListingRequest` and how the grid
 holds its items, and is its own piece of work.
+
+## Where it stands
+
+*Added once step 8 was done.*
+
+Every window of a library asks its `LibraryService`, so every one opens
+on a library another Mac holds: Browse, the player, Tag Manager, History,
+Review, Maintenance, Organise, Operations, Library Properties, Tag
+Analysis, Import, and the bookmark search. Background Tasks shows a lane
+for each remote library that has a window open, and its sweeps panel
+lists them. The search formats and the import extensions in Settings can
+be pointed at one.
+
+**The work is done where the files are.** A scan, an import, a sweep, a
+text scan, a repair, a move: each is a job in the host's queue, started
+from the other Mac and watched from it. The long ones — an import, a
+sweep of the library — are watched by asking how the job stands on a
+timer, not by holding a connection open for hours. A few short ones (a
+text scan or a metadata sweep of the one video on screen) are still
+waited for in one request.
+
+**What a remote library does not offer**, and is not meant to. Each of
+these acts on the host's own disk or its own app, and is done there:
+
+- adding a source folder (a path on the host; the host refuses it when
+  another Mac asks);
+- renaming the library;
+- showing a file or a backup in the Finder, dragging a file out, Quick
+  Look;
+- creating, opening, restoring and deleting libraries;
+- exporting or importing a library's configuration file;
+- "Pause all workers", which is each Mac's switch for its own queues. A
+  remote library's queue is paused from its own lane.
+
+**What a paired Mac cannot reach.** It names items and sources by id, and
+files by a path inside a source as the library spells it. A folder to
+join, a file to import or measure: anything that climbs out of a source
+or is absolute is refused by the host before it is looked at. Media is
+asked for by item, never by path.
+
+**The version.** `RemoteProtocol.version` is 2. It is raised whenever a
+request is added or changes shape, so that two Macs on different builds
+say "update the older one" when they first speak, not one window at a
+time.
+
+**Not looked at.** None of this has been seen on screen from here. The
+tests run both ends in one process over loopback. Two real Macs, a
+library of real size and a network between them are still to be tried.
