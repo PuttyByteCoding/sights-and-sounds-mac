@@ -102,16 +102,23 @@ public final class ServiceHost: @unchecked Sendable {
             Task { await connection.close() }
         }
         do {
-            guard let service = try await greet(connection, session: id) else { return }
+            guard let (caller, service) = try await greet(connection, session: id) else { return }
             while true {
                 let frame = try await connection.receive()
+                // Approved when it said hello is not approved now. A
+                // device revoked since is told so at its next request,
+                // on a connection it already had, and gets nothing more.
+                guard await directory.approves(caller.deviceID, caller.token) else {
+                    try await connection.send(Self.notApproved)
+                    return
+                }
                 switch frame.kind {
                 case RemoteProtocol.Kind.request:
                     try await connection.send(await answer(frame, service))
                 case RemoteProtocol.Kind.ping:
                     try await connection.send(Frame(kind: RemoteProtocol.Kind.pong))
                 case RemoteProtocol.Kind.subscribe:
-                    try await streamChanges(of: service, to: connection)
+                    try await streamChanges(of: service, to: connection, for: caller)
                     return
                 default:
                     return
@@ -123,24 +130,39 @@ public final class ServiceHost: @unchecked Sendable {
         }
     }
 
-    /// Hear the hello and answer it. Returns the service the connection
-    /// is for; nil when it was refused, or asked only which libraries
-    /// there are.
-    private func greet(_ connection: FrameConnection, session: UUID) async throws -> (any LibraryService)? {
+    private static let notApprovedRefusal = Refusal(
+        .notApproved, "This Mac has not been approved by the other one.")
+    private static var notApproved: Frame {
+        Frame(
+            kind: RemoteProtocol.Kind.refusal,
+            payload: (try? RemoteProtocol.encode(notApprovedRefusal)) ?? Data())
+    }
+
+    /// Hear the hello and answer it. Returns who is calling and the
+    /// service the connection is for; nil when it was refused, or asked
+    /// only which libraries there are.
+    private func greet(
+        _ connection: FrameConnection, session: UUID
+    ) async throws -> (Hello, any LibraryService)? {
         let first = try await connection.receive()
         guard first.kind == RemoteProtocol.Kind.hello else { return nil }
         let hello = try RemoteProtocol.decode(Hello.self, from: first.payload)
 
-        func refuse(_ refusal: Refusal) async throws -> (any LibraryService)? {
+        func refuse(_ refusal: Refusal) async throws -> (Hello, any LibraryService)? {
             try await connection.send(
                 Frame(kind: RemoteProtocol.Kind.refusal, payload: try RemoteProtocol.encode(refusal)))
             return nil
         }
 
+        // Known as this device's from here, before it is asked about:
+        // a device revoked while that question is being answered must
+        // find its connection among the ones to close.
+        lock.withLock { sessions[session] = Session(deviceID: hello.deviceID, connection: connection) }
+
         // Who it is, before anything about the host is said: a device not
         // approved learns nothing here, not even that the builds differ.
         guard await directory.approves(hello.deviceID, hello.token) else {
-            return try await refuse(Refusal(.notApproved, "This Mac has not been approved by the other one."))
+            return try await refuse(Self.notApprovedRefusal)
         }
         guard hello.protocolVersion == RemoteProtocol.version,
               hello.schema == LibraryDatabase.schemaIdentifier
@@ -156,16 +178,20 @@ public final class ServiceHost: @unchecked Sendable {
             }
             service = found
         }
-        lock.withLock { sessions[session] = Session(deviceID: hello.deviceID, connection: connection) }
         let welcome = Welcome(hostName: directory.hostName(), libraries: await directory.libraries())
         try await connection.send(
             Frame(kind: RemoteProtocol.Kind.welcome, payload: try RemoteProtocol.encode(welcome)))
-        return service
+        return service.map { (hello, $0) }
     }
 
     private func answer(_ frame: Frame, _ service: any LibraryService) async -> Frame {
         do {
             let request = try RemoteProtocol.decode(ServiceRequest.self, from: frame.payload)
+            // Checked here, where the request arrives, whatever the
+            // client's own code would or would not have sent.
+            if let refusal = request.refusalForAnotherMac {
+                return Frame(kind: RemoteProtocol.Kind.failure, payload: Data(refusal.utf8))
+            }
             return RemoteProtocol.answerFrame(try await request.answer(with: service))
         } catch {
             // The library's own words for what went wrong: the client
@@ -177,10 +203,19 @@ public final class ServiceHost: @unchecked Sendable {
     /// Send each change of the library until the client goes away. The
     /// client sends nothing more on this connection, so its next frame —
     /// or the connection closing — is the sign to stop.
-    private func streamChanges(of service: any LibraryService, to connection: FrameConnection) async throws {
+    private func streamChanges(
+        of service: any LibraryService, to connection: FrameConnection, for caller: Hello
+    ) async throws {
         let changes = service.changes()
+        let directory = directory
         let sending = Task {
             for await change in changes {
+                // Still welcome? A revoked device is not told what the
+                // library is doing; its stream is closed instead.
+                guard await directory.approves(caller.deviceID, caller.token) else {
+                    await connection.close()
+                    return
+                }
                 let domains = change.domains.map(\.rawValue).sorted()
                 guard let payload = try? RemoteProtocol.encode(domains) else { continue }
                 do {

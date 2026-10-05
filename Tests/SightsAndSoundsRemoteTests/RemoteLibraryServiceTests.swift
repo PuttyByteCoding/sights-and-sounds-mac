@@ -118,13 +118,6 @@ import Testing
         #expect(sources.first { $0.id == rig.source.id }?.name == "Shows")
         #expect(sources.first { $0.id == rig.away.id }?.enabled == false)
 
-        let folder = rig.root.deletingLastPathComponent()
-            .appendingPathComponent("sas-remote-rig-added-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let added = try await remote.addSource(named: "Added", rootPath: folder.path)
-        #expect(try rig.library.sources().contains(added))
-
         let saved = try await remote.saveFilter(named: "One", MediaFilter())
         var narrowed = MediaFilter()
         narrowed.searchText = "b"
@@ -236,10 +229,14 @@ import Testing
             try await rig.remote.renameSource(rig.source.id, to: "   ")
         }
         do {
-            _ = try await rig.remote.addSource(named: "Again", rootPath: rig.source.rootPath)
-            Issue.record("a source that is already one was added")
-        } catch {
-            #expect("\(error)".contains("already the source"), "\(error)")
+            try await rig.remote.renameTag(rig.beta.id, to: "alpha")
+            Issue.record("a tag was renamed to a name its category already has")
+        } catch let error as RemoteError {
+            guard case .failed(let words) = error else {
+                Issue.record("not the host's failure: \(error)")
+                return
+            }
+            #expect(!words.isEmpty)
         }
         #expect(rig.remote.state == .connected, "a failed request is not a failed connection")
         #expect(try await rig.remote.pendingDuplicateCount() == 1)
@@ -348,6 +345,142 @@ import Testing
             #expect(refusal.reason == .notApproved)
         }
         #expect(rig.host.sessionCounts.connections == 0)
+    }
+
+    /// Revoked, and nothing has closed its connections yet: the one it
+    /// has open is still not answered on. Approval is asked at every
+    /// request, not only when a connection is made.
+    @Test(.timeLimit(.minutes(1)))
+    func aDeviceRevokedIsRefusedOnAConnectionItAlreadyHas() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        #expect(try await rig.remote.pendingDuplicateCount() == 1)
+        let open = rig.host.sessionCounts.connections
+        #expect(open >= 1)
+
+        rig.door.isOpen = false
+
+        do {
+            _ = try await rig.remote.pendingDuplicateCount()
+            Issue.record("a revoked device was answered on a connection it already had")
+        } catch let error as RemoteError {
+            guard case .refused(let refusal) = error else {
+                Issue.record("not a refusal: \(error)")
+                return
+            }
+            #expect(refusal.reason == .notApproved)
+        }
+        guard case .refused = rig.remote.state else {
+            Issue.record("the state is \(rig.remote.state)")
+            return
+        }
+        // Nor a change to the library: a write is refused the same way.
+        await #expect(throws: RemoteError.self) {
+            _ = try await rig.remote.toggleTag(rig.beta.id, on: rig.b.id)
+        }
+        #expect(try rig.tagIDs(of: rig.b).isEmpty)
+    }
+
+    /// A revoked device stops being told what the library is doing.
+    @Test(.timeLimit(.minutes(1)))
+    func aRevokedDevicesChangeStreamIsClosed() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let heard = Heard()
+        let ended = Ended()
+        let listening = Task {
+            for await change in rig.remote.changes() { heard.add(change.domains) }
+            ended.set()
+        }
+        defer { listening.cancel() }
+        try await waitUntil("a change is heard") {
+            try? rig.library.assignTag(rig.beta.id, to: [rig.b.id])
+            try? rig.library.removeTag(rig.beta.id, from: [rig.b.id])
+            return !heard.all.isEmpty
+        }
+
+        rig.door.isOpen = false
+        // The next change is not sent; the stream is closed, the client
+        // tries again, is refused, and stops.
+        try await waitUntil("the stream ended") {
+            try? rig.library.assignTag(rig.beta.id, to: [rig.b.id])
+            try? rig.library.removeTag(rig.beta.id, from: [rig.b.id])
+            return ended.isSet
+        }
+        guard case .refused = rig.remote.state else {
+            Issue.record("the state is \(rig.remote.state)")
+            return
+        }
+    }
+
+    final class Ended: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func set() { lock.withLock { value = true } }
+        var isSet: Bool { lock.withLock { value } }
+    }
+
+    // MARK: - What another Mac may not ask
+
+    /// One request, sent to the host as a paired device's own code never
+    /// would: straight down the channel.
+    private func askDirectly(_ rig: RemoteRig, _ request: ServiceRequest) async throws -> Frame {
+        let connection = FrameConnection(host: "127.0.0.1", port: rig.endpoint.port, key: rig.endpoint.key)
+        try await connection.open(timeout: .seconds(5))
+        let hello = Hello(deviceID: rig.endpoint.deviceID, token: rig.endpoint.token, libraryID: rig.libraryID)
+        try await connection.send(Frame(kind: RemoteProtocol.Kind.hello, payload: try RemoteProtocol.encode(hello)))
+        #expect(try await connection.receive().kind == RemoteProtocol.Kind.welcome)
+        try await connection.send(
+            Frame(kind: RemoteProtocol.Kind.request, payload: try RemoteProtocol.encode(request)))
+        let reply = try await connection.receive()
+        await connection.close()
+        return reply
+    }
+
+    /// A source is a folder on the host. Named by another Mac it could be
+    /// any folder the host's user can read — the whole disk, as a
+    /// "source". It is refused by the host itself, whatever the client's
+    /// code would or would not have sent.
+    @Test(.timeLimit(.minutes(1)))
+    func aSourceCannotBeAddedFromAnotherMac() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let before = try rig.library.sources()
+
+        // The client does not even ask.
+        await #expect(throws: RemoteError.self) {
+            _ = try await rig.remote.addSource(named: "Everything", rootPath: "/")
+        }
+        // And a request made by hand is refused where it arrives.
+        let reply = try await askDirectly(rig, .addSource(name: "Everything", rootPath: "/"))
+        #expect(reply.kind == RemoteProtocol.Kind.failure)
+        #expect(String(decoding: reply.payload, as: UTF8.self).contains("added there"))
+        #expect(try rig.library.sources() == before)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aFolderOutsideASourceCannotBeNamedFromAnotherMac() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        for path in ["../elsewhere", "/etc", "set/../../up", "set//a"] {
+            let reply = try await askDirectly(
+                rig, .run(request: .joinFolder(sourceID: rig.source.id, folderPath: path), wait: .none))
+            #expect(reply.kind == RemoteProtocol.Kind.failure, "\(path) was accepted")
+        }
+        let queued = try await rig.library.writer.read { try JobRecord.fetchCount($0) }
+        #expect(queued == 0)
+        // A folder of the source, as the library spells it, is taken.
+        let reply = try await askDirectly(
+            rig, .run(request: .joinFolder(sourceID: rig.source.id, folderPath: "set"), wait: .none))
+        #expect(reply.kind == RemoteProtocol.Kind.answer)
+    }
+
+    @Test func onlyWhatReachesOutsideTheLibraryIsHeldBack() {
+        #expect(ServiceRequest.addSource(name: "x", rootPath: "/tmp").refusalForAnotherMac != nil)
+        #expect(ServiceRequest.sourceStates.refusalForAnotherMac == nil)
+        #expect(ServiceRequest.renameSource(id: UUID(), name: "x").refusalForAnotherMac == nil)
+        #expect(ServiceRequest.setStaging(folder: .toDelete, on: true, itemIDs: []).refusalForAnotherMac == nil)
+        #expect(ServiceRequest.run(request: .validation, wait: .none).refusalForAnotherMac == nil)
     }
 
     // MARK: - The connection

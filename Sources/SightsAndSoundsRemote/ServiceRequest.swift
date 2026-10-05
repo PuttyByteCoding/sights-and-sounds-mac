@@ -86,6 +86,28 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
 }
 
 extension ServiceRequest {
+    /// Why this request is not carried out for another Mac, or nil when
+    /// it is. A device that is paired can do with the library what the
+    /// app's windows do — with the exception of what would let it reach
+    /// outside the library, onto the rest of the host's disk.
+    public var refusalForAnotherMac: String? {
+        switch self {
+        case .addSource:
+            // A source is a folder on the host. Named from elsewhere it
+            // could be any folder the host's user can read.
+            return "A source is a folder on the Mac that holds the library, and is added there."
+        case .run(.joinFolder(_, let folderPath), _):
+            // Inside a source, as the library spells it: nothing that
+            // climbs out, and nothing absolute.
+            guard MediaPath.normalize(folderPath) == folderPath, !folderPath.hasPrefix("/") else {
+                return "That is not a folder of one of the library's sources."
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
     /// Carry the request out on a library, and encode what came of it.
     /// An operation that returns nothing answers with nothing.
     func answer(with service: any LibraryService) async throws -> Data {

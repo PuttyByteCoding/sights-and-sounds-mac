@@ -208,8 +208,12 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func setSourceEnabled(_ id: UUID, _ enabled: Bool) async throws {
         try await tell(.setSourceEnabled(id: id, enabled: enabled))
     }
+    /// Not offered: a source is a folder on the host's disk. Refused
+    /// here without being asked, and the host refuses it too.
     public func addSource(named name: String, rootPath: String) async throws -> Source {
-        try await ask(.addSource(name: name, rootPath: rootPath))
+        throw RemoteError.failed(
+            ServiceRequest.addSource(name: name, rootPath: rootPath).refusalForAnotherMac
+                ?? "A source is added on the Mac that holds the library.")
     }
     @discardableResult
     public func saveFilter(named name: String, _ filter: MediaFilter) async throws -> SavedFilter {

@@ -102,6 +102,10 @@ actor RemoteClient {
                 checkIn(connection)
                 throw RemoteError.failed(String(decoding: reply.payload, as: UTF8.self))
             }
+            if reply.kind == RemoteProtocol.Kind.refusal {
+                // Welcome when the connection was made, not any more.
+                throw RemoteError.refused(try RemoteProtocol.decode(Refusal.self, from: reply.payload))
+            }
             let json = try RemoteProtocol.answerJSON(reply)
             checkIn(connection)
             return json
