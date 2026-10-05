@@ -133,13 +133,14 @@ struct WatchedView: View {
                 item.isFavorite ? "Remove from Favourites" : "Add to Favourites",
                 systemImage: item.isFavorite ? "star.slash" : "star"
             ) {
-                model.attempt("change the favourite") {
-                    _ = try model.library.toggleFlag(.favorite, itemID: item.id)
+                Task {
+                    await model.setFavorite(item, !item.isFavorite)
+                    reload()
                 }
-                reload()
             }
+            // A file on another Mac is not in this Mac's Finder.
             Button("Reveal in Finder") { reveal(item) }
-                .disabled(!model.isOnline(item))
+                .disabled(!model.isOnline(item) || model.isRemote)
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard.opacity(0.5)).frame(height: 1)
@@ -181,12 +182,16 @@ struct WatchedView: View {
     }
 
     private func reload() {
-        do {
-            rows = try model.library.recentlyWatched(limit: Self.displayLimit)
-            total = try model.library.watchedItemCount()
-            loadError = nil
-        } catch {
-            loadError = "\(error)"
+        let service = model.service
+        Task {
+            do {
+                let history = try await service.watchHistory(limit: Self.displayLimit)
+                rows = history.items
+                total = history.total
+                loadError = nil
+            } catch {
+                loadError = "\(error)"
+            }
         }
     }
 

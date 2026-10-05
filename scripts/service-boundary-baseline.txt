@@ -7,16 +7,10 @@
 2	Sources/SightsAndSoundsApp/Browse/OperationsView.swift
 3	Sources/SightsAndSoundsApp/Browse/OrganiseMove.swift
 3	Sources/SightsAndSoundsApp/Browse/OrganiseView.swift
-2	Sources/SightsAndSoundsApp/Browse/RemoveFromLibraryPrompt.swift
 2	Sources/SightsAndSoundsApp/Browse/RepairWatch.swift
 17	Sources/SightsAndSoundsApp/Browse/ReviewView.swift
-1	Sources/SightsAndSoundsApp/Browse/SignalSummaryView.swift
-3	Sources/SightsAndSoundsApp/Browse/WatchedView.swift
 12	Sources/SightsAndSoundsApp/LibraryPropertiesView.swift
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
-2	Sources/SightsAndSoundsApp/Player/OcrLinesPanel.swift
-2	Sources/SightsAndSoundsApp/Search/BookmarkSearchView.swift
-2	Sources/SightsAndSoundsApp/Search/SearchCommands.swift
 6	Sources/SightsAndSoundsApp/Search/SearchSettingsPane.swift
 6	Sources/SightsAndSoundsApp/SettingsView.swift
 14	Sources/SightsAndSoundsApp/SightsAndSoundsApp.swift

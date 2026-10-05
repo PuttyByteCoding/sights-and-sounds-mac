@@ -88,16 +88,21 @@ struct SearchMenuCommands: View {
         case problem(String)
     }
 
-    private func buildString() -> Built {
-        guard let subject, let library = try? model.library(for: subject.libraryID) else {
-            return .problem("Nothing to search for.")
-        }
+    private func buildString() async -> Built {
+        guard let subject else { return .problem("Nothing to search for.") }
+        // The focused window's own service when the subject is its
+        // library's: that library may be one another Mac holds, which
+        // the app has no database for.
+        let service: (any LibraryService)? = browse.flatMap { $0.libraryID == subject.libraryID ? $0.service : nil }
+            ?? (try? model.library(for: subject.libraryID)).map { LocalLibraryService(library: $0) }
+        guard let service else { return .problem("Nothing to search for.") }
         do {
-            let recipe = try library.searchRecipe()
+            let context = try await service.searchContext(itemID: subject.itemID)
+            let recipe = context.formats.defaultFormat ?? .empty
             guard !recipe.parts.isEmpty else {
                 return .problem("The default search format has no parts yet — set one up in Settings › Search String.")
             }
-            guard let item = try library.searchSubject(for: subject.itemID) else {
+            guard let item = context.subject else {
                 return .problem("The item is gone.")
             }
             let string = SearchStringBuilder.string(recipe: recipe, subject: item)
@@ -108,27 +113,37 @@ struct SearchMenuCommands: View {
     }
 
     private func copyString() {
-        switch buildString() {
-        case .string(let string):
-            Clipboard.copy(string)
-            browse?.showSearchNotice("Copied: \(string)")
-        case .problem(let reason):
-            browse?.showSearchNotice(reason)
+        let browse = browse
+        Task {
+            switch await buildString() {
+            case .string(let string):
+                Clipboard.copy(string)
+                browse?.showSearchNotice("Copied: \(string)")
+            case .problem(let reason):
+                browse?.showSearchNotice(reason)
+            }
         }
     }
 
     private func searchWeb() {
-        switch buildString() {
-        case .string(let string):
-            guard let url = SearchWebURL.resolve(template: AppSettingsStore.shared.current.webSearchURL, query: string)
-            else {
-                browse?.showSearchNotice("The web search URL in Settings › Search String is not a URL.")
-                return
+        let browse = browse
+        Task {
+            switch await buildString() {
+            case .string(let string):
+                guard let url = SearchWebURL.resolve(
+                    template: AppSettingsStore.shared.current.webSearchURL, query: string)
+                else {
+                    browse?.showSearchNotice("The web search URL in Settings › Search String is not a URL.")
+                    return
+                }
+                let inFirefox = FirefoxLauncher.open(url)
+                browse?.showSearchNotice(
+                    inFirefox
+                        ? "Searching: \(string)"
+                        : "Firefox is not installed — opened in the default browser: \(string)")
+            case .problem(let reason):
+                browse?.showSearchNotice(reason)
             }
-            let inFirefox = FirefoxLauncher.open(url)
-            browse?.showSearchNotice(inFirefox ? "Searching: \(string)" : "Firefox is not installed — opened in the default browser: \(string)")
-        case .problem(let reason):
-            browse?.showSearchNotice(reason)
         }
     }
 

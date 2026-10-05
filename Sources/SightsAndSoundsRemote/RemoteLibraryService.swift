@@ -415,4 +415,15 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.createField(field: field))
     }
     public func deleteField(_ fieldID: UUID) async throws { try await tell(.deleteField(fieldID: fieldID)) }
+
+    // MARK: SupportingReading
+
+    public func watchHistory(limit: Int) async throws -> WatchHistory { try await ask(.watchHistory(limit: limit)) }
+    public func signalSummary(itemID: UUID) async throws -> SignalSummary? {
+        try await ask(.signalSummary(itemID: itemID))
+    }
+    public func unsavedSegments(itemIDs: [UUID]) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await ask(.unsavedSegments(itemIDs: itemIDs))
+    }
+    public func runNextAndWait(jobID: UUID) async throws { try await tell(.runNextAndWait(jobID: jobID)) }
 }

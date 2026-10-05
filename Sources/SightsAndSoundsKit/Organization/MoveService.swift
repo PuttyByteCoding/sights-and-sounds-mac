@@ -330,7 +330,7 @@ extension LibraryDatabase {
     }
 
     /// A flagged show and the segments that would be lost with its file.
-    public struct UnsavedSegments: Sendable, Equatable {
+    public struct UnsavedSegments: Codable, Sendable, Equatable {
         public let parentID: UUID
         public let parentFileName: String
         public let segmentIDs: [UUID]

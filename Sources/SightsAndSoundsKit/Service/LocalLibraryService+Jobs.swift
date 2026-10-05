@@ -37,6 +37,12 @@ extension LocalLibraryService {
 
     /// Through each job's own `enqueue`, so the payload is the one the
     /// job reads.
+    public func runNextAndWait(jobID: UUID) async throws {
+        guard let runner else { throw ServiceError.noJobRunner }
+        try await runner.runNext(jobID)
+        try await runner.waitUntilSettled([jobID])
+    }
+
     private func enqueue(_ request: JobRequest, on runner: JobRunner) async throws -> JobRecord {
         switch request {
         case .recogniseText(let itemID):
@@ -61,6 +67,8 @@ extension LocalLibraryService {
             try await runner.enqueue(MetadataSweepJob.self)
         case .examine(let itemIDs):
             try await MediaSignalJob.enqueue(on: runner, itemIDs: itemIDs)
+        case .removeFromLibrary(let itemIDs, let writeTagsFirst):
+            try await RemoveFromLibraryJob.enqueue(on: runner, itemIDs: itemIDs, writeTagsFirst: writeTagsFirst)
         case .validation:
             try await runner.enqueue(ValidationJob.self)
         }

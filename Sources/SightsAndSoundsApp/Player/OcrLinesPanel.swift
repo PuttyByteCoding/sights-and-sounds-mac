@@ -111,37 +111,34 @@ struct OcrLinesPanel: View {
         let service = model.service
         let pending = try? await service.pendingTextScan(itemID: itemID)
         // Checked after the read: two reloads in flight must not both wait.
-        if let jobID = pending ?? nil, !queuedScans.contains(itemID),
-           let runner = try? app.runner(for: model.libraryID) {
+        if let jobID = pending ?? nil, !queuedScans.contains(itemID) {
             queuedScans.insert(itemID)
-            wait(for: jobID, of: itemID, on: runner)
+            wait(for: jobID, of: itemID)
         }
         lines = (try? await service.textLines(itemID: itemID)) ?? []
     }
 
     private func enqueueScan() {
-        guard let itemID = model.item?.id,
-              let runner = try? app.runner(for: model.libraryID)
-        else { return }
+        guard let itemID = model.item?.id else { return }
         queuedScans.insert(itemID)
+        let service = model.service
         Task {
-            // Its own scan, next after the job running: waiting for the
-            // whole queue, the panel said "scan queued" until every sweep
-            // queued before or after it had ended.
-            guard let job = try? await OcrJob.enqueue(on: runner, itemID: itemID) else {
-                queuedScans.remove(itemID)
-                return
-            }
-            wait(for: job.id, of: itemID, on: runner)
+            // Its own scan, next after the job running, and waited for:
+            // waiting for the whole queue, the panel said "scan queued"
+            // until every sweep queued before or after it had ended.
+            _ = try? await service.run(.recogniseText(itemID: itemID), wait: .settled)
+            queuedScans.remove(itemID)
+            // Its lines are only on screen if its item is.
+            if model.item?.id == itemID { await reload() }
         }
     }
 
     /// Moves the scan ahead too — one found in the queue may have been
     /// retried from Background Tasks, at the back — then waits for it.
-    private func wait(for jobID: UUID, of itemID: UUID, on runner: JobRunner) {
+    private func wait(for jobID: UUID, of itemID: UUID) {
+        let service = model.service
         Task {
-            _ = try? await runner.runNext(jobID)
-            try? await runner.waitUntilSettled([jobID])
+            try? await service.runNextAndWait(jobID: jobID)
             queuedScans.remove(itemID)
             // Its lines are only on screen if its item is.
             if model.item?.id == itemID { await reload() }

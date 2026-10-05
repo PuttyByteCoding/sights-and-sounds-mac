@@ -295,9 +295,7 @@ private struct ItemCell: View {
                     request: request,
                     onRemove: { writingTagsFirst in
                         removal = nil
-                        if let runner = try? app.runner(for: model.libraryID) {
-                            model.removeFromLibrary(request, writingTagsFirst: writingTagsFirst, runner: runner)
-                        }
+                        model.removeFromLibrary(request, writingTagsFirst: writingTagsFirst)
                     },
                     onCancel: { removal = nil })
             }
@@ -380,9 +378,8 @@ private struct ItemCell: View {
         }
         Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") { Task { await model.markSelectionReviewed() } }
         Button("Remove \(count) from Library…", systemImage: "minus.circle") {
-            removal = model.removalRequest(for: selected)
+            Task { removal = await model.removalRequest(for: selected) }
         }
-        .unavailableRemotely(model.isRemote)
         Divider()
         Button("Write Tags to \(count) Files", systemImage: "square.and.pencil") {
             model.writeTags(itemIDs: selected.map(\.id), scope: "\(count) selected items")
@@ -440,9 +437,8 @@ private struct ItemCell: View {
         // Out of the library, file left alone — deletion staging is for
         // files that should go too.
         Button("Remove from Library…", systemImage: "minus.circle") {
-            removal = model.removalRequest(for: [item])
+            Task { removal = await model.removalRequest(for: [item]) }
         }
-        .unavailableRemotely(model.isRemote)
         if item.parentMediaItemID == nil {
             Divider()
             Button("Optimize (Faststart)", systemImage: "bolt") {

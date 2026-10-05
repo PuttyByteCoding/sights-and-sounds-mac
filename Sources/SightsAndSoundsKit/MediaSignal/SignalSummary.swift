@@ -6,8 +6,8 @@ import Foundation
 /// The wording is the point. An origin is "probably" or "possibly", with
 /// its confidence beside it, because it is an opinion; only a line marked
 /// `isFact` may be stated flatly.
-public struct SignalSummary: Equatable, Sendable {
-    public struct Line: Equatable, Sendable, Identifiable {
+public struct SignalSummary: Codable, Equatable, Sendable {
+    public struct Line: Codable, Equatable, Sendable, Identifiable {
         public var category: String
         public var confidence: Double
         /// True for the one conclusion read from the file's own metadata.

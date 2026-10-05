@@ -593,6 +593,38 @@ import Testing
         #expect(remote.state == .connected)
     }
 
+    /// History, a video's unsaved segments and an item's summary, from
+    /// another Mac; and taking an item out of the library there.
+    @Test(.timeLimit(.minutes(1)))
+    func theSmallerReadsAndRemovalReachTheHost() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.watchHistory(limit: 10) == local.watchHistory(limit: 10))
+        #expect(try await remote.watchHistory(limit: 10).items.map(\.id) == [rig.a.id])
+        #expect(try await remote.watchHistory(limit: 10).total == 1)
+        #expect(try await remote.signalSummary(itemID: rig.a.id) == nil)
+        #expect(try await remote.unsavedSegments(itemIDs: [rig.a.id, rig.b.id])
+            == local.unsavedSegments(itemIDs: [rig.a.id, rig.b.id]))
+        #expect(try await remote.unsavedSegments(itemIDs: [rig.a.id]).first?.segmentIDs == [rig.segment.id])
+
+        // Queued on the host, where the files are. The rig's runner is
+        // paused, so the job is seen and does not run.
+        let job = try #require(try await remote.run(
+            .removeFromLibrary(itemIDs: [rig.b.id], writeTagsFirst: true), wait: .none))
+        #expect(job.kind == RemoveFromLibraryJob.kind)
+        let queued = try await rig.library.writer.read { try JobRecord.fetchOne($0, key: job.id) }
+        #expect(queued?.state == .queued)
+    }
+
+    @Test func theSmallerReadsAreAskedTwiceAndAHurriedJobIsNot() {
+        #expect(ServiceRequest.watchHistory(limit: 5).onlyReads)
+        #expect(ServiceRequest.signalSummary(itemID: UUID()).onlyReads)
+        #expect(ServiceRequest.unsavedSegments(itemIDs: []).onlyReads)
+        #expect(!ServiceRequest.runNextAndWait(jobID: UUID()).onlyReads)
+    }
+
     @Test func onlyTheVocabularysReadsAreAskedTwice() {
         for read in [
             ServiceRequest.categories, .categoryTable(categoryID: UUID()), .vocabularyIndex,

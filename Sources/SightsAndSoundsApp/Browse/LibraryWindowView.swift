@@ -207,7 +207,6 @@ struct BrowseView: View {
                         openAux(.watched)
                     }
                     .help("What you have played, and where you stopped")
-                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Menu {
