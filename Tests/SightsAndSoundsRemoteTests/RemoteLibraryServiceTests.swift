@@ -629,8 +629,10 @@ import Testing
         let lists = try await remote.reviewLists()
         let pair = try #require(lists.candidates.first)
         #expect(Set(lists.candidateItems.keys) == [rig.a.id, rig.b.id])
-        #expect(try await remote.mergeableTags(keeperID: rig.b.id, loserID: rig.a.id).map(\.id).sorted { $0.uuidString < $1.uuidString }
-            == [rig.alpha.id, rig.y1995.id].sorted { $0.uuidString < $1.uuidString })
+        // In two steps: as one expression, CI's compiler gave up on it.
+        let carried = try await remote.mergeableTags(keeperID: rig.b.id, loserID: rig.a.id)
+        let carriedIDs: Set<UUID> = Set(carried.map(\.id))
+        #expect(carriedIDs == [rig.alpha.id, rig.y1995.id])
         #expect(try await remote.playbackIssueEvidence(itemID: rig.a.id) == nil)
         #expect(try await remote.unsavedSegmentsOfMarked(itemIDs: nil).isEmpty)
         // The rig's runner is paused, and the answer says so.
