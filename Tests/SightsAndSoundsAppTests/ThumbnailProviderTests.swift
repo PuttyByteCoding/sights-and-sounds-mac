@@ -80,11 +80,63 @@ import Testing
         #expect(await gauge.peak <= 2)
     }
 
+    /// Holds whoever waits on it until it is opened.
+    private final class Latch: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isOpen = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if isOpen {
+                    lock.unlock()
+                    continuation.resume()
+                } else {
+                    waiting.append(continuation)
+                    lock.unlock()
+                }
+            }
+        }
+
+        func open() {
+            let held = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+                isOpen = true
+                let held = waiting
+                waiting = []
+                return held
+            }
+            for continuation in held { continuation.resume() }
+        }
+    }
+
+    private func waitUntil(_ what: String, _ condition: () async -> Bool) async throws {
+        for _ in 0..<1_000 {
+            if await condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("\(what): never happened")
+    }
+
     /// A fast scroll asks for hundreds of tiles and keeps a dozen. The
     /// ones that scrolled away before their turn came are not rendered.
-    @Test func tilesThatScrolledAwayBeforeTheirTurnAreNotRendered() async throws {
+    ///
+    /// Each step waits for what it needs to be so, rather than for a
+    /// while: the first render holds the only slot until the others have
+    /// queued behind it and been given up on. It used to sleep thirty
+    /// milliseconds at each step and hope, which a slow machine did not
+    /// always honour.
+    @Test(.timeLimit(.minutes(1)))
+    func tilesThatScrolledAwayBeforeTheirTurnAreNotRendered() async throws {
         let gauge = Gauge()
-        let provider = slowProvider(gauge, maxConcurrent: 1)
+        let rendering = Latch()
+        defer { rendering.open() }
+        let provider = ThumbnailProvider(maxConcurrent: 1) { _, _ in
+            await gauge.enter()
+            await rendering.wait()
+            await gauge.leave()
+            return Data("jpeg".utf8)
+        }
         let libraryID = UUID()
         defer {
             try? FileManager.default.removeItem(
@@ -97,11 +149,13 @@ import Testing
         }
 
         let kept = Task { await request() }
-        try await Task.sleep(for: .milliseconds(30))  // the first is rendering
+        try await waitUntil("the first is rendering") { await gauge.started == 1 }
         let scrolledAway = (0..<5).map { _ in Task { await request() } }
-        try await Task.sleep(for: .milliseconds(30))  // they are queued behind it
+        try await waitUntil("the others are queued behind it") { await provider.queuedForATurn == 5 }
         for task in scrolledAway { task.cancel() }
+        try await waitUntil("the others have been given up on") { await provider.thumbnailsWaitedFor == 1 }
 
+        rendering.open()
         await kept.value
         for task in scrolledAway { await task.value }
 
