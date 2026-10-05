@@ -371,6 +371,13 @@ import Testing
         #expect(second !== first)
         #expect(try await second.sourceStates().count == 2)
 
+        // A window with no library window's model to ask — Library
+        // Properties — is given the same connection by the app.
+        #expect(try app.service(for: ref.id) as AnyObject === second)
+        #expect(try await app.service(for: ref.id).libraryProperties().info?.name == "Concerts")
+        // And for an id that is nobody's, there is no service to give.
+        #expect(throws: (any Error).self) { _ = try app.service(for: UUID()) }
+
         remote.forget(saved.id)
         await #expect(throws: (any Error).self) { _ = try await second.sourceStates() }
         #expect(remote.ref(for: ref.id) == nil)

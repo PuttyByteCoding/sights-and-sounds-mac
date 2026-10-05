@@ -68,33 +68,14 @@ struct OrganiseView: View {
         .background {
             if scope == nil { ListingSizeWatch(model: model) { preview(settle: .milliseconds(300)) } }
         }
-        // Whether a reorganize of this library is waiting, from any window:
-        // Move waits for it. Observed, not polled, and it stops with the
-        // window. Seeing one starts the queue unless tasks are paused.
+        // Whether a reorganize of this library is waiting, from any
+        // window, and whether the queue is paused: Move waits for it.
+        // Asked of the library every two seconds while the window is up,
+        // and once straight after Move is pressed. Asking starts a queue
+        // that has moves waiting and is not running, unless it is paused.
         .task {
-            guard let runner = try? app.runner(for: model.libraryID) else { return }
-            do {
-                for try await count in OrganiseMove.pending(in: model.library, runner: runner) {
-                    movesPending = count > 0
-                    // The queue has confirmed the moves: Move can stop
-                    // saying it is queueing them.
-                    if count > 0 { applying = false }
-                }
-            } catch {
-                movesPending = false
-            }
-        }
-        // Pausing writes nothing to the queue, so the observation above
-        // cannot see it. Only while moves wait, the runner's own flag is
-        // read every two seconds — the per-library pause lives there, not
-        // in the app-wide one.
-        .task(id: movesPending) {
-            guard movesPending, let runner = try? app.runner(for: model.libraryID) else {
-                queuePaused = false
-                return
-            }
             while !Task.isCancelled {
-                queuePaused = await runner.isPaused
+                await readMoveQueue()
                 try? await Task.sleep(for: .seconds(2))
             }
         }
@@ -496,12 +477,24 @@ struct OrganiseView: View {
     private func preview(settle: Duration = .zero) {
         planner.preview(
             template: template, ids: scopeIDs,
-            categoryNames: model.vocabulary.map(\.category.name), library: model.library,
+            categoryNames: model.vocabulary.map(\.category.name), service: model.service,
             settle: settle)
     }
 
+    /// How the queue of moves stands, as the library says it.
+    private func readMoveQueue() async {
+        guard let queue = try? await model.service.jobQueue(kind: ReorganizeJob.kind, startingQueue: true) else {
+            return
+        }
+        movesPending = queue.pendingCount > 0
+        queuePaused = movesPending && queue.isPaused
+        // The queue has confirmed the moves: Move can stop saying it is
+        // queueing them.
+        if movesPending { applying = false }
+    }
+
     private func apply() {
-        guard !applying, let runner = try? app.runner(for: model.libraryID) else { return }
+        guard !applying else { return }
         applying = true
         // The plan on screen: its items and the template it was made
         // with, not what the field says by now.
@@ -513,8 +506,9 @@ struct OrganiseView: View {
             do {
                 // Returns once queued: history and the plan refresh when
                 // the moves land (the window follows the library's items).
-                try await OrganiseMove.queue(on: runner, template: template, ids: ids)
+                try await model.service.run(.reorganize(template: template, itemIDs: ids), wait: .none)
                 status = "\(count) moves queued — each one logged and revertible"
+                await readMoveQueue()
                 // Move stays unavailable until the queue confirms the moves
                 // (then "Moves queued…" takes over), so a second click
                 // cannot land in between. Two seconds at most: a run that
@@ -530,15 +524,12 @@ struct OrganiseView: View {
 
     /// A file move, so off the main actor like putting back a whole run.
     private func revert(_ log: FileMoveLog) {
-        let library = model.library, id = log.id
+        let service = model.service, id = log.id
         Task {
-            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
-                do {
-                    try library.revertMove(id)
-                    return nil
-                } catch { return "\(error)" }
-            }.value
-            errorText = failure
+            do {
+                try await service.revertMove(logID: id)
+                errorText = nil
+            } catch { errorText = "\(error)" }
             reloadHistory()
         }
     }
@@ -546,17 +537,20 @@ struct OrganiseView: View {
     /// Off the main actor: putting a run back is a file move per entry,
     /// and a run can be thousands.
     private func revert(_ session: LibraryDatabase.MoveSession) {
-        let library = model.library
+        let service = model.service
         status = "Putting \(session.revertibleCount) moves back…"
         Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                Result { try library.revertSession(session.id) }
-            }.value
+            let result: Result<MoveRevertOutcome, any Error>
+            do {
+                result = .success(try await service.revertMoveSession(sessionID: session.id))
+            } catch {
+                result = .failure(error)
+            }
             finishRevert(result)
         }
     }
 
-    private func finishRevert(_ result: Result<(reverted: Int, failures: [String]), any Error>) {
+    private func finishRevert(_ result: Result<MoveRevertOutcome, any Error>) {
         do {
             let outcome = try result.get()
             errorText = outcome.failures.isEmpty
@@ -567,7 +561,9 @@ struct OrganiseView: View {
     }
 
     private func reloadHistory() {
-        sessions = (try? model.library.moveSessions()) ?? []
+        let service = model.service
+        // A history that cannot be read leaves the one on screen.
+        Task { if let read = try? await service.moveSessions() { sessions = read } }
     }
 }
 

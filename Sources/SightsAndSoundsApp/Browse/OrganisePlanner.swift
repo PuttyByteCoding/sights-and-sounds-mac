@@ -35,14 +35,14 @@ final class OrganisePlanner {
     private var latestTemplate: String?
 
     /// How a plan is made; tests hold it at a gate.
-    var makePlan: @Sendable (LibraryDatabase, String, [UUID]) async throws -> [ReorganizePlanEntry] = {
-        try $0.previewReorganize(template: $1, itemIDs: $2)
+    var makePlan: @Sendable (any LibraryService, String, [UUID]) async throws -> [ReorganizePlanEntry] = {
+        try await $0.organisePlan(template: $1, itemIDs: $2)
     }
 
     private struct Request {
         let template: String
         let ids: [UUID]
-        let library: LibraryDatabase
+        let service: any LibraryService
     }
 
     /// The newest request not yet walked.
@@ -61,7 +61,7 @@ final class OrganisePlanner {
     /// requests (listing refreshes during an import, typing) makes one —
     /// but never waits more than `longestSettle` in all.
     func preview(
-        template: String, ids: [UUID], categoryNames: [String], library: LibraryDatabase,
+        template: String, ids: [UUID], categoryNames: [String], service: any LibraryService,
         settle: Duration = .zero
     ) {
         validationErrors = OrganizeTemplate.validate(template, categoryNames: categoryNames).map(\.message)
@@ -77,7 +77,7 @@ final class OrganisePlanner {
             return
         }
         latestTemplate = template
-        pending = Request(template: template, ids: ids, library: library)
+        pending = Request(template: template, ids: ids, service: service)
 
         let now = ContinuousClock.now
         let started = burstStarted ?? now
@@ -107,7 +107,7 @@ final class OrganisePlanner {
         let make = makePlan
         Task {
             let made = try? await Task.detached(priority: .userInitiated) {
-                try await make(request.library, request.template, request.ids)
+                try await make(request.service, request.template, request.ids)
             }.value
             walking = false
             // A plan for the template in the field lands even if newer

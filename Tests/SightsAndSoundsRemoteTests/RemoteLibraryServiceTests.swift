@@ -618,6 +618,164 @@ import Testing
         #expect(queued?.state == .queued)
     }
 
+    /// The Review window, from another Mac.
+    @Test(.timeLimit(.minutes(1)))
+    func reviewIsDoneInTheHostsLibrary() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.reviewLists() == local.reviewLists())
+        let lists = try await remote.reviewLists()
+        let pair = try #require(lists.candidates.first)
+        #expect(Set(lists.candidateItems.keys) == [rig.a.id, rig.b.id])
+        // In two steps: as one expression, CI's compiler gave up on it.
+        let carried = try await remote.mergeableTags(keeperID: rig.b.id, loserID: rig.a.id)
+        let carriedIDs: Set<UUID> = Set(carried.map(\.id))
+        #expect(carriedIDs == [rig.alpha.id, rig.y1995.id])
+        #expect(try await remote.playbackIssueEvidence(itemID: rig.a.id) == nil)
+        #expect(try await remote.unsavedSegmentsOfMarked(itemIDs: nil).isEmpty)
+        // The rig's runner is paused, and the answer says so.
+        #expect(try await remote.repairQueue(startingQueue: true) == RepairQueue(pending: [], isPaused: true))
+
+        try await remote.keepBothDuplicates(candidateID: pair.id)
+        #expect(try await local.reviewLists().candidates.isEmpty)
+
+        // A purge naming nothing that is marked deletes nothing: the
+        // request arrives, and the files are where they were.
+        let outcome = try await remote.purgeMarked(itemIDs: [rig.a.id, UUID()])
+        #expect(outcome.rowsDeleted == 0 && outcome.filesDeleted == 0 && outcome.filesTrashed == 0)
+        #expect(outcome.fileFailures.isEmpty && outcome.rowFailures.isEmpty && outcome.keptForSegments.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("set/a.mp4").path))
+        #expect(try rig.row(rig.a) != nil)
+
+        // A repair is queued on the host with the recipe sent from here.
+        let recipe = RepairRecipe(
+            name: "remux", matchPattern: nil, tool: "ffmpeg", argumentTemplate: ["{input}", "{output}"],
+            estimate: "seconds")
+        let job = try await remote.queueRepair(itemID: rig.a.id, recipe: recipe)
+        #expect(job.kind == RepairJob.kind)
+        #expect(try await remote.repairQueue(startingQueue: false).pending == [rig.a.id])
+    }
+
+    /// The Maintenance window, from another Mac.
+    @Test(.timeLimit(.minutes(1)))
+    func maintenanceIsReadFromTheHostsLibrary() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.maintenanceSnapshot(includingBackups: false)
+            == local.maintenanceSnapshot(includingBackups: false))
+        #expect(try await remote.maintenanceSnapshot(includingBackups: false).backups == nil)
+        // An item on a drive that is not plugged in: previewed as
+        // skipped, with no file read.
+        let preview = try await remote.previewWriteback(itemIDs: [rig.unmounted.id])
+        #expect(preview == (try await local.previewWriteback(itemIDs: [rig.unmounted.id])))
+        #expect(preview.files.map(\.itemID) == [rig.unmounted.id])
+        #expect(preview.files.first?.skipReason != nil)
+        #expect(remote.state == .connected)
+    }
+
+    /// Organise and Operations, from another Mac: the plan is the host's,
+    /// the moves are queued on the host, and a join is held to a folder
+    /// inside its source like every other path from another Mac.
+    @Test(.timeLimit(.minutes(1)))
+    func organisingIsPlannedAndQueuedOnTheHost() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let plan = try await remote.organisePlan(template: "%Band", itemIDs: [rig.a.id, rig.b.id])
+        #expect(plan == (try await local.organisePlan(template: "%Band", itemIDs: [rig.a.id, rig.b.id])))
+        #expect(plan.first?.toFolder == "Alpha")
+        #expect(try await remote.moveSessions().isEmpty)
+        // The rig's runner is paused: the move is queued and seen, and
+        // no file is touched.
+        let job = try #require(try await remote.run(
+            .reorganize(template: "%Band", itemIDs: [rig.a.id]), wait: .none))
+        #expect(job.kind == ReorganizeJob.kind)
+        #expect(try await remote.jobQueue(kind: ReorganizeJob.kind, startingQueue: true)
+            == JobQueueState(pendingCount: 1, isPaused: true))
+        #expect(FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("set/a.mp4").path))
+        // Putting back a move that was never made is the host's refusal.
+        await #expect(throws: RemoteError.self) { try await remote.revertMove(logID: UUID()) }
+        #expect(try await remote.revertMoveSession(sessionID: UUID()) == MoveRevertOutcome(reverted: 0, failures: []))
+
+        // A join names a folder, and from another Mac only one inside
+        // its source.
+        #expect(ServiceRequest.run(
+            request: .joinItems(sourceID: rig.source.id, folderPath: "../elsewhere", itemIDs: []), wait: .none)
+            .refusalForAnotherMac != nil)
+        #expect(ServiceRequest.run(
+            request: .joinItems(sourceID: rig.source.id, folderPath: "set", itemIDs: [rig.a.id]), wait: .none)
+            .refusalForAnotherMac == nil)
+        await #expect(throws: RemoteError.self) {
+            _ = try await remote.run(
+                .joinItems(sourceID: rig.source.id, folderPath: "/etc", itemIDs: [rig.a.id]), wait: .none)
+        }
+    }
+
+    /// Get Info, from another Mac: the host's own counts, and the two
+    /// settings that are the library's to keep.
+    @Test(.timeLimit(.minutes(1)))
+    func aLibrarysPropertiesAreTheHostsCount() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let properties = try await remote.libraryProperties()
+        let direct = try await local.libraryProperties()
+        #expect(properties == direct)
+        #expect(properties.info?.name == "Rig")
+        #expect(properties.sources.map(\.name) == ["Away", "Here"])
+
+        try await remote.setSeparatorCharacters("._")
+        try await remote.setExtensionOverrides(video: ["mkv"], audio: nil)
+        let info = try #require(try rig.library.info())
+        #expect(info.separatorCharacters == "._")
+        #expect(info.videoExtensionsOverride == ["mkv"] && info.audioExtensionsOverride == nil)
+        #expect(ServiceRequest.libraryProperties.onlyReads)
+        #expect(!ServiceRequest.renameLibrary(name: "x").onlyReads)
+        #expect(!ServiceRequest.setSeparatorCharacters(characters: "x").onlyReads)
+        #expect(!ServiceRequest.setExtensionOverrides(video: nil, audio: nil).onlyReads)
+    }
+
+    @Test func whichOrganiseRequestsAreAskedTwice() {
+        #expect(ServiceRequest.organisePlan(template: "x", itemIDs: []).onlyReads)
+        #expect(ServiceRequest.moveSessions.onlyReads)
+        #expect(ServiceRequest.jobQueue(kind: "x", startingQueue: true).onlyReads)
+        #expect(!ServiceRequest.revertMove(logID: UUID()).onlyReads)
+        #expect(!ServiceRequest.revertMoveSession(sessionID: UUID()).onlyReads)
+    }
+
+    @Test func whichMaintenanceRequestsAreAskedTwice() {
+        #expect(ServiceRequest.maintenanceSnapshot(includingBackups: true).onlyReads)
+        #expect(ServiceRequest.previewWriteback(itemIDs: nil).onlyReads)
+        #expect(!ServiceRequest.acceptDiskSize(itemID: UUID()).onlyReads)
+        #expect(!ServiceRequest.backUp.onlyReads, "a backup asked for twice is two backups")
+        #expect(!ServiceRequest.purgeMarked(itemIDs: nil).onlyReads)
+    }
+
+    @Test func whichReviewRequestsAreAskedTwice() {
+        for read in [
+            ServiceRequest.reviewLists, .mergeableTags(keeperID: UUID(), loserID: UUID()),
+            .unsavedSegmentsOfMarked(itemIDs: nil), .playbackIssueEvidence(itemID: UUID()),
+            .repairQueue(startingQueue: true),
+        ] {
+            #expect(read.onlyReads, "\(read)")
+        }
+        let recipe = RepairRecipe(
+            name: "x", matchPattern: nil, tool: "x", argumentTemplate: [], estimate: "x")
+        for write in [
+            ServiceRequest.decideDuplicate(keeperID: UUID(), loserID: UUID(), candidateID: nil, mergeTagIDs: []),
+            .rejectDuplicate(candidateID: UUID()), .keepBothDuplicates(candidateID: UUID()),
+            .purgeMarked(itemIDs: []), .queueRepair(itemID: UUID(), recipe: recipe),
+        ] {
+            #expect(!write.onlyReads, "\(write)")
+        }
+    }
+
     @Test func theSmallerReadsAreAskedTwiceAndAHurriedJobIsNot() {
         #expect(ServiceRequest.watchHistory(limit: 5).onlyReads)
         #expect(ServiceRequest.signalSummary(itemID: UUID()).onlyReads)

@@ -315,7 +315,9 @@ import Testing
     /// holds. Written out, so that adding a window means deciding.
     @Test func whichWindowsWorkOnARemoteLibraryIsWrittenDown() {
         let working = AuxWindowRequest.Kind.allCases.filter(\.worksOnARemoteLibrary)
-        #expect(Set(working) == [.player, .categories, .watched, .bookmarkSearch])
+        #expect(Set(working) == [
+            .player, .categories, .watched, .bookmarkSearch, .review, .maintenance, .organise, .operations,
+        ])
     }
 
     /// A write asked of the service reports a failure where the view
@@ -337,6 +339,35 @@ import Testing
     @MainActor final class Reported {
         var text: String?
         var outcomes: [Bool] = []
+    }
+
+    /// Each operation of the Operations window is the same jobs it
+    /// always queued, now as requests the library's service is asked
+    /// for: one an item, except a join, which is one for them all in
+    /// the order chosen, and a tag write, which is one for the set.
+    @Test func eachOperationIsTheRequestsItQueues() {
+        let source = UUID()
+        let a = MediaItem(sourceID: source, kind: .video, relativePath: "set/a.mp4")
+        let b = MediaItem(sourceID: source, kind: .video, relativePath: "set/b.mp4")
+        func requests(_ operation: FileOperation) -> [JobRequest] {
+            operation.requests(
+                for: [a, b], order: [b.id, a.id], preset: .h264, mode: .optimize,
+                ocr: OcrSettings(), interval: 7)
+        }
+        #expect(requests(.optimize) == [.remux(itemID: a.id, mode: .optimize), .remux(itemID: b.id, mode: .optimize)])
+        #expect(requests(.repair) == [.remux(itemID: a.id, mode: .repair), .remux(itemID: b.id, mode: .repair)])
+        #expect(requests(.encode) == [.encode(itemID: a.id, preset: .h264), .encode(itemID: b.id, preset: .h264)])
+        #expect(requests(.clipExport) == [.exportClip(clipID: a.id), .exportClip(clipID: b.id)])
+        #expect(requests(.blockRemoval) == [.removeBlocks(itemID: a.id), .removeBlocks(itemID: b.id)])
+        #expect(requests(.ocr) == [
+            .recogniseTextSampled(itemID: a.id, settings: OcrSettings(), sampleIntervalSeconds: 7),
+            .recogniseTextSampled(itemID: b.id, settings: OcrSettings(), sampleIntervalSeconds: 7),
+        ])
+        #expect(requests(.join) == [.joinItems(sourceID: source, folderPath: "set", itemIDs: [b.id, a.id])])
+        #expect(requests(.writeTags) == [.writeTags(itemIDs: [a.id, b.id], scope: "selection (2 files)")])
+        // Nothing to join is nothing asked for.
+        #expect(FileOperation.join.requests(
+            for: [], order: [], preset: .h264, mode: .optimize, ocr: OcrSettings(), interval: 7).isEmpty)
     }
 
     @Test func aMacsHistoryIsSaidInALine() {

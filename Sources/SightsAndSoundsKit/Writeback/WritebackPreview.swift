@@ -13,8 +13,8 @@ import GRDB
 /// from the two halves that already exist — `TagWriters.readTagsJSON`
 /// for what is in the file, `WritebackMapping.resolve` for what would go
 /// in.
-public struct WritebackPreview: Sendable, Equatable {
-    public struct Field: Sendable, Equatable {
+public struct WritebackPreview: Codable, Sendable, Equatable {
+    public struct Field: Codable, Sendable, Equatable {
         public var name: String
         /// What would be written.
         public var newValues: [String]
@@ -28,7 +28,7 @@ public struct WritebackPreview: Sendable, Equatable {
         }
     }
 
-    public struct File: Sendable, Equatable, Identifiable {
+    public struct File: Codable, Sendable, Equatable, Identifiable {
         public var itemID: UUID
         public var fileName: String
         public var relativePath: String

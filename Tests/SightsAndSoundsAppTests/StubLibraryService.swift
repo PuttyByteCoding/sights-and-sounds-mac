@@ -197,6 +197,92 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.runNextAndWait(jobID: jobID) }
     }
 
+    // MARK: ReviewManaging
+
+    func reviewLists() async throws -> ReviewLists {
+        try await run { try await base.reviewLists() }
+    }
+    func mergeableTags(keeperID: UUID, loserID: UUID) async throws -> [SightsAndSoundsKit.Tag] {
+        try await run { try await base.mergeableTags(keeperID: keeperID, loserID: loserID) }
+    }
+    func decideDuplicate(
+        keeperID: UUID, loserID: UUID, candidateID: UUID?, mergeTagIDs: Set<UUID>
+    ) async throws -> DecideOutcome {
+        try await run {
+            try await base.decideDuplicate(
+                keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: mergeTagIDs)
+        }
+    }
+    func rejectDuplicate(candidateID: UUID) async throws {
+        try await run { try await base.rejectDuplicate(candidateID: candidateID) }
+    }
+    func keepBothDuplicates(candidateID: UUID) async throws {
+        try await run { try await base.keepBothDuplicates(candidateID: candidateID) }
+    }
+    func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await run { try await base.unsavedSegmentsOfMarked(itemIDs: itemIDs) }
+    }
+    func purgeMarked(itemIDs: [UUID]?) async throws -> LibraryDatabase.PurgeOutcome {
+        try await run { try await base.purgeMarked(itemIDs: itemIDs) }
+    }
+    func playbackIssueEvidence(itemID: UUID) async throws -> PlaybackIssueEvidence? {
+        try await run { try await base.playbackIssueEvidence(itemID: itemID) }
+    }
+    func queueRepair(itemID: UUID, recipe: RepairRecipe) async throws -> JobRecord {
+        try await run { try await base.queueRepair(itemID: itemID, recipe: recipe) }
+    }
+    func repairQueue(startingQueue: Bool) async throws -> RepairQueue {
+        try await run { try await base.repairQueue(startingQueue: startingQueue) }
+    }
+
+    // MARK: MaintenanceManaging
+
+    func maintenanceSnapshot(includingBackups: Bool) async throws -> MaintenanceSnapshot {
+        try await run { try await base.maintenanceSnapshot(includingBackups: includingBackups) }
+    }
+    func acceptDiskSize(itemID: UUID) async throws {
+        try await run { try await base.acceptDiskSize(itemID: itemID) }
+    }
+    func previewWriteback(itemIDs: [UUID]?) async throws -> WritebackPreview {
+        try await run { try await base.previewWriteback(itemIDs: itemIDs) }
+    }
+    func backUp() async throws -> URL {
+        try await run { try await base.backUp() }
+    }
+
+    // MARK: OrganiseManaging
+
+    func organisePlan(template: String, itemIDs: [UUID]) async throws -> [ReorganizePlanEntry] {
+        try await run { try await base.organisePlan(template: template, itemIDs: itemIDs) }
+    }
+    func moveSessions() async throws -> [LibraryDatabase.MoveSession] {
+        try await run { try await base.moveSessions() }
+    }
+    func revertMove(logID: UUID) async throws {
+        try await run { try await base.revertMove(logID: logID) }
+    }
+    func revertMoveSession(sessionID: UUID) async throws -> MoveRevertOutcome {
+        try await run { try await base.revertMoveSession(sessionID: sessionID) }
+    }
+    func jobQueue(kind: String, startingQueue: Bool) async throws -> JobQueueState {
+        try await run { try await base.jobQueue(kind: kind, startingQueue: startingQueue) }
+    }
+
+    // MARK: PropertiesManaging
+
+    func libraryProperties() async throws -> LibraryProperties {
+        try await run { try await base.libraryProperties() }
+    }
+    func renameLibrary(to name: String) async throws {
+        try await run { try await base.renameLibrary(to: name) }
+    }
+    func setSeparatorCharacters(_ characters: String) async throws {
+        try await run { try await base.setSeparatorCharacters(characters) }
+    }
+    func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
+        try await run { try await base.setExtensionOverrides(video: video, audio: audio) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

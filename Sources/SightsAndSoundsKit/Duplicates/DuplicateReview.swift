@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// What `decide` did — for the UI to report honestly.
-public struct DecideOutcome: Sendable, Equatable {
+public struct DecideOutcome: Codable, Sendable, Equatable {
     public let tagsMerged: Int
     /// Single-value-category tags that could NOT merge because the keeper's
     /// existing pick wins — one human-readable line each.

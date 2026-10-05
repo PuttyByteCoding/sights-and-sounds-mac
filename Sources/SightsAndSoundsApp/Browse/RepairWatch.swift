@@ -70,28 +70,3 @@ final class RepairWatch {
         watched.filter { !pending.contains($0) && !enqueuing.contains($0) }
     }
 }
-
-extension RepairWatch {
-    /// The items with a repair queued or running, as that changes. Seeing
-    /// one starts the queue (joining a drain under way): a runner does not
-    /// start its queue when the library opens, so a repair queued before a
-    /// quit left its issue on "Repair queued", Run fix disabled, until
-    /// something unrelated started the queue. A paused runner stays
-    /// paused — its drain starts nothing. Organise's watch does the same.
-    nonisolated static func pending(in library: LibraryDatabase, runner: JobRunner) -> AsyncThrowingStream<Set<UUID>, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    for try await items in library.pendingRepairItems() {
-                        if !items.isEmpty { await runner.startDraining() }
-                        continuation.yield(items)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-    }
-}

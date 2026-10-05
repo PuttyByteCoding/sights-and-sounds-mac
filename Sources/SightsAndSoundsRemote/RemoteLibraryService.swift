@@ -478,4 +478,74 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.unsavedSegments(itemIDs: itemIDs))
     }
     public func runNextAndWait(jobID: UUID) async throws { try await tell(.runNextAndWait(jobID: jobID)) }
+
+    // MARK: ReviewManaging
+
+    public func reviewLists() async throws -> ReviewLists { try await ask(.reviewLists) }
+    public func mergeableTags(keeperID: UUID, loserID: UUID) async throws -> [Tag] {
+        try await ask(.mergeableTags(keeperID: keeperID, loserID: loserID))
+    }
+    public func decideDuplicate(
+        keeperID: UUID, loserID: UUID, candidateID: UUID?, mergeTagIDs: Set<UUID>
+    ) async throws -> DecideOutcome {
+        try await ask(.decideDuplicate(
+            keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: mergeTagIDs))
+    }
+    public func rejectDuplicate(candidateID: UUID) async throws {
+        try await tell(.rejectDuplicate(candidateID: candidateID))
+    }
+    public func keepBothDuplicates(candidateID: UUID) async throws {
+        try await tell(.keepBothDuplicates(candidateID: candidateID))
+    }
+    public func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await ask(.unsavedSegmentsOfMarked(itemIDs: itemIDs))
+    }
+    public func purgeMarked(itemIDs: [UUID]?) async throws -> LibraryDatabase.PurgeOutcome {
+        try await ask(.purgeMarked(itemIDs: itemIDs))
+    }
+    public func playbackIssueEvidence(itemID: UUID) async throws -> PlaybackIssueEvidence? {
+        try await ask(.playbackIssueEvidence(itemID: itemID))
+    }
+    public func queueRepair(itemID: UUID, recipe: RepairRecipe) async throws -> JobRecord {
+        try await ask(.queueRepair(itemID: itemID, recipe: recipe))
+    }
+    public func repairQueue(startingQueue: Bool) async throws -> RepairQueue {
+        try await ask(.repairQueue(startingQueue: startingQueue))
+    }
+
+    // MARK: MaintenanceManaging
+
+    public func maintenanceSnapshot(includingBackups: Bool) async throws -> MaintenanceSnapshot {
+        try await ask(.maintenanceSnapshot(includingBackups: includingBackups))
+    }
+    public func acceptDiskSize(itemID: UUID) async throws { try await tell(.acceptDiskSize(itemID: itemID)) }
+    public func previewWriteback(itemIDs: [UUID]?) async throws -> WritebackPreview {
+        try await ask(.previewWriteback(itemIDs: itemIDs))
+    }
+    public func backUp() async throws -> URL { try await ask(.backUp) }
+
+    // MARK: OrganiseManaging
+
+    public func organisePlan(template: String, itemIDs: [UUID]) async throws -> [ReorganizePlanEntry] {
+        try await ask(.organisePlan(template: template, itemIDs: itemIDs))
+    }
+    public func moveSessions() async throws -> [LibraryDatabase.MoveSession] { try await ask(.moveSessions) }
+    public func revertMove(logID: UUID) async throws { try await tell(.revertMove(logID: logID)) }
+    public func revertMoveSession(sessionID: UUID) async throws -> MoveRevertOutcome {
+        try await ask(.revertMoveSession(sessionID: sessionID))
+    }
+    public func jobQueue(kind: String, startingQueue: Bool) async throws -> JobQueueState {
+        try await ask(.jobQueue(kind: kind, startingQueue: startingQueue))
+    }
+
+    // MARK: PropertiesManaging
+
+    public func libraryProperties() async throws -> LibraryProperties { try await ask(.libraryProperties) }
+    public func renameLibrary(to name: String) async throws { try await tell(.renameLibrary(name: name)) }
+    public func setSeparatorCharacters(_ characters: String) async throws {
+        try await tell(.setSeparatorCharacters(characters: characters))
+    }
+    public func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
+        try await tell(.setExtensionOverrides(video: video, audio: audio))
+    }
 }

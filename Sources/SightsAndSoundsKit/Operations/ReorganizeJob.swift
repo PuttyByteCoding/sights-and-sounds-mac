@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// One item's reorganization plan — for the preview table.
-public struct ReorganizePlanEntry: Sendable, Equatable {
+public struct ReorganizePlanEntry: Codable, Sendable, Equatable {
     public let itemID: UUID
     public let fileName: String
     public let fromFolder: String

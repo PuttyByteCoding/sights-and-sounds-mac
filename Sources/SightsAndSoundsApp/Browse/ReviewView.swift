@@ -89,35 +89,26 @@ struct ReviewView: View {
         .onAppear { reload() }
         // Marks, restores and new pairs made anywhere else show here.
         .followsLibraryChanges(model, [.items, .duplicates]) { reload() }
-        // Only while the selected issue's repair waits: pausing writes
-        // nothing the queue observation sees, so the runner is asked.
-        .task(id: selectedIssueID.map(repairs.isRepairing) == true) {
-            guard selectedIssueID.map(repairs.isRepairing) == true,
-                  let runner = try? app.runner(for: model.libraryID)
-            else {
-                repairQueuePaused = false
-                return
-            }
-            while !Task.isCancelled {
-                repairQueuePaused = await runner.isPaused
-                try? await Task.sleep(for: .seconds(2))
-            }
+        // "Paused" is said only while the selected issue's repair waits;
+        // the moment it does not, it is not.
+        .onChange(of: selectedIssueID.map(repairs.isRepairing) == true) { _, waiting in
+            if !waiting { repairQueuePaused = false }
         }
         // A failed decision names its own pair; a new pair shows it no more.
         .onChange(of: selectedCandidateID) { decisionError = nil }
-        // Repairs queued or running, observed rather than waited for; the
-        // watch says when the last one has gone and the issues need a look.
+        // Repairs queued or running, and whether the queue is paused:
+        // asked of the library every two seconds while the window is up,
+        // not waited for. The answer says when the last repair has gone
+        // and the issues need a look; a question that fails is asked
+        // again the next time round. Asking also starts a queue that has
+        // repairs waiting and is not running.
         .task {
-            // Restarted if it fails: one error used to end it, and every
-            // item held then or queued later stayed held until the window
-            // was rebuilt.
-            guard let runner = try? app.runner(for: model.libraryID) else { return }
+            let service = model.service
             while !Task.isCancelled {
-                do {
-                    for try await items in RepairWatch.pending(in: model.library, runner: runner) {
-                        if repairs.pendingChanged(to: items) { reload() }
-                    }
-                } catch {}
+                if let queue = try? await service.repairQueue(startingQueue: true) {
+                    repairQueuePaused = queue.isPaused && selectedIssueID.map(repairs.isRepairing) == true
+                    if repairs.pendingChanged(to: queue.pending) { reload() }
+                }
                 try? await Task.sleep(for: .seconds(2))
             }
         }
@@ -530,16 +521,13 @@ struct ReviewView: View {
 
     /// A file move, so off the main actor like Restore Selected.
     private func restore(_ item: MediaItem) {
-        let library = model.library, id = item.id
+        let service = model.service, id = item.id
         ticks.untick(id)
         Task {
-            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
-                do {
-                    try library.unstage(.toDelete, itemID: id)
-                    return nil
-                } catch { return "\(error)" }
-            }.value
-            if let failure { errorText = failure }
+            do {
+                let failures = try await service.setStaging(.toDelete, on: false, itemIDs: [id])
+                if let first = failures.first { errorText = first.reason }
+            } catch { errorText = "\(error)" }
             reload()
         }
     }
@@ -547,17 +535,15 @@ struct ReviewView: View {
     /// A file move per item, so off the main actor; and a restore that
     /// could not happen says so instead of looking like it did.
     private func restoreSelected() {
-        let library = model.library, ids = Array(deleteTicked)
+        let service = model.service, ids = Array(deleteTicked)
         ticks.clear()
         Task {
-            let failures = await Task.detached(priority: .userInitiated) { () -> [String] in
-                ids.compactMap { id in
-                    do {
-                        try library.unstage(.toDelete, itemID: id)
-                        return nil
-                    } catch { return "\(error)" }
-                }
-            }.value
+            let failures: [String]
+            do {
+                failures = try await service.setStaging(.toDelete, on: false, itemIDs: ids).map(\.reason)
+            } catch {
+                failures = ["\(error)"]
+            }
             if let first = failures.first {
                 errorText = failures.count == 1
                     ? "Could not restore: \(first)"
@@ -571,22 +557,28 @@ struct ReviewView: View {
     /// question: the user hears about the segments before anything is
     /// deleted, not afterwards in an outcome line.
     private func askBeforePurging() {
-        do {
-            let unsaved = try model.library.unsavedSegments(ofFlagged: Array(deleteTicked))
-            if unsaved.isEmpty { confirmDelete = true } else { unsavedSegments = unsaved }
-        } catch { errorText = "\(error)" }
+        let service = model.service, ids = Array(deleteTicked)
+        Task {
+            do {
+                let unsaved = try await service.unsavedSegmentsOfMarked(itemIDs: ids)
+                if unsaved.isEmpty { confirmDelete = true } else { unsavedSegments = unsaved }
+            } catch { errorText = "\(error)" }
+        }
     }
 
     /// Off the main actor: a purge moves a file per item, and a delete
     /// list on a sleeping or networked drive used to beachball the window
     /// for as long as that took.
     private func purge() {
-        let library = model.library, ids = Array(deleteTicked)
+        let service = model.service, ids = Array(deleteTicked)
         isPurging = true
         Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                Result { try library.purgeDeleted(itemIDs: ids) }
-            }.value
+            let result: Result<LibraryDatabase.PurgeOutcome, any Error>
+            do {
+                result = .success(try await service.purgeMarked(itemIDs: ids))
+            } catch {
+                result = .failure(error)
+            }
             isPurging = false
             finishPurge(result)
         }
@@ -614,17 +606,18 @@ struct ReviewView: View {
         selectedIssueID = item.id
         pickedRecipeID = nil
         // "Repair queued" was about the last issue, not this one.
-        let library = model.library, appDatabase = app.appDatabase, id = item.id
+        let service = model.service, appDatabase = app.appDatabase, id = item.id
         Task {
-            let (evidence, recipes) = await Task.detached(priority: .userInitiated) {
-                let evidence = try? library.playbackIssueEvidence(of: id)
+            // The evidence is the library's; the recipes are this Mac's
+            // own, and whichever is picked is sent with the repair.
+            let evidence = (try? await service.playbackIssueEvidence(itemID: id)) ?? nil
+            let recipes = await Task.detached(priority: .userInitiated) {
                 // Recipes are data: what is offered follows the failure
                 // kind, cheapest first, and anything unmatched still
                 // offers the last-resort ones.
-                let recipes = (try? appDatabase?.repairRecipes(
+                (try? appDatabase?.repairRecipes(
                     forFailureKind: evidence?.failureKind,
                     probeOutput: evidence?.probeOutput)) ?? []
-                return (evidence, recipes)
             }.value
             guard selectedIssueID == id else { return }
             self.evidence = evidence
@@ -634,31 +627,29 @@ struct ReviewView: View {
 
     private func runFix() {
         guard let itemID = selectedIssueID, !repairs.isRepairing(itemID),
-              let recipe = recipes.first(where: { $0.id == pickedRecipeID }),
-              let runner = try? app.runner(for: model.libraryID)
+              let recipe = recipes.first(where: { $0.id == pickedRecipeID })
         else { return }
         repairs.queued(itemID)
+        let service = model.service
         Task {
             do {
-                _ = try await RepairJob.enqueue(on: runner, itemID: itemID, recipe: recipe)
                 // Queued and started, not waited for. The queue is read
                 // once now it has committed (a repair queued and done
-                // between two deliveries reads to the observation as no
-                // change), and the watch follows it from there.
-                await runner.startDraining()
-                let library = model.library
-                if let pendingNow = await Task.detached(operation: { try? library.currentPendingRepairItems() }).value {
-                    repairs.enqueueFinished(itemID, pendingNow: pendingNow)
-                    if repairs.pendingChanged(to: pendingNow) { reload() }
+                // between two looks reads as no change), and the watch
+                // follows it from there.
+                try await service.queueRepair(itemID: itemID, recipe: recipe)
+                if let now = try? await service.repairQueue(startingQueue: false) {
+                    repairs.enqueueFinished(itemID, pendingNow: now.pending)
+                    if repairs.pendingChanged(to: now.pending) { reload() }
                 } else {
                     repairs.enqueueFinishedUnread(itemID)
-                    // The observation cannot be relied on to correct it: a
+                    // The watch cannot be relied on to correct it: a
                     // repair queued and done before it looks reads as no
                     // change. Read again until a read succeeds.
                     for _ in 0..<5 {
                         try? await Task.sleep(for: .seconds(1))
-                        if let pendingNow = await Task.detached(operation: { try? library.currentPendingRepairItems() }).value {
-                            if repairs.pendingChanged(to: pendingNow) { reload() }
+                        if let now = try? await service.repairQueue(startingQueue: false) {
+                            if repairs.pendingChanged(to: now.pending) { reload() }
                             break
                         }
                     }
@@ -673,58 +664,36 @@ struct ReviewView: View {
     /// The candidate/item fetch runs off the main actor — the window's
     /// open used to block on it.
     private func reload() {
-        let library = model.library
+        let service = model.service, appDatabase = app.appDatabase
         reloadGeneration += 1
         let generation = reloadGeneration
         Task {
             do {
-                let (fetched, items) = try await Task.detached(priority: .userInitiated) {
-                    let fetched = try library.pendingCandidates()
-                    let ids = Set(fetched.flatMap { [$0.itemAID, $0.itemBID] })
-                    let items = try await library.writer.read { db in
-                        Dictionary(
-                            uniqueKeysWithValues: try MediaItem.fetchAll(db, keys: Array(ids))
-                                .map { ($0.id, $0) })
-                    }
-                    return (fetched, items)
-                }.value
+                // The pairs with their items, the delete list, the items
+                // that will not play and what the delete list would free,
+                // as one answer from the library.
+                let lists = try await service.reviewLists()
                 guard generation == reloadGeneration else { return }
-                candidates = fetched
-                itemsByID = items
+                candidates = lists.candidates
+                itemsByID = lists.candidateItems
                 if selectedCandidateID == nil
                     || !candidates.contains(where: { $0.id == selectedCandidateID }) {
                     selectedCandidateID = candidates.first?.id
                 }
-                let marked = try await library.writer.read { db in
-                    try MediaItem
-                        .filter(sql: "markedForDeletion = 1")
-                        .order(sql: "relativePath").fetchAll(db)
-                }
-                guard generation == reloadGeneration else { return }
-                deleteList = marked
+                deleteList = lists.deleteList
                 // A file arrives ticked — the list exists because you
                 // already marked it — and keeps whatever you set after.
                 ticks.listLoaded(deleteList.map(\.id))
-                let flagged = try await library.writer.read { db in
-                    try MediaItem
-                        .filter(sql: "playbackIssue = 1")
-                        .order(sql: "relativePath").fetchAll(db)
-                }
+                issues = lists.issues
+                resolvedThisPass[.issues, default: 0] += repairs.settle(stillFlagged: Set(issues.map(\.id)))
+                // The recipes offered for an issue are this Mac's own:
+                // in place before the first issue asks for them.
+                await Task.detached(priority: .userInitiated) { try? appDatabase?.seedRepairRecipes() }.value
                 guard generation == reloadGeneration else { return }
-                issues = flagged
-                resolvedThisPass[.issues, default: 0] += repairs.settle(stillFlagged: Set(flagged.map(\.id)))
                 if selectedIssueID == nil || !issues.contains(where: { $0.id == selectedIssueID }) {
                     if let first = issues.first { select(issue: first) } else { selectedIssueID = nil }
                 }
-                // A stat of every staged file, and a write: off the main
-                // actor too.
-                let appDatabase = app.appDatabase
-                let bytes = await Task.detached(priority: .userInitiated) {
-                    try? appDatabase?.seedRepairRecipes()
-                    return (try? library.reclaimableBytes()) ?? 0
-                }.value
-                guard generation == reloadGeneration else { return }
-                reclaimable = bytes
+                reclaimable = lists.reclaimableBytes
             } catch {
                 guard generation == reloadGeneration else { return }
                 errorText = "\(error)"
@@ -1078,12 +1047,18 @@ private struct CompareView: View {
     private func choose(_ id: UUID) {
         keeperID = id
         let loserID = id == itemA.id ? itemB.id : itemA.id
-        do {
-            mergeableTags = try model.library.mergeableTags(keeper: id, loser: loserID)
-            mergeSelection = Set(mergeableTags.map(\.id))
-            errorText = nil
-        } catch {
-            errorText = "\(error)"
+        let service = model.service
+        Task {
+            do {
+                let tags = try await service.mergeableTags(keeperID: id, loserID: loserID)
+                // The other of the pair may have been chosen meanwhile.
+                guard keeperID == id else { return }
+                mergeableTags = tags
+                mergeSelection = Set(tags.map(\.id))
+                errorText = nil
+            } catch {
+                errorText = "\(error)"
+            }
         }
     }
 
@@ -1093,15 +1068,15 @@ private struct CompareView: View {
     private func decide(keeperID: UUID, loserID: UUID) {
         guard !deciding else { return }
         deciding = true
-        let library = model.library, candidateID = candidate.id, merge = mergeSelection
+        let service = model.service, candidateID = candidate.id, merge = mergeSelection
         Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                Result {
-                    try library.decide(
-                        keeper: keeperID, loser: loserID,
-                        candidateID: candidateID, mergeTagIDs: merge)
-                }
-            }.value
+            let result: Result<DecideOutcome, any Error>
+            do {
+                result = .success(try await service.decideDuplicate(
+                    keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: merge))
+            } catch {
+                result = .failure(error)
+            }
             deciding = false
             switch result {
             case .success(let outcome):
@@ -1126,18 +1101,28 @@ private struct CompareView: View {
 
     private func reject() {
         guard !deciding else { return }
-        do {
-            try model.library.rejectCandidate(candidate.id)
-            onResolved("Marked as not duplicates.")
-        } catch { errorText = "\(error)" }
+        deciding = true
+        let service = model.service, candidateID = candidate.id
+        Task {
+            defer { deciding = false }
+            do {
+                try await service.rejectDuplicate(candidateID: candidateID)
+                onResolved("Marked as not duplicates.")
+            } catch { errorText = "\(error)" }
+        }
     }
 
     private func keepBoth() {
         guard !deciding else { return }
-        do {
-            try model.library.keepBothCandidate(candidate.id)
-            onResolved("Kept both.")
-        } catch { errorText = "\(error)" }
+        deciding = true
+        let service = model.service, candidateID = candidate.id
+        Task {
+            defer { deciding = false }
+            do {
+                try await service.keepBothDuplicates(candidateID: candidateID)
+                onResolved("Kept both.")
+            } catch { errorText = "\(error)" }
+        }
     }
 }
 

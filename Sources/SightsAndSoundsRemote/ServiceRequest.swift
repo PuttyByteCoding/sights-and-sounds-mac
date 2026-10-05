@@ -103,6 +103,37 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case unsavedSegments(itemIDs: [UUID])
     case runNextAndWait(jobID: UUID)
 
+    // ReviewManaging
+    case reviewLists
+    case mergeableTags(keeperID: UUID, loserID: UUID)
+    case decideDuplicate(keeperID: UUID, loserID: UUID, candidateID: UUID?, mergeTagIDs: Set<UUID>)
+    case rejectDuplicate(candidateID: UUID)
+    case keepBothDuplicates(candidateID: UUID)
+    case unsavedSegmentsOfMarked(itemIDs: [UUID]?)
+    case purgeMarked(itemIDs: [UUID]?)
+    case playbackIssueEvidence(itemID: UUID)
+    case queueRepair(itemID: UUID, recipe: RepairRecipe)
+    case repairQueue(startingQueue: Bool)
+
+    // MaintenanceManaging
+    case maintenanceSnapshot(includingBackups: Bool)
+    case acceptDiskSize(itemID: UUID)
+    case previewWriteback(itemIDs: [UUID]?)
+    case backUp
+
+    // OrganiseManaging
+    case organisePlan(template: String, itemIDs: [UUID])
+    case moveSessions
+    case revertMove(logID: UUID)
+    case revertMoveSession(sessionID: UUID)
+    case jobQueue(kind: String, startingQueue: Bool)
+
+    // PropertiesManaging
+    case libraryProperties
+    case renameLibrary(name: String)
+    case setSeparatorCharacters(characters: String)
+    case setExtensionOverrides(video: [String]?, audio: [String]?)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -115,7 +146,12 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
              .tagMembership, .pendingTextScan, .textLines, .fullVocabulary, .tagUsageCounts, .tagDetails, .categories,
              .categoryTable, .vocabularyIndex, .fields, .fieldValues, .takenNames, .watchHistory,
-             .signalSummary, .unsavedSegments:
+             .signalSummary, .unsavedSegments, .reviewLists, .mergeableTags, .unsavedSegmentsOfMarked,
+             // Asking how the repair queue stands may start it, and a
+             // queue started twice is a queue started: safe to ask again.
+             .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback,
+             // Like the repair queue: asking may start it, and asking again is the same.
+             .organisePlan, .moveSessions, .jobQueue, .libraryProperties:
             true
         default:
             false
@@ -134,7 +170,7 @@ extension ServiceRequest {
             // A source is a folder on the host. Named from elsewhere it
             // could be any folder the host's user can read.
             return "A source is a folder on the Mac that holds the library, and is added there."
-        case .run(.joinFolder(_, let folderPath), _):
+        case .run(.joinFolder(_, let folderPath), _), .run(.joinItems(_, let folderPath, _), _):
             // Inside a source, as the library spells it: nothing that
             // climbs out, and nothing absolute.
             guard MediaPath.normalize(folderPath) == folderPath, !folderPath.hasPrefix("/") else {
@@ -350,6 +386,64 @@ extension ServiceRequest {
             return try json(await service.unsavedSegments(itemIDs: itemIDs))
         case .runNextAndWait(let jobID):
             try await service.runNextAndWait(jobID: jobID)
+            return nothing
+
+        case .reviewLists:
+            return try json(await service.reviewLists())
+        case .mergeableTags(let keeperID, let loserID):
+            return try json(await service.mergeableTags(keeperID: keeperID, loserID: loserID))
+        case .decideDuplicate(let keeperID, let loserID, let candidateID, let mergeTagIDs):
+            return try json(await service.decideDuplicate(
+                keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: mergeTagIDs))
+        case .rejectDuplicate(let candidateID):
+            try await service.rejectDuplicate(candidateID: candidateID)
+            return nothing
+        case .keepBothDuplicates(let candidateID):
+            try await service.keepBothDuplicates(candidateID: candidateID)
+            return nothing
+        case .unsavedSegmentsOfMarked(let itemIDs):
+            return try json(await service.unsavedSegmentsOfMarked(itemIDs: itemIDs))
+        case .purgeMarked(let itemIDs):
+            return try json(await service.purgeMarked(itemIDs: itemIDs))
+        case .playbackIssueEvidence(let itemID):
+            return try json(await service.playbackIssueEvidence(itemID: itemID))
+        case .queueRepair(let itemID, let recipe):
+            return try json(await service.queueRepair(itemID: itemID, recipe: recipe))
+        case .repairQueue(let startingQueue):
+            return try json(await service.repairQueue(startingQueue: startingQueue))
+
+        case .maintenanceSnapshot(let includingBackups):
+            return try json(await service.maintenanceSnapshot(includingBackups: includingBackups))
+        case .acceptDiskSize(let itemID):
+            try await service.acceptDiskSize(itemID: itemID)
+            return nothing
+        case .previewWriteback(let itemIDs):
+            return try json(await service.previewWriteback(itemIDs: itemIDs))
+        case .backUp:
+            return try json(await service.backUp())
+
+        case .organisePlan(let template, let itemIDs):
+            return try json(await service.organisePlan(template: template, itemIDs: itemIDs))
+        case .moveSessions:
+            return try json(await service.moveSessions())
+        case .revertMove(let logID):
+            try await service.revertMove(logID: logID)
+            return nothing
+        case .revertMoveSession(let sessionID):
+            return try json(await service.revertMoveSession(sessionID: sessionID))
+        case .jobQueue(let kind, let startingQueue):
+            return try json(await service.jobQueue(kind: kind, startingQueue: startingQueue))
+
+        case .libraryProperties:
+            return try json(await service.libraryProperties())
+        case .renameLibrary(let name):
+            try await service.renameLibrary(to: name)
+            return nothing
+        case .setSeparatorCharacters(let characters):
+            try await service.setSeparatorCharacters(characters)
+            return nothing
+        case .setExtensionOverrides(let video, let audio):
+            try await service.setExtensionOverrides(video: video, audio: audio)
             return nothing
         }
     }

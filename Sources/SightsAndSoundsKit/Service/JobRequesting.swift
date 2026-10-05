@@ -38,6 +38,13 @@ public enum JobRequest: Codable, Equatable, Sendable {
     /// Take items out of the library and leave their files where they
     /// are, writing their tags into the files first if asked.
     case removeFromLibrary(itemIDs: [UUID], writeTagsFirst: Bool)
+    /// Move these items' files into the folders a template gives them.
+    case reorganize(template: String, itemIDs: [UUID])
+    /// Read the text on screen in one item's video, with these settings
+    /// and this far between the frames read.
+    case recogniseTextSampled(itemID: UUID, settings: OcrSettings, sampleIntervalSeconds: Double)
+    /// Join these of a folder's files into one, in this order.
+    case joinItems(sourceID: UUID, folderPath: String, itemIDs: [UUID])
     /// Compare the library with the disk.
     case validation
 

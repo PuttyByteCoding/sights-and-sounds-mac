@@ -446,22 +446,23 @@ struct OperationsView: View {
     // MARK: - Running
 
     private func run() {
-        guard !queued, let runner = try? app.runner(for: model.libraryID) else { return }
+        guard !queued else { return }
         queued = true
         let targets = included
         let operation = operation, preset = preset, mode = remuxMode
         let ocr = ocr, interval = ocrInterval
         let order = orderedJoinParts.map(\.id)
+        let requests = operation.requests(
+            for: targets, order: order, preset: preset, mode: mode, ocr: ocr, interval: interval)
+        let service = model.service
         Task {
             do {
-                try await operation.enqueue(
-                    targets, order: order, on: runner, preset: preset, mode: mode,
-                    ocr: ocr, interval: interval)
-                // Said as soon as it is true: waiting on the drain meant
-                // the status (and a Run still enabled) until every job
-                // ahead had finished.
+                // Each is queued and the queue started, none waited for:
+                // said as soon as it is true, where waiting on the queue
+                // left the status (and a Run still enabled) until every
+                // job ahead had finished.
+                for request in requests { try await service.run(request, wait: .none) }
                 status = "Queued on this library — follow it in Background Tasks"
-                await runner.startDraining()
             } catch {
                 queued = false
                 status = "\(error)"
@@ -470,10 +471,8 @@ struct OperationsView: View {
     }
 
     private func load() async {
-        let library = model.library, ids = itemIDs
-        let fetched = (try? await library.writer.read { db in
-            try MediaItem.fetchAll(db, keys: ids)
-        }) ?? []
+        let ids = itemIDs
+        let fetched = (try? await model.service.items(ids: ids)) ?? []
         let position = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
         items = fetched.sorted { (position[$0.id] ?? 0) < (position[$1.id] ?? 0) }
         joinOrder = items.map(\.id)

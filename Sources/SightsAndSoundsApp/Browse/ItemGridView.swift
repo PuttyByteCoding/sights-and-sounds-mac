@@ -579,7 +579,6 @@ private struct BulkBar: View {
                         itemIDs: model.selectedItems.map(\.id)))
             }
             .buttonStyle(SecondaryButtonStyle(compact: true))
-            .unavailableRemotely(model.isRemote)
             divider
             Button("Deselect · esc") { model.clearSelection() }
                 .buttonStyle(.plain)
