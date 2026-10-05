@@ -1,5 +1,6 @@
 import SwiftUI
 import SightsAndSoundsKit
+import SightsAndSoundsRemote
 
 /// Early app shell: the library registry and the new-library flow (name →
 /// template → review → create). The browse workspace arrives in Phase 3.
@@ -204,6 +205,59 @@ final class AppModel {
         if let appDatabase {
             AppSettingsStore.shared.migrateLegacySkip(from: appDatabase)
         }
+        Task { await remoteAccess.startIfLeftOn() }
+    }
+
+    // MARK: - Remote access
+
+    /// This Mac's libraries, offered to the Macs it has approved.
+    @ObservationIgnored
+    private(set) lazy var remoteAccess = RemoteAccessModel(
+        file: Self.supportDirectory().appendingPathComponent("RemoteAccess/approved-devices.json"),
+        offer: RemoteAccessModel.Offer(
+            hostName: { Host.current().localizedName ?? "This Mac" },
+            libraries: { [weak self] in
+                (self?.libraries ?? []).map { RemoteLibraryInfo(id: $0.id, name: $0.name) }
+            },
+            service: { [weak self] id in self?.serviceForAnotherMac(id) },
+            turnedOff: { [weak self] in self?.remoteAccessTurnedOff() }),
+        ask: { [weak self] question in
+            await (self?.askAboutAMac ?? RemoteAccessModel.askWithAnAlert)(question)
+        })
+
+    /// How whoever is at this Mac is asked whether to let another in.
+    /// An alert; a test answers for them.
+    @ObservationIgnored
+    var askAboutAMac: @MainActor (PairingAsk) async -> Bool = RemoteAccessModel.askWithAnAlert
+
+    /// The libraries another Mac has been given, each with the one
+    /// service all of that Mac's connections share.
+    private var servedToOtherMacs: [UUID: any LibraryService] = [:]
+
+    /// Whether another Mac has been given this library since remote
+    /// access was last turned on.
+    func isServedToOtherMacs(_ libraryID: UUID) -> Bool { servedToOtherMacs[libraryID] != nil }
+
+    private func serviceForAnotherMac(_ libraryID: UUID) -> (any LibraryService)? {
+        if let served = servedToOtherMacs[libraryID] { return served }
+        guard let library = try? library(for: libraryID), let runner = try? runner(for: libraryID) else {
+            return nil
+        }
+        let service = LocalLibraryService(library: library, runner: runner)
+        servedToOtherMacs[libraryID] = service
+        return service
+    }
+
+    private func remoteAccessTurnedOff() {
+        servedToOtherMacs = [:]
+    }
+
+    /// Where the app keeps its own files; a folder of the run's own
+    /// under test.
+    static func supportDirectory() -> URL {
+        if AppSettingsStore.isUnderTest { return AppSettingsStore.testScratch }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("SightsAndSounds", isDirectory: true)
     }
 
     func refresh() {
@@ -391,11 +445,14 @@ final class AppModel {
     enum LibraryInUse: Error, CustomStringConvertible {
         case windowsOpen
         case jobRunning
+        case usedByAnotherMac
 
         var description: String {
             switch self {
             case .windowsOpen: "close this library's windows first"
             case .jobRunning: "a background task is running on this library — let it finish or cancel it first"
+            case .usedByAnotherMac:
+                "another Mac has been using this library — turn off Remote Access in Settings first"
             }
         }
     }
@@ -408,6 +465,9 @@ final class AppModel {
         guard !openLibraryIDs.contains(id), libraryHolds[id] == nil else {
             throw LibraryInUse.windowsOpen
         }
+        // Another Mac may have a window on it, which this Mac cannot see
+        // or close; what it can do is stop serving.
+        guard servedToOtherMacs[id] == nil else { throw LibraryInUse.usedByAnotherMac }
         // No runner this session means nothing can be running; a row left
         // `running` by a crash is settled when a runner is next created
         // and must not block a restore until then.

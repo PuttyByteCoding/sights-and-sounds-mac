@@ -31,7 +31,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "SightsAndSoundsApp",
-            dependencies: ["SightsAndSoundsKit"],
+            dependencies: ["SightsAndSoundsKit", "SightsAndSoundsRemote"],
             // Archivo (UI) and JetBrains Mono (every filename, path, count,
             // duration, size, timestamp, job kind and command) — the two
             // faces `design-tokens.md` specifies. Both OFL; the licences
@@ -51,7 +51,7 @@ let package = Package(
         // the Tag Analysis preview transport was the first to need it.
         .testTarget(
             name: "SightsAndSoundsAppTests",
-            dependencies: ["SightsAndSoundsApp", "SightsAndSoundsKit"]
+            dependencies: ["SightsAndSoundsApp", "SightsAndSoundsKit", "SightsAndSoundsRemote"]
         ),
     ]
 )

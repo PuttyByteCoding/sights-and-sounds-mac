@@ -21,6 +21,9 @@ public struct ApprovedDevice: Codable, Equatable, Identifiable, Sendable {
 public final class DeviceStore: @unchecked Sendable {
     private struct Contents: Codable {
         var port: UInt16?
+        /// Whether remote access was left on. Absent in a file from
+        /// before this was kept, which means off.
+        var enabled: Bool?
         var devices: [ApprovedDevice] = []
     }
 
@@ -43,6 +46,14 @@ public final class DeviceStore: @unchecked Sendable {
 
     func setPort(_ port: UInt16?) throws {
         try change { $0.port = port }
+    }
+
+    /// Whether remote access was left on, to be turned on again when
+    /// the app is next opened. Off until it has been turned on once.
+    public var isEnabled: Bool { lock.withLock { contents.enabled ?? false } }
+
+    public func setEnabled(_ enabled: Bool) throws {
+        try change { $0.enabled = enabled }
     }
 
     var keys: [ChannelKey] { lock.withLock { contents.devices.map(\.key) } }

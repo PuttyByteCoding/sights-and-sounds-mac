@@ -26,6 +26,8 @@ struct SettingsView: View {
                 .tabItem { Label("Search String", systemImage: "magnifyingglass") }
             LibraryImportSettingsPane()
                 .tabItem { Label("Library Import", systemImage: "square.and.arrow.down.on.square") }
+            RemoteAccessSettingsPane()
+                .tabItem { Label("Remote Access", systemImage: "lock.laptopcomputer") }
         }
         // A minimum, not a fixed width — the Settings window resizes
         // like any other (#73). The infinity maximums matter: the
