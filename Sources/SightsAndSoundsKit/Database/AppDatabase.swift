@@ -65,6 +65,13 @@ public final class AppDatabase: Sendable {
     public static func open(at url: URL) throws -> AppDatabase {
         var config = Configuration()
         config.foreignKeysEnabled = true
+        // More than one connection can be open on this file: a second
+        // copy of the app, and in a test run every app model the tests
+        // make. Left at SQLite's default, a write that found another
+        // connection writing failed at once with "database is locked".
+        // The registry's writes are a row at a time, so the wait is
+        // short; five seconds is for a disk that is slow to answer.
+        config.busyMode = .timeout(5)
         let pool = try DatabasePool(path: url.path, configuration: config)
         return try AppDatabase(writer: pool)
     }
