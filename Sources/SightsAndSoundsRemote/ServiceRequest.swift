@@ -134,6 +134,23 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case setSeparatorCharacters(characters: String)
     case setExtensionOverrides(video: [String]?, audio: [String]?)
 
+    // AnalysisManaging
+    case itemAnalysis(itemID: UUID)
+    case markAnalyzed(itemID: UUID)
+    case metadataSweepState(itemID: UUID)
+    case resetMetadataSweep(itemIDs: [UUID])
+    case analysisRules
+    case saveAnalysisRule(rule: RuleEngine.Rule)
+    case deleteAnalysisRule(id: UUID)
+    case moveAnalysisRule(id: UUID, up: Bool)
+    case ruleCovering(key: String?, value: String)
+    case dryRun(rule: RuleEngine.Rule)
+    case dryRuns(rules: [RuleEngine.Rule])
+    case applyAnalysisRule(rule: RuleEngine.Rule)
+    case jsonSchemas
+    case saveJsonSchema(id: UUID?, name: String, keys: [SchemaKey])
+    case deleteJsonSchema(id: UUID)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -151,7 +168,9 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              // queue started twice is a queue started: safe to ask again.
              .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback,
              // Like the repair queue: asking may start it, and asking again is the same.
-             .organisePlan, .moveSessions, .jobQueue, .libraryProperties:
+             .organisePlan, .moveSessions, .jobQueue, .libraryProperties,
+             .itemAnalysis, .metadataSweepState, .analysisRules, .ruleCovering, .dryRun, .dryRuns,
+             .jsonSchemas:
             true
         default:
             false
@@ -444,6 +463,43 @@ extension ServiceRequest {
             return nothing
         case .setExtensionOverrides(let video, let audio):
             try await service.setExtensionOverrides(video: video, audio: audio)
+            return nothing
+
+        case .itemAnalysis(let itemID):
+            return try json(await service.itemAnalysis(itemID: itemID))
+        case .markAnalyzed(let itemID):
+            try await service.markAnalyzed(itemID: itemID)
+            return nothing
+        case .metadataSweepState(let itemID):
+            return try json(await service.metadataSweepState(itemID: itemID))
+        case .resetMetadataSweep(let itemIDs):
+            try await service.resetMetadataSweep(itemIDs: itemIDs)
+            return nothing
+        case .analysisRules:
+            return try json(await service.analysisRules())
+        case .saveAnalysisRule(let rule):
+            try await service.saveAnalysisRule(rule)
+            return nothing
+        case .deleteAnalysisRule(let id):
+            try await service.deleteAnalysisRule(id: id)
+            return nothing
+        case .moveAnalysisRule(let id, let up):
+            try await service.moveAnalysisRule(id: id, up: up)
+            return nothing
+        case .ruleCovering(let key, let value):
+            return try json(await service.ruleCovering(key: key, value: value))
+        case .dryRun(let rule):
+            return try json(await service.dryRun(of: rule))
+        case .dryRuns(let rules):
+            return try json(await service.dryRuns(of: rules))
+        case .applyAnalysisRule(let rule):
+            return try json(await service.applyAnalysisRule(rule))
+        case .jsonSchemas:
+            return try json(await service.jsonSchemas())
+        case .saveJsonSchema(let id, let name, let keys):
+            return try json(await service.saveJsonSchema(id: id, named: name, keys: keys))
+        case .deleteJsonSchema(let id):
+            try await service.deleteJsonSchema(id: id)
             return nothing
         }
     }

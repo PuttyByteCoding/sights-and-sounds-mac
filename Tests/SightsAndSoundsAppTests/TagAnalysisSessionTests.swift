@@ -11,7 +11,7 @@ import Testing
     private func makeSession() throws -> TagAnalysisSession {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Session")
-        return TagAnalysisSession(libraryID: UUID(), library: library)
+        return TagAnalysisSession(libraryID: UUID(), service: LocalLibraryService(library: library))
     }
 
     @Test func aFreshSessionHasAnOpenPlayerAndNoCompanion() throws {

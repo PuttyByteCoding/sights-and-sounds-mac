@@ -29,8 +29,8 @@ struct AuxWindowRequest: Codable, Hashable {
         var worksOnARemoteLibrary: Bool {
             switch self {
             case .player, .categories, .watched, .bookmarkSearch, .review, .maintenance, .organise,
-                 .operations: true
-            case .importMedia, .tagAnalysis: false
+                 .operations, .tagAnalysis: true
+            case .importMedia: false
             }
         }
 

@@ -283,6 +283,54 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.setExtensionOverrides(video: video, audio: audio) }
     }
 
+    // MARK: AnalysisManaging
+
+    func itemAnalysis(itemID: UUID) async throws -> ItemAnalysisAnswer {
+        try await run { try await base.itemAnalysis(itemID: itemID) }
+    }
+    func markAnalyzed(itemID: UUID) async throws {
+        try await run { try await base.markAnalyzed(itemID: itemID) }
+    }
+    func metadataSweepState(itemID: UUID) async throws -> ItemSweepState {
+        try await run { try await base.metadataSweepState(itemID: itemID) }
+    }
+    func resetMetadataSweep(itemIDs: [UUID]) async throws {
+        try await run { try await base.resetMetadataSweep(itemIDs: itemIDs) }
+    }
+    func analysisRules() async throws -> [RuleEngine.Rule] {
+        try await run { try await base.analysisRules() }
+    }
+    func saveAnalysisRule(_ rule: RuleEngine.Rule) async throws {
+        try await run { try await base.saveAnalysisRule(rule) }
+    }
+    func deleteAnalysisRule(id: UUID) async throws {
+        try await run { try await base.deleteAnalysisRule(id: id) }
+    }
+    func moveAnalysisRule(id: UUID, up: Bool) async throws {
+        try await run { try await base.moveAnalysisRule(id: id, up: up) }
+    }
+    func ruleCovering(key: String?, value: String) async throws -> RuleEngine.Rule? {
+        try await run { try await base.ruleCovering(key: key, value: value) }
+    }
+    func dryRun(of rule: RuleEngine.Rule) async throws -> RuleDryRun {
+        try await run { try await base.dryRun(of: rule) }
+    }
+    func dryRuns(of rules: [RuleEngine.Rule]) async throws -> [UUID: RuleDryRun] {
+        try await run { try await base.dryRuns(of: rules) }
+    }
+    func applyAnalysisRule(_ rule: RuleEngine.Rule) async throws -> RuleApplication {
+        try await run { try await base.applyAnalysisRule(rule) }
+    }
+    func jsonSchemas() async throws -> [JsonSchemaDefinition] {
+        try await run { try await base.jsonSchemas() }
+    }
+    func saveJsonSchema(id: UUID?, named name: String, keys: [SchemaKey]) async throws -> JsonSchemaDefinition {
+        try await run { try await base.saveJsonSchema(id: id, named: name, keys: keys) }
+    }
+    func deleteJsonSchema(id: UUID) async throws {
+        try await run { try await base.deleteJsonSchema(id: id) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

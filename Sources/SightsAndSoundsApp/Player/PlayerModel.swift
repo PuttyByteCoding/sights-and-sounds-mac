@@ -40,7 +40,7 @@ final class PlayerModel {
     /// companion's window can find it by id.
     func analysisSession(registeringIn app: AppModel) -> TagAnalysisSession {
         if let analysisSession { return analysisSession }
-        let session = TagAnalysisSession(libraryID: libraryID, library: library)
+        let session = TagAnalysisSession(libraryID: libraryID, service: service)
         session.apply = { [weak self] tag in self?.applyTag(tag.id) }
         session.step = { [weak self] delta in
             delta < 0 ? self?.goPrevious() : self?.goNext()
