@@ -163,6 +163,15 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case setImportBoxes(boxes: [ImportBox])
     case enableExtension(fileExtension: String)
 
+    // QueueManaging
+    case jobLane(limit: Int)
+    case moveJobToFront(id: UUID)
+    case retryJob(id: UUID)
+    case clearFinishedJobs
+    case setQueuePaused(paused: Bool)
+    case sweepStatuses
+    case startSweep(kind: SweepKind, preparation: SweepPreparation)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -184,7 +193,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .itemAnalysis, .metadataSweepState, .analysisRules, .ruleCovering, .dryRun, .dryRuns,
              .jsonSchemas, .existingTags, .job,
              // A scan lists a folder and a probe measures a file; neither writes.
-             .importOverview, .scanSource, .probeFile, .importBoxes:
+             .importOverview, .scanSource, .probeFile, .importBoxes, .jobLane, .sweepStatuses:
             true
         default:
             false
@@ -555,6 +564,26 @@ extension ServiceRequest {
             return nothing
         case .enableExtension(let fileExtension):
             try await service.enableExtension(fileExtension)
+            return nothing
+
+        case .jobLane(let limit):
+            return try json(await service.jobLane(limit: limit))
+        case .moveJobToFront(let id):
+            try await service.moveJobToFront(id: id)
+            return nothing
+        case .retryJob(let id):
+            try await service.retryJob(id: id)
+            return nothing
+        case .clearFinishedJobs:
+            try await service.clearFinishedJobs()
+            return nothing
+        case .setQueuePaused(let paused):
+            try await service.setQueuePaused(paused)
+            return nothing
+        case .sweepStatuses:
+            return try json(await service.sweepStatuses())
+        case .startSweep(let kind, let preparation):
+            try await service.startSweep(kind, after: preparation)
             return nothing
         }
     }

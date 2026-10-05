@@ -364,6 +364,30 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.enableExtension(fileExtension) }
     }
 
+    // MARK: QueueManaging
+
+    func jobLane(limit: Int) async throws -> JobLane {
+        try await run { try await base.jobLane(limit: limit) }
+    }
+    func moveJobToFront(id: UUID) async throws {
+        try await run { try await base.moveJobToFront(id: id) }
+    }
+    func retryJob(id: UUID) async throws {
+        try await run { try await base.retryJob(id: id) }
+    }
+    func clearFinishedJobs() async throws {
+        try await run { try await base.clearFinishedJobs() }
+    }
+    func setQueuePaused(_ paused: Bool) async throws {
+        try await run { try await base.setQueuePaused(paused) }
+    }
+    func sweepStatuses() async throws -> [SweepKind: SweepStatus] {
+        try await run { try await base.sweepStatuses() }
+    }
+    func startSweep(_ kind: SweepKind, after preparation: SweepPreparation) async throws {
+        try await run { try await base.startSweep(kind, after: preparation) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

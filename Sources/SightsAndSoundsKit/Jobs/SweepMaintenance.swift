@@ -3,7 +3,7 @@ import GRDB
 
 /// One derived-data kind's health: how many items still lack the data,
 /// and how many failed last time — the numbers beside the sweep buttons.
-public struct SweepStatus: Equatable, Sendable {
+public struct SweepStatus: Codable, Equatable, Sendable {
     public let missing: Int
     public let failed: Int
 }
