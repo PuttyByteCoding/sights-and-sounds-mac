@@ -91,6 +91,11 @@ public final class LibraryDatabase: Sendable {
     /// lands as a new registration, and the dev-fixture migration loop
     /// (delete the library file, re-run the migrator against a frozen v8
     /// snapshot) re-exercises them all.
+    /// What this build's library schema is called: the name of its newest
+    /// migration. Two Macs sharing a library must be at the same one —
+    /// the rows they pass each other are this schema's rows.
+    public static var schemaIdentifier: String { migrator.migrations.last ?? "" }
+
     static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
