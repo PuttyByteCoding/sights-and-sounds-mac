@@ -139,6 +139,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case markAnalyzed(itemID: UUID)
     case metadataSweepState(itemID: UUID)
     case resetMetadataSweep(itemIDs: [UUID])
+    case existingTags(lines: [String])
     case analysisRules
     case saveAnalysisRule(rule: RuleEngine.Rule)
     case deleteAnalysisRule(id: UUID)
@@ -170,7 +171,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              // Like the repair queue: asking may start it, and asking again is the same.
              .organisePlan, .moveSessions, .jobQueue, .libraryProperties,
              .itemAnalysis, .metadataSweepState, .analysisRules, .ruleCovering, .dryRun, .dryRuns,
-             .jsonSchemas:
+             .jsonSchemas, .existingTags:
             true
         default:
             false
@@ -475,6 +476,8 @@ extension ServiceRequest {
         case .resetMetadataSweep(let itemIDs):
             try await service.resetMetadataSweep(itemIDs: itemIDs)
             return nothing
+        case .existingTags(let lines):
+            return try json(await service.existingTags(inLines: lines))
         case .analysisRules:
             return try json(await service.analysisRules())
         case .saveAnalysisRule(let rule):

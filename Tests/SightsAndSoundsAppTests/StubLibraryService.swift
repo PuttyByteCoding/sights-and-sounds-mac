@@ -297,6 +297,9 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func resetMetadataSweep(itemIDs: [UUID]) async throws {
         try await run { try await base.resetMetadataSweep(itemIDs: itemIDs) }
     }
+    func existingTags(inLines lines: [String]) async throws -> [ExistingTagFinding] {
+        try await run { try await base.existingTags(inLines: lines) }
+    }
     func analysisRules() async throws -> [RuleEngine.Rule] {
         try await run { try await base.analysisRules() }
     }
