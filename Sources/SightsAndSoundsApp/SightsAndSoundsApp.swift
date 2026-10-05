@@ -285,7 +285,7 @@ final class AppModel {
     /// The Macs this one has been paired with, and their libraries.
     @ObservationIgnored
     private(set) lazy var remoteLibraries = RemoteLibrariesModel(
-        file: Self.supportDirectory().appendingPathComponent("RemoteAccess/hosts.json"))
+        file: remoteAccessFolder.appendingPathComponent("hosts.json"))
 
     /// Where the app keeps its own files; a folder of the run's own
     /// under test.
