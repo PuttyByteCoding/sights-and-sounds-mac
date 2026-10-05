@@ -34,7 +34,9 @@ public enum ChannelSecurity {
     /// stolen later does not open traffic recorded earlier.
     public static let suite: UInt16 = 0xCCAC
 
-    static func parameters(keys: [ChannelKey]) -> NWParameters {
+    /// - Parameter resumesSessions: only ever true in a test, to stand
+    ///   for a caller that asks to resume whatever this app does.
+    static func parameters(keys: [ChannelKey], resumesSessions: Bool = false) -> NWParameters {
         let tls = NWProtocolTLS.Options()
         let options = tls.securityProtocolOptions
         for entry in keys {
@@ -48,6 +50,15 @@ public enum ChannelSecurity {
         // A pre-shared key is not offered under TLS 1.3 here.
         sec_protocol_options_set_min_tls_protocol_version(options, .TLSv12)
         sec_protocol_options_set_max_tls_protocol_version(options, .TLSv12)
+        // Every connection proves the key, from the start. TLS can
+        // otherwise pick up where an earlier connection left off, and a
+        // connection resumed is one that never showed a key at all: it
+        // shows only that some connection from the same program got
+        // through before. Seen on macOS 15, where a key the listener
+        // did not hold connected straight after one it did. So neither
+        // end keeps anything of a connection to resume it by.
+        sec_protocol_options_set_tls_resumption_enabled(options, resumesSessions)
+        sec_protocol_options_set_tls_tickets_enabled(options, resumesSessions)
 
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
