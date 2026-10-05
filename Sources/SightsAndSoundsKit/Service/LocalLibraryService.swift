@@ -99,6 +99,15 @@ extension LocalLibraryService {
             snapshotRefs: try library.recentSnapshotRefs(perItem: snapshotsPerItem))
     }
 
+    public func storedThumbnail(itemID: UUID) async throws -> Data? {
+        guard let libraryID = try library.info()?.libraryID else { return nil }
+        let url = ThumbnailStore.url(libraryID: libraryID, itemID: itemID)
+        // Whole, or not at all: half a JPEG sent to another Mac would be
+        // kept there as the thumbnail.
+        guard ThumbnailStore.isWhole(at: url) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
     public func thumbnailQueueStatus() async throws -> ThumbnailQueueStatus? {
         try await library.writer.read { db -> ThumbnailQueueStatus? in
             guard

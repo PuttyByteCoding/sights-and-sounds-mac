@@ -35,6 +35,65 @@ import Testing
         }
     }
 
+    /// A library held on another Mac: that Mac is asked for the thumbnail
+    /// it has already made. Nothing is rendered here, which would mean
+    /// fetching the video to do it, and what comes back is kept here
+    /// like one made here.
+    @Test func aThumbnailTheLibrarysMacHasIsNotMadeAgainHere() async throws {
+        let gauge = Gauge()
+        let libraryID = UUID(), itemID = UUID()
+        let cached = ThumbnailStore.url(libraryID: libraryID, itemID: itemID)
+        defer { try? FileManager.default.removeItem(at: cached.deletingLastPathComponent()) }
+        let askedForTheFile = Flag(), fetched = Flag()
+
+        let data = await slowProvider(gauge, maxConcurrent: 2).thumbnailData(
+            itemID: itemID, libraryID: libraryID, durationSeconds: 60,
+            fetchStored: {
+                fetched.set()
+                return Data("from the other Mac".utf8)
+            },
+            resolveFile: {
+                askedForTheFile.set()
+                return URL(fileURLWithPath: "/nonexistent.mp4")
+            })
+
+        #expect(data == Data("from the other Mac".utf8))
+        #expect(fetched.isSet)
+        #expect(await gauge.started == 0, "a thumbnail was rendered that the other Mac already had")
+        #expect(!askedForTheFile.isSet)
+        #expect(try Data(contentsOf: cached) == Data("from the other Mac".utf8))
+
+        // Next time — another launch, say — it is here already and the
+        // other Mac is not asked.
+        let again = Flag()
+        let second = await slowProvider(gauge, maxConcurrent: 2).thumbnailData(
+            itemID: itemID, libraryID: libraryID, durationSeconds: 60,
+            fetchStored: {
+                again.set()
+                return nil
+            },
+            resolveFile: { nil })
+        #expect(second == Data("from the other Mac".utf8))
+        #expect(!again.isSet)
+    }
+
+    /// The other Mac has made none yet: one is made here, from wherever
+    /// the item plays from.
+    @Test func whenTheLibrarysMacHasNoneOneIsMadeHere() async throws {
+        let gauge = Gauge()
+        let libraryID = UUID(), itemID = UUID()
+        defer {
+            try? FileManager.default.removeItem(
+                at: ThumbnailStore.root.appendingPathComponent(libraryID.uuidString))
+        }
+        let data = await slowProvider(gauge, maxConcurrent: 2).thumbnailData(
+            itemID: itemID, libraryID: libraryID, durationSeconds: 60,
+            fetchStored: { nil },
+            resolveFile: { URL(string: "http://127.0.0.1:9/relay/item.mp4") })
+        #expect(data == Data("jpeg".utf8))
+        #expect(await gauge.started == 1)
+    }
+
     /// Once a thumbnail is on disk the file it came from is irrelevant —
     /// that is what keeps an offline source looking complete — so nothing
     /// should go and work out where that file is. It used to be resolved

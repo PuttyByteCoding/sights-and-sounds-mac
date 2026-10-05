@@ -32,6 +32,11 @@ public enum RemoteProtocol {
         public static let pair: UInt8 = 12
         /// The host's yes: the device's own key and token.
         public static let grant: UInt8 = 13
+        /// Some of an item's file: which item, from where, how much.
+        public static let media: UInt8 = 14
+        /// The answer to `media`: the size of the whole file, then the
+        /// bytes asked for. Not JSON — these are the video itself.
+        public static let bytes: UInt8 = 15
     }
 
     /// An answer this large or larger is compressed. A listing of a big
@@ -115,6 +120,57 @@ public struct RemoteLibraryInfo: Codable, Equatable, Sendable, Identifiable {
     public init(id: UUID, name: String) {
         self.id = id
         self.name = name
+    }
+}
+
+/// A piece of an item's file, asked for by the item's id. Never by
+/// path: which file an item is, is the host's library's to say.
+public struct MediaRead: Codable, Equatable, Sendable {
+    public var itemID: UUID
+    public var offset: Int64
+    public var length: Int
+
+    /// The most that comes back in one answer, whatever was asked for.
+    public static let maximumLength = 1 << 20
+
+    public init(itemID: UUID, offset: Int64, length: Int) {
+        self.itemID = itemID
+        self.offset = offset
+        self.length = length
+    }
+}
+
+/// The answer to a `MediaRead`.
+public struct MediaBytes: Equatable, Sendable {
+    /// How long the whole file is.
+    public var total: Int64
+    /// From the offset asked for: as much as was asked, or as the host
+    /// sends at once, or as the file has left. Empty at its end.
+    public var data: Data
+
+    public init(total: Int64, data: Data) {
+        self.total = total
+        self.data = data
+    }
+
+    var frame: Frame {
+        var payload = Data(capacity: data.count + 8)
+        for shift in stride(from: 56, through: 0, by: -8) {
+            payload.append(UInt8(truncatingIfNeeded: total >> Int64(shift)))
+        }
+        payload.append(data)
+        return Frame(kind: RemoteProtocol.Kind.bytes, payload: payload)
+    }
+
+    init(frame: Frame) throws {
+        guard frame.kind == RemoteProtocol.Kind.bytes, frame.payload.count >= 8 else {
+            throw ChannelError.malformed("a frame of kind \(frame.kind) where a file's bytes were expected")
+        }
+        var total: Int64 = 0
+        for byte in frame.payload.prefix(8) { total = total << 8 | Int64(byte) }
+        guard total >= 0 else { throw ChannelError.malformed("a file of less than no length") }
+        self.total = total
+        self.data = Data(frame.payload.dropFirst(8))
     }
 }
 

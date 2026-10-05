@@ -831,7 +831,8 @@ private struct IssueDetail: View {
         .task(id: item.id) {
             let data = await ThumbnailProvider.shared.thumbnailData(
                 itemID: item.id, libraryID: model.libraryID,
-                durationSeconds: item.durationSeconds, resolveFile: model.fileResolver(for: item))
+                durationSeconds: item.durationSeconds,
+                fetchStored: model.storedThumbnail(for: item), resolveFile: model.fileResolver(for: item))
             thumbnail = await ThumbnailImages.shared.image(
                 libraryID: model.libraryID, itemID: item.id, data: data, points: nil)
         }
@@ -1251,7 +1252,8 @@ private struct ComparePane: View {
         .task(id: item.id) {
             let data = await ThumbnailProvider.shared.thumbnailData(
                 itemID: item.id, libraryID: model.libraryID,
-                durationSeconds: item.durationSeconds, resolveFile: model.fileResolver(for: item))
+                durationSeconds: item.durationSeconds,
+                fetchStored: model.storedThumbnail(for: item), resolveFile: model.fileResolver(for: item))
             thumbnail = await ThumbnailImages.shared.image(
                 libraryID: model.libraryID, itemID: item.id, data: data, points: nil)
         }

@@ -16,6 +16,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case savedFilterCounts(kinds: MediaKinds)
     case tileMenuFacts(snapshotsPerItem: Int)
     case thumbnailQueueStatus
+    case storedThumbnail(itemID: UUID)
 
     // BrowseListing
     case listing(ListingRequest)
@@ -75,7 +76,8 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     public var onlyReads: Bool {
         switch self {
         case .sourceStates, .browseVocabulary, .sidebarCounts, .pendingDuplicateCount, .savedFilters,
-             .savedFilterCounts, .tileMenuFacts, .thumbnailQueueStatus, .listing, .playable, .opened,
+             .savedFilterCounts, .tileMenuFacts, .thumbnailQueueStatus, .storedThumbnail, .listing, .playable,
+             .opened,
              .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
              .tagMembership, .pendingTextScan, .textLines:
             true
@@ -131,6 +133,8 @@ extension ServiceRequest {
             return try json(await service.tileMenuFacts(snapshotsPerItem: snapshotsPerItem))
         case .thumbnailQueueStatus:
             return try json(await service.thumbnailQueueStatus())
+        case .storedThumbnail(let itemID):
+            return try json(await service.storedThumbnail(itemID: itemID))
 
         case .listing(let request):
             return try json(await service.listing(request))

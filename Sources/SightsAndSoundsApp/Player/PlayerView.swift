@@ -1947,6 +1947,7 @@ private struct QueueCell: View {
                 let data = await ThumbnailProvider.shared.thumbnailData(
                     itemID: item.id, libraryID: model.libraryID,
                     durationSeconds: item.durationSeconds,
+                    fetchStored: model.storedThumbnail(for: item),
                     resolveFile: model.queueFileResolver(for: item))
                 thumbnail = await ThumbnailImages.shared.image(
                     libraryID: model.libraryID, itemID: item.id, data: data, points: cellWidth)

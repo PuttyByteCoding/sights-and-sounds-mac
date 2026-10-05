@@ -51,8 +51,14 @@ actor ThumbnailProvider {
     /// `resolveFile` is only called when a thumbnail has to be rendered,
     /// never on the caller's actor; nil from it (an offline source) means
     /// there is nothing to render from.
+    ///
+    /// `fetchStored` is for a library held on another Mac: it asks that
+    /// Mac for the thumbnail it has already made. It is tried before
+    /// rendering, since rendering there means fetching the video to do
+    /// it, and what it returns is kept here like one made here.
     func thumbnailData(
         itemID: UUID, libraryID: UUID, durationSeconds: Double?,
+        fetchStored: (@Sendable () async -> Data?)? = nil,
         resolveFile: @escaping @Sendable () async -> URL?
     ) async -> Data? {
         let key = "\(libraryID)/\(itemID)"
@@ -61,7 +67,7 @@ actor ThumbnailProvider {
         waiting[key, default: 0] += 1
         let task = inFlight[key] ?? startLoad(
             key: key, itemID: itemID, libraryID: libraryID,
-            durationSeconds: durationSeconds, resolveFile: resolveFile)
+            durationSeconds: durationSeconds, fetchStored: fetchStored, resolveFile: resolveFile)
         // `Task.value` does not return early when the caller is cancelled,
         // so the tile going away is heard through the handler instead.
         let data = await withTaskCancellationHandler {
@@ -80,6 +86,7 @@ actor ThumbnailProvider {
 
     private func startLoad(
         key: String, itemID: UUID, libraryID: UUID, durationSeconds: Double?,
+        fetchStored: (@Sendable () async -> Data?)?,
         resolveFile: @escaping @Sendable () async -> URL?
     ) -> Task<Data?, Never> {
         let render = render
@@ -92,8 +99,11 @@ actor ThumbnailProvider {
             // The tile scrolled away while this waited: render nothing.
             guard self.waiting[key] != nil else { return nil }
 
-            guard let fileURL = await resolveFile() else { return nil }
-            guard let jpeg = await render(fileURL, durationSeconds) else { return nil }
+            var made = await fetchStored?()
+            if made == nil, let fileURL = await resolveFile() {
+                made = await render(fileURL, durationSeconds)
+            }
+            guard let jpeg = made else { return nil }
             await Self.offActor {
                 try? FileManager.default.createDirectory(
                     at: diskURL.deletingLastPathComponent(), withIntermediateDirectories: true)

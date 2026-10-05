@@ -334,6 +334,7 @@ private struct ItemCell: View {
                     itemID: item.id,
                     libraryID: model.libraryID,
                     durationSeconds: item.durationSeconds,
+                    fetchStored: model.storedThumbnail(for: item),
                     resolveFile: model.fileResolver(for: item))
                 // An adaptive column is at most 1.4× the chosen size.
                 thumbnail = await ThumbnailImages.shared.image(

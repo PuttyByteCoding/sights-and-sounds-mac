@@ -43,6 +43,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key><true/>
+    </dict>
     <!-- What macOS shows when it asks for access to a library's media. -->
     <key>NSRemovableVolumesUsageDescription</key><string>Sights and Sounds reads and organises the media files in libraries kept on external drives.</string>
     <key>NSNetworkVolumesUsageDescription</key><string>Sights and Sounds reads and organises the media files in libraries kept on network shares.</string>
