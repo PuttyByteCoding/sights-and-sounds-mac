@@ -194,6 +194,14 @@ public actor RemoteHost {
         await rekey()
     }
 
+    /// The code's time is up, now. For a test, which cannot wait ten
+    /// minutes and must not depend on how long a few hundred
+    /// milliseconds turn out to be on a busy machine.
+    func pairingTimeIsUp() async {
+        guard let pairing else { return }
+        await expire(pairing.id)
+    }
+
     private func expire(_ id: UUID) async {
         // Out of time while the host's user is deciding about a device
         // that asked in time: the decision still counts, and ends the
