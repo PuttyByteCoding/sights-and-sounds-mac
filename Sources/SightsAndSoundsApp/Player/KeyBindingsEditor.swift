@@ -74,19 +74,16 @@ struct KeyBindingsEditor: View {
                         Toggle("Advances", isOn: Binding(
                             get: { binding.advance },
                             set: { flag in
-                                do {
-                                    try model.library.setKeyBinding(
+                                Task {
+                                    errorText = await model.setKeyBinding(
                                         binding.key, tagID: binding.tagID, advance: flag)
-                                    model.refreshTagging()
-                                    errorText = nil
-                                } catch { errorText = "\(error)" }
+                                }
                             }))
                             .toggleStyle(.checkbox)
                             .font(.caption)
                             .help("Applying the tag also moves to the next item")
                         Button {
-                            try? model.library.removeKeyBinding(binding.key)
-                            model.refreshTagging()
+                            Task { _ = await model.removeKeyBinding(binding.key) }
                         } label: { Image(systemName: "trash") }
                             .buttonStyle(.plain)
                     }
@@ -189,18 +186,21 @@ struct KeyBindingsEditor: View {
     /// clears, the key picker steps to the next free key so a run of
     /// bindings is type · Enter · type · Enter.
     private func bind(_ row: TagPick) {
-        do {
-            try model.library.setKeyBinding(selectedKey, tagID: row.id, advance: advance)
-            model.refreshTagging()
+        // The key and the flag as they were at the press: the picker may
+        // have moved by the time the binding has been made.
+        let key = selectedKey, advances = advance
+        Task {
+            if let problem = await model.setKeyBinding(key, tagID: row.id, advance: advances) {
+                errorText = problem
+                return
+            }
             errorText = nil
             query = ""
             highlighted = nil
-            if let next = TagKeyBinding.bindableKeys.first(where: { model.boundKeys[$0] == nil && $0 != selectedKey }) {
+            if let next = TagKeyBinding.bindableKeys.first(where: { model.boundKeys[$0] == nil && $0 != key }) {
                 selectedKey = next
             }
             queryFocused = true
-        } catch {
-            errorText = "\(error)"
         }
     }
 }

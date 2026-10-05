@@ -11,6 +11,29 @@ public protocol PlayerWriting: Sendable {
     /// it back. Returns the row and where it plays from as they are
     /// afterwards: a staged file has a new path.
     func setFlag(_ flag: PlayerToggleFlag, _ on: Bool, itemID: UUID) async throws -> Playable
+
+    // The tag panel. Applying a tag to items is `BrowseWriting`'s.
+
+    /// Put the tag on the item, or take it off. Returns whether the item
+    /// wears it afterwards. In a single-select category, putting one on
+    /// takes the others off.
+    func toggleTag(_ tagID: UUID, on itemID: UUID) async throws -> Bool
+
+    /// Refused when the category already has a tag of that name.
+    func renameTag(_ tagID: UUID, to name: String) async throws
+
+    /// The tag of that name in the category, made if it is not there.
+    func ensureTag(named name: String, inCategory categoryID: UUID) async throws -> Tag
+
+    /// Another name for a tag. An empty one is not added.
+    func addAlias(_ alias: String, toTag tagID: UUID) async throws
+
+    /// The order the categories are listed in, everywhere.
+    func setCategoryOrder(_ categoryIDs: [UUID]) async throws
+
+    /// Bind a key to a tag, replacing what the key was bound to.
+    func setKeyBinding(_ key: String, tagID: UUID, advance: Bool) async throws
+    func removeKeyBinding(_ key: String) async throws
 }
 
 public enum PlaybackEvent: Codable, Equatable, Sendable {

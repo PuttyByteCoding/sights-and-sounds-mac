@@ -121,4 +121,32 @@ extension LocalLibraryService {
         // as they are now.
         return try await playable(itemID: itemID)
     }
+
+    public func toggleTag(_ tagID: UUID, on itemID: UUID) async throws -> Bool {
+        try library.toggleTag(tagID, on: itemID)
+    }
+
+    public func renameTag(_ tagID: UUID, to name: String) async throws {
+        try library.renameTag(tagID, to: name)
+    }
+
+    public func ensureTag(named name: String, inCategory categoryID: UUID) async throws -> Tag {
+        try library.ensureTag(named: name, inCategory: categoryID)
+    }
+
+    public func addAlias(_ alias: String, toTag tagID: UUID) async throws {
+        try library.addAlias(alias, toTag: tagID)
+    }
+
+    public func setCategoryOrder(_ categoryIDs: [UUID]) async throws {
+        try library.setCategoryOrder(categoryIDs)
+    }
+
+    public func setKeyBinding(_ key: String, tagID: UUID, advance: Bool) async throws {
+        try library.setKeyBinding(key, tagID: tagID, advance: advance)
+    }
+
+    public func removeKeyBinding(_ key: String) async throws {
+        try library.removeKeyBinding(key)
+    }
 }

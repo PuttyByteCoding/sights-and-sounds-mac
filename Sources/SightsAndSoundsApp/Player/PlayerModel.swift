@@ -1055,13 +1055,82 @@ final class PlayerModel {
         let rows = TagPanelOrder.moved(panelRows, row, before: target)
         guard rows != panelRows else { return }
         AppSettingsStore.shared.update { $0.tagPanelRowOrder = rows.map(\.key) }
-        do {
-            try library.setCategoryOrder(rows.compactMap(\.categoryID))
-            refreshTagging()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
+        // The rows follow the setting at once, where the drop was made;
+        // the library's own category order follows when the write lands.
+        refreshPanelRows()
+        let order = rows.compactMap(\.categoryID)
+        editTags({ try await $0.setCategoryOrder(order) }) { [weak self] _ in
+            self?.refreshTagging()
+            self?.recountQueue()
         }
+    }
+
+    // MARK: - Tag writes
+
+    /// Tag writes asked for whose result has not been shown yet.
+    private(set) var writesInFlight = 0
+
+    /// Nothing asked of the library is still on its way: every write
+    /// made here has landed and every panel read has been shown.
+    var isSettled: Bool { writesInFlight == 0 && panelLoadsInFlight == 0 }
+
+    /// Queue one change to the library's tags, in the order it was asked
+    /// for, and show its result when it lands. The write is queued at
+    /// the call, so a run of key presses is carried out in the order
+    /// pressed; whatever it names (the item, the tag) was read at the
+    /// press, so stepping on meanwhile does not move it to another item.
+    /// A write that fails says so on the error line.
+    private func editTags<T: Sendable>(
+        _ work: @escaping @Sendable (any LibraryService) async throws -> T,
+        then show: @escaping @MainActor (T) -> Void
+    ) {
+        let service = service
+        writesInFlight += 1
+        let write = writes.submit { try await work(service) }
+        Task { [weak self] in
+            let outcome = await write.value
+            guard let self else { return }
+            // After `show`, which starts the panel's re-read: there is no
+            // moment between the two when the player looks settled.
+            defer { self.writesInFlight -= 1 }
+            switch outcome {
+            case .success(let value): show(value)
+            case .failure(let error): self.loadError = "\(error)"
+            }
+        }
+    }
+
+    /// A tag put on the item joins the tags recently applied. Only
+    /// APPLYING records history — removing a tag is not something you
+    /// want offered back.
+    private func noteApplied(_ tagID: UUID) {
+        recentlyAppliedTagIDs.removeAll { $0 == tagID }
+        recentlyAppliedTagIDs.insert(tagID, at: 0)
+        if recentlyAppliedTagIDs.count > 30 {
+            recentlyAppliedTagIDs.removeLast()
+        }
+    }
+
+    /// Bind a key to a tag. Returns what went wrong, or nil; the
+    /// bindings on this model are current when it returns, which the
+    /// editor relies on to step to the next free key.
+    func setKeyBinding(_ key: String, tagID: UUID, advance: Bool) async -> String? {
+        await editKeyBindings { try await $0.setKeyBinding(key, tagID: tagID, advance: advance) }
+    }
+
+    func removeKeyBinding(_ key: String) async -> String? {
+        await editKeyBindings { try await $0.removeKeyBinding(key) }
+    }
+
+    private func editKeyBindings(
+        _ work: @escaping @Sendable (any LibraryService) async throws -> Void
+    ) async -> String? {
+        let service = service
+        writesInFlight += 1
+        defer { writesInFlight -= 1 }
+        if case .failure(let error) = await writes.run({ try await work(service) }) { return "\(error)" }
+        await startTaggingRead()?.value
+        return nil
     }
 
     @discardableResult
@@ -1115,14 +1184,22 @@ final class PlayerModel {
     /// aliases, the key bindings and the search index. For a load, and
     /// for a change to the vocabulary itself.
     func refreshTagging() {
+        startTaggingRead()
+    }
+
+    /// The read `refreshTagging` starts, for a caller that waits for the
+    /// panel to be current. nil with no item on screen.
+    @discardableResult
+    private func startTaggingRead() -> Task<Void, Never>? {
         lastTaggingRefreshBegan = .now
-        guard let itemID = item?.id else { return }
+        guard let itemID = item?.id else { return nil }
         itemTagsGeneration += 1
         vocabularyGeneration += 1
         let tagsGeneration = itemTagsGeneration, wordsGeneration = vocabularyGeneration
         let service = service
         panelLoadsInFlight += 1
-        Task { [weak self] in
+        if panels.search { refreshSearch() }
+        return Task { [weak self] in
             let answer = await Self.answer { try await service.tagging(itemID: itemID) }
             guard let self else { return }
             self.panelLoadsInFlight -= 1
@@ -1137,7 +1214,6 @@ final class PlayerModel {
                 if self.item?.id == itemID { self.loadError = "\(error)" }
             }
         }
-        if panels.search { refreshSearch() }
     }
 
     /// The vocabulary, the aliases, the key bindings and the search
@@ -1182,22 +1258,11 @@ final class PlayerModel {
     private(set) var recentlyAppliedTagIDs: [UUID] = []
 
     func toggleTag(_ tagID: UUID) {
-        guard let item else { return }
-        do {
-            let applied = try library.toggleTag(tagID, on: item.id)
-            // Only APPLYING records history — removing a tag is not
-            // something you want offered back.
-            if applied {
-                recentlyAppliedTagIDs.removeAll { $0 == tagID }
-                recentlyAppliedTagIDs.insert(tagID, at: 0)
-                if recentlyAppliedTagIDs.count > 30 {
-                    recentlyAppliedTagIDs.removeLast()
-                }
-            }
-            refreshItemTags()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
+        guard let itemID = item?.id else { return }
+        editTags({ try await $0.toggleTag(tagID, on: itemID) }) { [weak self] applied in
+            if applied { self?.noteApplied(tagID) }
+            self?.refreshItemTags()
+            self?.recountQueue()
         }
     }
 
@@ -1206,43 +1271,32 @@ final class PlayerModel {
     /// does, and refreshes the panel, so a tag applied from the other
     /// window appears here at once without a broadcast.
     func applyTag(_ tagID: UUID) {
-        guard let item else { return }
-        do {
-            try library.assignTag(tagID, to: item.id)
-            recentlyAppliedTagIDs.removeAll { $0 == tagID }
-            recentlyAppliedTagIDs.insert(tagID, at: 0)
-            if recentlyAppliedTagIDs.count > 30 {
-                recentlyAppliedTagIDs.removeLast()
-            }
-            refreshItemTags()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
+        guard let itemID = item?.id else { return }
+        editTags({ try await $0.assignTag(tagID, to: [itemID]) }) { [weak self] _ in
+            self?.noteApplied(tagID)
+            self?.refreshItemTags()
+            self?.recountQueue()
         }
     }
 
     /// Rename through the kit's single write path (normalization,
     /// per-category uniqueness) — the info bar's pill menu calls this.
     func renameTag(_ tagID: UUID, to name: String) {
-        do {
-            try library.renameTag(tagID, to: name)
-            refreshTagging()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
+        editTags({ try await $0.renameTag(tagID, to: name) }) { [weak self] _ in
+            self?.refreshTagging()
+            self?.recountQueue()
         }
     }
 
     /// Autocomplete-create: normalize, find-or-create, assign.
     func addTag(named raw: String, categoryID: UUID) {
-        guard let item else { return }
-        do {
-            let tag = try library.ensureTag(named: raw, inCategory: categoryID)
-            try library.assignTag(tag.id, to: item.id)
-            refreshTagging()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
+        guard let itemID = item?.id else { return }
+        editTags({ service in
+            let tag = try await service.ensureTag(named: raw, inCategory: categoryID)
+            try await service.assignTag(tag.id, to: [itemID])
+        }) { [weak self] _ in
+            self?.refreshTagging()
+            self?.recountQueue()
         }
     }
 
@@ -1250,12 +1304,9 @@ final class PlayerModel {
     /// Aliases are how a future import or search resolves the spelling
     /// that was burned into the video.
     func addAlias(_ alias: String, to tagID: UUID) {
-        do {
-            try library.addAlias(alias, toTag: tagID)
-            refreshTagging()
-            recountQueue()
-        } catch {
-            loadError = "\(error)"
+        editTags({ try await $0.addAlias(alias, toTag: tagID) }) { [weak self] _ in
+            self?.refreshTagging()
+            self?.recountQueue()
         }
     }
 
@@ -1270,13 +1321,14 @@ final class PlayerModel {
     /// advance and the tag was APPLIED (not removed), step to the next item.
     func handleBoundKey(_ key: String) -> Bool {
         let canonical = key.count == 1 ? key.lowercased() : key
-        guard let binding = boundKeys[canonical], let item else { return false }
-        do {
-            let applied = try library.toggleTag(binding.tagID, on: item.id)
-            refreshItemTags()
-            if binding.advance && applied { goNext() }
-        } catch {
-            loadError = "\(error)"
+        guard let binding = boundKeys[canonical], let itemID = item?.id else { return false }
+        let tagID = binding.tagID, advances = binding.advance
+        editTags({ try await $0.toggleTag(tagID, on: itemID) }) { [weak self] applied in
+            guard let self else { return }
+            self.refreshItemTags()
+            // Still on the item the key was pressed on: a step taken
+            // meanwhile is not taken again.
+            if advances, applied, self.item?.id == itemID { self.goNext() }
         }
         return true
     }

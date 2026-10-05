@@ -13,6 +13,12 @@ import Testing
         let root: URL
         let a: MediaItem
         let b: MediaItem
+        let band: TagCategory
+        let year: TagCategory
+        let alpha: SightsAndSoundsKit.Tag
+        let beta: SightsAndSoundsKit.Tag
+        let y1995: SightsAndSoundsKit.Tag
+        let y1996: SightsAndSoundsKit.Tag
 
         init() async throws {
             root = FileManager.default.temporaryDirectory
@@ -27,11 +33,25 @@ import Testing
                 sourceID: source.id, kind: .video, relativePath: "a.mp4", durationSeconds: 600, needsReview: true)
             let b = MediaItem(
                 sourceID: source.id, kind: .video, relativePath: "b.mp4", durationSeconds: 600, needsReview: true)
+            let band = TagCategory(name: "Band", sortOrder: 0)
+            let year = TagCategory(name: "Year", allowMultiple: false, sortOrder: 1)
+            let alpha = SightsAndSoundsKit.Tag(tagCategoryID: band.id, name: "Alpha")
+            let beta = SightsAndSoundsKit.Tag(tagCategoryID: band.id, name: "Beta")
+            let y1995 = SightsAndSoundsKit.Tag(tagCategoryID: year.id, name: "1995")
+            let y1996 = SightsAndSoundsKit.Tag(tagCategoryID: year.id, name: "1996")
             try await library.writer.write { db in
                 try source.insert(db)
                 try a.insert(db)
                 try b.insert(db)
+                for category in [band, year] { try category.insert(db) }
+                for tag in [alpha, beta, y1995, y1996] { try tag.insert(db) }
             }
+            self.band = band
+            self.year = year
+            self.alpha = alpha
+            self.beta = beta
+            self.y1995 = y1995
+            self.y1996 = y1996
             self.library = library
             self.a = a
             self.b = b
@@ -39,6 +59,13 @@ import Testing
         }
 
         func tearDown() { try? FileManager.default.removeItem(at: root) }
+
+        func tagIDs(of item: MediaItem) throws -> Set<UUID> {
+            Set(try library.writer.read { db in
+                try UUID.fetchAll(
+                    db, sql: "SELECT tagID FROM mediaItemTag WHERE mediaItemID = ?", arguments: [item.id])
+            })
+        }
 
         func row(_ item: MediaItem) throws -> MediaItem {
             try #require(try library.writer.read { try MediaItem.fetchOne($0, key: item.id) })
@@ -153,5 +180,74 @@ import Testing
             #expect(try JSONDecoder().decode(PlayerToggleFlag.self, from: JSONEncoder().encode(flag)) == flag)
         }
         #expect(PlayerToggleFlag.allCases.count == 4)
+    }
+
+    // MARK: - The tag panel
+
+    @Test func togglingReturnsWhetherTheTagIsNowOn() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        #expect(try await f.service.toggleTag(f.alpha.id, on: f.a.id) == true)
+        #expect(try f.tagIDs(of: f.a) == [f.alpha.id])
+        #expect(try await f.service.toggleTag(f.alpha.id, on: f.a.id) == false)
+        #expect(try f.tagIDs(of: f.a).isEmpty)
+        #expect(try f.tagIDs(of: f.b).isEmpty)
+    }
+
+    @Test func aSingleSelectCategoryReplacesOnToggle() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        _ = try await f.service.toggleTag(f.y1995.id, on: f.a.id)
+        _ = try await f.service.toggleTag(f.alpha.id, on: f.a.id)
+        #expect(try await f.service.toggleTag(f.y1996.id, on: f.a.id) == true)
+        #expect(try f.tagIDs(of: f.a) == [f.y1996.id, f.alpha.id])
+    }
+
+    @Test func renamingToANameInUseIsRefused() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        await #expect(throws: (any Error).self) {
+            try await f.service.renameTag(f.beta.id, to: "alpha")
+        }
+        try await f.service.renameTag(f.beta.id, to: "  Beta Prime  ")
+        let names = try f.library.vocabulary().first { $0.category.id == f.band.id }?.tags.map(\.name)
+        #expect(names == ["Alpha", "Beta Prime"])
+    }
+
+    @Test func ensureTagReturnsTheExistingOneWhateverItsCase() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        #expect(try await f.service.ensureTag(named: "ALPHA", inCategory: f.band.id).id == f.alpha.id)
+        let made = try await f.service.ensureTag(named: "Gamma", inCategory: f.band.id)
+        #expect(made.name == "Gamma" && made.tagCategoryID == f.band.id)
+        #expect(try await f.service.ensureTag(named: "gamma", inCategory: f.band.id).id == made.id)
+    }
+
+    @Test func anAliasIsAddedAndAnEmptyOneIsNot() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try await f.service.addAlias("A", toTag: f.alpha.id)
+        try await f.service.addAlias("   ", toTag: f.alpha.id)
+        let aliases = try await f.library.writer.read { try TagAlias.fetchAll($0) }
+        #expect(aliases.map(\.alias) == ["A"])
+    }
+
+    @Test func categoryOrderIsStored() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try await f.service.setCategoryOrder([f.year.id, f.band.id])
+        #expect(try f.library.vocabulary().map(\.category.name) == ["Year", "Band"])
+    }
+
+    @Test func aKeyIsBoundReboundAndUnbound() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        try await f.service.setKeyBinding("1", tagID: f.alpha.id, advance: false)
+        try await f.service.setKeyBinding("1", tagID: f.beta.id, advance: true)
+        let bound = try f.library.keyBindings()
+        #expect(bound.map(\.key) == ["1"])
+        #expect(bound.first?.tagID == f.beta.id && bound.first?.advance == true)
+        try await f.service.removeKeyBinding("1")
+        #expect(try f.library.keyBindings().isEmpty)
     }
 }
