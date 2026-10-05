@@ -274,10 +274,13 @@ struct NotAvailableRemotelyView: View {
 
 extension View {
     /// Disable a control in a window on a remote library, and say why.
+    /// What is left behind this is not waiting to be built: it acts on
+    /// the other Mac's own disk — a folder to add, a file to show in its
+    /// Finder — and is done there.
     @ViewBuilder
     func unavailableRemotely(_ isRemote: Bool) -> some View {
         if isRemote {
-            self.disabled(true).help(NotAvailableRemotelyView.line)
+            self.disabled(true).help("Done on the Mac that holds this library")
         } else {
             self
         }
