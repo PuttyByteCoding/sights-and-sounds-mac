@@ -426,4 +426,38 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.unsavedSegments(itemIDs: itemIDs))
     }
     public func runNextAndWait(jobID: UUID) async throws { try await tell(.runNextAndWait(jobID: jobID)) }
+
+    // MARK: ReviewManaging
+
+    public func reviewLists() async throws -> ReviewLists { try await ask(.reviewLists) }
+    public func mergeableTags(keeperID: UUID, loserID: UUID) async throws -> [Tag] {
+        try await ask(.mergeableTags(keeperID: keeperID, loserID: loserID))
+    }
+    public func decideDuplicate(
+        keeperID: UUID, loserID: UUID, candidateID: UUID?, mergeTagIDs: Set<UUID>
+    ) async throws -> DecideOutcome {
+        try await ask(.decideDuplicate(
+            keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: mergeTagIDs))
+    }
+    public func rejectDuplicate(candidateID: UUID) async throws {
+        try await tell(.rejectDuplicate(candidateID: candidateID))
+    }
+    public func keepBothDuplicates(candidateID: UUID) async throws {
+        try await tell(.keepBothDuplicates(candidateID: candidateID))
+    }
+    public func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await ask(.unsavedSegmentsOfMarked(itemIDs: itemIDs))
+    }
+    public func purgeMarked(itemIDs: [UUID]) async throws -> LibraryDatabase.PurgeOutcome {
+        try await ask(.purgeMarked(itemIDs: itemIDs))
+    }
+    public func playbackIssueEvidence(itemID: UUID) async throws -> PlaybackIssueEvidence? {
+        try await ask(.playbackIssueEvidence(itemID: itemID))
+    }
+    public func queueRepair(itemID: UUID, recipe: RepairRecipe) async throws -> JobRecord {
+        try await ask(.queueRepair(itemID: itemID, recipe: recipe))
+    }
+    public func repairQueue(startingQueue: Bool) async throws -> RepairQueue {
+        try await ask(.repairQueue(startingQueue: startingQueue))
+    }
 }

@@ -200,7 +200,6 @@ struct BrowseView: View {
                     .help(model.pendingDuplicateCount > 0
                         ? "\(model.pendingDuplicateCount) duplicate pairs, plus the delete list and playback issues"
                         : "Duplicates, the delete list and playback issues")
-                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button("History", systemImage: "clock.arrow.circlepath") {
@@ -254,7 +253,6 @@ struct BrowseView: View {
                         }
                         .disabled(model.visibleItems.isEmpty)
                         PurgeButton()
-                            .disabled(model.isRemote)
                     } label: {
                         Label("Maintenance", systemImage: "wrench.adjustable")
                     }

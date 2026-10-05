@@ -618,6 +618,63 @@ import Testing
         #expect(queued?.state == .queued)
     }
 
+    /// The Review window, from another Mac.
+    @Test(.timeLimit(.minutes(1)))
+    func reviewIsDoneInTheHostsLibrary() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.reviewLists() == local.reviewLists())
+        let lists = try await remote.reviewLists()
+        let pair = try #require(lists.candidates.first)
+        #expect(Set(lists.candidateItems.keys) == [rig.a.id, rig.b.id])
+        #expect(try await remote.mergeableTags(keeperID: rig.b.id, loserID: rig.a.id).map(\.id).sorted { $0.uuidString < $1.uuidString }
+            == [rig.alpha.id, rig.y1995.id].sorted { $0.uuidString < $1.uuidString })
+        #expect(try await remote.playbackIssueEvidence(itemID: rig.a.id) == nil)
+        #expect(try await remote.unsavedSegmentsOfMarked(itemIDs: nil).isEmpty)
+        // The rig's runner is paused, and the answer says so.
+        #expect(try await remote.repairQueue(startingQueue: true) == RepairQueue(pending: [], isPaused: true))
+
+        try await remote.keepBothDuplicates(candidateID: pair.id)
+        #expect(try await local.reviewLists().candidates.isEmpty)
+
+        // A purge naming nothing that is marked deletes nothing: the
+        // request arrives, and the files are where they were.
+        let outcome = try await remote.purgeMarked(itemIDs: [rig.a.id, UUID()])
+        #expect(outcome.rowsDeleted == 0 && outcome.filesDeleted == 0 && outcome.filesTrashed == 0)
+        #expect(outcome.fileFailures.isEmpty && outcome.rowFailures.isEmpty && outcome.keptForSegments.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("set/a.mp4").path))
+        #expect(try rig.row(rig.a) != nil)
+
+        // A repair is queued on the host with the recipe sent from here.
+        let recipe = RepairRecipe(
+            name: "remux", matchPattern: nil, tool: "ffmpeg", argumentTemplate: ["{input}", "{output}"],
+            estimate: "seconds")
+        let job = try await remote.queueRepair(itemID: rig.a.id, recipe: recipe)
+        #expect(job.kind == RepairJob.kind)
+        #expect(try await remote.repairQueue(startingQueue: false).pending == [rig.a.id])
+    }
+
+    @Test func whichReviewRequestsAreAskedTwice() {
+        for read in [
+            ServiceRequest.reviewLists, .mergeableTags(keeperID: UUID(), loserID: UUID()),
+            .unsavedSegmentsOfMarked(itemIDs: nil), .playbackIssueEvidence(itemID: UUID()),
+            .repairQueue(startingQueue: true),
+        ] {
+            #expect(read.onlyReads, "\(read)")
+        }
+        let recipe = RepairRecipe(
+            name: "x", matchPattern: nil, tool: "x", argumentTemplate: [], estimate: "x")
+        for write in [
+            ServiceRequest.decideDuplicate(keeperID: UUID(), loserID: UUID(), candidateID: nil, mergeTagIDs: []),
+            .rejectDuplicate(candidateID: UUID()), .keepBothDuplicates(candidateID: UUID()),
+            .purgeMarked(itemIDs: []), .queueRepair(itemID: UUID(), recipe: recipe),
+        ] {
+            #expect(!write.onlyReads, "\(write)")
+        }
+    }
+
     @Test func theSmallerReadsAreAskedTwiceAndAHurriedJobIsNot() {
         #expect(ServiceRequest.watchHistory(limit: 5).onlyReads)
         #expect(ServiceRequest.signalSummary(itemID: UUID()).onlyReads)

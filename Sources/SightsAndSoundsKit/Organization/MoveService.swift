@@ -313,7 +313,7 @@ extension LibraryDatabase {
 
     // MARK: - Purge
 
-    public struct PurgeOutcome: Sendable, Equatable {
+    public struct PurgeOutcome: Codable, Sendable, Equatable {
         public var rowsDeleted = 0
         /// Files that left the library, by either route.
         public var filesDeleted = 0

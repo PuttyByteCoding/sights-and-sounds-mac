@@ -98,9 +98,9 @@ import Testing
 
 /// A repair queued before a quit has nothing draining it after relaunch:
 /// a runner does not start its queue when the library opens, and Review
-/// only watched the pending set, so the issue said "Repair queued" with
-/// Run fix disabled until something unrelated started the queue. Watching
-/// starts it, as Organise's watch does — unless tasks are paused.
+/// only looked at the pending set, so the issue said "Repair queued" with
+/// Run fix disabled until something unrelated started the queue. Asking
+/// how the queue stands starts it — unless tasks are paused.
 @Suite @MainActor struct RepairWatchQueueTests {
     private func recipe() -> RepairRecipe {
         RepairRecipe(name: "remux", matchPattern: nil, tool: "ffmpeg",
@@ -108,47 +108,68 @@ import Testing
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func watchingPendingRepairsStartsAQueueNobodyStarted() async throws {
+    func askingAboutPendingRepairsStartsAQueueNobodyStarted() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "RepairLeftQueued")
         let runner = JobRunner(library: library)
+        let service = LocalLibraryService(library: library, runner: runner)
         // Queued, and nothing drains it. Its item does not exist, so the
         // repair settles (as failed) as soon as it runs.
         let item = UUID()
         _ = try await RepairJob.enqueue(on: runner, itemID: item, recipe: recipe())
 
-        var seen: [Set<UUID>] = []
-        let watching = Task { @MainActor in
-            for try await items in RepairWatch.pending(in: library, runner: runner) {
-                seen.append(items)
-                if items.isEmpty, seen.contains(where: { !$0.isEmpty }) { return }
-            }
-        }
-        defer { watching.cancel() }
-        for _ in 0..<400 where !(seen.last == [] && seen.contains { !$0.isEmpty }) {
+        // Only looking does not start it.
+        #expect(try await service.repairQueue(startingQueue: false) == RepairQueue(pending: [item], isPaused: false))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(try await service.repairQueue(startingQueue: false).pending == [item])
+
+        // Asking as the Review window does, does.
+        #expect(try await service.repairQueue(startingQueue: true).pending == [item])
+        var pending: Set<UUID> = [item]
+        for _ in 0..<400 where !pending.isEmpty {
             try await Task.sleep(for: .milliseconds(25))
+            pending = try await service.repairQueue(startingQueue: true).pending
         }
-        #expect(seen.first == [item])
-        #expect(seen.last == [], "the queued repair never ran: \(seen)")
+        #expect(pending.isEmpty, "the queued repair never ran")
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func watchingNeverRunsAPausedQueue() async throws {
+    func askingNeverRunsAPausedQueue() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "RepairPaused")
         let runner = JobRunner(library: library, paused: true)
+        let service = LocalLibraryService(library: library, runner: runner)
         let item = UUID()
         let job = try await RepairJob.enqueue(on: runner, itemID: item, recipe: recipe())
 
-        var seen: [Set<UUID>] = []
-        let watching = Task { @MainActor in
-            for try await items in RepairWatch.pending(in: library, runner: runner) { seen.append(items) }
-        }
-        defer { watching.cancel() }
-        for _ in 0..<400 where seen.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
-        #expect(seen == [[item]])
+        #expect(try await service.repairQueue(startingQueue: true) == RepairQueue(pending: [item], isPaused: true))
         try await Task.sleep(for: .milliseconds(300))
         let state = try await library.writer.read { try JobRecord.fetchOne($0, key: job.id)?.state }
         #expect(state == .queued, "a paused queue was started")
+        #expect(try await service.repairQueue(startingQueue: true).pending == [item])
+    }
+
+    /// Run fix, as the window does it: queued through the service, which
+    /// starts the queue itself.
+    @Test(.timeLimit(.minutes(1)))
+    func aRepairQueuedThroughTheServiceRuns() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "RepairQueued")
+        let runner = JobRunner(library: library)
+        let service = LocalLibraryService(library: library, runner: runner)
+        let job = try await service.queueRepair(itemID: UUID(), recipe: recipe())
+        #expect(job.kind == RepairJob.kind)
+        var state = JobState.queued
+        for _ in 0..<400 where state == .queued || state == .running {
+            try await Task.sleep(for: .milliseconds(25))
+            state = try await library.writer.read { try JobRecord.fetchOne($0, key: job.id)?.state } ?? .queued
+        }
+        #expect(state == .failed, "its item does not exist: it runs, and fails")
+
+        // A service made without the library's runner cannot queue one.
+        let bare = LocalLibraryService(library: library)
+        await #expect(throws: ServiceError.noJobRunner) {
+            _ = try await bare.queueRepair(itemID: UUID(), recipe: recipe())
+        }
     }
 }

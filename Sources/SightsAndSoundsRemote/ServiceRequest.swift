@@ -103,6 +103,18 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case unsavedSegments(itemIDs: [UUID])
     case runNextAndWait(jobID: UUID)
 
+    // ReviewManaging
+    case reviewLists
+    case mergeableTags(keeperID: UUID, loserID: UUID)
+    case decideDuplicate(keeperID: UUID, loserID: UUID, candidateID: UUID?, mergeTagIDs: Set<UUID>)
+    case rejectDuplicate(candidateID: UUID)
+    case keepBothDuplicates(candidateID: UUID)
+    case unsavedSegmentsOfMarked(itemIDs: [UUID]?)
+    case purgeMarked(itemIDs: [UUID])
+    case playbackIssueEvidence(itemID: UUID)
+    case queueRepair(itemID: UUID, recipe: RepairRecipe)
+    case repairQueue(startingQueue: Bool)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -115,7 +127,10 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
              .tagMembership, .pendingTextScan, .textLines, .fullVocabulary, .tagUsageCounts, .tagDetails, .categories,
              .categoryTable, .vocabularyIndex, .fields, .fieldValues, .takenNames, .watchHistory,
-             .signalSummary, .unsavedSegments:
+             .signalSummary, .unsavedSegments, .reviewLists, .mergeableTags, .unsavedSegmentsOfMarked,
+             // Asking how the repair queue stands may start it, and a
+             // queue started twice is a queue started: safe to ask again.
+             .playbackIssueEvidence, .repairQueue:
             true
         default:
             false
@@ -351,6 +366,30 @@ extension ServiceRequest {
         case .runNextAndWait(let jobID):
             try await service.runNextAndWait(jobID: jobID)
             return nothing
+
+        case .reviewLists:
+            return try json(await service.reviewLists())
+        case .mergeableTags(let keeperID, let loserID):
+            return try json(await service.mergeableTags(keeperID: keeperID, loserID: loserID))
+        case .decideDuplicate(let keeperID, let loserID, let candidateID, let mergeTagIDs):
+            return try json(await service.decideDuplicate(
+                keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: mergeTagIDs))
+        case .rejectDuplicate(let candidateID):
+            try await service.rejectDuplicate(candidateID: candidateID)
+            return nothing
+        case .keepBothDuplicates(let candidateID):
+            try await service.keepBothDuplicates(candidateID: candidateID)
+            return nothing
+        case .unsavedSegmentsOfMarked(let itemIDs):
+            return try json(await service.unsavedSegmentsOfMarked(itemIDs: itemIDs))
+        case .purgeMarked(let itemIDs):
+            return try json(await service.purgeMarked(itemIDs: itemIDs))
+        case .playbackIssueEvidence(let itemID):
+            return try json(await service.playbackIssueEvidence(itemID: itemID))
+        case .queueRepair(let itemID, let recipe):
+            return try json(await service.queueRepair(itemID: itemID, recipe: recipe))
+        case .repairQueue(let startingQueue):
+            return try json(await service.repairQueue(startingQueue: startingQueue))
         }
     }
 }

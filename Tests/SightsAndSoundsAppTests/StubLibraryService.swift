@@ -197,6 +197,44 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.runNextAndWait(jobID: jobID) }
     }
 
+    // MARK: ReviewManaging
+
+    func reviewLists() async throws -> ReviewLists {
+        try await run { try await base.reviewLists() }
+    }
+    func mergeableTags(keeperID: UUID, loserID: UUID) async throws -> [SightsAndSoundsKit.Tag] {
+        try await run { try await base.mergeableTags(keeperID: keeperID, loserID: loserID) }
+    }
+    func decideDuplicate(
+        keeperID: UUID, loserID: UUID, candidateID: UUID?, mergeTagIDs: Set<UUID>
+    ) async throws -> DecideOutcome {
+        try await run {
+            try await base.decideDuplicate(
+                keeperID: keeperID, loserID: loserID, candidateID: candidateID, mergeTagIDs: mergeTagIDs)
+        }
+    }
+    func rejectDuplicate(candidateID: UUID) async throws {
+        try await run { try await base.rejectDuplicate(candidateID: candidateID) }
+    }
+    func keepBothDuplicates(candidateID: UUID) async throws {
+        try await run { try await base.keepBothDuplicates(candidateID: candidateID) }
+    }
+    func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await run { try await base.unsavedSegmentsOfMarked(itemIDs: itemIDs) }
+    }
+    func purgeMarked(itemIDs: [UUID]) async throws -> LibraryDatabase.PurgeOutcome {
+        try await run { try await base.purgeMarked(itemIDs: itemIDs) }
+    }
+    func playbackIssueEvidence(itemID: UUID) async throws -> PlaybackIssueEvidence? {
+        try await run { try await base.playbackIssueEvidence(itemID: itemID) }
+    }
+    func queueRepair(itemID: UUID, recipe: RepairRecipe) async throws -> JobRecord {
+        try await run { try await base.queueRepair(itemID: itemID, recipe: recipe) }
+    }
+    func repairQueue(startingQueue: Bool) async throws -> RepairQueue {
+        try await run { try await base.repairQueue(startingQueue: startingQueue) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

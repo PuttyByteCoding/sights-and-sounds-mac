@@ -28,8 +28,8 @@ struct AuxWindowRequest: Codable, Hashable {
         /// work on a database; the list grows as they are moved.
         var worksOnARemoteLibrary: Bool {
             switch self {
-            case .player, .categories, .watched, .bookmarkSearch: true
-            case .review, .organise, .maintenance, .importMedia, .operations, .tagAnalysis: false
+            case .player, .categories, .watched, .bookmarkSearch, .review: true
+            case .organise, .maintenance, .importMedia, .operations, .tagAnalysis: false
             }
         }
 
