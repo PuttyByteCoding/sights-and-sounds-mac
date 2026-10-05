@@ -51,6 +51,8 @@ public actor FrameConnection {
     /// other end will not have it — nothing listening, or not this key.
     public func open(timeout: Duration = .seconds(10)) async throws {
         let ready = OneShot<Void>()
+        let connection = connection
+        let retries = Retries()
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready:
@@ -58,9 +60,20 @@ public actor FrameConnection {
             case .failed(let error):
                 ready.fail(ChannelError.refused("\(error)"))
             case .waiting(let error):
-                // Where a key the other end does not hold shows up: the
-                // handshake fails and the connection waits to try again.
-                // It would only fail again.
+                // One kind of waiting is worth another try: the system
+                // picked a local port for this connection that is still
+                // spoken for, by one just closed. The next pick is a
+                // different port. Left as a failure it turned up about
+                // once in forty runs of the tests, as "address already
+                // in use" from a connection that was only being made.
+                if Self.isWorthAnotherTry(error), retries.takeOne() {
+                    Self.queue.asyncAfter(deadline: .now() + .milliseconds(25)) { connection.restart() }
+                    return
+                }
+                // Anything else here would only fail again. It is where
+                // a key the other end does not hold shows up — the
+                // handshake fails and the connection waits — and where
+                // nothing listening does.
                 ready.fail(ChannelError.refused("\(error)"))
             case .cancelled:
                 ready.fail(ChannelError.closed)
@@ -84,6 +97,30 @@ public actor FrameConnection {
         guard suite == ChannelSecurity.suite else {
             connection.cancel()
             throw ChannelError.weakSuite(suite)
+        }
+    }
+
+    /// Whether a connection that could not be made failed for a reason
+    /// that is gone a moment later: no local address to make it from
+    /// just then. Not a refusal by the other end, and not a failed
+    /// handshake — those are answers.
+    static func isWorthAnotherTry(_ error: NWError) -> Bool {
+        guard case .posix(let code) = error else { return false }
+        return code == .EADDRINUSE || code == .EADDRNOTAVAIL
+    }
+
+    /// How many more times a connection is tried. A few: a collision is
+    /// over at the next pick, and something that keeps happening is not
+    /// a collision.
+    private final class Retries: @unchecked Sendable {
+        private let lock = NSLock()
+        private var left = 5
+        func takeOne() -> Bool {
+            lock.withLock {
+                guard left > 0 else { return false }
+                left -= 1
+                return true
+            }
         }
     }
 

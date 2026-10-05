@@ -82,6 +82,19 @@ import Testing
             sourceLocation: sourceLocation)
     }
 
+    /// A connection that cannot be made is tried again only when the
+    /// reason is this end's own and passing. A refusal, a failed
+    /// handshake, or nothing there at all is an answer, and is given.
+    @Test func onlyAPassingLocalTroubleIsWorthAnotherTry() {
+        #expect(FrameConnection.isWorthAnotherTry(.posix(.EADDRINUSE)))
+        #expect(FrameConnection.isWorthAnotherTry(.posix(.EADDRNOTAVAIL)))
+        #expect(!FrameConnection.isWorthAnotherTry(.posix(.ECONNREFUSED)), "nothing listening is not waited on")
+        #expect(!FrameConnection.isWorthAnotherTry(.posix(.ETIMEDOUT)))
+        #expect(!FrameConnection.isWorthAnotherTry(.posix(.EHOSTUNREACH)))
+        #expect(!FrameConnection.isWorthAnotherTry(.tls(errSSLBadRecordMac)), "a wrong key is not tried again")
+        #expect(!FrameConnection.isWorthAnotherTry(.tls(errSSLPeerHandshakeFail)))
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func framesCrossInBothDirections() async throws {
         let key = ChannelKey.random(identity: "device-a")
