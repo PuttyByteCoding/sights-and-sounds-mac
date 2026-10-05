@@ -225,10 +225,23 @@ final class AppModel {
 
     // MARK: - Remote access
 
+    /// Where the approved Macs, and the Macs this one is paired with,
+    /// are kept.
+    ///
+    /// Under test it is a folder of this model's own. A test run makes
+    /// many app models in one process, and with one folder between them
+    /// a test that turned remote access on left it "on" for every model
+    /// made after it: each began listening as it was made, on the same
+    /// port, and whichever of them took a connection answered it.
+    @ObservationIgnored
+    let remoteAccessFolder: URL = AppSettingsStore.isUnderTest
+        ? AppSettingsStore.testScratch.appendingPathComponent("RemoteAccess-\(UUID().uuidString)", isDirectory: true)
+        : AppModel.supportDirectory().appendingPathComponent("RemoteAccess", isDirectory: true)
+
     /// This Mac's libraries, offered to the Macs it has approved.
     @ObservationIgnored
     private(set) lazy var remoteAccess = RemoteAccessModel(
-        file: Self.supportDirectory().appendingPathComponent("RemoteAccess/approved-devices.json"),
+        file: remoteAccessFolder.appendingPathComponent("approved-devices.json"),
         offer: RemoteAccessModel.Offer(
             hostName: { Host.current().localizedName ?? "This Mac" },
             libraries: { [weak self] in
