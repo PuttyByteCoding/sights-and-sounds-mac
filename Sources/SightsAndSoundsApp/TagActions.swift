@@ -53,7 +53,7 @@ struct TagRemoval {
 /// operator otherwise had to open the Tag Manager for.
 struct TagActionButtons: View {
     let tag: Tag
-    let library: LibraryDatabase
+    let service: any LibraryService
     let libraryID: UUID
     @Binding var pending: TagAction?
     var removal: TagRemoval?
@@ -61,33 +61,15 @@ struct TagActionButtons: View {
     /// then swaps on that item alone rather than across the library.
     var itemID: UUID?
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.libraryIsRemote) private var libraryIsRemote
 
     var body: some View {
-        if libraryIsRemote {
-            // Taking the tag off the item goes through the library's
-            // service and works anywhere. The rest of this menu changes
-            // the vocabulary through a database, and a window on another
-            // Mac's library has none.
-            if let removal {
-                Button(removal.label, action: removal.action)
-                Divider()
-            }
-            Text(NotAvailableRemotelyView.line)
-        } else {
-            local
-        }
-    }
-
-    @ViewBuilder
-    private var local: some View {
         Button("Edit Tag…") { pending = .edit(tag) }
         Button(tag.isFavorite ? "Remove from Favourites" : "Add to Favourites") {
             pending = .toggleFavorite(tag)
         }
         Button("Show Items with This Tag") {
             openTagPlayerWindow(
-                tag: tag, library: library, libraryID: libraryID, openWindow: openWindow)
+                tag: tag, service: service, libraryID: libraryID, openWindow: openWindow)
         }
         Divider()
         if let removal {
@@ -109,12 +91,12 @@ extension View {
     /// refresh. `onDismiss` runs when a sheet closes, for the field that
     /// wants its keyboard back.
     func tagActions(
-        _ pending: Binding<TagAction?>, library: LibraryDatabase, libraryID: UUID,
+        _ pending: Binding<TagAction?>, service: any LibraryService, libraryID: UUID,
         categories: [TagCategory], onChange: @escaping () -> Void,
         onDismiss: @escaping () -> Void = {}
     ) -> some View {
         modifier(TagActionHost(
-            pending: pending, library: library, libraryID: libraryID,
+            pending: pending, service: service, libraryID: libraryID,
             categories: categories, onChange: onChange, onDismiss: onDismiss))
     }
 }
@@ -123,11 +105,15 @@ private struct TagActionHost: ViewModifier {
     /// A write that failed; this host has no error line of its own.
     @State private var failure: String?
     @Binding var pending: TagAction?
-    let library: LibraryDatabase
+    let service: any LibraryService
     let libraryID: UUID
     let categories: [TagCategory]
     let onChange: () -> Void
     let onDismiss: () -> Void
+    /// How many items wear the tag about to be deleted, once the
+    /// library has said. The question is not put until it has: asked
+    /// with no number, it would say the tag is on none.
+    @State private var deleteUses: Int?
 
     private var editing: Binding<Tag?> {
         Binding(
@@ -153,8 +139,24 @@ private struct TagActionHost: ViewModifier {
 
     private var confirmingDelete: Binding<Bool> {
         Binding(
-            get: { if case .delete = pending { true } else { false } },
+            get: { if case .delete = pending { deleteUses != nil } else { false } },
             set: { if !$0, case .delete = pending { pending = nil } })
+    }
+
+    /// Run a write on the library, saying what failed if it does, and
+    /// tell the caller to refresh either way.
+    private func write(_ what: String, _ work: @escaping @Sendable (any LibraryService) async throws -> Void) {
+        let service = service
+        Task {
+            do {
+                try await work(service)
+            } catch {
+                let message = "Could not \(what): \(error)"
+                AppLog.shared.error("writes", message)
+                failure = message
+            }
+            onChange()
+        }
     }
 
     private var deleting: Tag? {
@@ -167,33 +169,40 @@ private struct TagActionHost: ViewModifier {
             // asked for, then cleared so the next right-click starts clean.
             .onChange(of: pending?.id) { _, _ in
                 guard case .toggleFavorite(let tag) = pending else { return }
-                Writes.attempt("change the favourite", report: $failure) {
-                    try library.setTagFavorite(tag.id, !tag.isFavorite)
-                }
+                write("change the favourite") { try await $0.setTagFavorite(tag.id, !tag.isFavorite) }
                 pending = nil
-                onChange()
+            }
+            // The delete question names how many items lose the tag, so
+            // the library is asked first.
+            .task(id: deleting?.id) {
+                deleteUses = nil
+                guard let tag = deleting else { return }
+                let counts = try? await service.tagUsageCounts(categoryID: tag.tagCategoryID)
+                guard !Task.isCancelled else { return }
+                // A count that could not be had is said as that, not as none.
+                deleteUses = counts.map { $0[tag.id] ?? 0 } ?? -1
             }
             .movableSheet(item: editing, onDismiss: onDismiss) { tag in
                 TagSheet(
-                    mode: .edit(tag), library: library, libraryID: libraryID,
+                    mode: .edit(tag), service: service, libraryID: libraryID,
                     categories: categories
                 ) { _ in onChange() }
             }
             .sheet(item: aliasing, onDismiss: onDismiss) { tag in
                 TagPickerSheet(
-                    tag: tag, library: library, scope: .category,
+                    tag: tag, service: service, scope: .category,
                     title: "Add \u{201C}\(tag.name)\u{201D} as an Alias",
                     blurb: { uses, categoryName in
                         "Its \(uses) item\(uses == 1 ? "" : "s") move to the tag you pick, and \u{201C}\(tag.name)\u{201D} stays as a way to find it. Only tags in \(categoryName) can take it."
                     },
                     confirm: "Add Alias",
-                    onPick: { target in try library.convertTagToAlias(tag.id, of: target.id) },
+                    onPick: { target in try await service.convertTagToAlias(tag.id, of: target.id) },
                     onChange: onChange)
             }
             .sheet(item: replacing, onDismiss: onDismiss) { replacement in
                 let tag = replacement.tag
                 TagPickerSheet(
-                    tag: tag, library: library, scope: .library,
+                    tag: tag, service: service, scope: .library,
                     title: "Replace \u{201C}\(tag.name)\u{201D}",
                     blurb: { uses, _ in
                         replacement.itemID == nil
@@ -202,11 +211,7 @@ private struct TagActionHost: ViewModifier {
                     },
                     confirm: "Replace",
                     onPick: { target in
-                        if let itemID = replacement.itemID {
-                            try library.replaceTag(tag.id, with: target.id, on: itemID)
-                        } else {
-                            try library.replaceTagEverywhere(tag.id, with: target.id)
-                        }
+                        try await service.replaceTag(tag.id, with: target.id, on: replacement.itemID)
                     },
                     onChange: onChange)
             }
@@ -217,25 +222,24 @@ private struct TagActionHost: ViewModifier {
                 isPresented: confirmingDelete, presenting: deleting
             ) { tag in
                 Button("Delete", role: .destructive) {
-                    Writes.attempt("delete the tag", report: $failure) {
-                        try library.deleteTag(tag.id)
-                    }
-                    onChange()
+                    write("delete the tag") { try await $0.deleteTag(tag.id) }
                 }
-            } message: { tag in
-                Text(TagActionCopy.deleteMessage(uses: uses(of: tag)))
+            } message: { _ in
+                Text(TagActionCopy.deleteMessage(uses: deleteUses))
             }
             .failureAlert($failure)
-    }
-
-    private func uses(of tag: Tag) -> Int {
-        (try? library.tagUsageCounts(inCategory: tag.tagCategoryID))?[tag.id] ?? 0
     }
 }
 
 enum TagActionCopy {
-    static func deleteMessage(uses: Int) -> String {
-        "Removes the tag from \(uses) item\(uses == 1 ? "" : "s"). Consider Add as Alias instead — that keeps the taggings and folds the name into another tag."
+    /// `uses` below zero, or nil, is a count that could not be had: the
+    /// message then says so, and does not say none.
+    static func deleteMessage(uses: Int?) -> String {
+        let alternative = "Consider Add as Alias instead — that keeps the taggings and folds the name into another tag."
+        guard let uses, uses >= 0 else {
+            return "Removes the tag from every item wearing it; how many could not be counted. \(alternative)"
+        }
+        return "Removes the tag from \(uses) item\(uses == 1 ? "" : "s"). \(alternative)"
     }
 }
 
@@ -275,15 +279,17 @@ struct TagPickerSheet: View {
     enum Scope { case category, library }
 
     let tag: Tag
-    let library: LibraryDatabase
+    let service: any LibraryService
     let scope: Scope
     let title: String
     /// The line under the title, given the tag's use count and its
     /// category's name.
     let blurb: (Int, String) -> String
     let confirm: String
-    let onPick: (Tag) throws -> Void
+    let onPick: @Sendable (Tag) async throws -> Void
     let onChange: () -> Void
+    /// The pick has been sent and not yet answered.
+    @State private var isCommitting = false
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var targetID: UUID?
@@ -426,26 +432,31 @@ struct TagPickerSheet: View {
         .padding(18)
         .frame(width: 440)
         .background(Theme.Surface.dialog)
-        .onAppear {
-            let vocabulary = (try? library.vocabulary()) ?? []
+        .onAppear { queryFocused = true }
+        .task {
+            let vocabulary = (try? await service.fullVocabulary()) ?? []
             categoryName = vocabulary.first { $0.category.id == tag.tagCategoryID }?.category.name ?? ""
             picks = vocabulary
                 .filter { scope == .library || $0.category.id == tag.tagCategoryID }
                 .flatMap { entry in entry.tags.map { TagPick(tag: $0, categoryName: entry.category.name) } }
-            uses = (try? library.tagUsageCounts(inCategory: tag.tagCategoryID))?[tag.id] ?? 0
-            queryFocused = true
+            uses = (try? await service.tagUsageCounts(categoryID: tag.tagCategoryID))?[tag.id] ?? 0
         }
     }
 
     private func commit() {
-        guard let targetID, let target = picks.first(where: { $0.id == targetID }) else { return }
-        do {
-            try onPick(target.tag)
-            errorText = nil
-            onChange()
-            dismiss()
-        } catch {
-            errorText = "\(error)"
+        guard !isCommitting, let targetID, let target = picks.first(where: { $0.id == targetID }) else { return }
+        let onPick = onPick
+        isCommitting = true
+        Task {
+            defer { isCommitting = false }
+            do {
+                try await onPick(target.tag)
+                errorText = nil
+                onChange()
+                dismiss()
+            } catch {
+                errorText = "\(error)"
+            }
         }
     }
 }

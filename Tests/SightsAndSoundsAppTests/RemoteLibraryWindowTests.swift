@@ -358,7 +358,14 @@ import Testing
         app.libraryWindowAppeared(ref.id)
         #expect(app.openLibraryIDs.contains(ref.id))
 
+        // A player opened beside it — a tag's "Show Items with This
+        // Tag" — shares the connection, and keeps it when the library's
+        // own window closes first.
+        remote.windowOpened(ref.id)
         app.libraryWindowDisappeared(ref.id)
+        #expect(try await first.sourceStates().count == 2, "the player's connection went with the other window")
+        #expect(remote.service(for: ref.id) === first)
+        remote.windowClosed(ref.id)
         await #expect(throws: (any Error).self) { _ = try await first.sourceStates() }
         let second = try #require(remote.service(for: ref.id))
         #expect(second !== first)

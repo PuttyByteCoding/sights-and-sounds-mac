@@ -157,6 +157,8 @@ struct UniversalTagField: View {
     var screenReadRequests = 0
     let categories: [TagCategory]
     let library: LibraryDatabase
+    /// What a tag made from here is made through.
+    let service: any LibraryService
     let libraryID: UUID
     /// The caller's focus walk, keyed by `focusID` — which is what puts
     /// the field IN a Tab order beside other fields.
@@ -515,7 +517,7 @@ struct UniversalTagField: View {
             if let first = categories.first?.id {
                 TagSheet(
                     mode: .create(categoryID: first, name: seed.text),
-                    library: library,
+                    service: service,
                     libraryID: libraryID,
                     categories: categories
                 ) { tag in

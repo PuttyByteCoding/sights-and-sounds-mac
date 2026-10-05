@@ -50,11 +50,15 @@ public enum ServiceError: Error, Equatable, Sendable, CustomStringConvertible {
     case emptyName
     /// A job was asked of a service made without the library's runner.
     case noJobRunner
+    /// The tag was deleted, here or from another window, before this
+    /// reached it.
+    case noSuchTag
 
     public var description: String {
         switch self {
         case .emptyName: "a name cannot be empty"
         case .noJobRunner: "background tasks cannot be started from here"
+        case .noSuchTag: "that tag is no longer in the library"
         }
     }
 }

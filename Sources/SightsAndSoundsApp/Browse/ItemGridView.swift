@@ -262,7 +262,7 @@ private struct ItemCell: View {
                 guard let tag = model.vocabulary.flatMap(\.tags).first(where: { $0.id == id })
                 else { return AnyView(EmptyView()) }
                 return AnyView(TagActionButtons(
-                    tag: tag, library: model.library, libraryID: model.libraryID,
+                    tag: tag, service: model.service, libraryID: model.libraryID,
                     pending: $pending,
                     removal: TagRemoval(label: TagRemoval.label(for: item.kind)) {
                         Task { await model.removeTag(tag.id, from: item) }
@@ -322,7 +322,7 @@ private struct ItemCell: View {
                 model.click(item.id, extend: true, range: false)
             }
             .tagActions(
-                $pending, library: model.library, libraryID: model.libraryID,
+                $pending, service: model.service, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
                 onChange: {})
             // Keyed on the size as well: a tile enlarged with the slider

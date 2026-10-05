@@ -99,16 +99,26 @@ struct AuxiliaryWindowView: View {
             }
         }
         .defaultToolbarShowsLabels()
+        .environment(\.libraryIsRemote, model?.isRemote ?? false)
         .task { [app] in
             guard model == nil else { return }
             do {
-                let made = BrowseModel(
-                    libraryID: request.libraryID,
-                    library: try app.library(for: request.libraryID),
-                    runner: try app.runner(for: request.libraryID),
-                    onWorkFinished: { [weak app] in
-                        app?.signalMaintenance(for: request.libraryID)
-                    })
+                let made: BrowseModel
+                if let remote = app.remoteLibraries.ref(for: request.libraryID),
+                   let service = app.remoteLibraries.service(for: request.libraryID) {
+                    made = try BrowseModel(
+                        libraryID: request.libraryID, name: remote.library.name, hostName: remote.host.name,
+                        service: service,
+                        connection: RemoteConnectionNote.notes(of: service, hostName: remote.host.name))
+                } else {
+                    made = BrowseModel(
+                        libraryID: request.libraryID,
+                        library: try app.library(for: request.libraryID),
+                        runner: try app.runner(for: request.libraryID),
+                        onWorkFinished: { [weak app] in
+                            app?.signalMaintenance(for: request.libraryID)
+                        })
+                }
                 // A player window plays on arrival: the request carries
                 // its whole queue, so there is nothing to browse first.
                 if request.kind == .player, let first = request.itemIDs.first {

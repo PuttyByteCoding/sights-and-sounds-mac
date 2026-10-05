@@ -69,6 +69,17 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case deleteBlock(blockID: UUID)
     case setSearchFormats(formats: SearchFormats, replacingUnreadable: Bool)
 
+    // TagManaging
+    case fullVocabulary
+    case tagUsageCounts(categoryID: UUID)
+    case tagDetails(tagID: UUID)
+    case setTagFavorite(tagID: UUID, isFavorite: Bool)
+    case convertTagToAlias(tagID: UUID, targetID: UUID)
+    case replaceTag(tagID: UUID, targetID: UUID, itemID: UUID?)
+    case deleteTag(tagID: UUID)
+    case removeAlias(alias: String, tagID: UUID)
+    case saveTag(draft: TagDraft)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -79,7 +90,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .savedFilterCounts, .tileMenuFacts, .thumbnailQueueStatus, .storedThumbnail, .listing, .playable,
              .opened,
              .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
-             .tagMembership, .pendingTextScan, .textLines:
+             .tagMembership, .pendingTextScan, .textLines, .fullVocabulary, .tagUsageCounts, .tagDetails:
             true
         default:
             false
@@ -243,6 +254,30 @@ extension ServiceRequest {
         case .setSearchFormats(let formats, let replacingUnreadable):
             try await service.setSearchFormats(formats, replacingUnreadable: replacingUnreadable)
             return nothing
+
+        case .fullVocabulary:
+            return try json(await service.fullVocabulary())
+        case .tagUsageCounts(let categoryID):
+            return try json(await service.tagUsageCounts(categoryID: categoryID))
+        case .tagDetails(let tagID):
+            return try json(await service.tagDetails(tagID: tagID))
+        case .setTagFavorite(let tagID, let isFavorite):
+            try await service.setTagFavorite(tagID, isFavorite)
+            return nothing
+        case .convertTagToAlias(let tagID, let targetID):
+            try await service.convertTagToAlias(tagID, of: targetID)
+            return nothing
+        case .replaceTag(let tagID, let targetID, let itemID):
+            try await service.replaceTag(tagID, with: targetID, on: itemID)
+            return nothing
+        case .deleteTag(let tagID):
+            try await service.deleteTag(tagID)
+            return nothing
+        case .removeAlias(let alias, let tagID):
+            try await service.removeAlias(alias, fromTag: tagID)
+            return nothing
+        case .saveTag(let draft):
+            return try json(await service.saveTag(draft))
         }
     }
 }

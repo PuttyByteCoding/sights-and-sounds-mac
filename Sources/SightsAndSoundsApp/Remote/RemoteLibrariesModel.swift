@@ -77,6 +77,9 @@ final class RemoteLibrariesModel {
     private let store: HostStore?
     /// One service for each remote library with a window open.
     private var services: [UUID: RemoteLibraryService] = [:]
+    /// How many windows are on each: the library's own, and any player
+    /// opened beside it.
+    private var windows: [UUID: Int] = [:]
 
     init(file: URL) {
         do {
@@ -208,10 +211,25 @@ final class RemoteLibrariesModel {
         return service
     }
 
-    /// The window has closed: let go of the host.
+    /// A window on the library has opened.
+    func windowOpened(_ windowID: UUID) {
+        guard ref(for: windowID) != nil else { return }
+        windows[windowID, default: 0] += 1
+    }
+
+    /// A window on the library has closed. When it was the last, the
+    /// host is let go of.
+    func windowClosed(_ windowID: UUID) {
+        guard let open = windows[windowID] else { return }
+        windows[windowID] = open > 1 ? open - 1 : nil
+        if open <= 1 { closeService(for: windowID) }
+    }
+
+    /// Let go of the host, whoever is still using it.
     func closeService(for windowID: UUID) {
         services[windowID]?.close()
         services[windowID] = nil
+        windows[windowID] = nil
     }
 }
 

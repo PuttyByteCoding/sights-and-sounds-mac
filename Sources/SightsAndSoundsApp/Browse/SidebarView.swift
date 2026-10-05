@@ -1105,11 +1105,11 @@ private struct TagFilterRow: View {
             // "edit this" — ⌥-click was a chord you had to be told about.
             .contextMenu {
                 TagActionButtons(
-                    tag: tag, library: model.library, libraryID: model.libraryID,
+                    tag: tag, service: model.service, libraryID: model.libraryID,
                     pending: $pending)
             }
             .tagActions(
-                $pending, library: model.library, libraryID: model.libraryID,
+                $pending, service: model.service, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
                 onChange: {})
     }

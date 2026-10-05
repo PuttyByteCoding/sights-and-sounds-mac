@@ -9,10 +9,11 @@ import SightsAndSoundsKit
 /// is how they drift, and one of them was already the only place you
 /// could set a note.
 ///
-/// It depends on the LIBRARY, not on a model, because it is opened from
-/// both the browse window (BrowseModel) and the player's tag panel
-/// (PlayerModel). Callers hand it a library and a refresh callback; it
-/// knows nothing about either.
+/// It depends on the library's SERVICE, not on a model, because it is
+/// opened from both the browse window (BrowseModel) and the player's tag
+/// panel (PlayerModel). Callers hand it the service and a refresh
+/// callback; it knows nothing about either — nor whether the library is
+/// on this Mac.
 struct TagSheet: View {
     enum Mode {
         /// A name typed into a category's tagging field.
@@ -28,7 +29,7 @@ struct TagSheet: View {
     @Environment(\.panelOpenWindow) private var panelOpenWindow
 
     let mode: Mode
-    let library: LibraryDatabase
+    let service: any LibraryService
     let libraryID: UUID
     let categories: [TagCategory]
     /// The library changed — callers refresh however they refresh.
@@ -46,6 +47,9 @@ struct TagSheet: View {
     /// Edit only: how many field values a move would drop, so the sheet
     /// can say so before Save rather than after.
     @State private var fieldValueCount: Int
+    /// A save has been sent and not yet answered: a second Enter must
+    /// not send a second.
+    @State private var isSaving = false
     /// Create only: the Enter that opened the sheet is still down, so it
     /// commits — until the first key or click, after which the buttons
     /// take over. Editing has no such in-flight Enter, so it uses the
@@ -54,11 +58,11 @@ struct TagSheet: View {
     @FocusState private var nameFocused: Bool
 
     init(
-        mode: Mode, library: LibraryDatabase, libraryID: UUID,
+        mode: Mode, service: any LibraryService, libraryID: UUID,
         categories: [TagCategory], onSaved: @escaping (Tag) -> Void
     ) {
         self.mode = mode
-        self.library = library
+        self.service = service
         self.libraryID = libraryID
         self.categories = categories
         self.onSaved = onSaved
@@ -80,8 +84,8 @@ struct TagSheet: View {
             _ignoredByAnalysis = State(initialValue: tag.ignoredByAnalysis)
             _favorite = State(initialValue: tag.isFavorite)
             _enterArmed = State(initialValue: false)
-            _fieldValueCount = State(
-                initialValue: (try? library.fieldValues(ofTag: tag.id).count) ?? 0)
+            // Asked for as the sheet comes up, with the aliases.
+            _fieldValueCount = State(initialValue: 0)
         }
     }
 
@@ -291,10 +295,8 @@ struct TagSheet: View {
             return .ignored
         }
         .onTapGesture { enterArmed = false }
-        .onAppear {
-            nameFocused = true
-            loadAliases()
-        }
+        .onAppear { nameFocused = true }
+        .task { await loadDetails() }
     }
 
     private var hintLine: String {
@@ -306,16 +308,15 @@ struct TagSheet: View {
             : "Enter saves · Esc to cancel"
     }
 
-    /// Edit mode reads the tag's aliases from the library; create mode
-    /// starts empty and writes them once the tag exists.
-    private func loadAliases() {
+    /// Edit mode asks the library for the tag's aliases and how many
+    /// field values it has; create mode starts empty and writes its
+    /// aliases once the tag exists.
+    private func loadDetails() async {
         guard let tag = editingTag, aliases.isEmpty else { return }
-        aliases = (try? library.writer.read { db in
-            try TagAlias
-                .filter(sql: "tagID = ?", arguments: [tag.id])
-                .fetchAll(db)
-                .map(\.alias)
-        }) ?? []
+        guard let details = try? await service.tagDetails(tagID: tag.id) else { return }
+        // Not over what was typed while the answer was on its way.
+        if aliases.isEmpty { aliases = details.aliases }
+        fieldValueCount = details.fieldValueCount
     }
 
     /// The field takes one alias — or a whole list, if that is what
@@ -334,27 +335,41 @@ struct TagSheet: View {
     private func addAliases(from text: String) {
         // The tag's own name is not an alias of itself.
         let additions = AliasList.parse(text, excluding: aliases + [trimmedName])
+        guard let tag = editingTag else {
+            aliases.append(contentsOf: additions)
+            return
+        }
         // Editing writes immediately — an alias is its own fact, and a
-        // half-finished rename should not take it with it.
-        for alias in additions {
-            if let tag = editingTag {
-                do { try library.addAlias(alias, toTag: tag.id) } catch {
+        // half-finished rename should not take it with it. One at a
+        // time, in order, each shown once the library has it.
+        let service = service
+        Task {
+            for alias in additions {
+                do {
+                    try await service.addAlias(alias, toTag: tag.id)
+                } catch {
                     errorText = "\(error)"
                     return
                 }
+                aliases.append(alias)
             }
-            aliases.append(alias)
         }
     }
 
     private func removeAlias(_ alias: String) {
-        if let tag = editingTag {
-            do { try library.removeAlias(alias, fromTag: tag.id) } catch {
+        guard let tag = editingTag else {
+            aliases.removeAll { $0 == alias }
+            return
+        }
+        let service = service
+        Task {
+            do {
+                try await service.removeAlias(alias, fromTag: tag.id)
+                aliases.removeAll { $0 == alias }
+            } catch {
                 errorText = "\(error)"
-                return
             }
         }
-        aliases.removeAll { $0 == alias }
     }
 
     /// Both paths go through the kit's single tagging writes, so neither
@@ -366,45 +381,23 @@ struct TagSheet: View {
     }
 
     private func commit() {
-        guard !trimmedName.isEmpty else { return }
-        do {
-            let tag: Tag
-            if let existing = editingTag {
-                // The move first: the rename then normalizes against the
-                // category the tag is IN.
-                if categoryID != existing.tagCategoryID {
-                    try library.moveTag(existing.id, toCategory: categoryID)
-                }
-                if trimmedName != existing.name {
-                    try library.renameTag(existing.id, to: trimmedName)
-                }
-                if hidden != existing.hiddenByDefault {
-                    try library.setTagHidden(existing.id, hidden)
-                }
-                if ignoredByAnalysis != existing.ignoredByAnalysis {
-                    try library.setTagAnalysisIgnored(existing.id, ignoredByAnalysis)
-                }
-                if favorite != existing.isFavorite {
-                    try library.setTagFavorite(existing.id, favorite)
-                }
-                if notes != existing.notes {
-                    try library.setTagNotes(existing.id, notes)
-                }
-                tag = existing
-            } else {
-                let created = try library.ensureTag(named: trimmedName, inCategory: categoryID)
-                for alias in aliases { try library.addAlias(alias, toTag: created.id) }
-                if hidden { try library.setTagHidden(created.id, true) }
-                if ignoredByAnalysis { try library.setTagAnalysisIgnored(created.id, true) }
-                if favorite { try library.setTagFavorite(created.id, true) }
-                if !notes.isEmpty { try library.setTagNotes(created.id, notes) }
-                tag = created
+        guard !trimmedName.isEmpty, !isSaving else { return }
+        let draft = TagDraft(
+            tagID: editingTag?.id, categoryID: categoryID, name: trimmedName, notes: notes,
+            hiddenByDefault: hidden, ignoredByAnalysis: ignoredByAnalysis, isFavorite: favorite,
+            aliases: isCreating ? aliases : [])
+        let service = service
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                let tag = try await service.saveTag(draft)
+                errorText = nil
+                onSaved(tag)
+                close()
+            } catch {
+                errorText = "\(error)"
             }
-            errorText = nil
-            onSaved(tag)
-            close()
-        } catch {
-            errorText = "\(error)"
         }
     }
 }

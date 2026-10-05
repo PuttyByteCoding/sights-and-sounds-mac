@@ -104,6 +104,36 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.storedThumbnail(itemID: itemID) }
     }
 
+    // MARK: TagManaging
+
+    func fullVocabulary() async throws -> [CategoryTags] {
+        try await run { try await base.fullVocabulary() }
+    }
+    func tagUsageCounts(categoryID: UUID) async throws -> [UUID: Int] {
+        try await run { try await base.tagUsageCounts(categoryID: categoryID) }
+    }
+    func tagDetails(tagID: UUID) async throws -> TagDetails {
+        try await run { try await base.tagDetails(tagID: tagID) }
+    }
+    func setTagFavorite(_ tagID: UUID, _ isFavorite: Bool) async throws {
+        try await run { try await base.setTagFavorite(tagID, isFavorite) }
+    }
+    func convertTagToAlias(_ tagID: UUID, of targetID: UUID) async throws {
+        try await run { try await base.convertTagToAlias(tagID, of: targetID) }
+    }
+    func replaceTag(_ tagID: UUID, with targetID: UUID, on itemID: UUID?) async throws {
+        try await run { try await base.replaceTag(tagID, with: targetID, on: itemID) }
+    }
+    func deleteTag(_ tagID: UUID) async throws {
+        try await run { try await base.deleteTag(tagID) }
+    }
+    func removeAlias(_ alias: String, fromTag tagID: UUID) async throws {
+        try await run { try await base.removeAlias(alias, fromTag: tagID) }
+    }
+    func saveTag(_ draft: TagDraft) async throws -> SightsAndSoundsKit.Tag {
+        try await run { try await base.saveTag(draft) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {
