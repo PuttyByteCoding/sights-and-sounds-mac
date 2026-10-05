@@ -97,6 +97,12 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case createField(field: FieldDefinition)
     case deleteField(fieldID: UUID)
 
+    // SupportingReading, and the one job hurried along
+    case watchHistory(limit: Int)
+    case signalSummary(itemID: UUID)
+    case unsavedSegments(itemIDs: [UUID])
+    case runNextAndWait(jobID: UUID)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -108,7 +114,8 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .opened,
              .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
              .tagMembership, .pendingTextScan, .textLines, .fullVocabulary, .tagUsageCounts, .tagDetails, .categories,
-             .categoryTable, .vocabularyIndex, .fields, .fieldValues, .takenNames:
+             .categoryTable, .vocabularyIndex, .fields, .fieldValues, .takenNames, .watchHistory,
+             .signalSummary, .unsavedSegments:
             true
         default:
             false
@@ -333,6 +340,16 @@ extension ServiceRequest {
             return try json(await service.createField(field))
         case .deleteField(let fieldID):
             try await service.deleteField(fieldID)
+            return nothing
+
+        case .watchHistory(let limit):
+            return try json(await service.watchHistory(limit: limit))
+        case .signalSummary(let itemID):
+            return try json(await service.signalSummary(itemID: itemID))
+        case .unsavedSegments(let itemIDs):
+            return try json(await service.unsavedSegments(itemIDs: itemIDs))
+        case .runNextAndWait(let jobID):
+            try await service.runNextAndWait(jobID: jobID)
             return nothing
         }
     }

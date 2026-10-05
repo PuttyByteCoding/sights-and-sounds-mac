@@ -593,6 +593,38 @@ import Testing
         #expect(remote.state == .connected)
     }
 
+    /// History, a video's unsaved segments and an item's summary, from
+    /// another Mac; and taking an item out of the library there.
+    @Test(.timeLimit(.minutes(1)))
+    func theSmallerReadsAndRemovalReachTheHost() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.watchHistory(limit: 10) == local.watchHistory(limit: 10))
+        #expect(try await remote.watchHistory(limit: 10).items.map(\.id) == [rig.a.id])
+        #expect(try await remote.watchHistory(limit: 10).total == 1)
+        #expect(try await remote.signalSummary(itemID: rig.a.id) == nil)
+        #expect(try await remote.unsavedSegments(itemIDs: [rig.a.id, rig.b.id])
+            == local.unsavedSegments(itemIDs: [rig.a.id, rig.b.id]))
+        #expect(try await remote.unsavedSegments(itemIDs: [rig.a.id]).first?.segmentIDs == [rig.segment.id])
+
+        // Queued on the host, where the files are. The rig's runner is
+        // paused, so the job is seen and does not run.
+        let job = try #require(try await remote.run(
+            .removeFromLibrary(itemIDs: [rig.b.id], writeTagsFirst: true), wait: .none))
+        #expect(job.kind == RemoveFromLibraryJob.kind)
+        let queued = try await rig.library.writer.read { try JobRecord.fetchOne($0, key: job.id) }
+        #expect(queued?.state == .queued)
+    }
+
+    @Test func theSmallerReadsAreAskedTwiceAndAHurriedJobIsNot() {
+        #expect(ServiceRequest.watchHistory(limit: 5).onlyReads)
+        #expect(ServiceRequest.signalSummary(itemID: UUID()).onlyReads)
+        #expect(ServiceRequest.unsavedSegments(itemIDs: []).onlyReads)
+        #expect(!ServiceRequest.runNextAndWait(jobID: UUID()).onlyReads)
+    }
+
     @Test func onlyTheVocabularysReadsAreAskedTwice() {
         for read in [
             ServiceRequest.categories, .categoryTable(categoryID: UUID()), .vocabularyIndex,
@@ -626,6 +658,44 @@ import Testing
             tagID: nil, categoryID: UUID(), name: "x", notes: "", hiddenByDefault: false,
             ignoredByAnalysis: false, isFavorite: false, aliases: [])
         #expect(!ServiceRequest.saveTag(draft: draft).onlyReads)
+    }
+
+    /// Closed, a service is closed there and then: nothing more is
+    /// asked of the host, whichever kind of request it is, and the
+    /// stream of changes ends. Closing used to take effect a moment
+    /// later, so a request sent straight after it could still get
+    /// through, and the change stream kept its connection to the host
+    /// for as long as anyone held the stream.
+    @Test(.timeLimit(.minutes(1)))
+    func aClosedServiceAsksNothingMoreAndItsChangeStreamEnds() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        #expect(try await rig.remote.pendingDuplicateCount() == 1)
+        let ended = Ended()
+        let listening = Task {
+            for await _ in rig.remote.changes() {}
+            ended.set()
+        }
+        defer { listening.cancel() }
+        try await waitUntil("the host has the change stream's connection") {
+            rig.host.sessionCounts.connections >= 2
+        }
+
+        rig.remote.close()
+
+        // With no pause at all.
+        await #expect(throws: RemoteError.self) { _ = try await rig.remote.pendingDuplicateCount() }
+        await #expect(throws: RemoteError.self) { try await rig.remote.setFavorite([rig.a.id], true) }
+        await #expect(throws: RemoteError.self) {
+            _ = try await rig.remote.fileBytes(itemID: rig.a.id, offset: 0, length: 1)
+        }
+        try await waitUntil("the change stream ended") { ended.isSet }
+        try await waitUntil("the host has none of its connections left") {
+            rig.host.sessionCounts.connections == 0
+        }
+        #expect(try rig.row(rig.a)?.isFavorite == false, "a change was made after the service was closed")
+        // Closing is not a refusal by the host: the state does not say so.
+        #expect(rig.remote.state == .connected)
     }
 
     // MARK: - The connection

@@ -48,12 +48,7 @@ struct SignalSummaryView: View {
     }
 
     private func load() async {
-        let library = model.library
-        let item = item
-        let found = await Task.detached(priority: .utility) {
-            try? library.signalSummary(for: item)
-        }.value
-        summary = found
+        summary = try? await model.service.signalSummary(itemID: item.id)
         loaded = true
     }
 }

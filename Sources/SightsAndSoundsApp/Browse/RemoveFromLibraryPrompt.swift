@@ -14,22 +14,22 @@ struct RemovalRequest: Identifiable, Equatable {
 
 extension BrowseModel {
     /// Ask before removing: the items, and what would go with them.
-    func removalRequest(for items: [MediaItem]) -> RemovalRequest? {
+    func removalRequest(for items: [MediaItem]) async -> RemovalRequest? {
         guard !items.isEmpty else { return nil }
-        let unsaved = (try? library.unsavedSegments(of: items.map(\.id))) ?? []
+        let unsaved = (try? await service.unsavedSegments(itemIDs: items.map(\.id))) ?? []
         return RemovalRequest(items: items, unsaved: unsaved)
     }
 
     /// Remove the items from the library, leaving the files where they
     /// are — writing their tags into the files first if asked, so what the
-    /// library knew travels with them. Queued, like every file operation;
-    /// the grid follows the rows out.
-    func removeFromLibrary(_ request: RemovalRequest, writingTagsFirst: Bool, runner: JobRunner) {
+    /// library knew travels with them. Queued, like every file operation,
+    /// on the Mac that holds the files; the grid follows the rows out.
+    func removeFromLibrary(_ request: RemovalRequest, writingTagsFirst: Bool) {
+        let service = service, itemIDs = request.itemIDs
         Task {
             do {
-                _ = try await RemoveFromLibraryJob.enqueue(
-                    on: runner, itemIDs: request.itemIDs, writeTagsFirst: writingTagsFirst)
-                await runner.startDraining()
+                try await service.run(
+                    .removeFromLibrary(itemIDs: itemIDs, writeTagsFirst: writingTagsFirst), wait: .none)
             } catch {
                 errorMessage = "Could not remove from the library: \(error)"
             }

@@ -24,6 +24,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     private let lock = NSLock()
     private var currentState: State = .connecting
     private var stateWatchers: [UUID: AsyncStream<State>.Continuation] = [:]
+    private var isClosed = false
+    /// The connections change streams are waiting on.
+    private var changeConnections: [UUID: FrameConnection] = [:]
 
     /// - Parameters:
     ///   - endpoint: where the host is, and who this Mac is to it.
@@ -48,10 +51,47 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         return welcome
     }
 
-    /// Let go of the host: every connection is closed.
+    /// Let go of the host, there and then: nothing more is asked of it
+    /// from here, the stream of changes ends, and every connection is
+    /// closed.
+    ///
+    /// That it is closed is noted before this returns. The connections
+    /// themselves are closed a moment later, and a request sent in that
+    /// moment used to reach the host; now it is refused here first.
     public func close() {
+        let following = lock.withLock { () -> [FrameConnection] in
+            isClosed = true
+            defer { changeConnections = [:] }
+            return Array(changeConnections.values)
+        }
         relay.stop()
-        Task { await client.close() }
+        Task { [client] in
+            for connection in following { await connection.close() }
+            await client.close()
+        }
+    }
+
+    private static let closed = RemoteError.unreachable("the connection to the other Mac was closed")
+
+    /// Thrown from, before anything is sent: a closed service says so
+    /// itself, and its state is left as it was — the host refused
+    /// nothing and did not go away.
+    private func checkOpen() throws {
+        if lock.withLock({ isClosed }) { throw Self.closed }
+    }
+
+    /// Keep hold of a connection the change stream is waiting on, so
+    /// that closing can end the wait. False when already closed.
+    private func follow(_ connection: FrameConnection, as id: UUID) -> Bool {
+        lock.withLock {
+            guard !isClosed else { return false }
+            changeConnections[id] = connection
+            return true
+        }
+    }
+
+    private func stopFollowing(_ id: UUID) {
+        lock.withLock { changeConnections[id] = nil }
     }
 
     // MARK: - State
@@ -96,6 +136,7 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     // MARK: - Asking
 
     private func ask<T: Decodable>(_ request: ServiceRequest) async throws -> T {
+        try checkOpen()
         do {
             let json = try await client.send(request)
             set(.connected)
@@ -107,6 +148,7 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     }
 
     private func tell(_ request: ServiceRequest) async throws {
+        try checkOpen()
         do {
             _ = try await client.send(request)
             set(.connected)
@@ -130,6 +172,7 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     /// Some of an item's file, straight from the host. What the relay
     /// reads with.
     public func fileBytes(itemID: UUID, offset: Int64, length: Int) async throws -> MediaBytes {
+        try checkOpen()
         do {
             let bytes = try await client.media(MediaRead(itemID: itemID, offset: offset, length: length))
             set(.connected)
@@ -154,9 +197,16 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
                 var delay: Duration = .milliseconds(500)
                 var connectedBefore = false
                 while !Task.isCancelled {
+                    let following = UUID()
+                    defer { self?.stopFollowing(following) }
                     do {
+                        guard let service = self else { break }
+                        try service.checkOpen()
                         let (connection, _) = try await client.connect()
                         defer { Task { await connection.close() } }
+                        // Closed while it was connecting: the wait below
+                        // would have nothing to end it.
+                        guard service.follow(connection, as: following) else { break }
                         try await connection.send(Frame(kind: RemoteProtocol.Kind.subscribe))
                         self?.set(.connected)
                         delay = .milliseconds(500)
@@ -172,7 +222,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
                             if !domains.isEmpty { continuation.yield(LibraryChange(domains: domains)) }
                         }
                     } catch {
-                        if Task.isCancelled { break }
+                        // Closed from here, not lost: nothing to report
+                        // and nothing to try again.
+                        if Task.isCancelled || (try? self?.checkOpen()) == nil { break }
                         self?.note(error)
                         if case .refused = RemoteClient.remote(error) { break }
                         try? await Task.sleep(for: delay)
@@ -415,4 +467,15 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.createField(field: field))
     }
     public func deleteField(_ fieldID: UUID) async throws { try await tell(.deleteField(fieldID: fieldID)) }
+
+    // MARK: SupportingReading
+
+    public func watchHistory(limit: Int) async throws -> WatchHistory { try await ask(.watchHistory(limit: limit)) }
+    public func signalSummary(itemID: UUID) async throws -> SignalSummary? {
+        try await ask(.signalSummary(itemID: itemID))
+    }
+    public func unsavedSegments(itemIDs: [UUID]) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await ask(.unsavedSegments(itemIDs: itemIDs))
+    }
+    public func runNextAndWait(jobID: UUID) async throws { try await tell(.runNextAndWait(jobID: jobID)) }
 }

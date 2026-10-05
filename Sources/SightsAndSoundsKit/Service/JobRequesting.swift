@@ -9,6 +9,11 @@ public protocol JobRequesting: Sendable {
     /// already pending.
     @discardableResult
     func run(_ request: JobRequest, wait: JobWait) async throws -> JobRecord?
+
+    /// Move a job already queued to the front, and wait until it has
+    /// settled — for the one job somebody is sitting in front of. A job
+    /// that is not queued (running, done, gone) is only waited for.
+    func runNextAndWait(jobID: UUID) async throws
 }
 
 public enum JobRequest: Codable, Equatable, Sendable {
@@ -30,6 +35,9 @@ public enum JobRequest: Codable, Equatable, Sendable {
     case metadataSweep(itemIDs: [UUID]?)
     /// Examine these items' files for Media Signal.
     case examine(itemIDs: [UUID])
+    /// Take items out of the library and leave their files where they
+    /// are, writing their tags into the files first if asked.
+    case removeFromLibrary(itemIDs: [UUID], writeTagsFirst: Bool)
     /// Compare the library with the disk.
     case validation
 

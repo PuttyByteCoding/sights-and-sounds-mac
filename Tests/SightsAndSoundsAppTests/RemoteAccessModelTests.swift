@@ -315,7 +315,7 @@ import Testing
     /// holds. Written out, so that adding a window means deciding.
     @Test func whichWindowsWorkOnARemoteLibraryIsWrittenDown() {
         let working = AuxWindowRequest.Kind.allCases.filter(\.worksOnARemoteLibrary)
-        #expect(Set(working) == [.player, .categories])
+        #expect(Set(working) == [.player, .categories, .watched, .bookmarkSearch])
     }
 
     /// A write asked of the service reports a failure where the view

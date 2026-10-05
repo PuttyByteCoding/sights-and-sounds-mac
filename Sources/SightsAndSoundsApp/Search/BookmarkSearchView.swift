@@ -85,8 +85,9 @@ struct BookmarkSearchView: View {
         let recipe: SearchRecipe
         let subject: SearchSubject?
         do {
-            recipe = try browse.library.searchRecipe()
-            subject = try browse.library.searchSubject(for: itemID)
+            let context = try await browse.service.searchContext(itemID: itemID)
+            recipe = context.formats.defaultFormat ?? .empty
+            subject = context.subject
         } catch {
             message = "\(error)"
             loading = false

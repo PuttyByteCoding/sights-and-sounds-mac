@@ -182,6 +182,21 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.deleteField(fieldID) }
     }
 
+    // MARK: SupportingReading
+
+    func watchHistory(limit: Int) async throws -> WatchHistory {
+        try await run { try await base.watchHistory(limit: limit) }
+    }
+    func signalSummary(itemID: UUID) async throws -> SignalSummary? {
+        try await run { try await base.signalSummary(itemID: itemID) }
+    }
+    func unsavedSegments(itemIDs: [UUID]) async throws -> [LibraryDatabase.UnsavedSegments] {
+        try await run { try await base.unsavedSegments(itemIDs: itemIDs) }
+    }
+    func runNextAndWait(jobID: UUID) async throws {
+        try await run { try await base.runNextAndWait(jobID: jobID) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {
