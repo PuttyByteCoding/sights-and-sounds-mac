@@ -182,7 +182,6 @@ struct BrowseView: View {
                         openAux(.importMedia)
                     }
                     .help("Add source folders and scan them for new files")
-                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button("Tag Manager", systemImage: "tag.square") {

@@ -627,15 +627,14 @@ final class AppModel {
     func signalMaintenance(for libraryID: UUID) {
         Task {
             do {
-                let runner = try runner(for: libraryID)
-                _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
-                _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
-                // Duplicates ride the same signal: hash pairs after hashing,
-                // fingerprints after capture, matches after both.
-                _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
-                _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
-                _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
-                try await runner.runPending()
+                // The library's own workers, wherever it is: for one
+                // another Mac holds they are that Mac's, and it is asked.
+                try await service(for: libraryID).wakeWorkers()
+                // Here the queue is waited for as well, so that one which
+                // cannot be read is said.
+                if remoteLibraries.ref(for: libraryID) == nil {
+                    try await runner(for: libraryID).runPending()
+                }
             } catch {
                 loadError = "Maintenance failed: \(error)"
             }

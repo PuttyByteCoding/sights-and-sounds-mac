@@ -161,7 +161,7 @@ import Testing
         for request in requests {
             #expect(try JSONDecoder().decode(JobRequest.self, from: JSONEncoder().encode(request)) == request)
         }
-        for wait in [JobWait.none, .settled] {
+        for wait in [JobWait.none, .queued, .settled] {
             #expect(try JSONDecoder().decode(JobWait.self, from: JSONEncoder().encode(wait)) == wait)
         }
     }

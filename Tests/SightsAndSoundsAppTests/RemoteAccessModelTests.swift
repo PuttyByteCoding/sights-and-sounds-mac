@@ -317,7 +317,7 @@ import Testing
         let working = AuxWindowRequest.Kind.allCases.filter(\.worksOnARemoteLibrary)
         #expect(Set(working) == [
             .player, .categories, .watched, .bookmarkSearch, .review, .maintenance, .organise, .operations,
-            .tagAnalysis,
+            .tagAnalysis, .importMedia,
         ])
     }
 

@@ -102,6 +102,9 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case signalSummary(itemID: UUID)
     case unsavedSegments(itemIDs: [UUID])
     case runNextAndWait(jobID: UUID)
+    case job(id: UUID)
+    case cancelJob(id: UUID)
+    case wakeWorkers
 
     // ReviewManaging
     case reviewLists
@@ -152,6 +155,14 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case saveJsonSchema(id: UUID?, name: String, keys: [SchemaKey])
     case deleteJsonSchema(id: UUID)
 
+    // ImportManaging
+    case importOverview
+    case scanSource(sourceID: UUID)
+    case probeFile(sourceID: UUID, relativePath: String)
+    case importBoxes
+    case setImportBoxes(boxes: [ImportBox])
+    case enableExtension(fileExtension: String)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -171,7 +182,9 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              // Like the repair queue: asking may start it, and asking again is the same.
              .organisePlan, .moveSessions, .jobQueue, .libraryProperties,
              .itemAnalysis, .metadataSweepState, .analysisRules, .ruleCovering, .dryRun, .dryRuns,
-             .jsonSchemas, .existingTags:
+             .jsonSchemas, .existingTags, .job,
+             // A scan lists a folder and a probe measures a file; neither writes.
+             .importOverview, .scanSource, .probeFile, .importBoxes:
             true
         default:
             false
@@ -197,9 +210,25 @@ extension ServiceRequest {
                 return "That is not a folder of one of the library's sources."
             }
             return nil
+        case .run(.importFiles(_, let relativePaths, _), _):
+            // The same for the files of an import: each is a path inside
+            // its source, as a scan lists them.
+            guard relativePaths.allSatisfy(Self.isInsideASource) else {
+                return "That is not a file of one of the library's sources."
+            }
+            return nil
+        case .probeFile(_, let relativePath):
+            guard Self.isInsideASource(relativePath) else {
+                return "That is not a file of one of the library's sources."
+            }
+            return nil
         default:
             return nil
         }
+    }
+
+    private static func isInsideASource(_ path: String) -> Bool {
+        !path.isEmpty && MediaPath.normalize(path) == path && !path.hasPrefix("/")
     }
 
     /// Carry the request out on a library, and encode what came of it.
@@ -407,6 +436,14 @@ extension ServiceRequest {
         case .runNextAndWait(let jobID):
             try await service.runNextAndWait(jobID: jobID)
             return nothing
+        case .job(let id):
+            return try json(await service.job(id: id))
+        case .cancelJob(let id):
+            try await service.cancelJob(id: id)
+            return nothing
+        case .wakeWorkers:
+            try await service.wakeWorkers()
+            return nothing
 
         case .reviewLists:
             return try json(await service.reviewLists())
@@ -503,6 +540,21 @@ extension ServiceRequest {
             return try json(await service.saveJsonSchema(id: id, named: name, keys: keys))
         case .deleteJsonSchema(let id):
             try await service.deleteJsonSchema(id: id)
+            return nothing
+
+        case .importOverview:
+            return try json(await service.importOverview())
+        case .scanSource(let sourceID):
+            return try json(await service.scanSource(sourceID: sourceID))
+        case .probeFile(let sourceID, let relativePath):
+            return try json(await service.probeFile(sourceID: sourceID, relativePath: relativePath))
+        case .importBoxes:
+            return try json(await service.importBoxes())
+        case .setImportBoxes(let boxes):
+            try await service.setImportBoxes(boxes)
+            return nothing
+        case .enableExtension(let fileExtension):
+            try await service.enableExtension(fileExtension)
             return nothing
         }
     }

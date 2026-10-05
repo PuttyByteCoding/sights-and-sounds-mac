@@ -12,6 +12,8 @@ extension LocalLibraryService {
             switch wait {
             case .none:
                 await runner.startDraining()
+            case .queued:
+                break
             case .settled:
                 // Waits for its own sweep, never for jobs queued after
                 // it; folded into one already pending, for that one.
@@ -28,6 +30,8 @@ extension LocalLibraryService {
         switch wait {
         case .none:
             await runner.startDraining()
+        case .queued:
+            break
         case .settled:
             try await runner.runNext(job.id)
             try await runner.waitUntilSettled([job.id])
@@ -41,6 +45,31 @@ extension LocalLibraryService {
         guard let runner else { throw ServiceError.noJobRunner }
         try await runner.runNext(jobID)
         try await runner.waitUntilSettled([jobID])
+    }
+
+    public func job(id: UUID) async throws -> JobRecord? {
+        try await library.writer.read { try JobRecord.fetchOne($0, key: id) }
+    }
+
+    public func cancelJob(id: UUID) async throws {
+        guard let runner else { throw ServiceError.noJobRunner }
+        await runner.requestCancel(id)
+    }
+
+    /// Work is decided from the disk and the database inside each job,
+    /// so the list here is only which workers there are.
+    public func wakeWorkers() async throws {
+        guard let runner else { throw ServiceError.noJobRunner }
+        _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+        if let libraryID = try library.info()?.libraryID {
+            _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
+        }
+        // Duplicates ride the same signal: hash pairs after hashing,
+        // fingerprints after capture, matches after both.
+        _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
+        _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
+        _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
+        await runner.startDraining()
     }
 
     private func enqueue(_ request: JobRequest, on runner: JobRunner) async throws -> JobRecord {
@@ -78,6 +107,9 @@ extension LocalLibraryService {
             try await JoinJob.enqueue(on: runner, sourceID: sourceID, folderPath: folderPath, itemIDs: itemIDs)
         case .validation:
             try await runner.enqueue(ValidationJob.self)
+        case .importFiles(let sourceID, let relativePaths, let staging):
+            try await ImportJob.enqueue(
+                on: runner, sourceID: sourceID, relativePaths: relativePaths, staging: staging)
         }
     }
 }

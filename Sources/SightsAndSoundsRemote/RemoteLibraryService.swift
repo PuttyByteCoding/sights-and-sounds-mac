@@ -478,6 +478,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.unsavedSegments(itemIDs: itemIDs))
     }
     public func runNextAndWait(jobID: UUID) async throws { try await tell(.runNextAndWait(jobID: jobID)) }
+    public func job(id: UUID) async throws -> JobRecord? { try await ask(.job(id: id)) }
+    public func cancelJob(id: UUID) async throws { try await tell(.cancelJob(id: id)) }
+    public func wakeWorkers() async throws { try await tell(.wakeWorkers) }
 
     // MARK: ReviewManaging
 
@@ -589,4 +592,19 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.saveJsonSchema(id: id, name: name, keys: keys))
     }
     public func deleteJsonSchema(id: UUID) async throws { try await tell(.deleteJsonSchema(id: id)) }
+
+    // MARK: ImportManaging
+
+    public func importOverview() async throws -> ImportOverview { try await ask(.importOverview) }
+    public func scanSource(sourceID: UUID) async throws -> ScanOutcome {
+        try await ask(.scanSource(sourceID: sourceID))
+    }
+    public func probeFile(sourceID: UUID, relativePath: String) async throws -> ProbeResult {
+        try await ask(.probeFile(sourceID: sourceID, relativePath: relativePath))
+    }
+    public func importBoxes() async throws -> [ImportBox] { try await ask(.importBoxes) }
+    public func setImportBoxes(_ boxes: [ImportBox]) async throws { try await tell(.setImportBoxes(boxes: boxes)) }
+    public func enableExtension(_ fileExtension: String) async throws {
+        try await tell(.enableExtension(fileExtension: fileExtension))
+    }
 }

@@ -53,12 +53,14 @@ public enum ServiceError: Error, Equatable, Sendable, CustomStringConvertible {
     /// The tag was deleted, here or from another window, before this
     /// reached it.
     case noSuchTag
+    case noSuchSource
 
     public var description: String {
         switch self {
         case .emptyName: "a name cannot be empty"
         case .noJobRunner: "background tasks cannot be started from here"
         case .noSuchTag: "that tag is no longer in the library"
+        case .noSuchSource: "that source is no longer in the library"
         }
     }
 }
