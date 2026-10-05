@@ -27,6 +27,11 @@ public enum RemoteProtocol {
         public static let change: UInt8 = 9
         public static let ping: UInt8 = 10
         public static let pong: UInt8 = 11
+        /// A Mac that is not yet approved asks to be: sent first, in
+        /// place of a hello, on a connection made with a pairing code.
+        public static let pair: UInt8 = 12
+        /// The host's yes: the device's own key and token.
+        public static let grant: UInt8 = 13
     }
 
     /// An answer this large or larger is compressed. A listing of a big
@@ -113,6 +118,29 @@ public struct RemoteLibraryInfo: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// A Mac asking to be approved.
+public struct PairRequest: Codable, Equatable, Sendable {
+    public var protocolVersion: Int
+    /// What the device calls itself; what the host's user is shown.
+    public var deviceName: String
+    /// That the device holds the pairing code's secret.
+    public var proof: Data
+
+    public init(protocolVersion: Int = RemoteProtocol.version, deviceName: String, proof: Data) {
+        self.protocolVersion = protocolVersion
+        self.deviceName = deviceName
+        self.proof = proof
+    }
+}
+
+/// The host's yes to a `PairRequest`: who the device is from now on.
+public struct PairGrant: Codable, Equatable, Sendable {
+    public var hostName: String
+    public var deviceID: UUID
+    public var key: ChannelKey
+    public var token: Data
+}
+
 /// Why a host would not have a connection.
 public struct Refusal: Codable, Equatable, Sendable, Error, CustomStringConvertible {
     public enum Reason: String, Codable, Sendable {
@@ -122,6 +150,9 @@ public struct Refusal: Codable, Equatable, Sendable, Error, CustomStringConverti
         /// other.
         case versionMismatch
         case noSuchLibrary
+        /// Asked to pair, and the host's user said no; or the host is
+        /// not pairing a device just now.
+        case notPaired
     }
 
     public var reason: Reason

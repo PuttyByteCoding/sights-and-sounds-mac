@@ -23,6 +23,37 @@ public enum RemoteAddress {
         return false
     }
 
+    /// This Mac's own addresses on a local network: what another Mac
+    /// there would connect to. Wired and wireless addresses a router
+    /// gave come first; an address the Mac gave itself for want of one
+    /// (169.254) comes last.
+    public static func ofThisMac() -> [String] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return [] }
+        defer { freeifaddrs(list) }
+        var found: [(interface: String, address: String)] = []
+        for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let entry = pointer.pointee
+            let flags = Int32(entry.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0,
+                  let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_INET)
+            else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(
+                address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0
+            else { continue }
+            let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            guard isLocalNetwork(text) else { continue }
+            found.append((String(cString: entry.ifa_name), text))
+        }
+        return found
+            .sorted { a, b in
+                let (selfA, selfB) = (a.address.hasPrefix("169.254."), b.address.hasPrefix("169.254."))
+                return selfA == selfB ? a.interface < b.interface : !selfA
+            }
+            .map(\.address)
+    }
+
     private static func isLocal(_ v4: [UInt8]) -> Bool {
         switch (v4[0], v4[1]) {
         case (127, _), (10, _), (192, 168), (169, 254): true
