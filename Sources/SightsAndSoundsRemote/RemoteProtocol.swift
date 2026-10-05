@@ -8,8 +8,14 @@ import SightsAndSoundsKit
 /// a time, each answered before the next; or it is given over to the
 /// library's change stream.
 public enum RemoteProtocol {
-    /// Raised whenever the frames or what is in them change shape.
-    public static let version = 1
+    /// Raised whenever the frames or what is in them change shape. A
+    /// request the other end does not know is such a change: two Macs on
+    /// different versions say "update the older one" at the hello,
+    /// rather than failing one window at a time.
+    ///
+    /// 1 · Browse and the player.
+    /// 2 · Every window of a library, Background Tasks and Settings.
+    public static let version = 2
 
     public enum Kind {
         public static let hello: UInt8 = 1
