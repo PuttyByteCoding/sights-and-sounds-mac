@@ -1,0 +1,222 @@
+import Foundation
+import SightsAndSoundsKit
+
+/// One thing asked of a library: an operation of `LibraryService`, with
+/// what it was given. The client encodes it, the host decodes it and
+/// calls the same operation on the library it holds. There is one case
+/// per operation and nothing else, so a host does for a remote library
+/// exactly what the app does for a local one.
+public enum ServiceRequest: Codable, Equatable, Sendable {
+    // BrowseReading
+    case sourceStates
+    case browseVocabulary
+    case sidebarCounts(kinds: MediaKinds)
+    case pendingDuplicateCount
+    case savedFilters
+    case savedFilterCounts(kinds: MediaKinds)
+    case tileMenuFacts(snapshotsPerItem: Int)
+    case thumbnailQueueStatus
+
+    // BrowseListing
+    case listing(ListingRequest)
+
+    // BrowseWriting
+    case renameSource(id: UUID, name: String)
+    case setSourceEnabled(id: UUID, enabled: Bool)
+    case addSource(name: String, rootPath: String)
+    case saveFilter(name: String, filter: MediaFilter)
+    case updateSavedFilter(id: UUID, filter: MediaFilter)
+    case renameSavedFilter(id: UUID, name: String)
+    case deleteSavedFilter(id: UUID)
+    case assignTag(tagID: UUID, itemIDs: [UUID])
+    case removeTag(tagID: UUID, itemIDs: [UUID])
+    case setFavorite(itemIDs: [UUID], isFavorite: Bool)
+    case setNeedsReview(itemIDs: [UUID], needsReview: Bool)
+    case setStaging(folder: StagingFolder, on: Bool, itemIDs: [UUID])
+
+    // JobRequesting
+    case run(request: JobRequest, wait: JobWait)
+
+    // PlayerReading
+    case playable(itemID: UUID)
+    case opened(itemID: UUID)
+    case itemTags(itemID: UUID)
+    case tagging(itemID: UUID)
+    case segments(parentID: UUID)
+    case searchContext(itemID: UUID)
+    case recentlyWatched(limit: Int)
+    case items(ids: [UUID])
+    case queueItems(QueueDefinition)
+    case tagMembership(itemIDs: [UUID])
+    case pendingTextScan(itemID: UUID)
+    case textLines(itemID: UUID)
+
+    // PlayerWriting
+    case recordPlayback(PlaybackEvent)
+    case setFlag(flag: PlayerToggleFlag, on: Bool, itemID: UUID)
+    case toggleTag(tagID: UUID, itemID: UUID)
+    case renameTag(tagID: UUID, name: String)
+    case ensureTag(name: String, categoryID: UUID)
+    case addAlias(alias: String, tagID: UUID)
+    case setCategoryOrder(categoryIDs: [UUID])
+    case setKeyBinding(key: String, tagID: UUID, advance: Bool)
+    case removeKeyBinding(key: String)
+    case createSegment(parentID: UUID, name: String, startSeconds: Double, endSeconds: Double, role: SegmentRole)
+    case renameSegment(itemID: UUID, name: String)
+    case deleteSegment(itemID: UUID)
+    case addBlock(itemID: UUID, startSeconds: Double, endSeconds: Double, kind: VideoBlockKind)
+    case deleteBlock(blockID: UUID)
+    case setSearchFormats(formats: SearchFormats, replacingUnreadable: Bool)
+
+    /// Asking again changes nothing: it is safe to ask a second time
+    /// when the first try was lost with its connection. A request that
+    /// changes the library is never asked twice on the client's own
+    /// say-so — the first may have landed.
+    public var onlyReads: Bool {
+        switch self {
+        case .sourceStates, .browseVocabulary, .sidebarCounts, .pendingDuplicateCount, .savedFilters,
+             .savedFilterCounts, .tileMenuFacts, .thumbnailQueueStatus, .listing, .playable, .opened,
+             .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
+             .tagMembership, .pendingTextScan, .textLines:
+            true
+        default:
+            false
+        }
+    }
+}
+
+extension ServiceRequest {
+    /// Carry the request out on a library, and encode what came of it.
+    /// An operation that returns nothing answers with nothing.
+    func answer(with service: any LibraryService) async throws -> Data {
+        func json<T: Encodable>(_ value: T) throws -> Data { try RemoteProtocol.encode(value) }
+        let nothing = Data()
+
+        switch self {
+        case .sourceStates:
+            return try json(await service.sourceStates())
+        case .browseVocabulary:
+            return try json(await service.browseVocabulary())
+        case .sidebarCounts(let kinds):
+            return try json(await service.sidebarCounts(kinds: kinds))
+        case .pendingDuplicateCount:
+            return try json(await service.pendingDuplicateCount())
+        case .savedFilters:
+            return try json(await service.savedFilters())
+        case .savedFilterCounts(let kinds):
+            return try json(await service.savedFilterCounts(kinds: kinds))
+        case .tileMenuFacts(let snapshotsPerItem):
+            return try json(await service.tileMenuFacts(snapshotsPerItem: snapshotsPerItem))
+        case .thumbnailQueueStatus:
+            return try json(await service.thumbnailQueueStatus())
+
+        case .listing(let request):
+            return try json(await service.listing(request))
+
+        case .renameSource(let id, let name):
+            try await service.renameSource(id, to: name)
+            return nothing
+        case .setSourceEnabled(let id, let enabled):
+            try await service.setSourceEnabled(id, enabled)
+            return nothing
+        case .addSource(let name, let rootPath):
+            return try json(await service.addSource(named: name, rootPath: rootPath))
+        case .saveFilter(let name, let filter):
+            return try json(await service.saveFilter(named: name, filter))
+        case .updateSavedFilter(let id, let filter):
+            try await service.updateSavedFilter(id, to: filter)
+            return nothing
+        case .renameSavedFilter(let id, let name):
+            try await service.renameSavedFilter(id, to: name)
+            return nothing
+        case .deleteSavedFilter(let id):
+            try await service.deleteSavedFilter(id)
+            return nothing
+        case .assignTag(let tagID, let itemIDs):
+            try await service.assignTag(tagID, to: itemIDs)
+            return nothing
+        case .removeTag(let tagID, let itemIDs):
+            try await service.removeTag(tagID, from: itemIDs)
+            return nothing
+        case .setFavorite(let itemIDs, let isFavorite):
+            try await service.setFavorite(itemIDs, isFavorite)
+            return nothing
+        case .setNeedsReview(let itemIDs, let needsReview):
+            try await service.setNeedsReview(itemIDs, needsReview)
+            return nothing
+        case .setStaging(let folder, let on, let itemIDs):
+            return try json(await service.setStaging(folder, on: on, itemIDs: itemIDs))
+
+        case .run(let request, let wait):
+            return try json(await service.run(request, wait: wait))
+
+        case .playable(let itemID):
+            return try json(await service.playable(itemID: itemID))
+        case .opened(let itemID):
+            return try json(await service.opened(itemID: itemID))
+        case .itemTags(let itemID):
+            return try json(await service.itemTags(itemID: itemID))
+        case .tagging(let itemID):
+            return try json(await service.tagging(itemID: itemID))
+        case .segments(let parentID):
+            return try json(await service.segments(parentID: parentID))
+        case .searchContext(let itemID):
+            return try json(await service.searchContext(itemID: itemID))
+        case .recentlyWatched(let limit):
+            return try json(await service.recentlyWatched(limit: limit))
+        case .items(let ids):
+            return try json(await service.items(ids: ids))
+        case .queueItems(let definition):
+            return try json(await service.queueItems(definition))
+        case .tagMembership(let itemIDs):
+            return try json(await service.tagMembership(itemIDs: itemIDs))
+        case .pendingTextScan(let itemID):
+            return try json(await service.pendingTextScan(itemID: itemID))
+        case .textLines(let itemID):
+            return try json(await service.textLines(itemID: itemID))
+
+        case .recordPlayback(let event):
+            try await service.recordPlayback(event)
+            return nothing
+        case .setFlag(let flag, let on, let itemID):
+            return try json(await service.setFlag(flag, on, itemID: itemID))
+        case .toggleTag(let tagID, let itemID):
+            return try json(await service.toggleTag(tagID, on: itemID))
+        case .renameTag(let tagID, let name):
+            try await service.renameTag(tagID, to: name)
+            return nothing
+        case .ensureTag(let name, let categoryID):
+            return try json(await service.ensureTag(named: name, inCategory: categoryID))
+        case .addAlias(let alias, let tagID):
+            try await service.addAlias(alias, toTag: tagID)
+            return nothing
+        case .setCategoryOrder(let categoryIDs):
+            try await service.setCategoryOrder(categoryIDs)
+            return nothing
+        case .setKeyBinding(let key, let tagID, let advance):
+            try await service.setKeyBinding(key, tagID: tagID, advance: advance)
+            return nothing
+        case .removeKeyBinding(let key):
+            try await service.removeKeyBinding(key)
+            return nothing
+        case .createSegment(let parentID, let name, let startSeconds, let endSeconds, let role):
+            return try json(await service.createSegment(
+                parentID: parentID, name: name, startSeconds: startSeconds, endSeconds: endSeconds, role: role))
+        case .renameSegment(let itemID, let name):
+            try await service.renameSegment(itemID, to: name)
+            return nothing
+        case .deleteSegment(let itemID):
+            try await service.deleteSegment(itemID)
+            return nothing
+        case .addBlock(let itemID, let startSeconds, let endSeconds, let kind):
+            return try json(await service.addBlock(
+                to: itemID, startSeconds: startSeconds, endSeconds: endSeconds, kind: kind))
+        case .deleteBlock(let blockID):
+            try await service.deleteBlock(blockID)
+            return nothing
+        case .setSearchFormats(let formats, let replacingUnreadable):
+            try await service.setSearchFormats(formats, replacingUnreadable: replacingUnreadable)
+            return nothing
+        }
+    }
+}

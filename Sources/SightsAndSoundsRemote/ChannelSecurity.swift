@@ -51,6 +51,13 @@ public enum ChannelSecurity {
 
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
+        // A Mac that sleeps or loses power says nothing on its way out.
+        // Without this a wait on it would never end; with it the
+        // connection is found dead in about half a minute.
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 15
+        tcp.keepaliveInterval = 5
+        tcp.keepaliveCount = 3
         let parameters = NWParameters(tls: tls, tcp: tcp)
         // A listener rebuilt with new keys comes back on the same port.
         parameters.allowLocalEndpointReuse = true

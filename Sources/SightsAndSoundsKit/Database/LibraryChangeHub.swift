@@ -49,6 +49,14 @@ public struct LibraryChange: Sendable {
     /// about, which is how a window avoids refreshing twice for its own
     /// write.
     public let lastCommitAt: ContinuousClock.Instant
+
+    /// For a change heard about from somewhere other than this library's
+    /// own hub: a library another Mac holds says which domains changed,
+    /// and when is when the word arrived.
+    public init(domains: Set<LibraryChangeDomain>, lastCommitAt: ContinuousClock.Instant = .now) {
+        self.domains = domains
+        self.lastCommitAt = lastCommitAt
+    }
 }
 
 public final class LibraryChangeHub: Sendable {
