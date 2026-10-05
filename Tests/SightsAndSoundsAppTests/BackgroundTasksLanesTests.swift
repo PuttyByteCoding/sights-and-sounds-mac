@@ -103,6 +103,96 @@ import Testing
         #expect(left == 0)
     }
 
+    /// A Mac that is asleep takes ten seconds to be given up on, and
+    /// every lane used to wait for it. Its lane says so when the time
+    /// allowed is up and the others have theirs; and while its question
+    /// is still unanswered it is not asked again beside itself.
+    ///
+    /// The slow library is held at a gate rather than given a delay, so
+    /// nothing here depends on how fast the machine is: the reading
+    /// returns while the gate is shut, which it could not if it waited.
+    @Test(.timeLimit(.minutes(1)))
+    func aLibrarySlowToAnswerDoesNotHoldTheOthers() async throws {
+        func library(_ name: String) throws -> LocalLibraryService {
+            let library = try LibraryDatabase.openInMemory()
+            try library.ensureInfo(name: name)
+            return LocalLibraryService(library: library)
+        }
+        let quickID = UUID(), slowID = UUID()
+        let open = [
+            AppModel.OpenLibrary(id: quickID, name: "Quick", service: try library("Quick"), isRemote: false),
+            AppModel.OpenLibrary(id: slowID, name: "Slow — Another Mac", service: try library("Slow"), isRemote: true),
+        ]
+        let slow = open[1].service
+        let gate = SlowLibrary(slow)
+        defer { gate.open() }
+        let asking: @Sendable (any LibraryService) async -> JobLane? = { service in
+            if service as AnyObject === slow as AnyObject { await gate.hold() }
+            return try? await service.jobLane(limit: 40)
+        }
+
+        // Long enough for the quick one however busy the machine is; the
+        // slow one never answers, so this returns when the time is up.
+        let first = await BackgroundTasksView.lanes(
+            for: open, tasksPaused: true, answerWithin: .seconds(4), asking: asking)
+        #expect(!gate.isOpen, "nothing was waited for: the gate was never opened")
+        #expect(first.map(\.isAnswering) == [true, false])
+        #expect(first[0].isPaused, "a library with no queue yet starts as the app's switch says")
+        #expect(gate.arrivals == 1)
+
+        // Asked again while the first question is still out: not a second one.
+        let second = await BackgroundTasksView.lanes(
+            for: open, tasksPaused: true, answerWithin: .milliseconds(100), asking: asking)
+        #expect(second[1].isAnswering == false)
+        #expect(gate.arrivals == 1, "the library was asked again beside its unanswered question")
+
+        // Once it has answered, a later reading asks afresh and has it.
+        gate.open()
+        var third: [BackgroundTasksView.Lane] = []
+        for _ in 0..<40 where third.last?.isAnswering != true {
+            third = await BackgroundTasksView.lanes(
+                for: open, tasksPaused: true, answerWithin: .seconds(4), asking: asking)
+        }
+        #expect(third.map(\.isAnswering) == [true, true])
+        // That answer was the first question's, kept for whoever asked
+        // next. With it used, the library is asked afresh.
+        for _ in 0..<40 where gate.arrivals < 2 {
+            _ = await BackgroundTasksView.lanes(
+                for: open, tasksPaused: true, answerWithin: .seconds(4), asking: asking)
+        }
+        #expect(gate.arrivals >= 2, "an answered question was never asked again")
+    }
+
+    /// Holds whoever asks the slow library until the gate is opened.
+    final class SlowLibrary: @unchecked Sendable {
+        private let lock = NSLock()
+        private var opened = false
+        private var count = 0
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        init(_ service: any LibraryService) {}
+        var isOpen: Bool { lock.withLock { opened } }
+        var arrivals: Int { lock.withLock { count } }
+        func open() {
+            let held = lock.withLock {
+                opened = true
+                defer { waiting = [] }
+                return waiting
+            }
+            for one in held { one.resume() }
+        }
+        func hold() async {
+            await withCheckedContinuation { (one: CheckedContinuation<Void, Never>) in
+                let goNow = lock.withLock {
+                    count += 1
+                    if opened { return true }
+                    waiting.append(one)
+                    return false
+                }
+                if goNow { one.resume() }
+            }
+        }
+    }
+
     /// Settings is pointed at any library on this Mac, open or shut.
     /// Choosing one opens it and nothing more: no runner is built,
     /// because nothing in Settings starts work.

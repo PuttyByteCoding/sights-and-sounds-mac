@@ -60,7 +60,10 @@ import Testing
     @Test func applyingGoesThroughTheSessionHookAndCountsThePass() async throws {
         let (session, items, taper, library) = try await makeSessionAndLibrary()
         var applied: [String] = []
-        session.apply = { applied.append($0.name) }
+        session.apply = { tag, done in
+            applied.append(tag.name)
+            done()
+        }
         let model = TagAnalysisModel(session: session)
         session.playerDidShow(itemID: items[0].id, position: nil)
         try await Task.sleep(for: .milliseconds(50))
@@ -271,6 +274,32 @@ import Testing
         #expect(model.analysis.existing.contains { $0.tag.name == "show" }, "the older answer replaced the newer")
         #expect(session.analysis == model.analysis)
         #expect(!model.isLoading)
+    }
+
+    /// Applying is the player's write, and reading the video again is
+    /// another request: sent side by side, the reading could get in
+    /// first and show the row still Undecided. It waits to be told the
+    /// write has landed.
+    @Test func theVideoIsReadAgainOnlyOnceTheTagHasLanded() async throws {
+        let (session, stub, items, _, _) = try await makeStubbedSession()
+        var landed: [@MainActor () -> Void] = []
+        session.apply = { _, done in landed.append(done) }
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        let readings = stub.calls("itemAnalysis(itemID:)")
+
+        let mike = try #require(session.analysis.existing.first?.tag)
+        model.applyNow(mike)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(stub.calls("itemAnalysis(itemID:)") == readings, "read again before the write had landed")
+        #expect(model.tagsAppliedThisPass == 1)
+
+        try #require(landed.count == 1)
+        landed[0]()
+        try await settle(model)
+        #expect(stub.calls("itemAnalysis(itemID:)") == readings + 1)
     }
 
     @Test func aReadingThatFailsSaysSoAndStopsWaiting() async throws {

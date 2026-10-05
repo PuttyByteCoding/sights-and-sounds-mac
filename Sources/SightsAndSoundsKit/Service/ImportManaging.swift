@@ -80,7 +80,10 @@ extension LocalLibraryService {
 
     public func probeFile(sourceID: UUID, relativePath: String) async throws -> ProbeResult {
         let root = URL(fileURLWithPath: try await source(sourceID).rootPath, isDirectory: true)
-        return await MediaProbe.probe(url: root.appendingPathComponent(relativePath))
+        let file = root.appendingPathComponent(relativePath)
+        // Only a file of the source: not one a link in it leads out to.
+        guard MediaPath.isReallyInside(root, file: file) else { return ProbeResult() }
+        return await MediaProbe.probe(url: file)
     }
 
     public func importBoxes() async throws -> [ImportBox] {

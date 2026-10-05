@@ -310,9 +310,11 @@ final class TagAnalysisModel {
     /// player's hook so its panel refreshes on the same call. The reload
     /// that follows moves the row to Applied.
     func applyNow(_ tag: Tag) {
-        session.apply(tag)
         tagsAppliedThisPass += 1
-        reload()
+        // Read again once the player's write has landed, not beside it:
+        // the two travel separately, and a reading that got in first
+        // left the row Undecided with the tag already on the video.
+        session.apply(tag) { [weak self] in self?.reload() }
     }
 
     /// Create (or find by name) then apply — the decide pane's Assign.

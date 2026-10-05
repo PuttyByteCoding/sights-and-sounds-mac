@@ -27,6 +27,12 @@ struct SearchSettingsPane: View {
     /// Only the newest reading lands: the picker can move on while a
     /// library — one on another Mac — is still being asked.
     @State private var loadGeneration = 0
+    /// The library whose formats are on the page. Until the one chosen
+    /// has been read there is nothing of it to edit: a format added to
+    /// the empty page and applied replaced the ones it had.
+    @State private var loadedLibraryID: UUID?
+
+    private var isLoaded: Bool { selectedLibraryID != nil && loadedLibraryID == selectedLibraryID }
     @State private var firefoxProfile = AppSettingsStore.shared.current.firefoxProfilePath ?? ""
     @State private var webSearchURL = AppSettingsStore.shared.current.webSearchURL
 
@@ -44,7 +50,7 @@ struct SearchSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if selectedLibraryID != nil {
+            if isLoaded {
                 formatsSection
                 if selectedFormatID != nil {
                     partsSection
@@ -65,7 +71,7 @@ struct SearchSettingsPane: View {
     /// Anything on the page that differs from what is stored.
     private var isDirty: Bool {
         let settings = AppSettingsStore.shared.current
-        return (selectedLibraryID != nil && formats != savedFormats)
+        return (isLoaded && formats != savedFormats)
             || firefoxProfile != (settings.firefoxProfilePath ?? "")
             || webSearchURL != settings.webSearchURL
     }
@@ -354,6 +360,7 @@ struct SearchSettingsPane: View {
         let generation = loadGeneration
         let service = selectedLibraryID.flatMap { try? model.settingsService(for: $0) }
         if anotherLibrary || service == nil {
+            loadedLibraryID = nil
             formats = .empty
             savedFormats = .empty
             storedFormatsUnreadable = false
@@ -367,6 +374,7 @@ struct SearchSettingsPane: View {
             do {
                 let stored = try await service.searchSettings()
                 guard generation == loadGeneration else { return }
+                loadedLibraryID = selectedLibraryID
                 formats = stored.formats
                 savedFormats = stored.formats
                 storedFormatsUnreadable = stored.storedFormatsUnreadable
@@ -390,7 +398,7 @@ struct SearchSettingsPane: View {
     /// to settings.json.
     private func apply(replacingUnreadable: Bool = false) {
         let draft = formats
-        guard let id = selectedLibraryID, let service = try? model.settingsService(for: id),
+        guard isLoaded, let id = selectedLibraryID, let service = try? model.settingsService(for: id),
               draft != savedFormats || replacingUnreadable
         else {
             applyToThisMac()

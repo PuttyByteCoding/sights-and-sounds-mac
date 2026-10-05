@@ -32,6 +32,15 @@ final class ImportRun {
         var description: String { "the import could not be queued" }
     }
 
+    /// The job is the library's and goes on whether or not it can be
+    /// asked about, so this is not "failed".
+    struct LostTouch: Error, CustomStringConvertible {
+        let reason: String
+        var description: String {
+            "could not ask how the import is going (\(reason)); it may still be running — see Background Tasks"
+        }
+    }
+
     private(set) var running: JobRecord?
     /// Across the whole run: a per-folder import is one job per folder,
     /// and the overlay restarted at "0 of 12" for each with no sense of
@@ -58,6 +67,10 @@ final class ImportRun {
 
     /// How often a job's row is read while it runs.
     var pollInterval: Duration = .milliseconds(250)
+    /// How many readings in a row may go unanswered — a library on
+    /// another Mac, out of reach for a moment — before the run gives up
+    /// watching.
+    var patience = 20
 
     init(service: any LibraryService) {
         self.service = service
@@ -87,20 +100,37 @@ final class ImportRun {
                 do {
                     let record = try await enqueue(service, sourceID, group.paths, group.staging)
                     running = record
-                    // Cancel pressed while it was being queued found no
-                    // job to cancel; this one is cancelled now, before it
-                    // can run, and settles like any other.
-                    if isCancelled { try await service.cancelJob(id: record.id) }
-                    // Started, not waited for: waiting for the drain meant
-                    // waiting for the whole queue, so a cancelled or
-                    // finished folder still held the run until every job
-                    // queued ahead or after it had finished. Its own row,
-                    // polled below, says when it is done.
-                    _ = try await service.jobQueue(kind: ImportJob.kind, startingQueue: true)
+                    do {
+                        // Cancel pressed while it was being queued found no
+                        // job to cancel; this one is cancelled now, before it
+                        // can run, and settles like any other.
+                        if isCancelled { try await service.cancelJob(id: record.id) }
+                        // Started, not waited for: waiting for the drain meant
+                        // waiting for the whole queue, so a cancelled or
+                        // finished folder still held the run until every job
+                        // queued ahead or after it had finished. Its own row,
+                        // polled below, says when it is done.
+                        _ = try await service.jobQueue(kind: ImportJob.kind, startingQueue: true)
+                    } catch {
+                        // Queued and not started: taken back, or it would
+                        // run later, behind a window that said it failed.
+                        try? await service.cancelJob(id: record.id)
+                        throw error
+                    }
                     var settled = false
+                    var unanswered = 0
                     while !settled {
                         try? await Task.sleep(for: pollInterval)
-                        guard let row = try await service.job(id: record.id) else { break }
+                        let asked: JobRecord?
+                        do {
+                            asked = try await service.job(id: record.id)
+                            unanswered = 0
+                        } catch {
+                            unanswered += 1
+                            guard unanswered < patience else { throw LostTouch(reason: "\(error)") }
+                            continue
+                        }
+                        guard let row = asked else { break }
                         progress = (completedBefore + row.progressCurrent, total)
                         switch row.state {
                         case .queued, .running: break

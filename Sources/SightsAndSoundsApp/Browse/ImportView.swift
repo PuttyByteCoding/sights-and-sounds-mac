@@ -763,6 +763,8 @@ struct ImportView: View {
                 collapsedFolders = []
                 step = .review
             } catch {
+                // Replaced by another scan: that one owns the window now.
+                guard !Task.isCancelled else { return }
                 notice = "Scan of \(source.name) failed: \(error)"
                 step = .source
             }

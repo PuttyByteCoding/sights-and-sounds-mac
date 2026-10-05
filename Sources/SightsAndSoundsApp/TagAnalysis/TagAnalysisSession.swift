@@ -27,8 +27,10 @@ final class TagAnalysisSession {
     private(set) var position: (index: Int, count: Int)?
     private(set) var playerIsOpen = true
     /// Apply one tag to the shown item, through the player's own path
-    /// so its panel and history refresh. Installed by the player.
-    var apply: (Tag) -> Void = { _ in }
+    /// so its panel and history refresh, and say when the write has
+    /// landed (or failed): what is read before that may not have it.
+    /// Installed by the player.
+    var apply: (Tag, @escaping @MainActor () -> Void) -> Void = { _, done in done() }
     /// The player's next (+1) / previous (−1). Installed by the player.
     var step: (Int) -> Void = { _ in }
 
@@ -51,7 +53,7 @@ final class TagAnalysisSession {
 
     func playerDidClose() {
         playerIsOpen = false
-        apply = { _ in }
+        apply = { _, done in done() }
         step = { _ in }
     }
 

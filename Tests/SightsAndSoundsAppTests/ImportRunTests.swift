@@ -288,6 +288,56 @@ import Testing
         #expect(tags == ["Alpha"])
     }
 
+    /// The job was queued and the queue could not be started — the other
+    /// Mac out of reach for a moment. Reported as a failure, it must not
+    /// then be left in the queue to run later behind the window's back.
+    @Test(.timeLimit(.minutes(1)))
+    func aJobThatCouldNotBeStartedIsTakenBack() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunNotStarted")
+        let source = Source(name: "Here", rootPath: "/tmp/sas-import-not-started-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let stub = StubLibraryService(
+            LocalLibraryService(library: library, runner: JobRunner(library: library, paused: true)))
+        stub.fail("jobQueue(kind:startingQueue:)")
+        let run = ImportRun(service: stub)
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
+        for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+
+        #expect(try #require(outcome).failures.count == 1)
+        let states = try await library.writer.read { try JobRecord.fetchAll($0).map(\.state) }
+        #expect(states == [.cancelled], "the job reported as failed was left to run: \(states)")
+    }
+
+    /// The job goes on whether or not it can be asked about. A run that
+    /// loses touch says that, and does not call the import failed — or
+    /// stop it.
+    @Test(.timeLimit(.minutes(1)))
+    func aRunThatLosesTouchSaysTheImportMayStillBeRunning() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunLostTouch")
+        let source = Source(name: "Here", rootPath: "/tmp/sas-import-lost-touch-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let stub = StubLibraryService(
+            LocalLibraryService(library: library, runner: JobRunner(library: library, paused: true)))
+        stub.fail("job(id:)")
+        let run = ImportRun(service: stub)
+        run.pollInterval = .milliseconds(10)
+        run.patience = 3
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
+        for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+
+        let got = try #require(outcome)
+        #expect(got.failures.count == 1 && got.failures[0].contains("may still be running"), "\(got.failures)")
+        #expect(stub.calls("job(id:)") == 3)
+        // Still the library's to run: not cancelled for not answering.
+        let states = try await library.writer.read { try JobRecord.fetchAll($0).map(\.state) }
+        #expect(states == [.queued])
+        #expect(!run.isRunning)
+    }
+
     /// A library whose jobs cannot be started says so in the run's own
     /// result; the window used to check for a runner before it began.
     @Test(.timeLimit(.minutes(1)))

@@ -21,6 +21,7 @@ final class SchemasTabModel {
     var sampleJSON = ""
 
     private let writes = WriteQueue()
+    private(set) var isSaving = false
 
     init(service: any LibraryService) {
         self.service = service
@@ -73,6 +74,12 @@ final class SchemasTabModel {
     }
 
     func save() async {
+        // One save at a time: a second press while a new schema's first
+        // save was on its way asked to make it again, and was refused
+        // for the name the first had just taken.
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
         let service = service, id = selectedID, name = draftName
         let keys = draftKeys.filter { !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
         do {

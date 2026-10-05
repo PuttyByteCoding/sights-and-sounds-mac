@@ -111,6 +111,42 @@ import Testing
         #expect(try f.library.importBoxes() == boxes)
     }
 
+    /// A path can be spelled inside a source and lead out of it, through
+    /// a link someone put there. A scan never lists such a file, so an
+    /// import that names one — as another Mac could — leaves it out.
+    @Test(.timeLimit(.minutes(1)))
+    func aLinkOutOfTheSourceIsNotFollowed() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let outside = f.root.deletingLastPathComponent()
+            .appendingPathComponent("sas-import-outside-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: outside.appendingPathComponent("x.mp4"))
+        try FileManager.default.createSymbolicLink(
+            at: f.root.appendingPathComponent("link"), withDestinationURL: outside)
+        try FileManager.default.createSymbolicLink(
+            at: f.root.appendingPathComponent("set/alias.mp4"),
+            withDestinationURL: outside.appendingPathComponent("x.mp4"))
+
+        #expect(MediaPath.isReallyInside(f.root, file: f.root.appendingPathComponent("set/b.mp4")))
+        #expect(MediaPath.isReallyInside(f.root, file: f.root.appendingPathComponent("set/not-there.mp4")))
+        #expect(!MediaPath.isReallyInside(f.root, file: f.root.appendingPathComponent("link/x.mp4")))
+        #expect(!MediaPath.isReallyInside(f.root, file: f.root.appendingPathComponent("set/alias.mp4")))
+        #expect(!MediaPath.isReallyInside(f.root, file: outside.appendingPathComponent("x.mp4")))
+        // The file is there to be reached, were the link followed.
+        #expect(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("link/x.mp4").path))
+
+        // The scan lists neither, and the import takes neither.
+        let listed = try await f.service.scanSource(sourceID: f.source.id).candidates.map(\.relativePath)
+        #expect(!listed.contains("link/x.mp4") && !listed.contains("set/alias.mp4"))
+        _ = try await f.service.run(
+            .importFiles(
+                sourceID: f.source.id, relativePaths: ["link/x.mp4", "set/alias.mp4", "set/b.mp4"], staging: nil),
+            wait: .settled)
+        #expect(try f.paths() == ["set/a.mp4", "set/b.mp4"])
+    }
+
     @Test func aFileThatCannotBeReadProbesEmpty() async throws {
         let f = try await Fixture()
         defer { f.tearDown() }

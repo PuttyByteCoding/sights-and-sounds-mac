@@ -113,6 +113,10 @@ public struct ImportJob: Job {
                         forExtension: (relative as NSString).pathExtension, video: videoSet, audio: audioSet)
                 else { continue }
                 let url = root.appendingPathComponent(relative)
+                // Nor is one reached through a link that leads out of
+                // the source: the walk does not follow links, so it
+                // would never have listed it.
+                guard MediaPath.isReallyInside(root, file: url) else { continue }
                 guard fileAccess.isReachable(url) else {
                     gone += 1
                     continue

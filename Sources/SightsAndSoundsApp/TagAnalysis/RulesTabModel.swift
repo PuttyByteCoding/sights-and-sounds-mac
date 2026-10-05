@@ -191,21 +191,27 @@ final class RulesTabModel {
 
     @discardableResult
     func makeRule(key: String?, value: String) async -> Bool {
-        do {
+        let service = service
+        // Looked for and made as one write, in its turn. Asked twice in
+        // a hurry — a double click — the second finds the first's rule
+        // instead of making a rival beside it.
+        let outcome = await writes.run { () -> (rule: RuleEngine.Rule, made: Bool) in
             if let covering = try await service.ruleCovering(key: key, value: value) {
-                await reload()
-                select(covering)
-                return false
+                return (covering, false)
             }
             let made = RuleEngine.Rule(
                 id: UUID(),
                 matcher: LibraryDatabase.matcher(forKey: key, value: value),
                 actions: [])
-            try await write { try await $0.saveAnalysisRule(made) }
+            try await service.saveAnalysisRule(made)
+            return (made, true)
+        }
+        switch outcome {
+        case .success(let found):
             await reload()
-            select(made)
-            return true
-        } catch {
+            select(found.rule)
+            return found.made
+        case .failure(let error):
             loadError = "\(error)"
             return false
         }

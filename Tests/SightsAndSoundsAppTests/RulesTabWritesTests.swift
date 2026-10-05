@@ -36,6 +36,48 @@ import Testing
         #expect(model.loadError == nil)
     }
 
+    /// "Make a rule from this" pressed twice in a hurry. Looking for a
+    /// rule that covers the string and making one were two requests, so
+    /// both presses looked before either had made: two rival rules.
+    @Test func makingARuleTwiceInAHurryMakesOne() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Rules")
+        let stub = StubLibraryService(LocalLibraryService(library: library))
+        let model = RulesTabModel(service: stub)
+        // The first look is slow to be answered; the second press comes meanwhile.
+        stub.delay("ruleCovering(key:value:)", by: .milliseconds(200))
+        let first = Task { await model.makeRule(key: "artist", value: "Alpha") }
+        let second = Task { await model.makeRule(key: "artist", value: "Alpha") }
+        let made = [await first.value, await second.value]
+
+        #expect(try library.analysisRules().count == 1)
+        #expect(made.filter { $0 }.count == 1, "\(made)")
+        #expect(model.rules.count == 1 && model.selectedID == model.rules.first?.id)
+        #expect(model.loadError == nil)
+    }
+
+    /// Save Schema pressed twice for a new schema: the second press asked
+    /// to make it again and was refused for the name the first had taken.
+    @Test func savingANewSchemaTwiceInAHurrySavesItOnce() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Schemas")
+        let stub = StubLibraryService(LocalLibraryService(library: library))
+        let model = SchemasTabModel(service: stub)
+        model.startNew()
+        model.draftName = "Notes"
+        model.draftKeys = [SchemaKey(key: "venue")]
+        stub.delay("saveJsonSchema(id:named:keys:)", by: .milliseconds(200))
+        let first = Task { await model.save() }
+        let second = Task { await model.save() }
+        await first.value
+        await second.value
+
+        #expect(model.schemas.map(\.name) == ["Notes"])
+        #expect(model.loadError == nil)
+        #expect(stub.calls("saveJsonSchema(id:named:keys:)") == 1)
+        #expect(!model.isSaving)
+    }
+
     @Test func aWriteThatFailsIsSaidAndTheListStays() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Rules")

@@ -335,16 +335,38 @@ struct BackgroundTasksView: View {
     /// retrying a missing drive every second, and starting runners (and
     /// their queued work) for libraries nobody had opened. A closed
     /// library has no runner, so nothing of its is running; its history
-    /// shows once it is opened. Each library is asked through its
-    /// service, all at once, so one that is slow to answer — another
-    /// Mac — does not hold the others' lanes back longer than itself.
+    /// shows once it is opened.
     static func lanes(of app: AppModel) async -> [Lane] {
-        let open = app.openLibraries()
-        let tasksPaused = app.tasksPaused
+        await lanes(for: app.openLibraries(), tasksPaused: app.tasksPaused)
+    }
+
+    /// Each library is asked through its service, all at once, and
+    /// given `limit` to answer. A Mac that is asleep takes ten seconds
+    /// to be given up on, and every lane used to wait for it: now its
+    /// lane says "not answering" and the others are on time. A question
+    /// still unanswered is not asked again beside itself — the next
+    /// reading waits on the same one.
+    /// `asking` is how a library is asked; tests hold one at a gate.
+    static func lanes(
+        for open: [AppModel.OpenLibrary], tasksPaused: Bool, answerWithin limit: Duration = .seconds(2),
+        asking: @escaping @Sendable (any LibraryService) async -> JobLane? = { try? await $0.jobLane(limit: 40) }
+    ) async -> [Lane] {
+        let asks = open.map { library -> Task<JobLane?, Never> in
+            if let unanswered = laneAsks[library.id] { return unanswered }
+            let service = library.service
+            // Off the main actor: a window busy drawing must not be what
+            // makes a library look as if it were not answering.
+            let ask = Task.detached { await asking(service) }
+            laneAsks[library.id] = ask
+            Task {
+                _ = await ask.value
+                if laneAsks[library.id] == ask { laneAsks[library.id] = nil }
+            }
+            return ask
+        }
         let answers = await withTaskGroup(of: (Int, JobLane?).self) { group -> [Int: JobLane] in
-            for (index, library) in open.enumerated() {
-                let service = library.service
-                group.addTask { (index, try? await service.jobLane(limit: 40)) }
+            for (index, ask) in asks.enumerated() {
+                group.addTask { (index, await FirstAnswer.of(ask, within: limit)) }
             }
             var answered: [Int: JobLane] = [:]
             for await (index, lane) in group { answered[index] = lane }
@@ -356,6 +378,42 @@ struct BackgroundTasksView: View {
             }
             // No runner yet: the queue would start as the app's switch says.
             return Lane(id: library.id, name: library.name, jobs: lane.jobs, isPaused: lane.isPaused ?? tasksPaused)
+        }
+    }
+
+    /// The question each library is still being asked.
+    private static var laneAsks: [UUID: Task<JobLane?, Never>] = [:]
+}
+
+/// What a task answers, or nil if it has not by the time allowed. The
+/// task is left to finish: its answer is for whoever asks next.
+enum FirstAnswer {
+    static func of<T: Sendable>(_ ask: Task<T?, Never>, within limit: Duration) async -> T? {
+        let once = Once<T?>()
+        return await withCheckedContinuation { continuation in
+            once.hold(continuation)
+            Task { once.resume(await ask.value) }
+            Task {
+                try? await Task.sleep(for: limit)
+                once.resume(nil)
+            }
+        }
+    }
+
+    private final class Once<Value: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Value, Never>?
+
+        func hold(_ continuation: CheckedContinuation<Value, Never>) {
+            lock.withLock { self.continuation = continuation }
+        }
+
+        func resume(_ value: Value) {
+            let waiting = lock.withLock { () -> CheckedContinuation<Value, Never>? in
+                defer { continuation = nil }
+                return continuation
+            }
+            waiting?.resume(returning: value)
         }
     }
 }
