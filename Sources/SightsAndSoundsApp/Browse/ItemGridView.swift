@@ -417,7 +417,6 @@ private struct ItemCell: View {
             // at this video, over the whole listing, and opens it.
             model.openPlayerForAnalysis(at: item.id)
         }
-        .unavailableRemotely(model.isRemote)
         if item.parentMediaItemID != nil && !item.isExportedClip {
             Button("Export Clip to File", systemImage: "scissors") {
                 model.exportClip(item)

@@ -45,6 +45,23 @@ import Testing
         }
     }
 
+    @Test func theIdentityRowAndTheSearchSettingsAreReadWithoutTheCounting() async throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        #expect(try await f.service.libraryInfo() == (try f.library.info()))
+        try await f.service.setExtensionOverrides(video: ["mkv"], audio: nil)
+        #expect(try await f.service.libraryInfo()?.videoExtensionsOverride == ["mkv"])
+
+        let settings = try await f.service.searchSettings()
+        #expect(settings.formats == (try f.library.searchFormats()))
+        #expect(!settings.storedFormatsUnreadable)
+        #expect(settings.categories.map(\.name) == ["Band"])
+        // The item that sorts first, with its tags, to try a format on.
+        #expect(settings.sample?.fileName == "a.mp4")
+        let sent = try JSONDecoder().decode(SearchSettings.self, from: JSONEncoder().encode(settings))
+        #expect(sent == settings)
+    }
+
     @Test func thePropertiesAreTheLibrarysOwnCount() async throws {
         let f = try Fixture()
         defer { f.tearDown() }

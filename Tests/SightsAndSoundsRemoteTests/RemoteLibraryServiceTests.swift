@@ -716,6 +716,138 @@ import Testing
         }
     }
 
+    /// Import, from another Mac: the folder is listed and the files are
+    /// measured on the host, the import is a job in the host's queue,
+    /// and a path that is not a file of a source is not taken.
+    @Test(.timeLimit(.minutes(1)))
+    func importIsScannedAndQueuedWhereTheFilesAre() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+        try Data("c".utf8).write(to: rig.root.appendingPathComponent("set/c.mp4"))
+
+        let outcome = try await remote.scanSource(sourceID: rig.source.id)
+        let new = outcome.candidates.filter { $0.isNew }.map(\.relativePath)
+        #expect(new == ["set/c.mp4"])
+        let overview = try await remote.importOverview()
+        let directOverview = try await local.importOverview()
+        #expect(overview == directOverview)
+        #expect(overview.online[rig.away.id] == false)
+        let probe = try await remote.probeFile(sourceID: rig.source.id, relativePath: "set/c.mp4")
+        #expect(probe == ProbeResult())
+
+        let boxes = [ImportBox(source: .category(rig.band.id), sticky: true, stickyTagIDs: [rig.alpha.id])]
+        try await remote.setImportBoxes(boxes)
+        let kept = try await remote.importBoxes()
+        #expect(kept == boxes)
+
+        // The rig's queue is paused: the job is queued, seen, and stopped.
+        let staging = ImportStaging(tagIDs: [rig.alpha.id], fieldValues: [:], clearsNeedsReview: true, marksFavorite: false)
+        let queued = try await remote.run(
+            .importFiles(sourceID: rig.source.id, relativePaths: ["set/c.mp4"], staging: staging), wait: .none)
+        let job = try #require(queued)
+        let row = try await remote.job(id: job.id)
+        #expect(row?.state == .queued && row?.kind == ImportJob.kind)
+        try await remote.cancelJob(id: job.id)
+        let stopped = try await remote.job(id: job.id)
+        #expect(stopped?.state == .cancelled)
+        let nobody = try await remote.job(id: UUID())
+        #expect(nobody == nil)
+
+        // What an import ends with: the host's own workers, queued there.
+        try await remote.wakeWorkers()
+        let woken = try await rig.library.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT kind) FROM job WHERE state = 'queued'") ?? 0
+        }
+        #expect(woken == 5)
+
+        try await remote.enableExtension("xyz")
+        let after = try await remote.importOverview()
+        #expect(after.hasOverride && after.videoExtensions.contains("xyz"))
+
+        // Nothing that climbs out of a source, and nothing absolute.
+        let before = try await rig.library.writer.read { try JobRecord.fetchCount($0) }
+        for path in ["../elsewhere.mp4", "/etc/hosts", "set/../../up.mp4", "set//c.mp4", ""] {
+            let asked = try await askDirectly(
+                rig,
+                .run(request: .importFiles(sourceID: rig.source.id, relativePaths: ["set/c.mp4", path], staging: nil),
+                     wait: .none))
+            #expect(asked.kind == RemoteProtocol.Kind.failure, "an import of \(path) was accepted")
+            let measured = try await askDirectly(rig, .probeFile(sourceID: rig.source.id, relativePath: path))
+            #expect(measured.kind == RemoteProtocol.Kind.failure, "a probe of \(path) was accepted")
+        }
+        let afterRefusals = try await rig.library.writer.read { try JobRecord.fetchCount($0) }
+        #expect(afterRefusals == before)
+
+        let reads: [ServiceRequest] = [
+            .importOverview, .scanSource(sourceID: rig.source.id), .importBoxes, .job(id: job.id),
+            .probeFile(sourceID: rig.source.id, relativePath: "set/c.mp4"),
+        ]
+        let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
+        #expect(everyReadIsARead)
+        let writes: [ServiceRequest] = [
+            .setImportBoxes(boxes: []), .enableExtension(fileExtension: "xyz"), .cancelJob(id: job.id),
+            .wakeWorkers,
+        ]
+        let aWriteIsARead = writes.contains { $0.onlyReads }
+        #expect(!aWriteIsARead)
+    }
+
+    /// Background Tasks, from another Mac: the lane is the host's queue,
+    /// and pausing, moving, retrying, clearing and sweeping are done to
+    /// it there.
+    @Test(.timeLimit(.minutes(1)))
+    func theHostsQueueIsSeenAndSteered() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let statuses = try await remote.sweepStatuses()
+        let directStatuses = try await local.sweepStatuses()
+        #expect(statuses == directStatuses)
+        #expect(statuses[.contentHash] != nil)
+
+        try await remote.startSweep(.contentHash, after: .nothing)
+        try await remote.startSweep(.duplicates, after: .forgetFailures)
+        let lane = try await remote.jobLane(limit: 40)
+        let directLane = try await local.jobLane(limit: 40)
+        #expect(lane == directLane)
+        #expect(lane.isPaused == true)
+        let queued = lane.jobs.map(\.kind).sorted()
+        #expect(queued == (SweepKind.contentHash.jobKinds + SweepKind.duplicates.jobKinds).sorted())
+
+        let hash = try #require(lane.jobs.first { $0.kind == SweepKind.contentHash.jobKinds[0] })
+        try await remote.moveJobToFront(id: hash.id)
+        try await remote.cancelJob(id: hash.id)
+        try await remote.retryJob(id: hash.id)
+        // A retry is a row of its own; the one retried stays as it ended.
+        let original = try await remote.job(id: hash.id)
+        #expect(original?.state == .cancelled)
+        let again = try await remote.jobLane(limit: 40)
+        #expect(again.jobs.contains { $0.kind == hash.kind && $0.state == .queued })
+
+        let other = try #require(again.jobs.first { $0.kind == SweepKind.duplicates.jobKinds[0] })
+        try await remote.cancelJob(id: other.id)
+        try await remote.clearFinishedJobs()
+        let cleared = try await remote.jobLane(limit: 40)
+        #expect(!cleared.jobs.contains { $0.state == .cancelled })
+
+        // Pause is the host's queue's, set from here.
+        try await remote.setQueuePaused(true)
+        let paused = await rig.runner.isPaused
+        #expect(paused)
+
+        let reads: [ServiceRequest] = [.jobLane(limit: 1), .sweepStatuses]
+        let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
+        #expect(everyReadIsARead)
+        let writes: [ServiceRequest] = [
+            .moveJobToFront(id: hash.id), .retryJob(id: hash.id), .clearFinishedJobs,
+            .setQueuePaused(paused: true), .startSweep(kind: .signal, preparation: .forgetEverything),
+        ]
+        let aWriteIsARead = writes.contains { $0.onlyReads }
+        #expect(!aWriteIsARead)
+    }
+
     /// Get Info, from another Mac: the host's own counts, and the two
     /// settings that are the library's to keep.
     @Test(.timeLimit(.minutes(1)))
@@ -727,6 +859,13 @@ import Testing
         let properties = try await remote.libraryProperties()
         let direct = try await local.libraryProperties()
         #expect(properties == direct)
+        // What Settings asks, of a library chosen there.
+        let identity = try await remote.libraryInfo()
+        #expect(identity == properties.info)
+        let search = try await remote.searchSettings()
+        let directSearch = try await local.searchSettings()
+        #expect(search == directSearch)
+        #expect(ServiceRequest.libraryInfo.onlyReads && ServiceRequest.searchSettings.onlyReads)
         #expect(properties.info?.name == "Rig")
         #expect(properties.sources.map(\.name) == ["Away", "Here"])
 
@@ -739,6 +878,83 @@ import Testing
         #expect(!ServiceRequest.renameLibrary(name: "x").onlyReads)
         #expect(!ServiceRequest.setSeparatorCharacters(characters: "x").onlyReads)
         #expect(!ServiceRequest.setExtensionOverrides(video: nil, audio: nil).onlyReads)
+    }
+
+    /// Tag Analysis, from another Mac: the video is read on the host,
+    /// where its file is, and the rules and schemas are the library's.
+    @Test(.timeLimit(.minutes(1)))
+    func tagAnalysisIsDoneWhereTheFilesAre() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let rule = RuleEngine.Rule(
+            id: UUID(), matcher: .keyEquals(key: "artist"), actions: [.assignCategory(category: "Band")])
+        try await remote.saveAnalysisRule(rule)
+        let rules = try await remote.analysisRules()
+        #expect(rules == [rule])
+        let covering = try await remote.ruleCovering(key: "artist", value: "Anyone")
+        #expect(covering == rule)
+
+        let answer = try await remote.itemAnalysis(itemID: rig.a.id)
+        let direct = try await local.itemAnalysis(itemID: rig.a.id)
+        #expect(answer == direct)
+        #expect(answer.item?.id == rig.a.id)
+        #expect(answer.rules == [rule])
+        #expect(!answer.analysis.readerReports.isEmpty)
+
+        let run = try await remote.dryRun(of: rule)
+        let directRun = try await local.dryRun(of: rule)
+        #expect(run == directRun)
+        let runs = try await remote.dryRuns(of: [rule])
+        #expect(runs == [rule.id: run])
+        let applied = try await remote.applyAnalysisRule(rule)
+        #expect(applied.itemsUpdated == 0)
+
+        // What the tag field asks about text it read off a frame here.
+        let lines = ["with Alpha tonight", "and nobody else"]
+        let found = try await remote.existingTags(inLines: lines)
+        let directFound = try await local.existingTags(inLines: lines)
+        #expect(found == directFound)
+        #expect(found.map(\.tag.id) == [rig.alpha.id])
+
+        let sweep = try await remote.metadataSweepState(itemID: rig.a.id)
+        let directSweep = try await local.metadataSweepState(itemID: rig.a.id)
+        #expect(sweep == directSweep)
+        try await remote.resetMetadataSweep(itemIDs: [rig.a.id])
+        try await remote.markAnalyzed(itemID: rig.a.id)
+        let stamped = try await rig.library.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tagAnalysisState") ?? 0
+        }
+        #expect(stamped == 1)
+
+        let schema = try await remote.saveJsonSchema(id: nil, named: "Notes", keys: [SchemaKey(key: "venue")])
+        let schemas = try await remote.jsonSchemas()
+        #expect(schemas.map(\.id) == [schema.id])
+        try await remote.deleteJsonSchema(id: schema.id)
+        let none = try await remote.jsonSchemas()
+        #expect(none.isEmpty)
+
+        try await remote.moveAnalysisRule(id: rule.id, up: true)
+        try await remote.deleteAnalysisRule(id: rule.id)
+        let left = try await remote.analysisRules()
+        #expect(left.isEmpty)
+
+        let reads: [ServiceRequest] = [
+            .itemAnalysis(itemID: rig.a.id), .metadataSweepState(itemID: rig.a.id), .analysisRules,
+            .ruleCovering(key: nil, value: "x"), .dryRun(rule: rule), .dryRuns(rules: [rule]), .jsonSchemas,
+            .existingTags(lines: []),
+        ]
+        let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
+        #expect(everyReadIsARead)
+        let writes: [ServiceRequest] = [
+            .markAnalyzed(itemID: rig.a.id), .resetMetadataSweep(itemIDs: []), .saveAnalysisRule(rule: rule),
+            .deleteAnalysisRule(id: rule.id), .moveAnalysisRule(id: rule.id, up: true),
+            .applyAnalysisRule(rule: rule), .saveJsonSchema(id: nil, name: "x", keys: []),
+            .deleteJsonSchema(id: rule.id),
+        ]
+        let aWriteIsARead = writes.contains { $0.onlyReads }
+        #expect(!aWriteIsARead)
     }
 
     @Test func whichOrganiseRequestsAreAskedTwice() {

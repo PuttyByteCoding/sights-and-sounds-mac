@@ -14,6 +14,23 @@ public protocol JobRequesting: Sendable {
     /// settled — for the one job somebody is sitting in front of. A job
     /// that is not queued (running, done, gone) is only waited for.
     func runNextAndWait(jobID: UUID) async throws
+
+    /// One job's row as it stands — its state, how far it has got, what
+    /// came of it. Nil when there is no such job.
+    func job(id: UUID) async throws -> JobRecord?
+
+    /// Stop a job: one still queued is taken out of the queue, one
+    /// running stops at its next safe point. A job already settled is
+    /// left as it is.
+    func cancelJob(id: UUID) async throws
+
+    /// Wake the library's workers: hashes, thumbnails and the duplicate
+    /// sweeps, for whatever has arrived since they last ran. A signal,
+    /// not a command — asked for while they are pending, it queues
+    /// nothing — and it returns once they are queued and the queue
+    /// started, not when they are done. Said after an import, or any
+    /// work that leaves new files behind.
+    func wakeWorkers() async throws
 }
 
 public enum JobRequest: Codable, Equatable, Sendable {
@@ -47,6 +64,9 @@ public enum JobRequest: Codable, Equatable, Sendable {
     case joinItems(sourceID: UUID, folderPath: String, itemIDs: [UUID])
     /// Compare the library with the disk.
     case validation
+    /// Bring these files of a source into the library, giving each what
+    /// was staged for them.
+    case importFiles(sourceID: UUID, relativePaths: [String], staging: ImportStaging?)
 
     /// A sweep of the whole library. It is a signal rather than a
     /// command: one at most is ever pending, and asking again while one
@@ -62,6 +82,11 @@ public enum JobRequest: Codable, Equatable, Sendable {
 public enum JobWait: String, Codable, Sendable {
     /// Return as soon as the job is queued and the queue started.
     case none
+    /// Return as soon as the job is queued, and leave the queue as it
+    /// is. For a caller that may yet take the job back — a run that was
+    /// cancelled while this was on its way — and starts the queue itself
+    /// once it knows it still wants it (`jobQueue(kind:startingQueue:)`).
+    case queued
     /// Return when the work is done. Somebody is waiting, so a job
     /// queued for this request goes next after the one running, rather
     /// than behind every sweep queued before it. For a library sweep it

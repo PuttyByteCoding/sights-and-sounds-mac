@@ -3,7 +3,7 @@ import GRDB
 
 /// Where a surviving string came from — enough for the display to say
 /// "embedded metadata · comment" or seek an OCR still.
-public struct AnalysisOrigin: Equatable, Sendable, Hashable {
+public struct AnalysisOrigin: Codable, Equatable, Sendable, Hashable {
     public let readerID: String
     public let timeSeconds: Double?
     /// The contributing file, for sidecars — nil elsewhere.
@@ -11,7 +11,7 @@ public struct AnalysisOrigin: Equatable, Sendable, Hashable {
 }
 
 /// One string the analysis surfaced, after parsing and the rule fold.
-public struct AnalysisCandidate: Equatable, Sendable, Identifiable {
+public struct AnalysisCandidate: Codable, Equatable, Sendable, Identifiable {
     /// The FOLDED value — a stripPrefix rule has already run, so this is
     /// what the tag would be called.
     public let value: String
@@ -38,7 +38,7 @@ public struct AnalysisCandidate: Equatable, Sendable, Identifiable {
 /// An existing tag whose name (or one of its aliases) appears inside a
 /// surviving string — the best possible candidate: nothing to create,
 /// just apply.
-public struct ExistingTagFinding: Equatable, Sendable, Identifiable {
+public struct ExistingTagFinding: Codable, Equatable, Sendable, Identifiable {
     public let tag: Tag
     public let categoryName: String
     /// What matched — the tag's own name, or the alias that hit.
@@ -67,7 +67,7 @@ public struct ExistingTagFinding: Equatable, Sendable, Identifiable {
 /// pipeline, raw. The processed half needs no storage — every candidate
 /// already carries its origins, so "what came OUT of this reader" is a
 /// filter over the buckets.
-public struct ReaderReport: Equatable, Sendable, Identifiable {
+public struct ReaderReport: Codable, Equatable, Sendable, Identifiable {
     public let readerID: String
     public let displayName: String
     public let sources: [AnalysisSourceText]
@@ -81,7 +81,7 @@ public struct ReaderReport: Equatable, Sendable, Identifiable {
 
 /// Everything the analysis found for one video, bucketed the way the
 /// operator triages: rule-mapped first, known tags second, judgment last.
-public struct ItemAnalysis: Equatable, Sendable {
+public struct ItemAnalysis: Codable, Equatable, Sendable {
     public let suggested: [AnalysisCandidate]
     public let existing: [ExistingTagFinding]
     public let unmapped: [AnalysisCandidate]

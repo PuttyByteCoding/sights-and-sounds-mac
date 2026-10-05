@@ -4,6 +4,8 @@ import SightsAndSoundsKit
 
 /// One import from the Import window: a job per staging group (one
 /// group, or one per folder), run in turn, with progress and a total.
+/// The jobs are the library's, asked for through its service, so the
+/// run is the same for a library another Mac holds.
 @Observable @MainActor
 final class ImportRun {
     struct Group {
@@ -26,6 +28,19 @@ final class ImportRun {
         var failures: [String] = []
     }
 
+    struct NotQueued: Error, CustomStringConvertible {
+        var description: String { "the import could not be queued" }
+    }
+
+    /// The job is the library's and goes on whether or not it can be
+    /// asked about, so this is not "failed".
+    struct LostTouch: Error, CustomStringConvertible {
+        let reason: String
+        var description: String {
+            "could not ask how the import is going (\(reason)); it may still be running — see Background Tasks"
+        }
+    }
+
     private(set) var running: JobRecord?
     /// Across the whole run: a per-folder import is one job per folder,
     /// and the overlay restarted at "0 of 12" for each with no sense of
@@ -39,48 +54,83 @@ final class ImportRun {
     /// being pressed again while a run carries on in the background.
     private(set) var isRunning = false
 
-    private let runner: JobRunner
-    private let library: LibraryDatabase
+    private let service: any LibraryService
 
-    /// How a group's job is queued; tests hold it at a gate.
-    var enqueue: @Sendable (JobRunner, UUID, [String], ImportStaging?) async throws -> JobRecord = {
-        try await ImportJob.enqueue(on: $0, sourceID: $1, relativePaths: $2, staging: $3)
+    /// How a group's job is queued; tests hold it at a gate. Queued and
+    /// not started: the run starts the queue once it knows the job is
+    /// still wanted.
+    var enqueue: @Sendable (any LibraryService, UUID, [String], ImportStaging?) async throws -> JobRecord = {
+        let request = JobRequest.importFiles(sourceID: $1, relativePaths: $2, staging: $3)
+        guard let job = try await $0.run(request, wait: .queued) else { throw NotQueued() }
+        return job
     }
 
-    init(runner: JobRunner, library: LibraryDatabase) {
-        self.runner = runner
-        self.library = library
+    /// How often a job's row is read while it runs.
+    var pollInterval: Duration = .milliseconds(250)
+    /// How many readings in a row may go unanswered — a library on
+    /// another Mac, out of reach for a moment — before the run gives up
+    /// watching.
+    var patience = 20
+
+    init(service: any LibraryService) {
+        self.service = service
     }
 
     func start(sourceID: UUID, groups: [Group], onFinish: @escaping @MainActor (Outcome) -> Void) {
+        start(sourceID: sourceID, preparing: { groups }, onFinish: onFinish)
+    }
+
+    /// The same, for groups that take a moment to make ready: the words
+    /// staged become tags first, and that is asked of the service. The
+    /// run counts as running from the press, not from when they are.
+    func start(
+        sourceID: UUID, preparing groups: @escaping @MainActor () async -> [Group],
+        onFinish: @escaping @MainActor (Outcome) -> Void
+    ) {
         isRunning = true
+        let service = service
         Task {
             var outcome = Outcome()
-            let groups = groups.filter { !$0.paths.isEmpty }
+            let groups = await groups().filter { !$0.paths.isEmpty }
             let total = groups.reduce(0) { $0 + $1.paths.count }
             var completedBefore = 0
             for group in groups {
                 guard !isCancelled, !Task.isCancelled else { break }
                 defer { completedBefore += group.paths.count }
                 do {
-                    let record = try await enqueue(runner, sourceID, group.paths, group.staging)
+                    let record = try await enqueue(service, sourceID, group.paths, group.staging)
                     running = record
-                    // Cancel pressed while it was being queued found no
-                    // job to cancel; this one is cancelled now, before it
-                    // can run, and settles like any other.
-                    if isCancelled { await runner.requestCancel(record.id) }
-                    // Started, not waited for: waiting for the drain meant
-                    // waiting for the whole queue, so a cancelled or
-                    // finished folder still held the run until every job
-                    // queued ahead or after it had finished. Its own row,
-                    // polled below, says when it is done.
-                    await runner.startDraining()
+                    do {
+                        // Cancel pressed while it was being queued found no
+                        // job to cancel; this one is cancelled now, before it
+                        // can run, and settles like any other.
+                        if isCancelled { try await service.cancelJob(id: record.id) }
+                        // Started, not waited for: waiting for the drain meant
+                        // waiting for the whole queue, so a cancelled or
+                        // finished folder still held the run until every job
+                        // queued ahead or after it had finished. Its own row,
+                        // polled below, says when it is done.
+                        _ = try await service.jobQueue(kind: ImportJob.kind, startingQueue: true)
+                    } catch {
+                        // Queued and not started: taken back, or it would
+                        // run later, behind a window that said it failed.
+                        try? await service.cancelJob(id: record.id)
+                        throw error
+                    }
                     var settled = false
+                    var unanswered = 0
                     while !settled {
-                        try? await Task.sleep(for: .milliseconds(250))
-                        guard let row = try await library.writer.read({
-                            try JobRecord.fetchOne($0, key: record.id)
-                        }) else { break }
+                        try? await Task.sleep(for: pollInterval)
+                        let asked: JobRecord?
+                        do {
+                            asked = try await service.job(id: record.id)
+                            unanswered = 0
+                        } catch {
+                            unanswered += 1
+                            guard unanswered < patience else { throw LostTouch(reason: "\(error)") }
+                            continue
+                        }
+                        guard let row = asked else { break }
                         progress = (completedBefore + row.progressCurrent, total)
                         switch row.state {
                         case .queued, .running: break
@@ -110,6 +160,7 @@ final class ImportRun {
     func cancel() {
         isCancelled = true
         guard let running else { return }
-        Task { await runner.requestCancel(running.id) }
+        let service = service
+        Task { try? await service.cancelJob(id: running.id) }
     }
 }

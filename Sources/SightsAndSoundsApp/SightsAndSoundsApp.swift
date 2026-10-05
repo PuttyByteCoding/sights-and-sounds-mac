@@ -306,6 +306,65 @@ final class AppModel {
         return LocalLibraryService(library: try library(for: libraryID), runner: try runner(for: libraryID))
     }
 
+    /// A library something has open, with a service to ask it through.
+    struct OpenLibrary: Identifiable {
+        let id: UUID
+        let name: String
+        let service: any LibraryService
+        /// Held by another Mac.
+        let isRemote: Bool
+    }
+
+    /// Every library something already has open, on this Mac or on
+    /// another. For what looks across libraries on a timer — Background
+    /// Tasks — so it opens no file, builds no runner and connects to
+    /// nothing: a library on this Mac that has no runner yet gets a
+    /// service that can read its jobs and start none. `withAWindow`
+    /// keeps only the libraries with a window of their own.
+    func openLibraries(withAWindow: Bool = false) -> [OpenLibrary] {
+        var result: [OpenLibrary] = []
+        for ref in libraries {
+            guard let library = openHandles[ref.id], !withAWindow || openLibraryIDs.contains(ref.id)
+            else { continue }
+            let service = runners[ref.id].map { LocalLibraryService(library: library, runner: $0) }
+                ?? LocalLibraryService(library: library)
+            result.append(OpenLibrary(id: ref.id, name: ref.name, service: service, isRemote: false))
+        }
+        for open in remoteLibraries.openLibraries {
+            result.append(OpenLibrary(
+                id: open.ref.id, name: "\(open.ref.library.name) — \(open.ref.host.name)",
+                service: open.service, isRemote: true))
+        }
+        return result
+    }
+
+    /// A library Settings can be pointed at.
+    struct SettingsLibrary: Identifiable, Equatable {
+        let id: UUID
+        let name: String
+    }
+
+    /// The libraries Settings offers for what is kept per library: every
+    /// one on this Mac, open or shut, and those on other Macs that have a
+    /// window open — a Mac is not connected to just to list it.
+    var librariesForSettings: [SettingsLibrary] {
+        libraries.map { SettingsLibrary(id: $0.id, name: $0.name) }
+            + remoteLibraries.openLibraries.map {
+                SettingsLibrary(id: $0.ref.id, name: "\($0.ref.library.name) — \($0.ref.host.name)")
+            }
+    }
+
+    /// The service for a library chosen in Settings. One on this Mac is
+    /// opened if it was shut, and is given no runner: nothing in Settings
+    /// starts work. One on another Mac is asked through the connection
+    /// its window has.
+    func settingsService(for libraryID: UUID) throws -> any LibraryService {
+        if let open = remoteLibraries.openLibraries.first(where: { $0.ref.id == libraryID }) {
+            return open.service
+        }
+        return LocalLibraryService(library: try library(for: libraryID))
+    }
+
     // MARK: - Libraries on other Macs
 
     /// The Macs this one has been paired with, and their libraries.
@@ -627,15 +686,14 @@ final class AppModel {
     func signalMaintenance(for libraryID: UUID) {
         Task {
             do {
-                let runner = try runner(for: libraryID)
-                _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
-                _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
-                // Duplicates ride the same signal: hash pairs after hashing,
-                // fingerprints after capture, matches after both.
-                _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
-                _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
-                _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
-                try await runner.runPending()
+                // The library's own workers, wherever it is: for one
+                // another Mac holds they are that Mac's, and it is asked.
+                try await service(for: libraryID).wakeWorkers()
+                // Here the queue is waited for as well, so that one which
+                // cannot be read is said.
+                if remoteLibraries.ref(for: libraryID) == nil {
+                    try await runner(for: libraryID).runPending()
+                }
             } catch {
                 loadError = "Maintenance failed: \(error)"
             }

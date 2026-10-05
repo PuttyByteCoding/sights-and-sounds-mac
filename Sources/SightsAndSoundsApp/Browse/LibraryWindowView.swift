@@ -182,7 +182,6 @@ struct BrowseView: View {
                         openAux(.importMedia)
                     }
                     .help("Add source folders and scan them for new files")
-                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button("Tag Manager", systemImage: "tag.square") {
@@ -209,11 +208,6 @@ struct BrowseView: View {
                 }
                 ToolbarItem {
                     Menu {
-                        if model.isRemote {
-                            // What is greyed out below still works on a
-                            // database, and this window has none.
-                            Text("Some of these are not available for a remote library yet")
-                        }
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
                         }
@@ -227,7 +221,6 @@ struct BrowseView: View {
                         Button("Tag Analysis…", systemImage: "tag.square") {
                             openAux(.tagAnalysis)
                         }
-                        .disabled(model.isRemote)
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             // Off the main actor: a full backup of a large
                             // library used to beachball the window.

@@ -24,6 +24,15 @@ struct SearchSettingsPane: View {
     /// The library holds formats this version cannot decode. The editor
     /// shows none, and Apply must not write that "none" over them.
     @State private var storedFormatsUnreadable = false
+    /// Only the newest reading lands: the picker can move on while a
+    /// library — one on another Mac — is still being asked.
+    @State private var loadGeneration = 0
+    /// The library whose formats are on the page. Until the one chosen
+    /// has been read there is nothing of it to edit: a format added to
+    /// the empty page and applied replaced the ones it had.
+    @State private var loadedLibraryID: UUID?
+
+    private var isLoaded: Bool { selectedLibraryID != nil && loadedLibraryID == selectedLibraryID }
     @State private var firefoxProfile = AppSettingsStore.shared.current.firefoxProfilePath ?? ""
     @State private var webSearchURL = AppSettingsStore.shared.current.webSearchURL
 
@@ -33,7 +42,7 @@ struct SearchSettingsPane: View {
             Section("Search String") {
                 Picker("Library", selection: $selectedLibraryID) {
                     Text("Choose…").tag(UUID?.none)
-                    ForEach(model.libraries) { library in
+                    ForEach(model.librariesForSettings) { library in
                         Text(library.name).tag(UUID?.some(library.id))
                     }
                 }
@@ -41,7 +50,7 @@ struct SearchSettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if selectedLibraryID != nil {
+            if isLoaded {
                 formatsSection
                 if selectedFormatID != nil {
                     partsSection
@@ -56,13 +65,13 @@ struct SearchSettingsPane: View {
             applySection
         }
         .formStyle(.grouped)
-        .onChange(of: selectedLibraryID) { load() }
+        .onChange(of: selectedLibraryID) { load(anotherLibrary: true) }
     }
 
     /// Anything on the page that differs from what is stored.
     private var isDirty: Bool {
         let settings = AppSettingsStore.shared.current
-        return (selectedLibraryID != nil && formats != savedFormats)
+        return (isLoaded && formats != savedFormats)
             || firefoxProfile != (settings.firefoxProfilePath ?? "")
             || webSearchURL != settings.webSearchURL
     }
@@ -338,13 +347,20 @@ struct SearchSettingsPane: View {
     // MARK: Load and apply
 
     /// Read everything from where it is stored — on a library change,
-    /// and on Revert.
-    private func load() {
+    /// and on Revert. The library's part is asked of its service, and
+    /// arrives a moment later; on a change of library the page is
+    /// emptied first, so that nothing of the library before is on it to
+    /// be applied to this one.
+    private func load(anotherLibrary: Bool = false) {
         statusText = nil
         let settings = AppSettingsStore.shared.current
         firefoxProfile = settings.firefoxProfilePath ?? ""
         webSearchURL = settings.webSearchURL
-        guard let id = selectedLibraryID, let library = try? model.library(for: id) else {
+        loadGeneration += 1
+        let generation = loadGeneration
+        let service = selectedLibraryID.flatMap { try? model.settingsService(for: $0) }
+        if anotherLibrary || service == nil {
+            loadedLibraryID = nil
             formats = .empty
             savedFormats = .empty
             storedFormatsUnreadable = false
@@ -352,42 +368,62 @@ struct SearchSettingsPane: View {
             categories = []
             sampleFileName = ""
             sampleTags = []
-            return
         }
-        do {
-            formats = try library.searchFormats()
-            savedFormats = formats
-            storedFormatsUnreadable = try library.storedSearchFormatsAreUnreadable()
-            if storedFormatsUnreadable {
-                statusText = "This library's search formats were saved in a form this version cannot read. They are untouched, and Apply will not replace them."
+        guard let service else { return }
+        Task {
+            do {
+                let stored = try await service.searchSettings()
+                guard generation == loadGeneration else { return }
+                loadedLibraryID = selectedLibraryID
+                formats = stored.formats
+                savedFormats = stored.formats
+                storedFormatsUnreadable = stored.storedFormatsUnreadable
+                if storedFormatsUnreadable {
+                    statusText = "This library's search formats were saved in a form this version cannot read. They are untouched, and Apply will not replace them."
+                }
+                if !formats.formats.contains(where: { $0.id == selectedFormatID }) {
+                    selectedFormatID = formats.defaultFormat?.id
+                }
+                categories = stored.categories
+                sampleFileName = stored.sample?.fileName ?? ""
+                sampleTags = stored.sample?.tags ?? []
+            } catch {
+                guard generation == loadGeneration else { return }
+                statusText = "Could not read the library: \(error)"
             }
-            if !formats.formats.contains(where: { $0.id == selectedFormatID }) {
-                selectedFormatID = formats.defaultFormat?.id
-            }
-            categories = try library.vocabulary().map(\.category)
-            let first = try library.writer.read { try MediaItem.order(sql: "relativePath").fetchOne($0) }
-            let subject = try first.flatMap { try library.searchSubject(for: $0.id) }
-            sampleFileName = subject?.fileName ?? ""
-            sampleTags = subject?.tags ?? []
-        } catch {
-            statusText = "Could not read the library: \(error)"
         }
     }
 
     /// Write the draft: the formats to the library, the Firefox fields
     /// to settings.json.
     private func apply(replacingUnreadable: Bool = false) {
-        if let id = selectedLibraryID, let library = try? model.library(for: id),
-           formats != savedFormats || replacingUnreadable {
+        let draft = formats
+        guard isLoaded, let id = selectedLibraryID, let service = try? model.settingsService(for: id),
+              draft != savedFormats || replacingUnreadable
+        else {
+            applyToThisMac()
+            return
+        }
+        // Whatever is still being read was read before this.
+        loadGeneration += 1
+        let generation = loadGeneration
+        Task {
             do {
-                try library.setSearchFormats(formats, replacingUnreadable: replacingUnreadable)
-                savedFormats = formats
-                storedFormatsUnreadable = false
+                try await service.setSearchFormats(draft, replacingUnreadable: replacingUnreadable)
             } catch {
                 statusText = "Could not save the formats: \(error)"
                 return
             }
+            // The library on the page is still the one that was saved to.
+            if generation == loadGeneration {
+                savedFormats = draft
+                storedFormatsUnreadable = false
+            }
+            applyToThisMac()
         }
+    }
+
+    private func applyToThisMac() {
         let profile = firefoxProfile.trimmingCharacters(in: .whitespaces)
         let url = webSearchURL.trimmingCharacters(in: .whitespaces)
         AppSettingsStore.shared.update {

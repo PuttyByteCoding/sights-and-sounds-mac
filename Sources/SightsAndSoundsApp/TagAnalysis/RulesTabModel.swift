@@ -12,7 +12,7 @@ import SightsAndSoundsKit
 @MainActor
 final class RulesTabModel {
 
-    let library: LibraryDatabase
+    let service: any LibraryService
 
     private(set) var rules: [RuleEngine.Rule] = []
     private(set) var dryRun: RuleDryRun?
@@ -26,8 +26,12 @@ final class RulesTabModel {
 
     private var dryRunTask: Task<Void, Never>?
     /// The draft's walk; tests slow it down to overlap edits with it.
-    var walkDryRun: @Sendable (LibraryDatabase, RuleEngine.Rule) async throws -> RuleDryRun = { try $0.dryRun($1) }
+    var walkDryRun: @Sendable (any LibraryService, RuleEngine.Rule) async throws -> RuleDryRun = {
+        try await $0.dryRun(of: $1)
+    }
     private var cardDryRunGeneration = 0
+    /// Only the newest reading of the rules lands.
+    private var reloadGeneration = 0
 
     var selectedID: UUID?
 
@@ -36,8 +40,17 @@ final class RulesTabModel {
     /// — and so Revert has something to go back to.
     var draft: RuleEngine.Rule?
 
-    init(library: LibraryDatabase) {
-        self.library = library
+    /// This tab's writes, one at a time in the order they were asked
+    /// for: two moves pressed quickly must not land the other way round.
+    private let writes = WriteQueue()
+
+    init(service: any LibraryService) {
+        self.service = service
+    }
+
+    private func write(_ body: @escaping @Sendable (any LibraryService) async throws -> Void) async throws {
+        let service = service
+        try await writes.run { try await body(service) }.get()
     }
 
     var selected: RuleEngine.Rule? {
@@ -51,9 +64,13 @@ final class RulesTabModel {
 
     // MARK: - Loading
 
-    func reload() {
+    func reload() async {
+        reloadGeneration += 1
+        let generation = reloadGeneration
         do {
-            rules = try library.analysisRules()
+            let fetched = try await service.analysisRules()
+            guard generation == reloadGeneration else { return }
+            rules = fetched
             loadError = nil
             refreshCardDryRuns()
             if let selectedID, !rules.contains(where: { $0.id == selectedID }) {
@@ -66,16 +83,14 @@ final class RulesTabModel {
         }
     }
 
-    /// One queue computation for all cards — off the main actor, since
-    /// it walks every stored pair.
+    /// One queue computation for all cards — the service's, off the main
+    /// actor, since it walks every stored pair.
     private func refreshCardDryRuns() {
-        let library = library, rules = rules
+        let service = service, rules = rules
         cardDryRunGeneration += 1
         let generation = cardDryRunGeneration
         Task {
-            let runs = try? await Task.detached(priority: .utility) {
-                try library.dryRuns(for: rules)
-            }.value
+            let runs = try? await service.dryRuns(of: rules)
             // An older walk that finishes last must not win.
             if let runs, generation == cardDryRunGeneration { self.cardDryRuns = runs }
         }
@@ -135,11 +150,9 @@ final class RulesTabModel {
         }
         walking = true
         walkIsStale = false
-        let library = library, walk = walkDryRun
+        let service = service, walk = walkDryRun
         Task {
-            let run = try? await Task.detached(priority: .userInitiated) {
-                try await walk(library, subject)
-            }.value
+            let run = try? await walk(service, subject)
             walking = false
             if walkIsStale {
                 startDryRunWalk()
@@ -154,14 +167,14 @@ final class RulesTabModel {
 
     // MARK: - Editing
 
-    func addRule() {
+    func addRule() async {
         // A new rule starts inert: an empty keyEquals matches nothing, so
         // it cannot do anything until it has been given a key AND an
         // action. Better than defaulting to something that fires.
         let made = RuleEngine.Rule(id: UUID(), matcher: .keyEquals(key: ""), actions: [])
         do {
-            try library.saveAnalysisRule(made)
-            reload()
+            try await write { try await $0.saveAnalysisRule(made) }
+            await reload()
             select(made)
         } catch {
             loadError = "\(error)"
@@ -172,27 +185,33 @@ final class RulesTabModel {
     /// this **opens that rule** rather than adding a rival — spec 14 §4,
     /// and the entire path from one-off triage to automation.
     @discardableResult
-    func makeRule(from candidate: TagCandidate) -> Bool {
-        makeRule(key: candidate.key, value: candidate.value)
+    func makeRule(from candidate: TagCandidate) async -> Bool {
+        await makeRule(key: candidate.key, value: candidate.value)
     }
 
     @discardableResult
-    func makeRule(key: String?, value: String) -> Bool {
-        do {
-            if let covering = try library.ruleCovering(key: key, value: value) {
-                reload()
-                select(covering)
-                return false
+    func makeRule(key: String?, value: String) async -> Bool {
+        let service = service
+        // Looked for and made as one write, in its turn. Asked twice in
+        // a hurry — a double click — the second finds the first's rule
+        // instead of making a rival beside it.
+        let outcome = await writes.run { () -> (rule: RuleEngine.Rule, made: Bool) in
+            if let covering = try await service.ruleCovering(key: key, value: value) {
+                return (covering, false)
             }
             let made = RuleEngine.Rule(
                 id: UUID(),
                 matcher: LibraryDatabase.matcher(forKey: key, value: value),
                 actions: [])
-            try library.saveAnalysisRule(made)
-            reload()
-            select(made)
-            return true
-        } catch {
+            try await service.saveAnalysisRule(made)
+            return (made, true)
+        }
+        switch outcome {
+        case .success(let found):
+            await reload()
+            select(found.rule)
+            return found.made
+        case .failure(let error):
             loadError = "\(error)"
             return false
         }
@@ -205,11 +224,11 @@ final class RulesTabModel {
         refreshDryRun(settle: .milliseconds(150))
     }
 
-    func saveDraft() {
+    func saveDraft() async {
         guard let draft else { return }
         do {
-            try library.saveAnalysisRule(draft)
-            reload()
+            try await write { try await $0.saveAnalysisRule(draft) }
+            await reload()
         } catch {
             loadError = "\(error)"
         }
@@ -220,23 +239,23 @@ final class RulesTabModel {
         refreshDryRun()
     }
 
-    func delete(_ rule: RuleEngine.Rule) {
+    func delete(_ rule: RuleEngine.Rule) async {
         do {
-            try library.deleteAnalysisRule(rule.id)
+            try await write { try await $0.deleteAnalysisRule(id: rule.id) }
             if selectedID == rule.id {
                 selectedID = nil
                 draft = nil
             }
-            reload()
+            await reload()
         } catch {
             loadError = "\(error)"
         }
     }
 
-    func move(_ rule: RuleEngine.Rule, up: Bool) {
+    func move(_ rule: RuleEngine.Rule, up: Bool) async {
         do {
-            try library.moveAnalysisRule(rule.id, up: up)
-            reload()
+            try await write { try await $0.moveAnalysisRule(id: rule.id, up: up) }
+            await reload()
         } catch {
             loadError = "\(error)"
         }
@@ -250,11 +269,9 @@ final class RulesTabModel {
     func applySelected() {
         guard let selected, !isApplying else { return }
         isApplying = true
-        let library = library
+        let service = service
         Task {
-            let outcome = await Task.detached(priority: .userInitiated) {
-                Result { try library.applyAnalysisRule(selected) }
-            }.value
+            let outcome = await writes.run { try await service.applyAnalysisRule(selected) }
             isApplying = false
             switch outcome {
             case .success(let applied):
@@ -262,7 +279,7 @@ final class RulesTabModel {
                 // another meanwhile cleared the result, and this used to
                 // write it back under the other rule.
                 if selectedID == selected.id { lastApplied = applied }
-                reload()
+                await reload()
             case .failure(let error):
                 loadError = "\(error)"
             }

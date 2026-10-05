@@ -384,6 +384,58 @@ import Testing
         #expect(remote.service(for: ref.id) == nil)
         await other.tearDown()
     }
+
+    /// Background Tasks shows a lane for a library on another Mac while
+    /// a window is open on it, and the queue it shows and steers is that
+    /// Mac's.
+    @Test(.timeLimit(.minutes(1)))
+    func anOpenRemoteLibraryHasALaneAndTheQueueIsTheOtherMacs() async throws {
+        let other = try await OtherMac()
+        let app = AppModel()
+        let remote = app.remoteLibraries
+        let saved = try await remote.pair(codeText: try await other.code(), as: "Studio MacBook")
+        defer { remote.forget(saved.id) }
+        let ref = try #require(remote.ref(for: RemoteLibraryRef.windowID(hostID: saved.id, libraryID: other.libraryID)))
+
+        // Paired and not open: no lane, and nothing is connected to ask.
+        #expect(await BackgroundTasksView.lanes(of: app).isEmpty)
+        #expect(app.openLibraries(withAWindow: true).isEmpty)
+        #expect(!app.librariesForSettings.contains { $0.id == ref.id })
+
+        let open = try #require(remote.service(for: ref.id))
+        app.libraryWindowAppeared(ref.id)
+        // Settings offers it while it is open, and asks it through the
+        // connection its window has.
+        #expect(app.librariesForSettings.contains(
+            AppModel.SettingsLibrary(id: ref.id, name: "Concerts — The Den Mac")))
+        #expect(try app.settingsService(for: ref.id) as AnyObject === open)
+        #expect(try await app.settingsService(for: ref.id).libraryInfo()?.name == "Concerts")
+        // The other Mac's queue is paused, and has one sweep waiting.
+        try await other.service.startSweep(.contentHash, after: .nothing)
+
+        let lane = try #require(await BackgroundTasksView.lanes(of: app).first { $0.id == ref.id })
+        #expect(lane.name == "Concerts — The Den Mac")
+        #expect(lane.isAnswering && lane.isPaused)
+        #expect(lane.queued == 1)
+        #expect(app.openLibraries(withAWindow: true).map(\.id) == [ref.id])
+
+        // Cancelled from here, it is cancelled there.
+        let job = try #require(lane.jobs.first)
+        try await app.service(for: ref.id).cancelJob(id: job.id)
+        #expect(try await other.service.job(id: job.id)?.state == .cancelled)
+        // And the sweeps panel's counts are the other Mac's.
+        let statuses = try await app.service(for: ref.id).sweepStatuses()
+        #expect(statuses == (try await other.service.sweepStatuses()))
+
+        // The other Mac going away is said on its lane, not left as it was.
+        await other.host.stop()
+        let after = try #require(await BackgroundTasksView.lanes(of: app).first { $0.id == ref.id })
+        #expect(!after.isAnswering && after.jobs.isEmpty)
+
+        app.libraryWindowDisappeared(ref.id)
+        #expect(await BackgroundTasksView.lanes(of: app).isEmpty)
+        await other.tearDown()
+    }
 }
 
 /// The picker's reading of a host's state, where a test can reach it.

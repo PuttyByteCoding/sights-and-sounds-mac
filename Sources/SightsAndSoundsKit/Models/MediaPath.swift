@@ -22,6 +22,18 @@ public enum MediaPath {
         return segments.joined(separator: "/")
     }
 
+    /// Whether a file really is under a folder once every link on the
+    /// way to it has been followed. A path can be spelled inside a
+    /// source and still lead out of it, through a link someone put
+    /// there; a scan never lists such a file, so nothing named to an
+    /// import or a probe may be one either. A file that does not exist
+    /// is judged by where it would be.
+    public static func isReallyInside(_ root: URL, file: URL) -> Bool {
+        let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let filePath = file.resolvingSymlinksInPath().standardizedFileURL.path
+        return filePath.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/")
+    }
+
     /// The directory portion of a normalized relative path ("" for a file at
     /// the root). Stored denormalized on `MediaItem.folderPath` so the exact
     /// folder filter is a plain indexed equality — the one term the old app

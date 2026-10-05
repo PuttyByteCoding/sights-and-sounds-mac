@@ -8,6 +8,10 @@ public protocol PropertiesManaging: Sendable {
     /// Everything the window shows, as one answer.
     func libraryProperties() async throws -> LibraryProperties
 
+    /// The library's identity row alone — its name and the few settings
+    /// it keeps about itself — without the counting.
+    func libraryInfo() async throws -> LibraryInfo?
+
     /// The library's name, in its own identity row.
     func renameLibrary(to name: String) async throws
 
@@ -120,6 +124,10 @@ extension LocalLibraryService {
             properties.thumbnailsOnDisk = (try? FileManager.default.contentsOfDirectory(atPath: folder.path).count) ?? 0
         }
         return properties
+    }
+
+    public func libraryInfo() async throws -> LibraryInfo? {
+        try library.info()
     }
 
     public func renameLibrary(to name: String) async throws {

@@ -40,8 +40,11 @@ final class PlayerModel {
     /// companion's window can find it by id.
     func analysisSession(registeringIn app: AppModel) -> TagAnalysisSession {
         if let analysisSession { return analysisSession }
-        let session = TagAnalysisSession(libraryID: libraryID, library: library)
-        session.apply = { [weak self] tag in self?.applyTag(tag.id) }
+        let session = TagAnalysisSession(libraryID: libraryID, service: service)
+        session.apply = { [weak self] tag, done in
+            guard let self else { return done() }
+            self.applyTag(tag.id, then: done)
+        }
         session.step = { [weak self] delta in
             delta < 0 ? self?.goPrevious() : self?.goNext()
         }
@@ -1284,13 +1287,16 @@ final class PlayerModel {
     /// results field's. Records the session history like a toggle-on
     /// does, and refreshes the panel, so a tag applied from the other
     /// window appears here at once without a broadcast.
-    func applyTag(_ tagID: UUID) {
-        guard let itemID = item?.id else { return }
-        queueWrite({ try await $0.assignTag(tagID, to: [itemID]) }) { [weak self] _ in
+    /// `done` is told once the write has landed or failed — for the
+    /// companion, which reads the item again and must not do so first.
+    func applyTag(_ tagID: UUID, then done: @escaping @MainActor () -> Void = {}) {
+        guard let itemID = item?.id else { return done() }
+        queueWrite({ try await $0.assignTag(tagID, to: [itemID]) }, then: { [weak self] _ in
             self?.noteApplied(tagID)
             self?.refreshItemTags()
             self?.recountQueue()
-        }
+            done()
+        }, orElse: done)
     }
 
     /// Rename through the kit's single write path (normalization,

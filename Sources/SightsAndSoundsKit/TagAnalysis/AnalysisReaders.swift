@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// One string a reader found, with where it came from.
-public struct AnalysisSourceText: Equatable, Sendable {
+public struct AnalysisSourceText: Codable, Equatable, Sendable {
     public let readerID: String
     /// The key the text sat under, when the source has keys — an embedded
     /// metadata field name. Sidecar lines and paths have none.

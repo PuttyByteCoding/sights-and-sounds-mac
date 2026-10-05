@@ -15,7 +15,7 @@ struct RulesTabView: View {
             list.frame(minWidth: 380, idealWidth: 460)
             editor.frame(minWidth: 340, idealWidth: 400, maxWidth: 560)
         }
-        .task { model.reload() }
+        .task { await model.reload() }
     }
 
     // MARK: - The ordered list
@@ -28,7 +28,7 @@ struct RulesTabView: View {
                     .foregroundStyle(Theme.Text.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Button("+ Rule") { model.addRule() }
+                Button("+ Rule") { Task { await model.addRule() } }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
             }
             .padding(.horizontal, 14)
@@ -63,9 +63,9 @@ struct RulesTabView: View {
                                 isFirst: index == 0,
                                 isLast: index == model.rules.count - 1,
                                 onSelect: { model.select(rule) },
-                                onMoveUp: { model.move(rule, up: true) },
-                                onMoveDown: { model.move(rule, up: false) },
-                                onRemove: { model.delete(rule) })
+                                onMoveUp: { Task { await model.move(rule, up: true) } },
+                                onMoveDown: { Task { await model.move(rule, up: false) } },
+                                onRemove: { Task { await model.delete(rule) } })
                         }
                     }
                     .padding(14)
@@ -247,7 +247,7 @@ struct RulesTabView: View {
             }
 
             HStack(spacing: 8) {
-                Button("Save changes") { model.saveDraft() }
+                Button("Save changes") { Task { await model.saveDraft() } }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                     .disabled(!model.isDirty)
                 Button("Revert") { model.revertDraft() }

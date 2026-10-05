@@ -10,6 +10,13 @@ import Testing
 @Suite @MainActor struct TagAnalysisModelTests {
 
     private func makeSession() async throws -> (TagAnalysisSession, [MediaItem], TagCategory) {
+        let (session, items, taper, _) = try await makeSessionAndLibrary()
+        return (session, items, taper)
+    }
+
+    private func makeSessionAndLibrary() async throws -> (
+        TagAnalysisSession, [MediaItem], TagCategory, LibraryDatabase
+    ) {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Companion")
         let source = Source(name: "S", rootPath: "/tmp/companion-\(UUID().uuidString)")
@@ -23,7 +30,8 @@ import Testing
             for item in items { try item.insert(db) }
             try Tag(tagCategoryID: taper.id, name: "Mike Jones").insert(db)
         }
-        return (TagAnalysisSession(libraryID: UUID(), library: library), items, taper)
+        let session = TagAnalysisSession(libraryID: UUID(), service: LocalLibraryService(library: library))
+        return (session, items, taper, library)
     }
 
     private func settle(_ model: TagAnalysisModel) async throws {
@@ -50,9 +58,12 @@ import Testing
     }
 
     @Test func applyingGoesThroughTheSessionHookAndCountsThePass() async throws {
-        let (session, items, taper) = try await makeSession()
+        let (session, items, taper, library) = try await makeSessionAndLibrary()
         var applied: [String] = []
-        session.apply = { applied.append($0.name) }
+        session.apply = { tag, done in
+            applied.append(tag.name)
+            done()
+        }
         let model = TagAnalysisModel(session: session)
         session.playerDidShow(itemID: items[0].id, position: nil)
         try await Task.sleep(for: .milliseconds(50))
@@ -61,12 +72,12 @@ import Testing
         let mike = try #require(session.analysis.existing.first?.tag)
         model.applyNow(mike)
         try await settle(model)
-        model.applyNew(value: "New Person", categoryID: taper.id)
+        await model.applyNew(value: "New Person", categoryID: taper.id)
         try await settle(model)
 
         #expect(applied == ["Mike Jones", "New Person"])
         #expect(model.tagsAppliedThisPass == 2)
-        let names = try session.library.vocabulary().flatMap(\.tags).map(\.name)
+        let names = try library.vocabulary().flatMap(\.tags).map(\.name)
         #expect(names.contains("New Person"))
     }
 
@@ -188,5 +199,130 @@ import Testing
         model.close()
         #expect(!session.companionIsOpen)
         #expect(session.analysis == .empty)
+    }
+
+    // MARK: - Through the service
+
+    private func makeStubbedSession() async throws -> (
+        TagAnalysisSession, StubLibraryService, [MediaItem], TagCategory, LibraryDatabase
+    ) {
+        let (_, items, taper, library) = try await makeSessionAndLibrary()
+        let stub = StubLibraryService(LocalLibraryService(library: library))
+        // As for a library another Mac holds: nothing here may reach
+        // for a file.
+        stub.filesAreOnThisMac = false
+        return (TagAnalysisSession(libraryID: UUID(), service: stub), stub, items, taper, library)
+    }
+
+    /// Everything the companion shows and writes is asked of the
+    /// library's service, so it is the same for a library on another Mac.
+    @Test func theCompanionAsksTheServiceForEverything() async throws {
+        let (session, stub, items, taper, library) = try await makeStubbedSession()
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(stub.calls("itemAnalysis(itemID:)") == 1)
+        #expect(model.currentItem?.id == items[0].id)
+        #expect(model.categories.map(\.name) == ["Taper"])
+        #expect(model.analysis.existing.contains { $0.tag.name == "Mike Jones" })
+
+        await model.applyNew(value: "New Person", categoryID: taper.id)
+        try await settle(model)
+        #expect(stub.calls("ensureTag(named:inCategory:)") == 1)
+        let candidate = try #require(model.allRows.first?.candidate)
+        await model.ignoreRule(for: candidate)
+        try await settle(model)
+        #expect(try library.analysisRules().map(\.actions) == [[.ignore]])
+        #expect(model.rules.count == 1, "the analysis was not read again under the new rule")
+
+        // Walking on stamps the video left behind.
+        session.playerDidShow(itemID: items[1].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        for _ in 0..<200 where stub.answered("markAnalyzed(itemID:)") == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let stamped = try await library.writer.read { try TagAnalysisState.fetchAll($0) }
+        #expect(stamped.map(\.mediaItemID) == [items[0].id])
+        #expect(model.loadError == nil)
+    }
+
+    /// Two readings of one video can be answered out of order — more so
+    /// from another Mac. The older answer, arriving last, used to be the
+    /// one left on screen.
+    @Test func anOlderAnswerArrivingLastDoesNotLand() async throws {
+        let (session, stub, items, taper, library) = try await makeStubbedSession()
+        let model = TagAnalysisModel(session: session)
+        // The first reading is made at once and its answer held back.
+        stub.holdAnswer("itemAnalysis(itemID:)", by: .milliseconds(600))
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0..<200 where stub.calls("itemAnalysis(itemID:)") == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        // The library changes, and a second reading sees it.
+        try await library.writer.write { try Tag(tagCategoryID: taper.id, name: "show").insert($0) }
+        model.reload()
+        for _ in 0..<200 where !model.analysis.existing.contains(where: { $0.tag.name == "show" }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.analysis.existing.contains { $0.tag.name == "show" })
+        // The first reading's answer arrives now, and is not shown.
+        try await Task.sleep(for: .milliseconds(800))
+        #expect(model.analysis.existing.contains { $0.tag.name == "show" }, "the older answer replaced the newer")
+        #expect(session.analysis == model.analysis)
+        #expect(!model.isLoading)
+    }
+
+    /// Applying is the player's write, and reading the video again is
+    /// another request: sent side by side, the reading could get in
+    /// first and show the row still Undecided. It waits to be told the
+    /// write has landed.
+    @Test func theVideoIsReadAgainOnlyOnceTheTagHasLanded() async throws {
+        let (session, stub, items, _, _) = try await makeStubbedSession()
+        var landed: [@MainActor () -> Void] = []
+        session.apply = { _, done in landed.append(done) }
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        let readings = stub.calls("itemAnalysis(itemID:)")
+
+        let mike = try #require(session.analysis.existing.first?.tag)
+        model.applyNow(mike)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(stub.calls("itemAnalysis(itemID:)") == readings, "read again before the write had landed")
+        #expect(model.tagsAppliedThisPass == 1)
+
+        try #require(landed.count == 1)
+        landed[0]()
+        try await settle(model)
+        #expect(stub.calls("itemAnalysis(itemID:)") == readings + 1)
+    }
+
+    @Test func aReadingThatFailsSaysSoAndStopsWaiting() async throws {
+        let (session, stub, items, _, _) = try await makeStubbedSession()
+        stub.fail("itemAnalysis(itemID:)")
+        let model = TagAnalysisModel(session: session)
+        session.playerDidShow(itemID: items[0].id, position: nil)
+        try await Task.sleep(for: .milliseconds(50))
+        try await settle(model)
+        #expect(model.loadError != nil)
+        #expect(session.analysis == .empty && !session.isAnalyzing)
+    }
+
+    /// Whether a video needs its sweep is asked of the service, which
+    /// takes a moment: one question at a time per video, or walking away
+    /// and back in that moment queued the sweep twice.
+    @Test func aVideoIsAskedAboutOnceAtATime() async throws {
+        let (session, _, items, _, _) = try await makeStubbedSession()
+        let model = TagAnalysisModel(session: session)
+        #expect(model.beginSweepQuestion(for: items[0].id))
+        #expect(!model.beginSweepQuestion(for: items[0].id))
+        #expect(model.beginSweepQuestion(for: items[1].id), "another video is its own question")
+        model.endSweepQuestion(for: items[0].id)
+        #expect(model.beginSweepQuestion(for: items[0].id))
     }
 }

@@ -9,7 +9,7 @@ import SightsAndSoundsKit
 @Observable
 @MainActor
 final class SchemasTabModel {
-    let library: LibraryDatabase
+    let service: any LibraryService
 
     private(set) var schemas: [JsonSchemaDefinition] = []
     private(set) var categories: [TagCategory] = []
@@ -20,18 +20,21 @@ final class SchemasTabModel {
     var draftKeys: [SchemaKey] = []
     var sampleJSON = ""
 
-    init(library: LibraryDatabase) {
-        self.library = library
+    private let writes = WriteQueue()
+    private(set) var isSaving = false
+
+    init(service: any LibraryService) {
+        self.service = service
     }
 
     var selected: JsonSchemaDefinition? {
         schemas.first { $0.id == selectedID }
     }
 
-    func reload() {
+    func reload() async {
         do {
-            schemas = try library.jsonSchemas()
-            categories = (try? library.vocabulary().map(\.category)) ?? []
+            schemas = try await service.jsonSchemas()
+            categories = (try? await service.categories()) ?? []
             loadError = nil
             if let selectedID, !schemas.contains(where: { $0.id == selectedID }) {
                 self.selectedID = nil
@@ -70,26 +73,32 @@ final class SchemasTabModel {
         }
     }
 
-    func save() {
+    func save() async {
+        // One save at a time: a second press while a new schema's first
+        // save was on its way asked to make it again, and was refused
+        // for the name the first had just taken.
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        let service = service, id = selectedID, name = draftName
+        let keys = draftKeys.filter { !$0.key.trimmingCharacters(in: .whitespaces).isEmpty }
         do {
-            let saved = try library.saveJsonSchema(
-                id: selectedID,
-                named: draftName,
-                keys: draftKeys.filter {
-                    !$0.key.trimmingCharacters(in: .whitespaces).isEmpty
-                })
-            reload()
+            let saved = try await writes.run {
+                try await service.saveJsonSchema(id: id, named: name, keys: keys)
+            }.get()
+            await reload()
             selectedID = saved.id
         } catch {
             loadError = "\(error)"
         }
     }
 
-    func delete(_ schema: JsonSchemaDefinition) {
+    func delete(_ schema: JsonSchemaDefinition) async {
         do {
-            try library.deleteJsonSchema(schema.id)
+            let service = service
+            try await writes.run { try await service.deleteJsonSchema(id: schema.id) }.get()
             if selectedID == schema.id { startNew() }
-            reload()
+            await reload()
         } catch {
             loadError = "\(error)"
         }
@@ -104,7 +113,7 @@ struct SchemasTabView: View {
             list.frame(minWidth: 260, idealWidth: 300, maxWidth: 380)
             editor.frame(minWidth: 420)
         }
-        .task { model.reload() }
+        .task { await model.reload() }
     }
 
     private var list: some View {
@@ -172,7 +181,7 @@ struct SchemasTabView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Delete Schema") { model.delete(schema) }
+            Button("Delete Schema") { Task { await model.delete(schema) } }
         }
     }
 
@@ -242,11 +251,11 @@ struct SchemasTabView: View {
 
                 HStack {
                     if let selected = model.selected {
-                        Button("Delete") { model.delete(selected) }
+                        Button("Delete") { Task { await model.delete(selected) } }
                             .buttonStyle(SecondaryButtonStyle(compact: true))
                     }
                     Spacer()
-                    Button("Save Schema") { model.save() }
+                    Button("Save Schema") { Task { await model.save() } }
                         .buttonStyle(PrimaryButtonStyle())
                         .disabled(
                             model.draftName.trimmingCharacters(in: .whitespaces).isEmpty

@@ -15,7 +15,8 @@ import Foundation
 /// See docs/superpowers/specs/2026-10-03-remote-library-design.md.
 public protocol LibraryService: BrowseReading, BrowseListing, BrowseWriting, JobRequesting, PlayerReading,
     PlayerWriting, TagManaging, VocabularyManaging, SupportingReading, ReviewManaging, MaintenanceManaging,
-    OrganiseManaging, PropertiesManaging
+    OrganiseManaging, PropertiesManaging, AnalysisManaging, ImportManaging,
+    QueueManaging
 {
     /// Whether the library's files are on this Mac. When they are, a
     /// source's folder and an item's path name a file the Finder can be

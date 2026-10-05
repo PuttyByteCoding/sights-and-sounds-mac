@@ -15,7 +15,9 @@ import SightsAndSoundsKit
 final class TagAnalysisSession {
     let id: UUID
     let libraryID: UUID
-    let library: LibraryDatabase
+    /// The library, as the player was given it: held on this Mac or on
+    /// another.
+    let service: any LibraryService
 
     // MARK: Written by the player
 
@@ -25,8 +27,10 @@ final class TagAnalysisSession {
     private(set) var position: (index: Int, count: Int)?
     private(set) var playerIsOpen = true
     /// Apply one tag to the shown item, through the player's own path
-    /// so its panel and history refresh. Installed by the player.
-    var apply: (Tag) -> Void = { _ in }
+    /// so its panel and history refresh, and say when the write has
+    /// landed (or failed): what is read before that may not have it.
+    /// Installed by the player.
+    var apply: (Tag, @escaping @MainActor () -> Void) -> Void = { _, done in done() }
     /// The player's next (+1) / previous (−1). Installed by the player.
     var step: (Int) -> Void = { _ in }
 
@@ -36,10 +40,10 @@ final class TagAnalysisSession {
     private(set) var isAnalyzing = false
     private(set) var companionIsOpen = false
 
-    init(libraryID: UUID, library: LibraryDatabase) {
+    init(libraryID: UUID, service: any LibraryService) {
         self.id = UUID()
         self.libraryID = libraryID
-        self.library = library
+        self.service = service
     }
 
     func playerDidShow(itemID: UUID?, position: (index: Int, count: Int)?) {
@@ -49,7 +53,7 @@ final class TagAnalysisSession {
 
     func playerDidClose() {
         playerIsOpen = false
-        apply = { _ in }
+        apply = { _, done in done() }
         step = { _ in }
     }
 

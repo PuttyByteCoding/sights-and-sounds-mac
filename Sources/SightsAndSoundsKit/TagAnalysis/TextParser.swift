@@ -42,7 +42,7 @@ public struct ParsedCandidate: Equatable, Sendable {
 /// when the cycle guard fired, or `timeout` when the run was cut short.
 /// Deliberately a string rather than a closed set, so a new sub-parser
 /// appears here without this file changing.
-public struct ProvenanceStep: Equatable, Sendable {
+public struct ProvenanceStep: Codable, Equatable, Sendable {
     public let tool: String
     public let raw: String
     public let depth: Int

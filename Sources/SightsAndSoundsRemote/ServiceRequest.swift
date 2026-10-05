@@ -102,6 +102,9 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case signalSummary(itemID: UUID)
     case unsavedSegments(itemIDs: [UUID])
     case runNextAndWait(jobID: UUID)
+    case job(id: UUID)
+    case cancelJob(id: UUID)
+    case wakeWorkers
 
     // ReviewManaging
     case reviewLists
@@ -130,9 +133,46 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
 
     // PropertiesManaging
     case libraryProperties
+    case libraryInfo
+    case searchSettings
     case renameLibrary(name: String)
     case setSeparatorCharacters(characters: String)
     case setExtensionOverrides(video: [String]?, audio: [String]?)
+
+    // AnalysisManaging
+    case itemAnalysis(itemID: UUID)
+    case markAnalyzed(itemID: UUID)
+    case metadataSweepState(itemID: UUID)
+    case resetMetadataSweep(itemIDs: [UUID])
+    case existingTags(lines: [String])
+    case analysisRules
+    case saveAnalysisRule(rule: RuleEngine.Rule)
+    case deleteAnalysisRule(id: UUID)
+    case moveAnalysisRule(id: UUID, up: Bool)
+    case ruleCovering(key: String?, value: String)
+    case dryRun(rule: RuleEngine.Rule)
+    case dryRuns(rules: [RuleEngine.Rule])
+    case applyAnalysisRule(rule: RuleEngine.Rule)
+    case jsonSchemas
+    case saveJsonSchema(id: UUID?, name: String, keys: [SchemaKey])
+    case deleteJsonSchema(id: UUID)
+
+    // ImportManaging
+    case importOverview
+    case scanSource(sourceID: UUID)
+    case probeFile(sourceID: UUID, relativePath: String)
+    case importBoxes
+    case setImportBoxes(boxes: [ImportBox])
+    case enableExtension(fileExtension: String)
+
+    // QueueManaging
+    case jobLane(limit: Int)
+    case moveJobToFront(id: UUID)
+    case retryJob(id: UUID)
+    case clearFinishedJobs
+    case setQueuePaused(paused: Bool)
+    case sweepStatuses
+    case startSweep(kind: SweepKind, preparation: SweepPreparation)
 
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
@@ -151,7 +191,12 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              // queue started twice is a queue started: safe to ask again.
              .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback,
              // Like the repair queue: asking may start it, and asking again is the same.
-             .organisePlan, .moveSessions, .jobQueue, .libraryProperties:
+             .organisePlan, .moveSessions, .jobQueue, .libraryProperties,
+             .itemAnalysis, .metadataSweepState, .analysisRules, .ruleCovering, .dryRun, .dryRuns,
+             .jsonSchemas, .existingTags, .job,
+             // A scan lists a folder and a probe measures a file; neither writes.
+             .importOverview, .scanSource, .probeFile, .importBoxes, .jobLane, .sweepStatuses,
+             .libraryInfo, .searchSettings:
             true
         default:
             false
@@ -177,9 +222,25 @@ extension ServiceRequest {
                 return "That is not a folder of one of the library's sources."
             }
             return nil
+        case .run(.importFiles(_, let relativePaths, _), _):
+            // The same for the files of an import: each is a path inside
+            // its source, as a scan lists them.
+            guard relativePaths.allSatisfy(Self.isInsideASource) else {
+                return "That is not a file of one of the library's sources."
+            }
+            return nil
+        case .probeFile(_, let relativePath):
+            guard Self.isInsideASource(relativePath) else {
+                return "That is not a file of one of the library's sources."
+            }
+            return nil
         default:
             return nil
         }
+    }
+
+    private static func isInsideASource(_ path: String) -> Bool {
+        !path.isEmpty && MediaPath.normalize(path) == path && !path.hasPrefix("/")
     }
 
     /// Carry the request out on a library, and encode what came of it.
@@ -387,6 +448,14 @@ extension ServiceRequest {
         case .runNextAndWait(let jobID):
             try await service.runNextAndWait(jobID: jobID)
             return nothing
+        case .job(let id):
+            return try json(await service.job(id: id))
+        case .cancelJob(let id):
+            try await service.cancelJob(id: id)
+            return nothing
+        case .wakeWorkers:
+            try await service.wakeWorkers()
+            return nothing
 
         case .reviewLists:
             return try json(await service.reviewLists())
@@ -436,6 +505,10 @@ extension ServiceRequest {
 
         case .libraryProperties:
             return try json(await service.libraryProperties())
+        case .libraryInfo:
+            return try json(await service.libraryInfo())
+        case .searchSettings:
+            return try json(await service.searchSettings())
         case .renameLibrary(let name):
             try await service.renameLibrary(to: name)
             return nothing
@@ -444,6 +517,80 @@ extension ServiceRequest {
             return nothing
         case .setExtensionOverrides(let video, let audio):
             try await service.setExtensionOverrides(video: video, audio: audio)
+            return nothing
+
+        case .itemAnalysis(let itemID):
+            return try json(await service.itemAnalysis(itemID: itemID))
+        case .markAnalyzed(let itemID):
+            try await service.markAnalyzed(itemID: itemID)
+            return nothing
+        case .metadataSweepState(let itemID):
+            return try json(await service.metadataSweepState(itemID: itemID))
+        case .resetMetadataSweep(let itemIDs):
+            try await service.resetMetadataSweep(itemIDs: itemIDs)
+            return nothing
+        case .existingTags(let lines):
+            return try json(await service.existingTags(inLines: lines))
+        case .analysisRules:
+            return try json(await service.analysisRules())
+        case .saveAnalysisRule(let rule):
+            try await service.saveAnalysisRule(rule)
+            return nothing
+        case .deleteAnalysisRule(let id):
+            try await service.deleteAnalysisRule(id: id)
+            return nothing
+        case .moveAnalysisRule(let id, let up):
+            try await service.moveAnalysisRule(id: id, up: up)
+            return nothing
+        case .ruleCovering(let key, let value):
+            return try json(await service.ruleCovering(key: key, value: value))
+        case .dryRun(let rule):
+            return try json(await service.dryRun(of: rule))
+        case .dryRuns(let rules):
+            return try json(await service.dryRuns(of: rules))
+        case .applyAnalysisRule(let rule):
+            return try json(await service.applyAnalysisRule(rule))
+        case .jsonSchemas:
+            return try json(await service.jsonSchemas())
+        case .saveJsonSchema(let id, let name, let keys):
+            return try json(await service.saveJsonSchema(id: id, named: name, keys: keys))
+        case .deleteJsonSchema(let id):
+            try await service.deleteJsonSchema(id: id)
+            return nothing
+
+        case .importOverview:
+            return try json(await service.importOverview())
+        case .scanSource(let sourceID):
+            return try json(await service.scanSource(sourceID: sourceID))
+        case .probeFile(let sourceID, let relativePath):
+            return try json(await service.probeFile(sourceID: sourceID, relativePath: relativePath))
+        case .importBoxes:
+            return try json(await service.importBoxes())
+        case .setImportBoxes(let boxes):
+            try await service.setImportBoxes(boxes)
+            return nothing
+        case .enableExtension(let fileExtension):
+            try await service.enableExtension(fileExtension)
+            return nothing
+
+        case .jobLane(let limit):
+            return try json(await service.jobLane(limit: limit))
+        case .moveJobToFront(let id):
+            try await service.moveJobToFront(id: id)
+            return nothing
+        case .retryJob(let id):
+            try await service.retryJob(id: id)
+            return nothing
+        case .clearFinishedJobs:
+            try await service.clearFinishedJobs()
+            return nothing
+        case .setQueuePaused(let paused):
+            try await service.setQueuePaused(paused)
+            return nothing
+        case .sweepStatuses:
+            return try json(await service.sweepStatuses())
+        case .startSweep(let kind, let preparation):
+            try await service.startSweep(kind, after: preparation)
             return nothing
         }
     }

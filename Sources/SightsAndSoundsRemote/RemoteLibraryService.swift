@@ -478,6 +478,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.unsavedSegments(itemIDs: itemIDs))
     }
     public func runNextAndWait(jobID: UUID) async throws { try await tell(.runNextAndWait(jobID: jobID)) }
+    public func job(id: UUID) async throws -> JobRecord? { try await ask(.job(id: id)) }
+    public func cancelJob(id: UUID) async throws { try await tell(.cancelJob(id: id)) }
+    public func wakeWorkers() async throws { try await tell(.wakeWorkers) }
 
     // MARK: ReviewManaging
 
@@ -541,11 +544,81 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     // MARK: PropertiesManaging
 
     public func libraryProperties() async throws -> LibraryProperties { try await ask(.libraryProperties) }
+    public func libraryInfo() async throws -> LibraryInfo? { try await ask(.libraryInfo) }
+    public func searchSettings() async throws -> SearchSettings { try await ask(.searchSettings) }
     public func renameLibrary(to name: String) async throws { try await tell(.renameLibrary(name: name)) }
     public func setSeparatorCharacters(_ characters: String) async throws {
         try await tell(.setSeparatorCharacters(characters: characters))
     }
     public func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
         try await tell(.setExtensionOverrides(video: video, audio: audio))
+    }
+
+    // MARK: AnalysisManaging
+
+    public func itemAnalysis(itemID: UUID) async throws -> ItemAnalysisAnswer {
+        try await ask(.itemAnalysis(itemID: itemID))
+    }
+    public func markAnalyzed(itemID: UUID) async throws { try await tell(.markAnalyzed(itemID: itemID)) }
+    public func metadataSweepState(itemID: UUID) async throws -> ItemSweepState {
+        try await ask(.metadataSweepState(itemID: itemID))
+    }
+    public func resetMetadataSweep(itemIDs: [UUID]) async throws {
+        try await tell(.resetMetadataSweep(itemIDs: itemIDs))
+    }
+    public func existingTags(inLines lines: [String]) async throws -> [ExistingTagFinding] {
+        try await ask(.existingTags(lines: lines))
+    }
+    public func analysisRules() async throws -> [RuleEngine.Rule] { try await ask(.analysisRules) }
+    public func saveAnalysisRule(_ rule: RuleEngine.Rule) async throws {
+        try await tell(.saveAnalysisRule(rule: rule))
+    }
+    public func deleteAnalysisRule(id: UUID) async throws { try await tell(.deleteAnalysisRule(id: id)) }
+    public func moveAnalysisRule(id: UUID, up: Bool) async throws {
+        try await tell(.moveAnalysisRule(id: id, up: up))
+    }
+    public func ruleCovering(key: String?, value: String) async throws -> RuleEngine.Rule? {
+        try await ask(.ruleCovering(key: key, value: value))
+    }
+    public func dryRun(of rule: RuleEngine.Rule) async throws -> RuleDryRun { try await ask(.dryRun(rule: rule)) }
+    public func dryRuns(of rules: [RuleEngine.Rule]) async throws -> [UUID: RuleDryRun] {
+        try await ask(.dryRuns(rules: rules))
+    }
+    public func applyAnalysisRule(_ rule: RuleEngine.Rule) async throws -> RuleApplication {
+        try await ask(.applyAnalysisRule(rule: rule))
+    }
+    public func jsonSchemas() async throws -> [JsonSchemaDefinition] { try await ask(.jsonSchemas) }
+    public func saveJsonSchema(
+        id: UUID?, named name: String, keys: [SchemaKey]
+    ) async throws -> JsonSchemaDefinition {
+        try await ask(.saveJsonSchema(id: id, name: name, keys: keys))
+    }
+    public func deleteJsonSchema(id: UUID) async throws { try await tell(.deleteJsonSchema(id: id)) }
+
+    // MARK: ImportManaging
+
+    public func importOverview() async throws -> ImportOverview { try await ask(.importOverview) }
+    public func scanSource(sourceID: UUID) async throws -> ScanOutcome {
+        try await ask(.scanSource(sourceID: sourceID))
+    }
+    public func probeFile(sourceID: UUID, relativePath: String) async throws -> ProbeResult {
+        try await ask(.probeFile(sourceID: sourceID, relativePath: relativePath))
+    }
+    public func importBoxes() async throws -> [ImportBox] { try await ask(.importBoxes) }
+    public func setImportBoxes(_ boxes: [ImportBox]) async throws { try await tell(.setImportBoxes(boxes: boxes)) }
+    public func enableExtension(_ fileExtension: String) async throws {
+        try await tell(.enableExtension(fileExtension: fileExtension))
+    }
+
+    // MARK: QueueManaging
+
+    public func jobLane(limit: Int) async throws -> JobLane { try await ask(.jobLane(limit: limit)) }
+    public func moveJobToFront(id: UUID) async throws { try await tell(.moveJobToFront(id: id)) }
+    public func retryJob(id: UUID) async throws { try await tell(.retryJob(id: id)) }
+    public func clearFinishedJobs() async throws { try await tell(.clearFinishedJobs) }
+    public func setQueuePaused(_ paused: Bool) async throws { try await tell(.setQueuePaused(paused: paused)) }
+    public func sweepStatuses() async throws -> [SweepKind: SweepStatus] { try await ask(.sweepStatuses) }
+    public func startSweep(_ kind: SweepKind, after preparation: SweepPreparation) async throws {
+        try await tell(.startSweep(kind: kind, preparation: preparation))
     }
 }

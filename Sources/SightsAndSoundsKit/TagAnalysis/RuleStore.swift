@@ -6,7 +6,7 @@ import GRDB
 /// Spec 14 §6: a rule reports before it writes. Both numbers are here
 /// because they answer different questions — how many strings the matcher
 /// fires on, and how much of the library that reaches.
-public struct RuleDryRun: Equatable, Sendable {
+public struct RuleDryRun: Codable, Equatable, Sendable {
     /// Candidate rows the matcher fires on.
     public let matchedCandidates: Int
     /// Distinct items behind those rows. Counted, not summed: two
@@ -156,7 +156,7 @@ extension LibraryDatabase {
 }
 
 /// What applying a rule actually did.
-public struct RuleApplication: Equatable, Sendable {
+public struct RuleApplication: Codable, Equatable, Sendable {
     public let itemsUpdated: Int
     public let candidatesIgnored: Int
     /// Categories the rule named that this library does not have. The
