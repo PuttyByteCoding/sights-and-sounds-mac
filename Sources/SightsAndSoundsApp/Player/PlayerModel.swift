@@ -243,23 +243,27 @@ final class PlayerModel {
             formats.formats.append(recipe)
             if formats.defaultID == nil { formats.defaultID = recipe.id }
         }
-        do {
-            try library.setSearchFormats(formats)
-            searchFormats = formats
-        } catch {
-            loadError = "\(error)"
-        }
+        store(formats)
     }
 
     /// The panel's ⌘⇧C marker: make this format the default.
     func setDefaultSearchFormat(_ id: UUID) {
         var formats = searchFormats
         formats.defaultID = id
-        do {
-            try library.setSearchFormats(formats)
-            searchFormats = formats
-        } catch {
-            loadError = "\(error)"
+        store(formats)
+    }
+
+    /// The formats are shown at once and stored when the write lands.
+    /// The next edit is built on what is shown, so two in a row are both
+    /// kept. If they cannot be stored the panel says so and goes back to
+    /// what the library has.
+    private func store(_ formats: SearchFormats) {
+        searchFormats = formats
+        // A read of the formats asked for before this must not put the
+        // old ones back.
+        searchGeneration += 1
+        queueWrite({ try await $0.setSearchFormats(formats, replacingUnreadable: false) }, then: { _ in }) {
+            [weak self] in self?.refreshSearch()
         }
     }
 
@@ -1059,7 +1063,7 @@ final class PlayerModel {
         // the library's own category order follows when the write lands.
         refreshPanelRows()
         let order = rows.compactMap(\.categoryID)
-        editTags({ try await $0.setCategoryOrder(order) }) { [weak self] _ in
+        queueWrite({ try await $0.setCategoryOrder(order) }) { [weak self] _ in
             self?.refreshTagging()
             self?.recountQueue()
         }
@@ -1074,15 +1078,17 @@ final class PlayerModel {
     /// made here has landed and every panel read has been shown.
     var isSettled: Bool { writesInFlight == 0 && panelLoadsInFlight == 0 }
 
-    /// Queue one change to the library's tags, in the order it was asked
-    /// for, and show its result when it lands. The write is queued at
-    /// the call, so a run of key presses is carried out in the order
-    /// pressed; whatever it names (the item, the tag) was read at the
-    /// press, so stepping on meanwhile does not move it to another item.
-    /// A write that fails says so on the error line.
-    private func editTags<T: Sendable>(
+    /// Queue one change to the library, in the order it was asked for,
+    /// and show its result when it lands. The write is queued at the
+    /// call, so a run of key presses is carried out in the order
+    /// pressed; whatever it names (the item, the tag, the range) was
+    /// read at the press, so stepping on meanwhile does not move it to
+    /// another item. A write that fails says so on the error line, and
+    /// `orElse` puts back whatever was shown ahead of it.
+    private func queueWrite<T: Sendable>(
         _ work: @escaping @Sendable (any LibraryService) async throws -> T,
-        then show: @escaping @MainActor (T) -> Void
+        then show: @escaping @MainActor (T) -> Void,
+        orElse undo: @escaping @MainActor () -> Void = {}
     ) {
         let service = service
         writesInFlight += 1
@@ -1094,8 +1100,11 @@ final class PlayerModel {
             // moment between the two when the player looks settled.
             defer { self.writesInFlight -= 1 }
             switch outcome {
-            case .success(let value): show(value)
-            case .failure(let error): self.loadError = "\(error)"
+            case .success(let value):
+                show(value)
+            case .failure(let error):
+                self.loadError = "\(error)"
+                undo()
             }
         }
     }
@@ -1259,7 +1268,7 @@ final class PlayerModel {
 
     func toggleTag(_ tagID: UUID) {
         guard let itemID = item?.id else { return }
-        editTags({ try await $0.toggleTag(tagID, on: itemID) }) { [weak self] applied in
+        queueWrite({ try await $0.toggleTag(tagID, on: itemID) }) { [weak self] applied in
             if applied { self?.noteApplied(tagID) }
             self?.refreshItemTags()
             self?.recountQueue()
@@ -1272,7 +1281,7 @@ final class PlayerModel {
     /// window appears here at once without a broadcast.
     func applyTag(_ tagID: UUID) {
         guard let itemID = item?.id else { return }
-        editTags({ try await $0.assignTag(tagID, to: [itemID]) }) { [weak self] _ in
+        queueWrite({ try await $0.assignTag(tagID, to: [itemID]) }) { [weak self] _ in
             self?.noteApplied(tagID)
             self?.refreshItemTags()
             self?.recountQueue()
@@ -1282,7 +1291,7 @@ final class PlayerModel {
     /// Rename through the kit's single write path (normalization,
     /// per-category uniqueness) — the info bar's pill menu calls this.
     func renameTag(_ tagID: UUID, to name: String) {
-        editTags({ try await $0.renameTag(tagID, to: name) }) { [weak self] _ in
+        queueWrite({ try await $0.renameTag(tagID, to: name) }) { [weak self] _ in
             self?.refreshTagging()
             self?.recountQueue()
         }
@@ -1291,7 +1300,7 @@ final class PlayerModel {
     /// Autocomplete-create: normalize, find-or-create, assign.
     func addTag(named raw: String, categoryID: UUID) {
         guard let itemID = item?.id else { return }
-        editTags({ service in
+        queueWrite({ service in
             let tag = try await service.ensureTag(named: raw, inCategory: categoryID)
             try await service.assignTag(tag.id, to: [itemID])
         }) { [weak self] _ in
@@ -1304,7 +1313,7 @@ final class PlayerModel {
     /// Aliases are how a future import or search resolves the spelling
     /// that was burned into the video.
     func addAlias(_ alias: String, to tagID: UUID) {
-        editTags({ try await $0.addAlias(alias, toTag: tagID) }) { [weak self] _ in
+        queueWrite({ try await $0.addAlias(alias, toTag: tagID) }) { [weak self] _ in
             self?.refreshTagging()
             self?.recountQueue()
         }
@@ -1323,7 +1332,7 @@ final class PlayerModel {
         let canonical = key.count == 1 ? key.lowercased() : key
         guard let binding = boundKeys[canonical], let itemID = item?.id else { return false }
         let tagID = binding.tagID, advances = binding.advance
-        editTags({ try await $0.toggleTag(tagID, on: itemID) }) { [weak self] applied in
+        queueWrite({ try await $0.toggleTag(tagID, on: itemID) }) { [weak self] applied in
             guard let self else { return }
             self.refreshItemTags()
             // Still on the item the key was pressed on: a step taken
@@ -1395,26 +1404,32 @@ final class PlayerModel {
     /// is how you lose the range you just marked.
     func closeSegmentMark(as role: SegmentRole) {
         guard let item, let start = pendingSegmentStart, currentSeconds > start else { return }
-        do {
-            let created = try library.createEmbeddedClip(
-                parentID: item.parentMediaItemID ?? item.id,
-                startSeconds: start, endSeconds: currentSeconds, role: role)
-            pendingSegmentStart = nil
-            refreshSegments()
-            selectedSegmentID = created.id
-        } catch {
-            loadError = "\(error)"
-        }
+        let parentID = item.parentMediaItemID ?? item.id, end = currentSeconds
+        // Closed at the press: a second press must not make it twice.
+        pendingSegmentStart = nil
+        queueWrite({
+            try await $0.createSegment(parentID: parentID, name: "", startSeconds: start, endSeconds: end, role: role)
+        }, then: { [weak self] created in
+            // Still on the video it was marked on: its rail, its selection.
+            guard let self, self.shownVideoID == parentID else { return }
+            self.refreshSegments()
+            self.selectedSegmentID = created.id
+        }, orElse: { [weak self] in
+            // The range just marked is the thing not to lose: open again,
+            // unless another mark has been opened or the video has changed.
+            guard let self, self.shownVideoID == parentID, self.pendingSegmentStart == nil else { return }
+            self.pendingSegmentStart = start
+        })
     }
+
+    /// The video on screen: the item, or the video it is a segment of.
+    private var shownVideoID: UUID? { item.map { $0.parentMediaItemID ?? $0.id } }
 
     func cancelSegmentMark() { pendingSegmentStart = nil }
 
     func renameSegment(_ id: UUID, to name: String) {
-        do {
-            try library.renameSegment(id, to: name)
-            refreshSegments()
-        } catch {
-            loadError = "\(error)"
+        queueWrite({ try await $0.renameSegment(id, to: name) }) { [weak self] _ in
+            self?.refreshSegments()
         }
     }
 
@@ -1422,15 +1437,17 @@ final class PlayerModel {
     /// either way: a segment is a name over a range, and a hide block is
     /// an instruction the export reads.
     func removeSegment(_ row: SegmentRow) {
-        do {
-            switch row.kind {
-            case .song, .clip: try library.deleteSegment(row.id)
-            case .hide: try library.deleteBlock(row.id)
+        let id = row.id, isHideBlock = row.kind == .hide
+        queueWrite({ service in
+            if isHideBlock {
+                try await service.deleteBlock(id)
+            } else {
+                try await service.deleteSegment(id)
             }
-            if selectedSegmentID == row.id { selectedSegmentID = nil }
-            refreshSegments()
-        } catch {
-            loadError = "\(error)"
+        }) { [weak self] _ in
+            guard let self else { return }
+            if self.selectedSegmentID == id { self.selectedSegmentID = nil }
+            self.refreshSegments()
         }
     }
 
@@ -1520,20 +1537,25 @@ final class PlayerModel {
             return
         }
         guard let start = pendingBlockStart, currentSeconds > start else { return }
-        let targetID = item.parentMediaItemID ?? item.id
-        do {
-            _ = try library.addBlock(
-                to: targetID, startSeconds: start, endSeconds: currentSeconds, kind: .hide)
-            pendingBlockStart = nil
-            refreshBlocks()
-        } catch {
-            loadError = "\(error)"
-        }
+        let targetID = item.parentMediaItemID ?? item.id, end = currentSeconds
+        // Closed at the tap, like a segment mark, and reopened if the
+        // block could not be saved.
+        pendingBlockStart = nil
+        queueWrite({
+            try await $0.addBlock(to: targetID, startSeconds: start, endSeconds: end, kind: .hide)
+        }, then: { [weak self] _ in
+            guard let self, self.shownVideoID == targetID else { return }
+            self.refreshBlocks()
+        }, orElse: { [weak self] in
+            guard let self, self.shownVideoID == targetID, self.pendingBlockStart == nil else { return }
+            self.pendingBlockStart = start
+        })
     }
 
     func deleteBlock(_ blockID: UUID) {
-        try? library.deleteBlock(blockID)
-        refreshBlocks()
+        queueWrite({ try await $0.deleteBlock(blockID) }) { [weak self] _ in
+            self?.refreshBlocks()
+        }
     }
 
     // MARK: - Playlist walking

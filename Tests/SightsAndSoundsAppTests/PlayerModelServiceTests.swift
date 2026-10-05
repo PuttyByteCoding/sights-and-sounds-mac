@@ -569,6 +569,100 @@ import Testing
         #expect(problem?.contains("setKeyBinding") == true)
         #expect(model.boundKeys["3"] == nil)
     }
+
+    // MARK: - Marks made while playing
+
+    /// Play far enough into the item for a mark to have a length.
+    private func playhead(_ model: PlayerModel, at seconds: Double) async throws {
+        model.seek(to: seconds)
+        try await waitUntil("the playhead at \(seconds)") { abs(model.currentSeconds - seconds) < 0.4 }
+    }
+
+    /// Marked on a, closed, and stepped on before the segment had been
+    /// made: it is a's segment, and b's rail does not show it.
+    @Test func aMarkClosedJustBeforeSteppingBelongsToTheVideoItWasMarkedOn() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a, f.b])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.item?.id == f.a.id && model.fileURL != nil }
+        try await playhead(model, at: 1)
+        model.openSegmentMark()
+        try await playhead(model, at: 2.5)
+
+        f.stub.delay("createSegment(parentID:name:startSeconds:endSeconds:role:)", by: .milliseconds(300))
+        model.closeSegmentMark(as: .song)
+        #expect(model.pendingSegmentStart == nil, "the mark is closed at the press")
+        model.load(itemID: f.b.id)
+        try await waitUntil("b") { model.item?.id == f.b.id }
+        try await settled(model)
+
+        let made = try f.library.clips(of: f.a.id)
+        #expect(made.count == 1)
+        #expect(made.first?.segmentRole == .song)
+        #expect(abs((made.first?.clipStartSeconds ?? 0) - 1) < 0.4)
+        #expect(try f.library.clips(of: f.b.id).isEmpty)
+        #expect(model.segments.isEmpty, "a's segment is on b's rail")
+        #expect(model.selectedSegmentID == nil)
+    }
+
+    @Test func aClosedMarkIsOnTheRailAndSelected() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.item?.id == f.a.id && model.fileURL != nil }
+        try await playhead(model, at: 1)
+        model.openSegmentMark()
+        try await playhead(model, at: 2.5)
+
+        model.closeSegmentMark(as: .clip)
+        try await settled(model)
+
+        #expect(model.segments.count == 1 && model.clipCount == 1)
+        #expect(model.selectedSegmentID == model.segments.first?.id)
+    }
+
+    /// The range just marked is the thing not to lose: a mark that could
+    /// not be saved is open again, where it was.
+    @Test func aMarkThatCannotBeSavedIsStillOpen() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.item?.id == f.a.id && model.fileURL != nil }
+        try await playhead(model, at: 1)
+        model.openSegmentMark()
+        let start = try #require(model.pendingSegmentStart)
+        try await playhead(model, at: 2.5)
+
+        f.stub.fail("createSegment(parentID:name:startSeconds:endSeconds:role:)")
+        model.closeSegmentMark(as: .song)
+        try await settled(model)
+
+        #expect(model.loadError?.contains("createSegment") == true)
+        #expect(model.pendingSegmentStart == start)
+        #expect(model.segments.isEmpty)
+    }
+
+    @Test func aBlockTappedOpenAndClosedIsOnTheRail() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.player([f.a])
+        defer { model.shutdown() }
+        try await waitUntil("a, playable") { model.item?.id == f.a.id && model.fileURL != nil }
+        try await playhead(model, at: 1)
+        model.blockTap(open: true)
+        try await playhead(model, at: 2.5)
+
+        model.blockTap(open: false)
+        #expect(model.pendingBlockStart == nil)
+        try await settled(model)
+
+        #expect(model.hideBlocks.count == 1)
+        #expect(abs((model.hideBlocks.first?.startSeconds ?? 0) - 1) < 0.4)
+        #expect(try f.library.blocks(of: f.a.id).count == 1)
+    }
 }
 
 extension PlaybackEvent {

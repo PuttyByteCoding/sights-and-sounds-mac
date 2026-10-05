@@ -20,7 +20,7 @@
 12	Sources/SightsAndSoundsApp/LibraryPropertiesView.swift
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
 2	Sources/SightsAndSoundsApp/Player/OcrLinesPanel.swift
-9	Sources/SightsAndSoundsApp/Player/PlayerModel.swift
+1	Sources/SightsAndSoundsApp/Player/PlayerModel.swift
 2	Sources/SightsAndSoundsApp/Search/BookmarkSearchView.swift
 2	Sources/SightsAndSoundsApp/Search/SearchCommands.swift
 6	Sources/SightsAndSoundsApp/Search/SearchSettingsPane.swift
