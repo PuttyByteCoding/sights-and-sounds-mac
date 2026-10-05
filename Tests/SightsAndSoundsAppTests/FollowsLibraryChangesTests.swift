@@ -20,11 +20,15 @@ import Testing
     struct Probe: View {
         let model: BrowseModel
         let counter: Counter
+        var settle = FollowsLibraryChanges.settle
+        var longestSettle = FollowsLibraryChanges.longestSettle
         var body: some View {
             counter.bodies += 1
             return Color.clear
                 .frame(width: 40, height: 40)
-                .followsLibraryChanges(model, [.vocabulary]) { counter.reloads += 1 }
+                .followsLibraryChanges(model, [.vocabulary], settle: settle, longestSettle: longestSettle) {
+                    counter.reloads += 1
+                }
         }
     }
 
@@ -100,56 +104,56 @@ import Testing
     /// settle back: Review, Maintenance and Tag Manager did not reload until
     /// the import stopped — a mark made in the player missing from Review
     /// for the length of it. A burst now reloads within `longestSettle`.
+    ///
+    /// The settle here is far longer than any machine stalls, so only the
+    /// cap can reload inside the stream. With the app's own 0.4 s settle
+    /// the test needed a dozen changes in a row each under 0.4 s apart,
+    /// against the 0.2 s this loop takes on a quiet Mac; a build machine
+    /// did not always manage it, and the test failed having tested nothing.
     @Test func aSteadyStreamOfChangesStillReloads() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Stream")
         let model = BrowseModel(libraryID: UUID(), library: library, runner: JobRunner(library: library))
         let counter = Counter()
+        let plainSettle: Duration = .seconds(60)
+        let cap: Duration = .seconds(1)
         let window = NSWindow(
             contentRect: NSRect(x: -4000, y: -4000, width: 40, height: 40),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(rootView: Probe(model: model, counter: counter))
+        window.contentViewController = NSHostingController(
+            rootView: Probe(model: model, counter: counter, settle: plainSettle, longestSettle: cap))
         window.orderFront(nil)
         defer { window.close() }
         try await settle(1.0)
         #expect(counter.reloads == 0)
 
-        // Changes closer together than the plain settle, for longer than
-        // `longestSettle`; each one waited for, so the hub cannot merge the
-        // stream into one delivery. Only the cap can reload inside it — if
-        // the machine keeps up: a gap as long as the settle lets it reload
-        // without the cap, and such a run proves nothing either way. So a
-        // run that stalled is tried again, and if none keeps up the test
-        // fails rather than passing having tested nothing.
+        // One change after another, each waited for so the hub cannot merge
+        // the stream into one delivery, until the window reloads or the
+        // stream has run many times the cap.
         let clock = ContinuousClock()
+        let started = clock.now
+        let streamEnd = started + .seconds(15)
+        var lastDelivered: ContinuousClock.Instant?
+        var longestGap: Duration = .zero
         var n = 0
-        for _ in 0..<3 {
-            let reloadsBefore = counter.reloads
-            let started = clock.now
-            let streamEnd = started + .seconds(4)
-            var lastDelivered: ContinuousClock.Instant?
-            var longestGap: Duration = .zero
-            while clock.now < streamEnd, counter.reloads == reloadsBefore {
-                let before = model.changeCount([.vocabulary])
-                let name = "Band \(n)"
-                n += 1
-                try await library.writer.write { try TagCategory(name: name).insert($0) }
-                try await waitFor { model.changeCount([.vocabulary]) > before }
-                let now = clock.now
-                if let lastDelivered { longestGap = max(longestGap, now - lastDelivered) }
-                lastDelivered = now
-                try await settle(0.1)
-            }
-            let reloadedAfter = clock.now - started
-            if longestGap < FollowsLibraryChanges.settle {
-                #expect(counter.reloads > reloadsBefore, "no reload while the changes kept coming")
-                #expect(reloadedAfter < .seconds(3), "the first reload came \(reloadedAfter) into the stream")
-                return
-            }
-            // Let this run's reload land before the next begins.
-            try await settle(2.5)
+        while clock.now < streamEnd, counter.reloads == 0 {
+            let before = model.changeCount([.vocabulary])
+            let name = "Band \(n)"
+            n += 1
+            try await library.writer.write { try TagCategory(name: name).insert($0) }
+            try await waitFor { model.changeCount([.vocabulary]) > before }
+            let now = clock.now
+            if let lastDelivered { longestGap = max(longestGap, now - lastDelivered) }
+            lastDelivered = now
+            try await settle(0.1)
         }
-        Issue.record("no run kept every gap under the settle: the cap was not tested")
+        let reloadedAfter = clock.now - started
+        let said: Comment = "\(n) changes, \(longestGap) apart at most, \(reloadedAfter) in all"
+        #expect(longestGap < plainSettle, "the stream stalled for a whole settle, so the cap was not tested: \(said)")
+        #expect(counter.reloads == 1, "no reload while the changes kept coming: \(said)")
+        // It waited for the cap: it did not reload for the first change.
+        #expect(reloadedAfter >= cap, "reloaded before the cap: \(said)")
+        #expect(n > 1, "one change is not a stream: \(said)")
     }
 }

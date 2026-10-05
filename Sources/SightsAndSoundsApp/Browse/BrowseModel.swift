@@ -1347,6 +1347,10 @@ struct FollowsLibraryChanges: ViewModifier {
     @State private var burstStarted: ContinuousClock.Instant?
     static let settle: Duration = .milliseconds(400)
     static let longestSettle: Duration = .seconds(2)
+    /// The app uses the two above everywhere. They are given per window
+    /// so a test can make the settle longer than any machine stalls.
+    var settle: Duration = FollowsLibraryChanges.settle
+    var longestSettle: Duration = FollowsLibraryChanges.longestSettle
 
     func body(content: Content) -> some View {
         // Read here, in the modifier's own body, not the window's: read in
@@ -1366,7 +1370,7 @@ struct FollowsLibraryChanges: ViewModifier {
                 let now = ContinuousClock.now
                 let started = burstStarted ?? now
                 burstStarted = started
-                let wait = min(Self.settle, Self.longestSettle - (now - started))
+                let wait = min(settle, longestSettle - (now - started))
                 if wait > .zero {
                     try? await Task.sleep(for: wait)
                     guard !Task.isCancelled else { return }
@@ -1380,9 +1384,14 @@ struct FollowsLibraryChanges: ViewModifier {
 
 extension View {
     func followsLibraryChanges(
-        _ model: BrowseModel, _ domains: Set<LibraryChangeDomain>, reload: @escaping () -> Void
+        _ model: BrowseModel, _ domains: Set<LibraryChangeDomain>,
+        settle: Duration = FollowsLibraryChanges.settle,
+        longestSettle: Duration = FollowsLibraryChanges.longestSettle,
+        reload: @escaping () -> Void
     ) -> some View {
-        modifier(FollowsLibraryChanges(model: model, domains: domains, reload: reload))
+        modifier(
+            FollowsLibraryChanges(
+                model: model, domains: domains, reload: reload, settle: settle, longestSettle: longestSettle))
     }
 }
 
