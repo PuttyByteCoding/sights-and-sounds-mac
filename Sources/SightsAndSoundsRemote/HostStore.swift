@@ -11,8 +11,26 @@ public struct SavedHost: Codable, Equatable, Identifiable, Sendable {
     public var address: String
     public var port: UInt16
     public var pairedAt: Date
+    /// The libraries it offered when last asked. Kept so a window on
+    /// one of them can be put back at launch before the host has been
+    /// reached, and so the list is not empty while it is being asked.
+    public var knownLibraries: [RemoteLibraryInfo]?
     var key: ChannelKey
     var token: Data
+
+    init(
+        id: UUID, name: String, address: String, port: UInt16, pairedAt: Date,
+        knownLibraries: [RemoteLibraryInfo]? = nil, key: ChannelKey, token: Data
+    ) {
+        self.id = id
+        self.name = name
+        self.address = address
+        self.port = port
+        self.pairedAt = pairedAt
+        self.knownLibraries = knownLibraries
+        self.key = key
+        self.token = token
+    }
 
     /// How to reach it.
     public var endpoint: RemoteEndpoint {
@@ -53,6 +71,17 @@ public final class HostStore: @unchecked Sendable {
             guard let index = hosts.firstIndex(where: { $0.id == id }) else { return }
             hosts[index].address = address
             hosts[index].port = port
+        }
+    }
+
+    /// What the host said when it was last asked: its name now, and the
+    /// libraries it offers.
+    public func heard(from id: UUID, name: String, libraries: [RemoteLibraryInfo]) throws {
+        try change { hosts in
+            guard let index = hosts.firstIndex(where: { $0.id == id }) else { return }
+            guard hosts[index].name != name || hosts[index].knownLibraries != libraries else { return }
+            hosts[index].name = name
+            hosts[index].knownLibraries = libraries
         }
     }
 

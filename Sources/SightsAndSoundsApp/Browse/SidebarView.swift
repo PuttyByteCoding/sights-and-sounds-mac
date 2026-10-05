@@ -416,16 +416,20 @@ struct SidebarView: View {
                         depth: 0, expanded: $expandedFolders)
                 }
             }
-            Button(action: addSource) {
-                Text("+ Add Source…")
-                    .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
-                    .padding(.vertical, 7)
-                    .padding(.leading, 27)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            // A source is a folder on the Mac that holds the library,
+            // and is added there.
+            if !model.isRemote {
+                Button(action: addSource) {
+                    Text("+ Add Source…")
+                        .font(Theme.ui(12))
+                        .foregroundStyle(Theme.Text.disabled)
+                        .padding(.vertical, 7)
+                        .padding(.leading, 27)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 

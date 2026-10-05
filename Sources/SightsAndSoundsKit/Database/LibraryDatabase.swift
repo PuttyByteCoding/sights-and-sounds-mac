@@ -63,6 +63,39 @@ public final class LibraryDatabase: Sendable {
         return try LibraryDatabase(writer: queue, fileURL: nil)
     }
 
+    /// A library with nothing in it, that refuses every change.
+    ///
+    /// For a window on a library another Mac holds, while some of the
+    /// app's surfaces still ask a window for a database rather than its
+    /// service. Those surfaces are not offered for such a library; this
+    /// is what stands behind them if one is reached anyway — it shows
+    /// nothing and changes nothing, where a real handle to some other
+    /// library would show and change the wrong one.
+    ///
+    /// Read-only where SQLite itself enforces it: the file is opened
+    /// that way. Switching an open connection to "query only" does not
+    /// hold — the database layer switches it back after every read.
+    /// There is one for the whole app, made the first time it is asked
+    /// for; nothing can change it, so nothing needs its own.
+    public static func emptyAndReadOnly() throws -> LibraryDatabase {
+        try emptyLibrary.get()
+    }
+
+    private static let emptyLibrary = Result { () throws -> LibraryDatabase in
+        // A file of this run's own, in the temporary folder, which the
+        // system clears. It has to stay there while it is open: SQLite
+        // goes back to the file by name, and reads of one that had been
+        // removed failed.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-empty-library-\(UUID().uuidString).sqlite")
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        // Made, given the schema, and closed.
+        try LibraryDatabase(writer: try DatabaseQueue(path: url.path, configuration: config), fileURL: nil).close()
+        config.readonly = true
+        return try LibraryDatabase(writer: try DatabaseQueue(path: url.path, configuration: config), fileURL: nil)
+    }
+
     // MARK: - Identity
 
     /// This library's identity row, if it has been stamped.

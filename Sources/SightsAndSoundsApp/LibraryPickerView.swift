@@ -1,5 +1,6 @@
 import SwiftUI
 import SightsAndSoundsKit
+import SightsAndSoundsRemote
 
 /// Choose a library to open — spec `docs/design/01-library-picker.md`.
 ///
@@ -22,6 +23,10 @@ struct LibraryPickerView: View {
     @State private var selection: UUID?
     @State private var placement: Placement = .newWindow
     @State private var showingNewLibrary = false
+    @State private var showingConnect = false
+    @State private var movingHost: SavedHost?
+
+    private var remote: RemoteLibrariesModel { model.remoteLibraries }
 
     /// Where a chosen library opens. Only ever asked in the menu context:
     /// at launch there is no window to replace.
@@ -32,7 +37,7 @@ struct LibraryPickerView: View {
             header
             Divider().overlay(Theme.Border.standard)
 
-            if model.libraries.isEmpty {
+            if model.libraries.isEmpty && remote.hosts.isEmpty {
                 emptyState
             } else {
                 libraryList
@@ -54,6 +59,17 @@ struct LibraryPickerView: View {
         .onAppear {
             selection = defaultSelection
             model.refreshOpenLibraryStatus()
+        }
+        // Each paired Mac is asked what it has now; what it had last
+        // time is listed meanwhile.
+        .task { await remote.refresh() }
+        .sheet(isPresented: $showingConnect) {
+            ConnectToAnotherMacSheet()
+                .environment(model)
+        }
+        .sheet(item: $movingHost) { host in
+            RemoteHostAddressSheet(host: host)
+                .environment(model)
         }
         .onChange(of: model.libraries) { _, _ in
             // A library added or forgotten while the dialog is up must not
@@ -109,18 +125,55 @@ struct LibraryPickerView: View {
                 }
                 // The claim the cached summary makes, stated where it is
                 // read rather than in a tooltip.
-                Text("Counts are as of each library's last close. Whether a drive is plugged in is only known for a library that is open.")
-                    .font(Theme.ui(11))
-                    .foregroundStyle(Theme.Text.quaternary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 6)
-                    .padding(.bottom, 10)
+                if !model.libraries.isEmpty {
+                    Text("Counts are as of each library's last close. Whether a drive is plugged in is only known for a library that is open.")
+                        .font(Theme.ui(11))
+                        .foregroundStyle(Theme.Text.quaternary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 6)
+                        .padding(.bottom, 10)
+                }
+                otherMacs
             }
             .padding(.horizontal, 12)
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(minHeight: 120)
+    }
+
+    // MARK: - On other Macs
+
+    /// The Macs this one has been paired with, each with the libraries
+    /// it offers. Listed as last heard while each is asked again.
+    @ViewBuilder
+    private var otherMacs: some View {
+        if let problem = remote.problem {
+            Text(problem)
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Status.red)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+        }
+        ForEach(remote.hosts) { entry in
+            RemoteHostHeader(entry: entry, move: { movingHost = entry.host })
+            if entry.libraries.isEmpty {
+                Text(RemoteHostHeader.emptyLine(for: entry.state))
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            }
+            ForEach(entry.libraries) { library in
+                RemoteLibraryPickerRow(
+                    library: library,
+                    isSelected: selection == library.id,
+                    isOpen: model.openLibraryIDs.contains(library.id),
+                    select: { selection = library.id },
+                    open: { open(library.id) })
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -189,6 +242,9 @@ struct LibraryPickerView: View {
             AddExistingLibraryButton()
             DemoLibraryButton()
             SignalSamplesLibraryButton()
+            Button("Connect to Another Mac…") { showingConnect = true }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .help("Open a library held by another Mac on this network, with a pairing code from that Mac")
 
             Spacer(minLength: 8)
 
@@ -201,10 +257,10 @@ struct LibraryPickerView: View {
                 .keyboardShortcut(fromMenu ? .cancelAction : nil)
 
             Button(primaryLabel) {
-                if let selected { open(selected) }
+                if let selection, selectedName != nil { open(selection) }
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(selected == nil)
+            .disabled(selectedName == nil)
             .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 16)
@@ -212,8 +268,14 @@ struct LibraryPickerView: View {
     }
 
     private var primaryLabel: String {
-        guard let selected else { return "Open" }
-        return selectionIsOpen ? "Bring Forward" : "Open \(selected.name)"
+        guard let selectedName else { return "Open" }
+        return selectionIsOpen ? "Bring Forward" : "Open \(selectedName)"
+    }
+
+    /// The name of what is selected, on this Mac or another.
+    private var selectedName: String? {
+        guard let selection else { return nil }
+        return selected?.name ?? remote.ref(for: selection)?.library.name
     }
 
     // MARK: - State
@@ -247,17 +309,21 @@ struct LibraryPickerView: View {
 
     // MARK: - Actions
 
-    private func open(_ library: LibraryRef) {
-        if model.openLibraryIDs.contains(library.id) {
+    private func open(_ library: LibraryRef) { open(library.id) }
+
+    /// Open a library by the id its window goes by: its own, for one on
+    /// this Mac; this Mac's id for it, for one on another.
+    private func open(_ libraryID: UUID) {
+        if model.openLibraryIDs.contains(libraryID) {
             // Already open: bring it forward rather than loading it twice.
-            openWindow(id: "library", value: library.id)
+            openWindow(id: "library", value: libraryID)
             dismiss()
             return
         }
         if fromMenu, placement == .thisWindow, let origin = model.pickerOriginLibraryID {
             dismissWindow(id: "library", value: origin)
         }
-        openWindow(id: "library", value: library.id)
+        openWindow(id: "library", value: libraryID)
         dismiss()
     }
 
@@ -269,6 +335,128 @@ struct LibraryPickerView: View {
             // button says.
             NSApplication.shared.terminate(nil)
         }
+    }
+}
+
+// MARK: - Other Macs
+
+/// One paired Mac: its name, where it is, and how asking it went.
+private struct RemoteHostHeader: View {
+    @Environment(AppModel.self) private var model
+    let entry: RemoteLibrariesModel.HostEntry
+    let move: () -> Void
+    @State private var confirmForget = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "laptopcomputer")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.Text.quaternary)
+            Text("ON \(entry.host.name.uppercased())")
+                .font(Theme.ui(10.5, .semibold))
+                .foregroundStyle(Theme.Text.tertiary)
+                .lineLimit(1)
+            Text("\(entry.host.address):\(String(entry.host.port))")
+                .font(Theme.mono(10.5))
+                .foregroundStyle(Theme.Text.quaternary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(Self.stateLine(for: entry.state))
+                .font(Theme.ui(10.5))
+                .foregroundStyle(Self.isTrouble(entry.state) ? Theme.Status.warnText : Theme.Text.quaternary)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Ask Again") { Task { await model.remoteLibraries.refresh() } }
+            Button("Change Address…", action: move)
+            Divider()
+            Button("Forget This Mac…") { confirmForget = true }
+        }
+        .confirmationDialog(
+            "Forget this Mac?",
+            isPresented: $confirmForget
+        ) {
+            Button("Forget") { model.remoteLibraries.forget(entry.host.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(entry.host.name)\n\nThis Mac will no longer be able to open its libraries; to open them again, pair again with a new code. It still lists this Mac as approved until it is revoked there.")
+        }
+    }
+
+    static func stateLine(for state: RemoteLibrariesModel.HostEntry.State) -> String {
+        switch state {
+        case .asking: "Asking\u{2026}"
+        case .reachable: "Connected"
+        case .unreachable: "Not answering"
+        case .refused(let why): why
+        }
+    }
+
+    static func isTrouble(_ state: RemoteLibrariesModel.HostEntry.State) -> Bool {
+        switch state {
+        case .asking, .reachable: false
+        case .unreachable, .refused: true
+        }
+    }
+
+    static func emptyLine(for state: RemoteLibrariesModel.HostEntry.State) -> String {
+        switch state {
+        case .asking: "Asking which libraries it has\u{2026}"
+        case .reachable: "It has no libraries."
+        case .unreachable: "It is not answering, and has not said before which libraries it has. Is it on, with Remote Access on, at this address?"
+        case .refused: "It will not say which libraries it has."
+        }
+    }
+}
+
+/// A library on another Mac. It has no path here and no cached counts:
+/// what is known is its name and whose it is.
+private struct RemoteLibraryPickerRow: View {
+    let library: RemoteLibraryRef
+    let isSelected: Bool
+    let isOpen: Bool
+    let select: () -> Void
+    let open: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 11) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile)
+                .frame(width: 34, height: 34)
+                .overlay(
+                    Image(systemName: "network")
+                        .font(.system(size: 15))
+                        .foregroundStyle(isSelected ? Theme.Accent.amber : Theme.Text.quaternary))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(library.library.name)
+                        .font(Theme.ui(13.5, .semibold))
+                        .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.secondary)
+                        .lineLimit(1)
+                    if isOpen {
+                        ThemeBadge(text: "OPEN")
+                    }
+                }
+                Text("Held by \(library.host.name). Browsed, played and tagged from here; its files stay there.")
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
+                    .lineLimit(2)
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Theme.Surface.selectedRow : .clear))
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onClicks(single: select, double: open)
     }
 }
 

@@ -102,26 +102,41 @@ struct SightsAndSoundsApp: App {
         // grid.
         WindowGroup(id: "aux", for: AuxWindowRequest.self) { $request in
             if let request {
-                AuxiliaryWindowView(request: request)
-                    .environment(model)
-                    .uiZoomed()
-                    .appWindowAppearance()
-                    // Holds the handle: Restore and Remove wait for it.
-                    .onAppear { model.holdLibrary(request.libraryID) }
-                    .onDisappear { model.releaseLibrary(request.libraryID) }
+                if model.remoteLibraries.ref(for: request.libraryID) != nil {
+                    // None of these has been moved onto the library's
+                    // service yet, and there is no database here to give
+                    // them.
+                    NotAvailableRemotelyView(what: request.title ?? request.kind.title)
+                        .uiZoomed()
+                        .appWindowAppearance()
+                } else {
+                    AuxiliaryWindowView(request: request)
+                        .environment(model)
+                        .uiZoomed()
+                        .appWindowAppearance()
+                        // Holds the handle: Restore and Remove wait for it.
+                        .onAppear { model.holdLibrary(request.libraryID) }
+                        .onDisappear { model.releaseLibrary(request.libraryID) }
+                }
             }
         }
 
         // Get Info for one library — facts, coverage, jump-offs.
         WindowGroup(id: "properties", for: LibraryRef.ID.self) { $libraryID in
             if let libraryID {
-                LibraryPropertiesView(libraryID: libraryID)
-                    .environment(model)
-                    .uiZoomed()
-                    .appWindowAppearance()
-                    // Holds the handle: Restore and Remove wait for it.
-                    .onAppear { model.holdLibrary(libraryID) }
-                    .onDisappear { model.releaseLibrary(libraryID) }
+                if model.remoteLibraries.ref(for: libraryID) != nil {
+                    NotAvailableRemotelyView(what: "Library Properties")
+                        .uiZoomed()
+                        .appWindowAppearance()
+                } else {
+                    LibraryPropertiesView(libraryID: libraryID)
+                        .environment(model)
+                        .uiZoomed()
+                        .appWindowAppearance()
+                        // Holds the handle: Restore and Remove wait for it.
+                        .onAppear { model.holdLibrary(libraryID) }
+                        .onDisappear { model.releaseLibrary(libraryID) }
+                }
             }
         }
 
@@ -252,6 +267,13 @@ final class AppModel {
         servedToOtherMacs = [:]
     }
 
+    // MARK: - Libraries on other Macs
+
+    /// The Macs this one has been paired with, and their libraries.
+    @ObservationIgnored
+    private(set) lazy var remoteLibraries = RemoteLibrariesModel(
+        file: Self.supportDirectory().appendingPathComponent("RemoteAccess/hosts.json"))
+
     /// Where the app keeps its own files; a folder of the run's own
     /// under test.
     static func supportDirectory() -> URL {
@@ -313,6 +335,8 @@ final class AppModel {
     func libraryWindowDisappeared(_ libraryID: UUID) {
         openLibraryIDs.remove(libraryID)
         offlineSourceCounts[libraryID] = nil
+        // A window on another Mac's library: its connections go with it.
+        remoteLibraries.closeService(for: libraryID)
         // The one moment the counts are both current and free: the handle
         // is open and the user is done with it.
         cacheSummary(for: libraryID)
