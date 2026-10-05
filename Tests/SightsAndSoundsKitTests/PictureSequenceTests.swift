@@ -278,7 +278,7 @@ import Testing
         #expect(split.value("cadence.duplicatePeriod") == nil)
     }
 
-    @Test func theStageRunsOnASynthesizedClip() async throws {
+    @Test(.writesVideo) func theStageRunsOnASynthesizedClip() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-sequence-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("clip.mp4")

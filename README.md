@@ -319,11 +319,19 @@ Requires Xcode 16+ (Swift 6). Open `Package.swift` in Xcode, or:
 
 ```sh
 swift build          # build kit + app shell
-swift test           # filter semantics, SQL shape, schema integrity, jobs
+swift test           # every test: filter semantics, SQL shape, schema integrity, jobs
+./scripts/run-tests.sh               # the same, by a name that says so
+./scripts/run-tests.sh --merge-gate  # only what a merge waits for (what CI runs)
 swift run            # run the app (dev; keyboard focus handled)
 ./scripts/check-terminology.sh      # banned names from the old app
 ./scripts/check-no-private-data.sh  # no library data, archives or home paths tracked
 ```
+
+A merge waits for fewer tests than there are. The ones that write a real
+video are marked `.writesVideo` and left out on CI, where there is no
+hardware encoder and they queue for a minute and more; on a Mac they take
+a moment, and `swift test` runs them with everything else. See
+`Tests/*/MergeGate.swift`.
 
 The build must be free of warnings; CI runs both guards beside the build and tests.
 

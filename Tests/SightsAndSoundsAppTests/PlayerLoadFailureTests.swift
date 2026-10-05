@@ -8,7 +8,7 @@ import Testing
 /// A load that cannot play anything must leave nothing playing: not the
 /// last item's picture under the new item's title, and not a file URL
 /// that still answers for the last item.
-@Suite @MainActor struct PlayerLoadFailureTests {
+@Suite(.writesVideo) @MainActor struct PlayerLoadFailureTests {
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
         #expect(condition())

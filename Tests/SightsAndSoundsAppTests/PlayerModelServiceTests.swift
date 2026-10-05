@@ -8,7 +8,7 @@ import Testing
 /// A player over a service that behaves the way a library on another
 /// Mac can: an answer fails, an older answer arrives after a newer one,
 /// and the window closes while the library goes on changing.
-@Suite @MainActor struct PlayerModelServiceTests {
+@Suite(.writesVideo) @MainActor struct PlayerModelServiceTests {
     struct Fixture {
         let library: LibraryDatabase
         let stub: StubLibraryService

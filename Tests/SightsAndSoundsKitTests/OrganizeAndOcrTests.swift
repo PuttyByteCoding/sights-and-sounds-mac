@@ -110,7 +110,7 @@ import Testing
 
     // MARK: OCR on real burned-in text
 
-    @Test func ocrReadsBurnedInTextAndSearchFindsIt() async throws {
+    @Test(.writesVideo) func ocrReadsBurnedInTextAndSearchFindsIt() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-ocr-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -177,7 +177,7 @@ import Testing
 
     // MARK: Join (ffmpeg-gated)
 
-    @Test func joinConcatenatesFolderParts() async throws {
+    @Test(.writesVideo) func joinConcatenatesFolderParts() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-join-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

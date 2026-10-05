@@ -8,7 +8,7 @@ import Testing
 /// Every load plays from the top. The stored resume position never
 /// drives playback, and neither does whatever the LAST item was doing:
 /// its playhead, its seek in flight, its position in the player.
-@Suite @MainActor struct PlayerStartPositionTests {
+@Suite(.writesVideo) @MainActor struct PlayerStartPositionTests {
     private func makeLibrary() async throws -> (LibraryDatabase, Source, URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("player-start-\(UUID().uuidString)", isDirectory: true)

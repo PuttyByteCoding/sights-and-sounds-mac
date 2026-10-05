@@ -10,7 +10,7 @@ import Testing
 /// thrashed and the picture lagged the thumb. Apple's chase pattern
 /// (Technical Q&A QA1820): one seek in flight, the latest target kept,
 /// loose seeks while dragging, an exact one where the drag ends.
-@Suite @MainActor struct ScrubChaseTests {
+@Suite(.writesVideo) @MainActor struct ScrubChaseTests {
     private func waitUntil(_ what: String, _ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
         #expect(condition(), "timed out: \(what)")

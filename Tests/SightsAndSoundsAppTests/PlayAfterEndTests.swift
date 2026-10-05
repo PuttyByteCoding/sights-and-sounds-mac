@@ -8,7 +8,7 @@ import Testing
 /// Play on a finished item starts it again, as QuickTime does. It used
 /// to call `player.play()` at the end of the file: nothing moved, while
 /// the button said Pause.
-@Suite @MainActor struct PlayAfterEndTests {
+@Suite(.writesVideo) @MainActor struct PlayAfterEndTests {
     private func waitUntil(_ what: String, _ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
         #expect(condition(), "timed out: \(what)")

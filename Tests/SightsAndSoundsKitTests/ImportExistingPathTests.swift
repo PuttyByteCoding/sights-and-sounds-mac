@@ -8,7 +8,7 @@ import Testing
 /// path — the schema's path index is NOCASE — and a rescan of a large
 /// source answers that from one lookup per file, not a scan of every
 /// known path per file.
-@Suite struct ImportExistingPathTests {
+@Suite(.writesVideo) struct ImportExistingPathTests {
     @Test func aPathKnownInAnotherCaseIsSkipped() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-import-case-\(UUID().uuidString)", isDirectory: true)

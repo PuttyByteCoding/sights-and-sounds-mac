@@ -10,7 +10,7 @@ import Testing
 /// and the player used to take it as the file's: every seek was clamped
 /// to it, so a song at 4–5 s of a 6 s file started at 1 s and looped
 /// back to 1 s at its out-point.
-@Suite @MainActor struct PlayerSegmentTimelineTests {
+@Suite(.writesVideo) @MainActor struct PlayerSegmentTimelineTests {
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
         #expect(condition())

@@ -177,7 +177,7 @@ import Testing
         return url
     }
 
-    @Test func declaredStageReadsTheEncodeTheFactoryWrote() async throws {
+    @Test(.writesVideo) func declaredStageReadsTheEncodeTheFactoryWrote() async throws {
         let url = try await clip()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let findings = try await DeclaredStage().examine(SignalStageInput(url: url, kind: .video))
@@ -195,7 +195,7 @@ import Testing
         #expect(findings.value("container.overallBitrate")! > 0)
     }
 
-    @Test func frameTimingStageCountsTheFramesThatWereWritten() async throws {
+    @Test(.writesVideo) func frameTimingStageCountsTheFramesThatWereWritten() async throws {
         let url = try await clip(seconds: 3)
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let findings = try await FrameTimingStage().examine(SignalStageInput(url: url, kind: .video))
@@ -355,7 +355,7 @@ import Testing
 
 @Suite struct MediaSignalJobTests {
 
-    @Test func theJobExaminesAFileAndAFailingStageDoesNotStopTheOthers() async throws {
+    @Test(.writesVideo) func theJobExaminesAFileAndAFailingStageDoesNotStopTheOthers() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-signal-job-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

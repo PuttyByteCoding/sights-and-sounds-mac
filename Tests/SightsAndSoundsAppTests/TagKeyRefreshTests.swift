@@ -8,7 +8,7 @@ import Testing
 /// vocabulary, every alias and the key bindings and rebuild the search
 /// index — on the main actor, on every press — so tagging slowed with
 /// the size of the library's vocabulary.
-@Suite @MainActor struct TagKeyRefreshTests {
+@Suite(.writesVideo) @MainActor struct TagKeyRefreshTests {
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
         #expect(condition())

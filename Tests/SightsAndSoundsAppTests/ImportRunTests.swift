@@ -14,7 +14,7 @@ import Testing
     /// pressed — cancelling on a timer caught the first job still queued
     /// (cancelled before it ran: the first folder imported nothing) or
     /// already finished (the second had begun: it imported too).
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(1)), .writesVideo)
     func cancelAfterTheFirstFolderImportsNoLaterFolder() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("import-run-\(UUID().uuidString)", isDirectory: true)
@@ -86,7 +86,7 @@ import Testing
     /// step — and a second click started a second run over the same files
     /// and orphaned the first one's Cancel. The run says whether it is
     /// still going.
-    @Test func aRunSaysItIsRunningUntilItFinishes() async throws {
+    @Test(.writesVideo) func aRunSaysItIsRunningUntilItFinishes() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("import-run-live-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

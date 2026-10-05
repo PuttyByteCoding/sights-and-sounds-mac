@@ -7,7 +7,7 @@ import Testing
 /// and the whole thing queryable through the app's own filter surface.
 @Suite struct DemoLibraryTests {
 
-    @Test func seedingIsDeterministic() async throws {
+    @Test(.writesVideo) func seedingIsDeterministic() async throws {
         func names(seed: UInt64) async throws -> [String] {
             let library = try LibraryDatabase.openInMemory()
             try library.ensureInfo(name: "Demo")
@@ -24,7 +24,7 @@ import Testing
         #expect(a != c)
     }
 
-    @Test func seededLibraryAnswersTheFilterSurface() async throws {
+    @Test(.writesVideo) func seededLibraryAnswersTheFilterSurface() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Demo")
         let source = Source(name: "S", rootPath: TestRoots.unreachable("demo"))
@@ -60,7 +60,7 @@ import Testing
         #expect(report.fieldValues > 0)
     }
 
-    @Test func synthesizedMediaIsRealPlayableMedia() async throws {
+    @Test(.writesVideo) func synthesizedMediaIsRealPlayableMedia() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-demo-media-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -86,7 +86,7 @@ import Testing
         #expect(videoSize > 5_000)
     }
 
-    @Test func makeFileCallbackDrivesSizesAndPaths() async throws {
+    @Test(.writesVideo) func makeFileCallbackDrivesSizesAndPaths() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Demo")
         let source = Source(name: "S", rootPath: TestRoots.unreachable("demo"))
@@ -126,7 +126,7 @@ import Testing
         return url
     }
 
-    @Test func aSecondDemoInTheSameFolderLeavesTheFirstAlone() async throws {
+    @Test(.writesVideo) func aSecondDemoInTheSameFolderLeavesTheFirstAlone() async throws {
         let dir = try folder()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("Demo Concerts.sqlite")
@@ -143,7 +143,7 @@ import Testing
         #expect(try await reopened.writer.read { try Source.fetchCount($0) } == before)
     }
 
-    @Test func aFailedDemoLeavesNoFileBehind() async throws {
+    @Test(.writesVideo) func aFailedDemoLeavesNoFileBehind() async throws {
         let dir = try folder()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("Demo Concerts.sqlite")
@@ -163,7 +163,7 @@ import Testing
 /// every retry failed at its first video ("startWriting") until the media
 /// folder was found and deleted by hand.
 @Suite struct DemoMediaRewriteTests {
-    @Test func aVideoIsWrittenOverOneAlreadyThere() async throws {
+    @Test(.writesVideo) func aVideoIsWrittenOverOneAlreadyThere() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-demo-rewrite-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: dir) }

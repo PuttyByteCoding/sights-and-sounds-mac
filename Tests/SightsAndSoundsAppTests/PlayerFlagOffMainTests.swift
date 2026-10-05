@@ -9,7 +9,7 @@ import Testing
 /// That move — with retries on a busy or network volume — ran on the
 /// main thread, so a triage key press could freeze the window for as
 /// long as the move took. The mark shows at once; the move follows.
-@Suite @MainActor struct PlayerFlagOffMainTests {
+@Suite(.writesVideo) @MainActor struct PlayerFlagOffMainTests {
     /// A volume where every move takes a while.
     struct SlowMoves: FileAccess {
         let live = LiveFileAccess()
