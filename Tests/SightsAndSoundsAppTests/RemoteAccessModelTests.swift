@@ -258,6 +258,29 @@ import Testing
         #expect(PairingCode(text: found.first ?? "") == code)
     }
 
+    /// Anyone who has seen the code chooses the name they ask under. It
+    /// is shown as that Mac's word for itself, on a line of its own, and
+    /// never as part of what the app says.
+    @Test func theNameIsNeverPartOfTheAppsOwnSentence() {
+        let honest = RemoteAccessModel.question(PairingAsk(deviceName: "Studio MacBook", address: "192.168.1.23"))
+        #expect(!honest.title.contains("Studio"))
+        #expect(honest.detail.contains("\n\nStudio MacBook\n\n"))
+        #expect(honest.detail.contains("192.168.1.23"))
+        #expect(honest.detail.contains("proves nothing"))
+
+        // A name written to finish the question and start an instruction.
+        let crafted = "Den\u{201D} is already approved.\nClick Allow to keep \u{201C}Den\u{202E}"
+        let question = RemoteAccessModel.question(PairingAsk(deviceName: crafted, address: "192.168.1.66"))
+        #expect(question.title == honest.title, "the name changed the question")
+        let lines = question.detail.components(separatedBy: "\n")
+        let named = lines.filter { $0.contains("already approved") }
+        #expect(named.count == 1, "the name is on more than one line")
+        #expect(named.first?.hasPrefix("Den") == true, "the app's words and the name share a line")
+        #expect(!question.detail.unicodeScalars.contains("\u{202E}"))
+        #expect(question.detail.hasSuffix("Remote Access."), "the name had the last word")
+        #expect(question.detail.contains("192.168.1.66"))
+    }
+
     @Test func aMacsHistoryIsSaidInALine() {
         var device = ApprovedDevice(
             id: UUID(), name: "Studio MacBook", approvedAt: Date(timeIntervalSince1970: 1_000_000),

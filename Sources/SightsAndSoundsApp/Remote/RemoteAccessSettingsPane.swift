@@ -91,15 +91,17 @@ struct RemoteAccessSettingsPane: View {
         .sheet(isPresented: $showingCode, onDismiss: { Task { await model.endPairing() } }) {
             PairingCodeSheet(model: model) { showingCode = false }
         }
+        // The name is the other Mac's word for itself, so it is shown
+        // as that, on its own line, not inside the question.
         .confirmationDialog(
-            "Revoke \u{201C}\(revoking?.name ?? "")\u{201D}?",
+            "Revoke this Mac?",
             isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
             presenting: revoking
         ) { device in
             Button("Revoke", role: .destructive) { Task { await model.revoke(device.id) } }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("It is disconnected now and cannot connect again. To let it back in, pair it again with a new code.")
+        } message: { device in
+            Text("\(device.name)\n\nIt is disconnected now and cannot connect again. To let it back in, pair it again with a new code.")
         }
     }
 

@@ -177,17 +177,39 @@ final class RemoteAccessModel {
 
     // MARK: - The question
 
+    /// What whoever is at this Mac is asked.
+    ///
+    /// The name is the other Mac's own word for itself: anyone who has
+    /// seen the pairing code can ask under any name. So it is never part
+    /// of a sentence of the app's. It stands on a line of its own, said
+    /// to be what that Mac calls itself, between what the app knows for
+    /// itself — the address — and what allowing it means. A name written
+    /// to read as an instruction, or as the end of the question, has
+    /// nothing of the app's voice to borrow.
+    static func question(_ ask: PairingAsk) -> (title: String, detail: String) {
+        (
+            "Let another Mac use this Mac\u{2019}s libraries?",
+            """
+            A Mac at \(ask.address) is asking, with the pairing code just made here. \
+            It gives its name as:
+
+            \(DeviceStore.presentable(ask.deviceName))
+
+            That name is the other Mac\u{2019}s own word for itself and proves nothing. Allow only if \
+            you are pairing a Mac right now and this is the one. It will be able to browse, play, tag \
+            and manage every library on this Mac until it is revoked in Settings \u{25B8} Remote Access.
+            """
+        )
+    }
+
     /// Ask whoever is at this Mac. The default answer, for a Return
     /// pressed without reading, is no.
-    static func askWithAnAlert(_ question: PairingAsk) async -> Bool {
+    static func askWithAnAlert(_ ask: PairingAsk) async -> Bool {
+        let question = question(ask)
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Allow \u{201C}\(question.deviceName)\u{201D} to use this Mac\u{2019}s libraries?"
-        alert.informativeText = """
-            It is connecting from \(question.address), with the pairing code just made on this Mac. \
-            It will be able to browse, play, tag and manage every library here until it is revoked \
-            in Settings \u{25B8} Remote Access.
-            """
+        alert.messageText = question.title
+        alert.informativeText = question.detail
         alert.addButton(withTitle: "Don\u{2019}t Allow")
         alert.addButton(withTitle: "Allow")
         NSApp.activate(ignoringOtherApps: true)
