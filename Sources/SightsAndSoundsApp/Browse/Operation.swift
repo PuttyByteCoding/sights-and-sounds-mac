@@ -5,6 +5,11 @@ import SightsAndSoundsKit
 ///
 /// One list, used by the window and by the menu, so the two cannot come
 /// to call the same job different things.
+/// The same type by a name nothing else has. Outside this module's own
+/// files `Operation` is Foundation's, and the module's name is also the
+/// app's own type, so there is no other way to say which is meant.
+typealias FileOperation = Operation
+
 enum Operation: String, CaseIterable {
     case optimize, repair, encode, clipExport, blockRemoval, ocr, join, writeTags
 
@@ -271,45 +276,29 @@ enum Operation: String, CaseIterable {
 
     // MARK: - Running
 
-    /// One operation, N items, one queue. The runner still executes them
-    /// one at a time.
-    func enqueue(
-        _ items: [MediaItem], order: [UUID], on runner: JobRunner,
+    /// One operation, N items, one queue: the jobs to ask the library
+    /// for, in the order they are to be queued. The runner still
+    /// executes them one at a time.
+    func requests(
+        for items: [MediaItem], order: [UUID],
         preset: EncodeJob.Preset, mode: RemuxJob.Mode,
         ocr: OcrSettings, interval: Double
-    ) async throws {
+    ) -> [JobRequest] {
         switch self {
         case .optimize, .repair:
-            for item in items {
-                _ = try await RemuxJob.enqueue(
-                    on: runner, itemID: item.id, mode: self == .optimize ? .optimize : .repair)
-            }
+            items.map { .remux(itemID: $0.id, mode: self == .optimize ? .optimize : .repair) }
         case .encode:
-            for item in items {
-                _ = try await EncodeJob.enqueue(on: runner, itemID: item.id, preset: preset)
-            }
+            items.map { .encode(itemID: $0.id, preset: preset) }
         case .clipExport:
-            for item in items {
-                _ = try await ClipExportJob.enqueue(on: runner, clipID: item.id)
-            }
+            items.map { .exportClip(clipID: $0.id) }
         case .blockRemoval:
-            for item in items {
-                _ = try await BlockRemovalJob.enqueue(on: runner, itemID: item.id)
-            }
+            items.map { .removeBlocks(itemID: $0.id) }
         case .ocr:
-            for item in items {
-                _ = try await OcrJob.enqueue(
-                    on: runner, itemID: item.id, settings: ocr, sampleIntervalSeconds: interval)
-            }
+            items.map { .recogniseTextSampled(itemID: $0.id, settings: ocr, sampleIntervalSeconds: interval) }
         case .join:
-            guard let first = items.first else { return }
-            _ = try await JoinJob.enqueue(
-                on: runner, sourceID: first.sourceID, folderPath: first.folderPath,
-                itemIDs: order)
+            items.first.map { [.joinItems(sourceID: $0.sourceID, folderPath: $0.folderPath, itemIDs: order)] } ?? []
         case .writeTags:
-            _ = try await WritebackJob.enqueue(
-                on: runner, itemIDs: items.map(\.id),
-                scopeDescription: "selection (\(items.count) files)")
+            [.writeTags(itemIDs: items.map(\.id), scope: "selection (\(items.count) files)")]
         }
     }
 }

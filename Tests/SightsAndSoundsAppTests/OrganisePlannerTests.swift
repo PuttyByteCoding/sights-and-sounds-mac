@@ -36,7 +36,7 @@ import Testing
             for plan in held { plan.resume() }
         }
 
-        func make(_ library: LibraryDatabase, _ template: String, _ ids: [UUID]) async throws -> [ReorganizePlanEntry] {
+        func make(_ library: any LibraryService, _ template: String, _ ids: [UUID]) async throws -> [ReorganizePlanEntry] {
             let main = Self.isMainThread()
             lock.withLock {
                 counts.started += 1
@@ -56,11 +56,12 @@ import Testing
         private static func isMainThread() -> Bool { Thread.isMainThread }
     }
 
-    private func planner() throws -> (OrganisePlanner, GatedPlans, LibraryDatabase) {
+    /// The third is the library's service: what a plan is asked of.
+    private func planner() throws -> (OrganisePlanner, GatedPlans, any LibraryService) {
         let planner = OrganisePlanner()
         let plans = GatedPlans()
         planner.makePlan = plans.make
-        return (planner, plans, try LibraryDatabase.openInMemory())
+        return (planner, plans, LocalLibraryService(library: try LibraryDatabase.openInMemory()))
     }
 
     /// A plan cannot be stopped part-way, so a request arriving while one
@@ -70,10 +71,10 @@ import Testing
     @Test func oneWalkAtATimeOffTheMainActorAndOnlyTheNewestLands() async throws {
         let (planner, plans, library) = try planner()
         let first = [UUID()], second = [UUID(), UUID()], third = [UUID(), UUID(), UUID()]
-        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], service: library)
         try await waitUntil { plans.started == 1 }
-        planner.preview(template: "%Band/Live", ids: second, categoryNames: ["Band"], library: library)
-        planner.preview(template: "%Band/Encore", ids: third, categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band/Live", ids: second, categoryNames: ["Band"], service: library)
+        planner.preview(template: "%Band/Encore", ids: third, categoryNames: ["Band"], service: library)
         try await Task.sleep(for: .milliseconds(200))
         #expect(plans.started == 1, "a request started a second walk beside the running one")
         #expect(planner.plannedIDs.isEmpty, "nothing lands while the walk is held")
@@ -95,7 +96,7 @@ import Testing
         var last: [UUID] = []
         for _ in 0..<5 {
             last = [UUID()]
-            planner.preview(template: "%Band", ids: last, categoryNames: ["Band"], library: library,
+            planner.preview(template: "%Band", ids: last, categoryNames: ["Band"], service: library,
                             settle: .milliseconds(150))
         }
         try await waitUntil { !planner.plannedIDs.isEmpty }
@@ -110,13 +111,13 @@ import Testing
     @Test func thePlanIsNotCurrentWhileANewerOneIsBeingMade() async throws {
         let (planner, plans, library) = try planner()
         plans.open()
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library)
         try await waitUntil { planner.isCurrent }
         #expect(planner.plannedTemplate == "%Band")
 
         let held = GatedPlans()
         planner.makePlan = held.make
-        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], service: library)
         #expect(!planner.isCurrent, "the old plan still counts as current right after the edit")
         try await waitUntil { held.started == 1 }
         try await Task.sleep(for: .milliseconds(100))
@@ -130,9 +131,9 @@ import Testing
 
     @Test func anInvalidTemplateMakesNoPlanAndDropsOneInFlight() async throws {
         let (planner, plans, library) = try planner()
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library)
         try await waitUntil { plans.started == 1 }
-        planner.preview(template: "", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "", ids: [UUID()], categoryNames: ["Band"], service: library)
         #expect(!planner.validationErrors.isEmpty)
         #expect(planner.isCurrent, "nothing is being made: the errors say why Move is unavailable")
         #expect(plans.started == 1)
@@ -146,7 +147,7 @@ import Testing
         #expect(!planner.validationErrors.isEmpty)
 
         // And a valid template afterwards plans normally.
-        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], service: library)
         try await waitUntil { planner.plannedTemplate == "%Band/Live" }
     }
 
@@ -158,7 +159,7 @@ import Testing
     func aSteadyStreamOfRequestsForOneTemplateKeepsLandingPlans() async throws {
         let (planner, plans, library) = try planner()
         plans.open()
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library)
         try await waitUntil { planner.isCurrent && !planner.plannedIDs.isEmpty }
         let before = plans.started
 
@@ -169,7 +170,7 @@ import Testing
         var alwaysCurrent = true
         var landedMidStream = false
         for _ in 0..<400 where !landedMidStream {
-            planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
+            planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library,
                             settle: .milliseconds(300))
             alwaysCurrent = alwaysCurrent && planner.isCurrent
             try await Task.sleep(for: .milliseconds(50))
@@ -190,13 +191,13 @@ import Testing
         plans.open()
         let clock = ContinuousClock()
         let start = clock.now
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library)
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library,
                         settle: .milliseconds(150))
         try await Task.sleep(for: .milliseconds(50))
         let later = [UUID(), UUID()]
         let sent = clock.now
-        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
+        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], service: library,
                         settle: .milliseconds(800))
         try await Task.sleep(for: .milliseconds(300))
         // Only meaningful when the machine kept time: a stall long enough
@@ -216,11 +217,11 @@ import Testing
     @Test func aRequestThatArrivesDuringAWalkStillWaitsOutItsPause() async throws {
         let (planner, plans, library) = try planner()
         let first = [UUID()], later = [UUID(), UUID()]
-        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], service: library)
         try await waitUntil { plans.started == 1 }
         // The walk is held at the gate. A request arrives, to be walked
         // after a pause far longer than this test.
-        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
+        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], service: library,
                         settle: .seconds(60))
         plans.open()
         try await waitUntil { planner.plannedIDs == first }
@@ -236,9 +237,9 @@ import Testing
     @Test func aRequestWhosePauseEndedDuringAWalkIsWalkedAfterIt() async throws {
         let (planner, plans, library) = try planner()
         let first = [UUID()], later = [UUID(), UUID()]
-        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], service: library)
         try await waitUntil { plans.started == 1 }
-        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
+        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], service: library,
                         settle: .milliseconds(50))
         try await Task.sleep(for: .milliseconds(300))
         #expect(plans.started == 1, "a second walk began beside the first")
@@ -251,7 +252,7 @@ import Testing
         let planner = OrganisePlanner()
         planner.makePlan = { _, _, _ in throw CancellationError() }
         planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"],
-                        library: try LibraryDatabase.openInMemory())
+                        service: LocalLibraryService(library: try LibraryDatabase.openInMemory()))
         try await waitUntil { planner.isCurrent }
         #expect(planner.plan.isEmpty)
     }
@@ -262,15 +263,15 @@ import Testing
     /// could see, on the pool this work was moved to.
     @Test func cancellingStopsASettlingRequestAndAQueuedOne() async throws {
         let (planner, plans, library) = try planner()
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library,
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library,
                         settle: .milliseconds(200))
         planner.cancel()
         try await Task.sleep(for: .milliseconds(400))
         #expect(plans.started == 0, "a settling request walked after the window closed")
 
-        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band", ids: [UUID()], categoryNames: ["Band"], service: library)
         try await waitUntil { plans.started == 1 }
-        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], library: library)
+        planner.preview(template: "%Band/Live", ids: [UUID()], categoryNames: ["Band"], service: library)
         planner.cancel()
         plans.open()
         try await waitUntil { !planner.walking }

@@ -523,4 +523,18 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await ask(.previewWriteback(itemIDs: itemIDs))
     }
     public func backUp() async throws -> URL { try await ask(.backUp) }
+
+    // MARK: OrganiseManaging
+
+    public func organisePlan(template: String, itemIDs: [UUID]) async throws -> [ReorganizePlanEntry] {
+        try await ask(.organisePlan(template: template, itemIDs: itemIDs))
+    }
+    public func moveSessions() async throws -> [LibraryDatabase.MoveSession] { try await ask(.moveSessions) }
+    public func revertMove(logID: UUID) async throws { try await tell(.revertMove(logID: logID)) }
+    public func revertMoveSession(sessionID: UUID) async throws -> MoveRevertOutcome {
+        try await ask(.revertMoveSession(sessionID: sessionID))
+    }
+    public func jobQueue(kind: String, startingQueue: Bool) async throws -> JobQueueState {
+        try await ask(.jobQueue(kind: kind, startingQueue: startingQueue))
+    }
 }

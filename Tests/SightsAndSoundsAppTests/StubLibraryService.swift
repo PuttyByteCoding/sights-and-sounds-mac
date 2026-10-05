@@ -250,6 +250,24 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.backUp() }
     }
 
+    // MARK: OrganiseManaging
+
+    func organisePlan(template: String, itemIDs: [UUID]) async throws -> [ReorganizePlanEntry] {
+        try await run { try await base.organisePlan(template: template, itemIDs: itemIDs) }
+    }
+    func moveSessions() async throws -> [LibraryDatabase.MoveSession] {
+        try await run { try await base.moveSessions() }
+    }
+    func revertMove(logID: UUID) async throws {
+        try await run { try await base.revertMove(logID: logID) }
+    }
+    func revertMoveSession(sessionID: UUID) async throws -> MoveRevertOutcome {
+        try await run { try await base.revertMoveSession(sessionID: sessionID) }
+    }
+    func jobQueue(kind: String, startingQueue: Bool) async throws -> JobQueueState {
+        try await run { try await base.jobQueue(kind: kind, startingQueue: startingQueue) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

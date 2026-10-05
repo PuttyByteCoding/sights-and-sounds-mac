@@ -55,6 +55,7 @@ import Testing
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "OrganiseMove")
         let runner = JobRunner(library: library, jobTypes: JobCatalog.all + [LongSweep.self])
+        let service = LocalLibraryService(library: library, runner: runner)
         Gate.shared.reset()
         defer { Gate.shared.open() }
 
@@ -65,7 +66,7 @@ import Testing
 
         var queued = false
         let moving = Task { @MainActor in
-            try await OrganiseMove.queue(on: runner, template: "%Band", ids: [UUID()])
+            try await service.run(.reorganize(template: "%Band", itemIDs: [UUID()]), wait: .none)
             queued = true
         }
         // Correct code needs one write and a hop; the old code never
@@ -76,56 +77,59 @@ import Testing
         let jobs = try await library.writer.read { try JobRecord.fetchAll($0) }
         #expect(jobs.first { $0.id == sweep.id }?.state == .running, "the sweep ahead is still running")
         #expect(jobs.contains { $0.kind == ReorganizeJob.kind && $0.state == .queued })
+        // And the window, asking, is told one is waiting.
+        #expect(try await service.jobQueue(kind: ReorganizeJob.kind, startingQueue: false)
+            == JobQueueState(pendingCount: 1, isPaused: false))
 
         Gate.shared.open()
-        _ = try await moving.value
+        try await moving.value
     }
 
     /// A reorganize left queued by an earlier session (quit behind a long
-    /// sweep) has nothing draining it after relaunch. Watching the pending
-    /// moves starts the queue, so the window is never stuck on "Moves
-    /// queued…" — unless tasks are paused, which the window says instead.
+    /// sweep) has nothing draining it after relaunch. Asking how the
+    /// queue of moves stands starts it, so the window is never stuck on
+    /// "Moves queued…" — unless tasks are paused, which the window says
+    /// instead.
     @Test(.timeLimit(.minutes(1)))
-    func watchingPendingMovesStartsAQueueNobodyStarted() async throws {
+    func askingAboutPendingMovesStartsAQueueNobodyStarted() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "OrganiseLeftQueued")
         let runner = JobRunner(library: library)
+        let service = LocalLibraryService(library: library, runner: runner)
         // Queued, and nothing drains it.
         _ = try await ReorganizeJob.enqueue(on: runner, template: "%Band", itemIDs: [])
 
-        var seen: [Int] = []
-        let watching = Task { @MainActor in
-            for try await count in OrganiseMove.pending(in: library, runner: runner) {
-                seen.append(count)
-                if count == 0, seen.contains(where: { $0 > 0 }) { return }
-            }
-        }
-        defer { watching.cancel() }
-        for _ in 0..<400 where !(seen.last == 0 && seen.contains { $0 > 0 }) {
+        // Only looking does not start it.
+        #expect(try await service.jobQueue(kind: ReorganizeJob.kind, startingQueue: false).pendingCount == 1)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(try await service.jobQueue(kind: ReorganizeJob.kind, startingQueue: false).pendingCount == 1)
+
+        // Asking as the Organise window does, does.
+        var pending = try await service.jobQueue(kind: ReorganizeJob.kind, startingQueue: true).pendingCount
+        #expect(pending == 1)
+        for _ in 0..<400 where pending > 0 {
             try await Task.sleep(for: .milliseconds(25))
+            pending = try await service.jobQueue(kind: ReorganizeJob.kind, startingQueue: true).pendingCount
         }
-        #expect(seen.first == 1)
-        #expect(seen.last == 0, "the queued move never ran: \(seen)")
+        #expect(pending == 0, "the queued move never ran")
+        // Another kind's queue is another count.
+        #expect(try await service.jobQueue(kind: "no.such.kind", startingQueue: true).pendingCount == 0)
     }
 
-    /// Watching starts the queue, but a paused runner stays paused: the
-    /// moves wait, whatever watches them. (The runner's drain is what
-    /// holds them; this pins that watching goes through it rather than
+    /// Asking starts the queue, but a paused runner stays paused: the
+    /// moves wait, whatever asks after them. (The runner's drain is what
+    /// holds them; this pins that asking goes through it rather than
     /// around it.)
     @Test(.timeLimit(.minutes(1)))
-    func watchingNeverRunsAPausedQueue() async throws {
+    func askingNeverRunsAPausedQueue() async throws {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "OrganisePaused")
         let runner = JobRunner(library: library, paused: true)
+        let service = LocalLibraryService(library: library, runner: runner)
         let job = try await ReorganizeJob.enqueue(on: runner, template: "%Band", itemIDs: [])
 
-        var seen: [Int] = []
-        let watching = Task { @MainActor in
-            for try await count in OrganiseMove.pending(in: library, runner: runner) { seen.append(count) }
-        }
-        defer { watching.cancel() }
-        for _ in 0..<400 where seen.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
-        #expect(seen == [1])
+        #expect(try await service.jobQueue(kind: ReorganizeJob.kind, startingQueue: true)
+            == JobQueueState(pendingCount: 1, isPaused: true))
         try await Task.sleep(for: .milliseconds(300))
         let state = try await library.writer.read { try JobRecord.fetchOne($0, key: job.id)?.state }
         #expect(state == .queued, "a paused queue was started")

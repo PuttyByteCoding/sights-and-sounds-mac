@@ -675,6 +675,53 @@ import Testing
         #expect(remote.state == .connected)
     }
 
+    /// Organise and Operations, from another Mac: the plan is the host's,
+    /// the moves are queued on the host, and a join is held to a folder
+    /// inside its source like every other path from another Mac.
+    @Test(.timeLimit(.minutes(1)))
+    func organisingIsPlannedAndQueuedOnTheHost() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let plan = try await remote.organisePlan(template: "%Band", itemIDs: [rig.a.id, rig.b.id])
+        #expect(plan == (try await local.organisePlan(template: "%Band", itemIDs: [rig.a.id, rig.b.id])))
+        #expect(plan.first?.toFolder == "Alpha")
+        #expect(try await remote.moveSessions().isEmpty)
+        // The rig's runner is paused: the move is queued and seen, and
+        // no file is touched.
+        let job = try #require(try await remote.run(
+            .reorganize(template: "%Band", itemIDs: [rig.a.id]), wait: .none))
+        #expect(job.kind == ReorganizeJob.kind)
+        #expect(try await remote.jobQueue(kind: ReorganizeJob.kind, startingQueue: true)
+            == JobQueueState(pendingCount: 1, isPaused: true))
+        #expect(FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("set/a.mp4").path))
+        // Putting back a move that was never made is the host's refusal.
+        await #expect(throws: RemoteError.self) { try await remote.revertMove(logID: UUID()) }
+        #expect(try await remote.revertMoveSession(sessionID: UUID()) == MoveRevertOutcome(reverted: 0, failures: []))
+
+        // A join names a folder, and from another Mac only one inside
+        // its source.
+        #expect(ServiceRequest.run(
+            request: .joinItems(sourceID: rig.source.id, folderPath: "../elsewhere", itemIDs: []), wait: .none)
+            .refusalForAnotherMac != nil)
+        #expect(ServiceRequest.run(
+            request: .joinItems(sourceID: rig.source.id, folderPath: "set", itemIDs: [rig.a.id]), wait: .none)
+            .refusalForAnotherMac == nil)
+        await #expect(throws: RemoteError.self) {
+            _ = try await remote.run(
+                .joinItems(sourceID: rig.source.id, folderPath: "/etc", itemIDs: [rig.a.id]), wait: .none)
+        }
+    }
+
+    @Test func whichOrganiseRequestsAreAskedTwice() {
+        #expect(ServiceRequest.organisePlan(template: "x", itemIDs: []).onlyReads)
+        #expect(ServiceRequest.moveSessions.onlyReads)
+        #expect(ServiceRequest.jobQueue(kind: "x", startingQueue: true).onlyReads)
+        #expect(!ServiceRequest.revertMove(logID: UUID()).onlyReads)
+        #expect(!ServiceRequest.revertMoveSession(sessionID: UUID()).onlyReads)
+    }
+
     @Test func whichMaintenanceRequestsAreAskedTwice() {
         #expect(ServiceRequest.maintenanceSnapshot(includingBackups: true).onlyReads)
         #expect(ServiceRequest.previewWriteback(itemIDs: nil).onlyReads)

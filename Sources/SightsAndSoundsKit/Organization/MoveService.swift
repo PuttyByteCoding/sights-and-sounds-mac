@@ -157,7 +157,7 @@ extension LibraryDatabase {
     }
 
     /// One run of moves, as the history lists them.
-    public struct MoveSession: Sendable, Identifiable, Equatable {
+    public struct MoveSession: Codable, Sendable, Identifiable, Equatable {
         public var id: UUID
         public var movedAt: Date
         public var logs: [FileMoveLog]

@@ -121,6 +121,13 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case previewWriteback(itemIDs: [UUID]?)
     case backUp
 
+    // OrganiseManaging
+    case organisePlan(template: String, itemIDs: [UUID])
+    case moveSessions
+    case revertMove(logID: UUID)
+    case revertMoveSession(sessionID: UUID)
+    case jobQueue(kind: String, startingQueue: Bool)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -136,7 +143,9 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .signalSummary, .unsavedSegments, .reviewLists, .mergeableTags, .unsavedSegmentsOfMarked,
              // Asking how the repair queue stands may start it, and a
              // queue started twice is a queue started: safe to ask again.
-             .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback:
+             .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback,
+             // Like the repair queue: asking may start it, and asking again is the same.
+             .organisePlan, .moveSessions, .jobQueue:
             true
         default:
             false
@@ -155,7 +164,7 @@ extension ServiceRequest {
             // A source is a folder on the host. Named from elsewhere it
             // could be any folder the host's user can read.
             return "A source is a folder on the Mac that holds the library, and is added there."
-        case .run(.joinFolder(_, let folderPath), _):
+        case .run(.joinFolder(_, let folderPath), _), .run(.joinItems(_, let folderPath, _), _):
             // Inside a source, as the library spells it: nothing that
             // climbs out, and nothing absolute.
             guard MediaPath.normalize(folderPath) == folderPath, !folderPath.hasPrefix("/") else {
@@ -406,6 +415,18 @@ extension ServiceRequest {
             return try json(await service.previewWriteback(itemIDs: itemIDs))
         case .backUp:
             return try json(await service.backUp())
+
+        case .organisePlan(let template, let itemIDs):
+            return try json(await service.organisePlan(template: template, itemIDs: itemIDs))
+        case .moveSessions:
+            return try json(await service.moveSessions())
+        case .revertMove(let logID):
+            try await service.revertMove(logID: logID)
+            return nothing
+        case .revertMoveSession(let sessionID):
+            return try json(await service.revertMoveSession(sessionID: sessionID))
+        case .jobQueue(let kind, let startingQueue):
+            return try json(await service.jobQueue(kind: kind, startingQueue: startingQueue))
         }
     }
 }

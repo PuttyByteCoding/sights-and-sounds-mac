@@ -222,7 +222,6 @@ struct BrowseView: View {
                         Button("Organise…", systemImage: "folder.badge.gearshape") {
                             openAux(.organise)
                         }
-                        .disabled(model.isRemote)
                         Button("Maintenance…", systemImage: "checkmark.seal") {
                             openAux(.maintenance)
                         }

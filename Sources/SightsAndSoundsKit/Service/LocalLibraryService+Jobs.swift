@@ -69,6 +69,13 @@ extension LocalLibraryService {
             try await MediaSignalJob.enqueue(on: runner, itemIDs: itemIDs)
         case .removeFromLibrary(let itemIDs, let writeTagsFirst):
             try await RemoveFromLibraryJob.enqueue(on: runner, itemIDs: itemIDs, writeTagsFirst: writeTagsFirst)
+        case .reorganize(let template, let itemIDs):
+            try await ReorganizeJob.enqueue(on: runner, template: template, itemIDs: itemIDs)
+        case .recogniseTextSampled(let itemID, let settings, let interval):
+            try await OcrJob.enqueue(
+                on: runner, itemID: itemID, settings: settings, sampleIntervalSeconds: interval)
+        case .joinItems(let sourceID, let folderPath, let itemIDs):
+            try await JoinJob.enqueue(on: runner, sourceID: sourceID, folderPath: folderPath, itemIDs: itemIDs)
         case .validation:
             try await runner.enqueue(ValidationJob.self)
         }
