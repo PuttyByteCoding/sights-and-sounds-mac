@@ -31,6 +31,12 @@ public protocol BrowseReading: Sendable {
     /// The thumbnail sweep's progress, or nil when none is queued or
     /// running.
     func thumbnailQueueStatus() async throws -> ThumbnailQueueStatus?
+
+    /// The thumbnail the library's own Mac has already made for an item,
+    /// as JPEG bytes; nil when it has made none. For a window on another
+    /// Mac, which cannot make one without fetching the video to do it. A
+    /// window on the library's Mac reads the same file for itself.
+    func storedThumbnail(itemID: UUID) async throws -> Data?
 }
 
 /// A source, and whether its files are within reach.

@@ -42,7 +42,7 @@ final class RemoteRig: @unchecked Sendable {
     let unmounted: MediaItem
     let segment: MediaItem
 
-    init(playbackURL: @escaping @Sendable (UUID) -> URL? = { _ in nil }) async throws {
+    init() async throws {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-remote-rig-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
@@ -119,7 +119,7 @@ final class RemoteRig: @unchecked Sendable {
         let port = try await host.start()
         self.listener = listener
         endpoint = RemoteEndpoint(host: "127.0.0.1", port: port, key: key, deviceID: deviceID, token: token)
-        remote = RemoteLibraryService(endpoint: endpoint, libraryID: libraryID, playbackURL: playbackURL)
+        remote = RemoteLibraryService(endpoint: endpoint, libraryID: libraryID)
     }
 
     func tearDown() {

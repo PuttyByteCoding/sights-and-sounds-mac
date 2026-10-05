@@ -111,6 +111,8 @@ public final class ServiceHost: @unchecked Sendable {
             lock.withLock { sessions[id] = nil }
             Task { await connection.close() }
         }
+        var media = MediaSource()
+        defer { media.close() }
         do {
             guard let (caller, service) = try await greet(connection, session: id) else { return }
             while true {
@@ -125,6 +127,8 @@ public final class ServiceHost: @unchecked Sendable {
                 switch frame.kind {
                 case RemoteProtocol.Kind.request:
                     try await connection.send(await answer(frame, service))
+                case RemoteProtocol.Kind.media:
+                    try await connection.send(await media.answer(frame, from: service))
                 case RemoteProtocol.Kind.ping:
                     try await connection.send(Frame(kind: RemoteProtocol.Kind.pong))
                 case RemoteProtocol.Kind.subscribe:
@@ -259,5 +263,53 @@ public final class ServiceHost: @unchecked Sendable {
         }
         defer { sending.cancel() }
         _ = try? await connection.receive()
+    }
+}
+
+/// The file a connection is reading from, kept open between one read and
+/// the next: a video is read as many pieces of the same file.
+private struct MediaSource {
+    private var itemID: UUID?
+    private var handle: FileHandle?
+    private var size: Int64 = 0
+
+    mutating func close() {
+        try? handle?.close()
+        handle = nil
+        itemID = nil
+    }
+
+    /// The bytes asked for, or why not. The request names an item; the
+    /// file is whichever the library says that item plays from, and no
+    /// other can be reached this way.
+    mutating func answer(_ frame: Frame, from service: any LibraryService) async -> Frame {
+        do {
+            let read = try RemoteProtocol.decode(MediaRead.self, from: frame.payload)
+            guard read.offset >= 0, read.length >= 0 else {
+                throw ChannelError.malformed("a read from before the start of a file")
+            }
+            if itemID != read.itemID || handle == nil {
+                close()
+                guard let url = try await service.playable(itemID: read.itemID).url, url.isFileURL else {
+                    return Frame(
+                        kind: RemoteProtocol.Kind.failure,
+                        payload: Data("That file cannot be reached on the other Mac just now.".utf8))
+                }
+                let opened = try FileHandle(forReadingFrom: url)
+                size = Int64(try opened.seekToEnd())
+                handle = opened
+                itemID = read.itemID
+            }
+            var data = Data()
+            let length = min(read.length, MediaRead.maximumLength)
+            if let handle, length > 0, read.offset < size {
+                try handle.seek(toOffset: UInt64(read.offset))
+                data = try handle.read(upToCount: length) ?? Data()
+            }
+            return MediaBytes(total: size, data: data).frame
+        } catch {
+            close()
+            return Frame(kind: RemoteProtocol.Kind.failure, payload: Data("\(error)".utf8))
+        }
     }
 }

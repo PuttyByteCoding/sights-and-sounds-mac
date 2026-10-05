@@ -100,6 +100,9 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func thumbnailQueueStatus() async throws -> ThumbnailQueueStatus? {
         try await run { try await base.thumbnailQueueStatus() }
     }
+    func storedThumbnail(itemID: UUID) async throws -> Data? {
+        try await run { try await base.storedThumbnail(itemID: itemID) }
+    }
 
     // MARK: BrowseListing
 

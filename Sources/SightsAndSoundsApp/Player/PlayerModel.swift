@@ -510,6 +510,13 @@ final class PlayerModel {
         return { (try? await service.playable(itemID: itemID))?.url }
     }
 
+    /// See `BrowseModel.storedThumbnail(for:)`.
+    func storedThumbnail(for item: MediaItem) -> (@Sendable () async -> Data?)? {
+        guard !service.filesAreOnThisMac else { return nil }
+        let service = service, itemID = item.id
+        return { try? await service.storedThumbnail(itemID: itemID) }
+    }
+
     // MARK: - Loading
 
     /// Loads race under fast ←/→ — the counter lets only the newest

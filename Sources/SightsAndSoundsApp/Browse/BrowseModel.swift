@@ -1037,6 +1037,15 @@ final class BrowseModel {
         return { (try? await service.playable(itemID: itemID))?.url }
     }
 
+    /// For a library held on another Mac: how to ask that Mac for the
+    /// thumbnail it has already made. nil for a library on this one,
+    /// whose thumbnails are files here already.
+    func storedThumbnail(for item: MediaItem) -> (@Sendable () async -> Data?)? {
+        guard !service.filesAreOnThisMac else { return nil }
+        let service = service, itemID = item.id
+        return { try? await service.storedThumbnail(itemID: itemID) }
+    }
+
     // MARK: - Operations
 
     /// Save segments as files of their own — what the delete list offers

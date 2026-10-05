@@ -73,18 +73,20 @@ import Testing
     }
 
     /// The host's answer names a file on the host's disk. Here an item is
-    /// played from wherever this Mac says — a relay — and from nowhere
-    /// when the host cannot reach the file, or this Mac has no relay.
+    /// played from this Mac's own relay to the host, and from nowhere
+    /// when the host cannot reach the file.
     @Test(.timeLimit(.minutes(1)))
     func whereAnItemPlaysFromIsThisMacsToSay() async throws {
-        let relay: @Sendable (UUID) -> URL? = { URL(string: "http://127.0.0.1:9/item/\($0.uuidString)") }
-        let rig = try await RemoteRig(playbackURL: relay)
+        let rig = try await RemoteRig()
         defer { rig.tearDown() }
 
         let playable = try await rig.remote.playable(itemID: rig.a.id)
         #expect(try await rig.local.playable(itemID: rig.a.id).item == playable.item)
-        #expect(playable.url == relay(rig.a.id))
-        #expect(playable.url?.isFileURL == false, "a path on the host's disk reached the client")
+        let url = try #require(playable.url)
+        #expect(url.isFileURL == false, "a path on the host's disk reached the client")
+        #expect(url.scheme == "http" && url.host == "127.0.0.1")
+        #expect(url.lastPathComponent == "\(rig.a.id.uuidString).mp4")
+        #expect(!url.absoluteString.contains(rig.root.path), "the host's folder is in the address")
         // The host cannot reach this one's file: nothing to play from.
         #expect(try await rig.remote.playable(itemID: rig.unmounted.id).url == nil)
         #expect(try await rig.remote.playable(itemID: rig.unmounted.id).item?.id == rig.unmounted.id)
@@ -92,16 +94,20 @@ import Testing
 
         let opened = try await rig.remote.opened(itemID: rig.a.id)
         let direct = try await rig.local.opened(itemID: rig.a.id)
-        #expect(opened.playable.url == relay(rig.a.id))
+        #expect(opened.playable.url == url, "the same item is played from the same address")
         #expect(opened.tagging == direct.tagging && opened.segments == direct.segments)
         // A segment plays from its video's file: its own id is what is asked for.
-        #expect(try await rig.remote.opened(itemID: rig.segment.id).playable.url == relay(rig.segment.id))
+        let segment = try #require(try await rig.remote.opened(itemID: rig.segment.id).playable.url)
+        #expect(segment.lastPathComponent == "\(rig.segment.id.uuidString).mp4")
+        #expect(segment.deletingLastPathComponent() == url.deletingLastPathComponent())
 
-        // With no relay there is nowhere to play from.
-        let bare = RemoteLibraryService(endpoint: rig.endpoint, libraryID: rig.libraryID)
-        defer { bare.close() }
-        #expect(try await bare.playable(itemID: rig.a.id).url == nil)
-        #expect(bare.filesAreOnThisMac == false)
+        // Each window's service has a relay of its own, with its own
+        // token: an address from one is no use at another.
+        let other = RemoteLibraryService(endpoint: rig.endpoint, libraryID: rig.libraryID)
+        defer { other.close() }
+        let elsewhere = try #require(try await other.playable(itemID: rig.a.id).url)
+        #expect(elsewhere != url)
+        #expect(other.filesAreOnThisMac == false)
     }
 
     // MARK: - Writes

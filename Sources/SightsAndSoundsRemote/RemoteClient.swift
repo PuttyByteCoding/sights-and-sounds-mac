@@ -83,20 +83,43 @@ actor RemoteClient {
             // A request that changes the library goes only down a
             // connection just seen to be alive: it cannot be asked again
             // if its connection turns out to have been dead.
-            return try await attempt(payload, onAProvenConnection: !request.onlyReads)
+            let frame = Frame(kind: RemoteProtocol.Kind.request, payload: payload)
+            return try RemoteProtocol.answerJSON(
+                try await attempt(frame, onAProvenConnection: !request.onlyReads))
         } catch let error as RemoteError {
             // Only a request that changes nothing is asked a second
             // time, and only when the host was not heard from: one it
             // answered with a failure has been answered.
             guard request.onlyReads, case .unreachable = error, !closed else { throw error }
-            return try await attempt(payload, onAProvenConnection: true)
+            let frame = Frame(kind: RemoteProtocol.Kind.request, payload: payload)
+            return try RemoteProtocol.answerJSON(try await attempt(frame, onAProvenConnection: true))
+        } catch {
+            throw Self.remote(error)
         }
     }
 
-    private func attempt(_ payload: Data, onAProvenConnection proven: Bool) async throws -> Data {
+    /// Some of an item's file. A read, so it is asked a second time if
+    /// the first was lost with its connection.
+    func media(_ read: MediaRead) async throws -> MediaBytes {
+        let frame = Frame(kind: RemoteProtocol.Kind.media, payload: try RemoteProtocol.encode(read))
+        do {
+            do {
+                return try MediaBytes(frame: try await attempt(frame, onAProvenConnection: false))
+            } catch RemoteError.unreachable where !closed {
+                return try MediaBytes(frame: try await attempt(frame, onAProvenConnection: true))
+            }
+        } catch {
+            throw Self.remote(error)
+        }
+    }
+
+    /// One frame out, and the frame that answers it. A failure or a
+    /// refusal from the host is thrown; anything else is the answer, for
+    /// the caller to read.
+    private func attempt(_ frame: Frame, onAProvenConnection proven: Bool) async throws -> Frame {
         let connection = try await checkOut(proven: proven)
         do {
-            try await connection.send(Frame(kind: RemoteProtocol.Kind.request, payload: payload))
+            try await connection.send(frame)
             let reply = try await connection.receive()
             if reply.kind == RemoteProtocol.Kind.failure {
                 checkIn(connection)
@@ -106,9 +129,8 @@ actor RemoteClient {
                 // Welcome when the connection was made, not any more.
                 throw RemoteError.refused(try RemoteProtocol.decode(Refusal.self, from: reply.payload))
             }
-            let json = try RemoteProtocol.answerJSON(reply)
             checkIn(connection)
-            return json
+            return reply
         } catch let error as RemoteError {
             if case .failed = error { throw error }
             await discard(connection)

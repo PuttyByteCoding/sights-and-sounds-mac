@@ -99,4 +99,20 @@ import Testing
         #expect(f.stub.calls("playable(itemID:)") == 1)
         #expect(await model.fileResolver(for: f.away)() == nil)
     }
+
+    /// A library on this Mac has its thumbnails here, as files. One held
+    /// elsewhere is asked for each, and only when a tile wants it.
+    @Test func onlyALibraryHeldElsewhereIsAskedForItsThumbnails() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let model = f.model()
+        try await waitUntil("the sources") { model.sources.count == 3 }
+        #expect(model.storedThumbnail(for: f.here) == nil)
+
+        f.stub.filesAreOnThisMac = false
+        let fetch = try #require(model.storedThumbnail(for: f.here))
+        #expect(f.stub.calls("storedThumbnail(itemID:)") == 0)
+        #expect(await fetch() == nil, "the library has made none")
+        #expect(f.stub.calls("storedThumbnail(itemID:)") == 1)
+    }
 }

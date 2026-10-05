@@ -19,7 +19,8 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     }
 
     private let client: RemoteClient
-    private let playbackURL: @Sendable (UUID) -> URL?
+    /// What this Mac's players play the library's items from.
+    private let relay: MediaRelay
     private let lock = NSLock()
     private var currentState: State = .connecting
     private var stateWatchers: [UUID: AsyncStream<State>.Continuation] = [:]
@@ -27,22 +28,15 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     /// - Parameters:
     ///   - endpoint: where the host is, and who this Mac is to it.
     ///   - libraryID: which of the host's libraries.
-    ///   - playbackURL: where an item can be played from on this Mac —
-    ///     a relay to the host. The host answers with a path on its own
-    ///     disk, which means nothing here; this is asked instead,
-    ///     whenever the host says the file is in its reach.
-    public init(
-        endpoint: RemoteEndpoint, libraryID: UUID,
-        playbackURL: @escaping @Sendable (UUID) -> URL? = { _ in nil }
-    ) {
-        client = RemoteClient(endpoint: endpoint, libraryID: libraryID)
-        self.playbackURL = playbackURL
+    public convenience init(endpoint: RemoteEndpoint, libraryID: UUID) {
+        self.init(client: RemoteClient(endpoint: endpoint, libraryID: libraryID))
     }
 
-    /// For tests: a client that says what it is told to say.
-    init(client: RemoteClient, playbackURL: @escaping @Sendable (UUID) -> URL? = { _ in nil }) {
+    init(client: RemoteClient) {
         self.client = client
-        self.playbackURL = playbackURL
+        relay = MediaRelay { [client] itemID, offset, length in
+            try await client.media(MediaRead(itemID: itemID, offset: offset, length: length))
+        }
     }
 
     /// The host's name and the libraries it offers, asked on a connection
@@ -56,6 +50,7 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
 
     /// Let go of the host: every connection is closed.
     public func close() {
+        relay.stop()
         Task { await client.close() }
     }
 
@@ -121,13 +116,28 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         }
     }
 
-    /// The host's answer names a file on the host. Here it is played
-    /// through a relay, or not at all.
-    private func here(_ playable: Playable) -> Playable {
-        guard let item = playable.item, playable.url != nil else {
+    /// The host's answer names a file on the host, which means nothing
+    /// here. What it says is that the host can reach the file; a player
+    /// on this Mac is given the relay's address for it instead.
+    private func here(_ playable: Playable) async -> Playable {
+        guard let item = playable.item, let onTheHost = playable.url else {
             return Playable(item: playable.item, url: nil)
         }
-        return Playable(item: item, url: playbackURL(item.id))
+        let url = try? await relay.url(for: item.id, fileExtension: onTheHost.pathExtension)
+        return Playable(item: item, url: url)
+    }
+
+    /// Some of an item's file, straight from the host. What the relay
+    /// reads with.
+    public func fileBytes(itemID: UUID, offset: Int64, length: Int) async throws -> MediaBytes {
+        do {
+            let bytes = try await client.media(MediaRead(itemID: itemID, offset: offset, length: length))
+            set(.connected)
+            return bytes
+        } catch {
+            note(error)
+            throw RemoteClient.remote(error)
+        }
     }
 
     // MARK: - LibraryService
@@ -189,6 +199,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     }
     public func tileMenuFacts(snapshotsPerItem: Int) async throws -> TileMenuFacts {
         try await ask(.tileMenuFacts(snapshotsPerItem: snapshotsPerItem))
+    }
+    public func storedThumbnail(itemID: UUID) async throws -> Data? {
+        try await ask(.storedThumbnail(itemID: itemID))
     }
     public func thumbnailQueueStatus() async throws -> ThumbnailQueueStatus? {
         try await ask(.thumbnailQueueStatus)
@@ -256,11 +269,11 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     // PlayerReading
 
     public func playable(itemID: UUID) async throws -> Playable {
-        here(try await ask(.playable(itemID: itemID)))
+        await here(try await ask(.playable(itemID: itemID)))
     }
     public func opened(itemID: UUID) async throws -> OpenedItem {
         var opened: OpenedItem = try await ask(.opened(itemID: itemID))
-        opened.playable = here(opened.playable)
+        opened.playable = await here(opened.playable)
         return opened
     }
     public func itemTags(itemID: UUID) async throws -> [CategoryTags] { try await ask(.itemTags(itemID: itemID)) }
@@ -294,7 +307,7 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await tell(.recordPlayback(event))
     }
     public func setFlag(_ flag: PlayerToggleFlag, _ on: Bool, itemID: UUID) async throws -> Playable {
-        here(try await ask(.setFlag(flag: flag, on: on, itemID: itemID)))
+        await here(try await ask(.setFlag(flag: flag, on: on, itemID: itemID)))
     }
     public func toggleTag(_ tagID: UUID, on itemID: UUID) async throws -> Bool {
         try await ask(.toggleTag(tagID: tagID, itemID: itemID))
