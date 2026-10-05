@@ -250,4 +250,58 @@ import Testing
         try await f.service.removeKeyBinding("1")
         #expect(try f.library.keyBindings().isEmpty)
     }
+
+    // MARK: - Segments, hide blocks and search formats
+
+    @Test func aSegmentIsMadeRenamedAndDeleted() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let song = try await f.service.createSegment(
+            parentID: f.a.id, name: "", startSeconds: 10, endSeconds: 20, role: .song)
+        #expect(song.parentMediaItemID == f.a.id)
+        #expect(song.clipStartSeconds == 10 && song.clipEndSeconds == 20)
+        #expect(song.segmentRole == .song)
+        #expect(try f.library.clips(of: f.a.id).map(\.id) == [song.id])
+
+        try await f.service.renameSegment(song.id, to: "Opener")
+        #expect(try f.library.clips(of: f.a.id).first?.notes == "Opener")
+
+        try await f.service.deleteSegment(song.id)
+        #expect(try f.library.clips(of: f.a.id).isEmpty)
+    }
+
+    /// A segment is a name over a range of its parent's file. Deleting
+    /// one takes nothing else with it.
+    @Test func deletingASegmentLeavesItsParentAndTheOtherSegments() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let first = try await f.service.createSegment(
+            parentID: f.a.id, name: "One", startSeconds: 0, endSeconds: 5, role: .clip)
+        let second = try await f.service.createSegment(
+            parentID: f.a.id, name: "Two", startSeconds: 5, endSeconds: 9, role: .clip)
+        try await f.service.deleteSegment(first.id)
+        #expect(try f.library.clips(of: f.a.id).map(\.id) == [second.id])
+        #expect(try f.row(f.a).relativePath == "a.mp4")
+        #expect(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("a.mp4").path))
+    }
+
+    @Test func aHideBlockIsAddedAndRemoved() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        let block = try await f.service.addBlock(to: f.a.id, startSeconds: 30, endSeconds: 40, kind: .hide)
+        #expect(block.kind == .hide && block.startSeconds == 30 && block.endSeconds == 40)
+        #expect(try f.library.blocks(of: f.a.id).map(\.id) == [block.id])
+        try await f.service.deleteBlock(block.id)
+        #expect(try f.library.blocks(of: f.a.id).isEmpty)
+    }
+
+    @Test func searchFormatsAreStoredAndReadBack() async throws {
+        let f = try await Fixture()
+        defer { f.tearDown() }
+        var formats = SearchFormats(formats: [SearchRecipe(name: "Web"), SearchRecipe(name: "Archive")])
+        formats.defaultID = formats.formats[1].id
+        try await f.service.setSearchFormats(formats, replacingUnreadable: false)
+        #expect(try f.library.searchFormats() == formats)
+        #expect(try await f.service.searchContext(itemID: f.a.id).formats == formats)
+    }
 }

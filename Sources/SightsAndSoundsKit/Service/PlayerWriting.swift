@@ -34,6 +34,27 @@ public protocol PlayerWriting: Sendable {
     /// Bind a key to a tag, replacing what the key was bound to.
     func setKeyBinding(_ key: String, tagID: UUID, advance: Bool) async throws
     func removeKeyBinding(_ key: String) async throws
+
+    // The segment rail.
+
+    /// A named range inside a video: a song or a clip. An empty name
+    /// leaves it to be named on the rail.
+    func createSegment(
+        parentID: UUID, name: String, startSeconds: Double, endSeconds: Double, role: SegmentRole
+    ) async throws -> MediaItem
+    func renameSegment(_ itemID: UUID, to name: String) async throws
+    /// The segment only. Its video, and the video's other segments, stay.
+    func deleteSegment(_ itemID: UUID) async throws
+
+    func addBlock(
+        to itemID: UUID, startSeconds: Double, endSeconds: Double, kind: VideoBlockKind
+    ) async throws -> VideoBlock
+    func deleteBlock(_ blockID: UUID) async throws
+
+    /// The library's search formats, whole. Refused, unless told
+    /// otherwise, when the formats stored are ones this build cannot
+    /// read: saving would replace them.
+    func setSearchFormats(_ formats: SearchFormats, replacingUnreadable: Bool) async throws
 }
 
 public enum PlaybackEvent: Codable, Equatable, Sendable {

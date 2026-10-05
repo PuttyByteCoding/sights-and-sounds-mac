@@ -149,4 +149,33 @@ extension LocalLibraryService {
     public func removeKeyBinding(_ key: String) async throws {
         try library.removeKeyBinding(key)
     }
+
+    public func createSegment(
+        parentID: UUID, name: String, startSeconds: Double, endSeconds: Double, role: SegmentRole
+    ) async throws -> MediaItem {
+        try library.createEmbeddedClip(
+            parentID: parentID, name: name, startSeconds: startSeconds, endSeconds: endSeconds, role: role)
+    }
+
+    public func renameSegment(_ itemID: UUID, to name: String) async throws {
+        try library.renameSegment(itemID, to: name)
+    }
+
+    public func deleteSegment(_ itemID: UUID) async throws {
+        try library.deleteSegment(itemID)
+    }
+
+    public func addBlock(
+        to itemID: UUID, startSeconds: Double, endSeconds: Double, kind: VideoBlockKind
+    ) async throws -> VideoBlock {
+        try library.addBlock(to: itemID, startSeconds: startSeconds, endSeconds: endSeconds, kind: kind)
+    }
+
+    public func deleteBlock(_ blockID: UUID) async throws {
+        try library.deleteBlock(blockID)
+    }
+
+    public func setSearchFormats(_ formats: SearchFormats, replacingUnreadable: Bool) async throws {
+        try library.setSearchFormats(formats, replacingUnreadable: replacingUnreadable)
+    }
 }

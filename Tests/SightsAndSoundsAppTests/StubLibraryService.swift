@@ -213,4 +213,31 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func removeKeyBinding(_ key: String) async throws {
         try await run { try await base.removeKeyBinding(key) }
     }
+    func createSegment(
+        parentID: UUID, name: String, startSeconds: Double, endSeconds: Double, role: SegmentRole
+    ) async throws -> MediaItem {
+        try await run {
+            try await base.createSegment(
+                parentID: parentID, name: name, startSeconds: startSeconds, endSeconds: endSeconds, role: role)
+        }
+    }
+    func renameSegment(_ itemID: UUID, to name: String) async throws {
+        try await run { try await base.renameSegment(itemID, to: name) }
+    }
+    func deleteSegment(_ itemID: UUID) async throws {
+        try await run { try await base.deleteSegment(itemID) }
+    }
+    func addBlock(
+        to itemID: UUID, startSeconds: Double, endSeconds: Double, kind: VideoBlockKind
+    ) async throws -> VideoBlock {
+        try await run {
+            try await base.addBlock(to: itemID, startSeconds: startSeconds, endSeconds: endSeconds, kind: kind)
+        }
+    }
+    func deleteBlock(_ blockID: UUID) async throws {
+        try await run { try await base.deleteBlock(blockID) }
+    }
+    func setSearchFormats(_ formats: SearchFormats, replacingUnreadable: Bool) async throws {
+        try await run { try await base.setSearchFormats(formats, replacingUnreadable: replacingUnreadable) }
+    }
 }
