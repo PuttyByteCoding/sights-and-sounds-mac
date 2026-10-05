@@ -204,8 +204,10 @@ these acts on the host's own disk or its own app, and is done there:
 **What a paired Mac cannot reach.** It names items and sources by id, and
 files by a path inside a source as the library spells it. A folder to
 join, a file to import or measure: anything that climbs out of a source
-or is absolute is refused by the host before it is looked at. Media is
-asked for by item, never by path.
+or is absolute is refused by the host before it is looked at. Nor is a
+link followed out of a source: a file is imported or measured only if it
+is really inside its source once links are resolved, which is also all a
+scan ever lists. Media is asked for by item, never by path.
 
 **The version.** `RemoteProtocol.version` is 2. It is raised whenever a
 request is added or changes shape, so that two Macs on different builds
