@@ -717,6 +717,44 @@ import Testing
         #expect(!ServiceRequest.saveTag(draft: draft).onlyReads)
     }
 
+    /// Closed, a service is closed there and then: nothing more is
+    /// asked of the host, whichever kind of request it is, and the
+    /// stream of changes ends. Closing used to take effect a moment
+    /// later, so a request sent straight after it could still get
+    /// through, and the change stream kept its connection to the host
+    /// for as long as anyone held the stream.
+    @Test(.timeLimit(.minutes(1)))
+    func aClosedServiceAsksNothingMoreAndItsChangeStreamEnds() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        #expect(try await rig.remote.pendingDuplicateCount() == 1)
+        let ended = Ended()
+        let listening = Task {
+            for await _ in rig.remote.changes() {}
+            ended.set()
+        }
+        defer { listening.cancel() }
+        try await waitUntil("the host has the change stream's connection") {
+            rig.host.sessionCounts.connections >= 2
+        }
+
+        rig.remote.close()
+
+        // With no pause at all.
+        await #expect(throws: RemoteError.self) { _ = try await rig.remote.pendingDuplicateCount() }
+        await #expect(throws: RemoteError.self) { try await rig.remote.setFavorite([rig.a.id], true) }
+        await #expect(throws: RemoteError.self) {
+            _ = try await rig.remote.fileBytes(itemID: rig.a.id, offset: 0, length: 1)
+        }
+        try await waitUntil("the change stream ended") { ended.isSet }
+        try await waitUntil("the host has none of its connections left") {
+            rig.host.sessionCounts.connections == 0
+        }
+        #expect(try rig.row(rig.a)?.isFavorite == false, "a change was made after the service was closed")
+        // Closing is not a refusal by the host: the state does not say so.
+        #expect(rig.remote.state == .connected)
+    }
+
     // MARK: - The connection
 
     @Test(.timeLimit(.minutes(1)))
