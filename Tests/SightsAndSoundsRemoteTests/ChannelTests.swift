@@ -140,7 +140,6 @@ import Testing
         let new = ChannelKey.random(identity: "device-new")
         let echo = try await Echo(keys: [old])
         defer { echo.stop() }
-        let before = try await connect(echo, old)
 
         try await echo.listener.replaceKeys([new])
         #expect(echo.listener.port == echo.port, "the port moved, and the client's address with it")
@@ -150,7 +149,61 @@ import Testing
         #expect(try await after.receive().payload == Data("new".utf8))
         await after.close()
         await #expect(throws: ChannelError.self) { _ = try await connect(echo, old) }
-        await before.close()
+    }
+
+    /// Revoking a device has to end what it is doing, not only stop it
+    /// starting again: a connection it already has open is closed. The
+    /// listener cannot tell whose connection is whose, so every one made
+    /// under the old keys goes, and a device still welcome reconnects.
+    @Test(.timeLimit(.minutes(1)))
+    func replacingTheKeysClosesTheConnectionsMadeUnderTheOldOnes() async throws {
+        let revoked = ChannelKey.random(identity: "device-revoked")
+        let kept = ChannelKey.random(identity: "device-kept")
+        let echo = try await Echo(keys: [revoked, kept])
+        defer { echo.stop() }
+        let revokedConnection = try await connect(echo, revoked)
+        let keptConnection = try await connect(echo, kept)
+        // Both are in use: a frame out and back on each.
+        for connection in [revokedConnection, keptConnection] {
+            try await connection.send(Frame(kind: 4, payload: Data("before".utf8)))
+            #expect(try await connection.receive().payload == Data("before".utf8))
+        }
+
+        try await echo.listener.replaceKeys([kept])
+
+        // The revoked device's open connection carries nothing more.
+        await #expect(throws: ChannelError.self) {
+            try await revokedConnection.send(Frame(kind: 4, payload: Data("after".utf8)))
+            _ = try await revokedConnection.receive()
+        }
+        // Nor can it make another.
+        await #expect(throws: ChannelError.self) { _ = try await connect(echo, revoked) }
+        // The device still welcome lost its connection too, and gets a new one.
+        await #expect(throws: ChannelError.self) {
+            try await keptConnection.send(Frame(kind: 4, payload: Data("after".utf8)))
+            _ = try await keptConnection.receive()
+        }
+        let again = try await connect(echo, kept)
+        try await again.send(Frame(kind: 4, payload: Data("again".utf8)))
+        #expect(try await again.receive().payload == Data("again".utf8))
+        await again.close()
+    }
+
+    /// Turning remote access off turns it off for whoever is connected.
+    @Test(.timeLimit(.minutes(1)))
+    func stoppingTheListenerClosesItsConnections() async throws {
+        let key = ChannelKey.random(identity: "device-a")
+        let echo = try await Echo(keys: [key])
+        let connection = try await connect(echo, key)
+        try await connection.send(Frame(kind: 4, payload: Data("before".utf8)))
+        #expect(try await connection.receive().payload == Data("before".utf8))
+
+        echo.stop()
+
+        await #expect(throws: ChannelError.self) {
+            try await connection.send(Frame(kind: 4, payload: Data("after".utf8)))
+            _ = try await connection.receive()
+        }
     }
 
     @Test(.timeLimit(.minutes(1)))

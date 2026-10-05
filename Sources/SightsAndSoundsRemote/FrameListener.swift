@@ -11,6 +11,16 @@ public final class FrameListener: @unchecked Sendable {
     private var boundPort: UInt16
     private let accepts: @Sendable (String) -> Bool
     private let continuation: AsyncStream<FrameConnection>.Continuation
+    /// Which set of keys is current. A connection belongs to the set it
+    /// was taken under.
+    private var generation = 0
+    /// The connections handed out and, as far as is known, still open.
+    private var live: [ObjectIdentifier: Live] = [:]
+
+    private struct Live {
+        weak var connection: FrameConnection?
+        let generation: Int
+    }
 
     /// Connections, each already open: the handshake is done and the
     /// suite checked.
@@ -40,9 +50,8 @@ public final class FrameListener: @unchecked Sendable {
     /// Begin listening. Returns the port.
     @discardableResult
     public func start() async throws -> UInt16 {
-        let (keys, port) = lock.withLock { (self.keys, boundPort) }
-        let (listener, bound) = try await Self.listen(
-            keys: keys, port: port, accepts: accepts, continuation: continuation)
+        let (keys, port, generation) = lock.withLock { (self.keys, boundPort, self.generation) }
+        let (listener, bound) = try await listen(keys: keys, port: port, generation: generation)
         lock.withLock {
             self.listener = listener
             boundPort = bound
@@ -51,24 +60,32 @@ public final class FrameListener: @unchecked Sendable {
     }
 
     /// Change which keys may connect: a device paired, or revoked. The
-    /// listener is rebuilt on the same port. Connections already made are
-    /// not touched by this; whoever holds them closes the ones that
-    /// should not go on.
+    /// listener is rebuilt on the same port.
+    ///
+    /// **Every connection made under the old keys is closed.** A
+    /// connection does not say which key it was made with, so the
+    /// listener cannot close only a revoked device's; and a revoked
+    /// device left holding an open connection would not be revoked at
+    /// all. A device whose key is still good finds its connection gone
+    /// and makes another.
     public func replaceKeys(_ keys: [ChannelKey]) async throws {
-        let (old, port) = lock.withLock { () -> (NWListener?, UInt16) in
+        let (old, port, generation, stale) = lock.withLock { () -> (NWListener?, UInt16, Int, [FrameConnection]) in
             self.keys = keys
+            self.generation += 1
             let old = listener
             listener = nil
-            return (old, boundPort)
+            let stale = live.values.compactMap(\.connection)
+            live = [:]
+            return (old, boundPort, self.generation, stale)
         }
         if let old { await Self.cancel(old) }
+        for connection in stale { await connection.close() }
         // The port is the client's address for this host: it must not
         // move. It can take a moment to come free.
         var lastError: (any Error)?
         for _ in 0..<20 {
             do {
-                let (listener, _) = try await Self.listen(
-                    keys: keys, port: port, accepts: accepts, continuation: continuation)
+                let (listener, _) = try await listen(keys: keys, port: port, generation: generation)
                 lock.withLock { self.listener = listener }
                 return
             } catch {
@@ -79,32 +96,54 @@ public final class FrameListener: @unchecked Sendable {
         throw lastError ?? ChannelError.refused("the port could not be listened on again")
     }
 
+    /// Stop listening, and close every connection that was taken:
+    /// turning remote access off turns it off for whoever is connected.
     public func stop() {
-        let old = lock.withLock { () -> NWListener? in
+        let (old, open) = lock.withLock { () -> (NWListener?, [FrameConnection]) in
+            generation += 1
             let old = listener
             listener = nil
-            return old
+            let open = live.values.compactMap(\.connection)
+            live = [:]
+            return (old, open)
         }
         old?.cancel()
+        for connection in open { Task { await connection.close() } }
     }
 
-    private static func listen(
-        keys: [ChannelKey], port: UInt16, accepts: @escaping @Sendable (String) -> Bool,
-        continuation: AsyncStream<FrameConnection>.Continuation
+    /// Hand a connection out — unless the keys have been replaced since
+    /// it was taken. Its handshake may have been under way while they
+    /// were, with a key that is no longer one of them.
+    private func admit(_ connection: FrameConnection, takenUnder generation: Int) -> Bool {
+        lock.withLock {
+            guard generation == self.generation else { return false }
+            live = live.filter { $0.value.connection != nil }
+            live[ObjectIdentifier(connection)] = Live(connection: connection, generation: generation)
+            return true
+        }
+    }
+
+    private func listen(
+        keys: [ChannelKey], port: UInt16, generation: Int
     ) async throws -> (NWListener, UInt16) {
+        let accepts = accepts, continuation = continuation
         guard !keys.isEmpty else { throw ChannelError.refused("no key to listen with") }
         let listener = try NWListener(
             using: ChannelSecurity.parameters(keys: keys),
             on: port == 0 ? .any : (NWEndpoint.Port(rawValue: port) ?? .any))
-        listener.newConnectionHandler = { incoming in
+        listener.newConnectionHandler = { [weak self] incoming in
             guard let address = FrameConnection.address(of: incoming.endpoint), accepts(address) else {
                 incoming.cancel()
                 return
             }
             let connection = FrameConnection(accepted: incoming)
-            Task {
+            Task { [weak self] in
                 do {
                     try await connection.open()
+                    guard let self, self.admit(connection, takenUnder: generation) else {
+                        await connection.close()
+                        return
+                    }
                     continuation.yield(connection)
                 } catch {
                     await connection.close()
@@ -120,7 +159,7 @@ public final class FrameListener: @unchecked Sendable {
             default: break
             }
         }
-        listener.start(queue: queue)
+        listener.start(queue: Self.queue)
         do {
             return (listener, try await ready.value)
         } catch {
