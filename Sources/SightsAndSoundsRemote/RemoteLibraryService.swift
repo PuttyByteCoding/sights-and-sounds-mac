@@ -375,4 +375,44 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
         try await tell(.removeAlias(alias: alias, tagID: tagID))
     }
     public func saveTag(_ draft: TagDraft) async throws -> Tag { try await ask(.saveTag(draft: draft)) }
+
+    // MARK: VocabularyManaging
+
+    public func categories() async throws -> [TagCategory] { try await ask(.categories) }
+    public func categoryTable(categoryID: UUID) async throws -> CategoryTable {
+        try await ask(.categoryTable(categoryID: categoryID))
+    }
+    public func vocabularyIndex() async throws -> VocabularyIndex { try await ask(.vocabularyIndex) }
+    public func fields(scope: FieldScope, categoryID: UUID?) async throws -> [FieldDefinition] {
+        try await ask(.fields(scope: scope, categoryID: categoryID))
+    }
+    public func fieldValues(tagID: UUID) async throws -> [UUID: String] { try await ask(.fieldValues(tagID: tagID)) }
+    public func takenNames(categoryID: UUID) async throws -> Set<String> {
+        try await ask(.takenNames(categoryID: categoryID))
+    }
+    public func createCategory(_ category: TagCategory) async throws {
+        try await tell(.createCategory(category: category))
+    }
+    public func updateCategory(_ category: TagCategory) async throws {
+        try await tell(.updateCategory(category: category))
+    }
+    public func deleteCategory(_ categoryID: UUID) async throws {
+        try await tell(.deleteCategory(categoryID: categoryID))
+    }
+    public func mergeTags(_ sourceIDs: [UUID], into target: TagMergeTarget) async throws -> Tag {
+        try await ask(.mergeTags(sourceIDs: sourceIDs, target: target))
+    }
+    public func setTagHidden(_ tagID: UUID, _ hidden: Bool) async throws {
+        try await tell(.setTagHidden(tagID: tagID, hidden: hidden))
+    }
+    public func setTagNotes(_ tagID: UUID, _ notes: String) async throws {
+        try await tell(.setTagNotes(tagID: tagID, notes: notes))
+    }
+    public func setFieldValue(_ value: String, tagID: UUID, field: FieldDefinition) async throws {
+        try await tell(.setFieldValue(value: value, tagID: tagID, field: field))
+    }
+    public func createField(_ field: FieldDefinition) async throws -> FieldDefinition {
+        try await ask(.createField(field: field))
+    }
+    public func deleteField(_ fieldID: UUID) async throws { try await tell(.deleteField(fieldID: fieldID)) }
 }

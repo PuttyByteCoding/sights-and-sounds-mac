@@ -84,7 +84,7 @@ struct CategoryManagerView: View {
         .followsLibraryChanges(model, [.vocabulary, .tagging]) { reload() }
         .sheet(isPresented: $showPaste) {
             if let category = selectedCategory {
-                PasteTagListSheet(category: category, library: model.library) {
+                PasteTagListSheet(category: category, service: model.service) {
                     reloadTags()
                 }
             }
@@ -365,16 +365,16 @@ struct CategoryManagerView: View {
                         },
                         onOpen: { tag in editingTag = tag },
                         onToggleFavorite: { tag in
-                            Writes.attempt("change the favourite", report: $errorText) {
-                                try model.library.setTagFavorite(tag.id, !tag.isFavorite)
+                            let service = model.service
+                            Writes.run("change the favourite", report: $errorText, then: { _ in reloadTags() }) {
+                                try await service.setTagFavorite(tag.id, !tag.isFavorite)
                             }
-                            reloadTags()
                         },
                         onHide: { tag in
-                            Writes.attempt("change whether the tag is hidden", report: $errorText) {
-                                try model.library.setTagHidden(tag.id, !tag.hiddenByDefault)
-                            }
-                            reloadTags()
+                            let service = model.service
+                            Writes.run(
+                                "change whether the tag is hidden", report: $errorText, then: { _ in reloadTags() }
+                            ) { try await service.setTagHidden(tag.id, !tag.hiddenByDefault) }
                         },
                         pending: $pending,
                         service: model.service,
@@ -404,7 +404,7 @@ struct CategoryManagerView: View {
                     title: "Media Item Fields",
                     subtitle: "scope mediaItem · applies to every item in the library",
                     fields: itemFields,
-                    library: model.library,
+                    service: model.service,
                     scope: .mediaItem,
                     categoryID: nil,
                     onChange: { reloadItemFields() })
@@ -499,15 +499,15 @@ struct CategoryManagerView: View {
                         category: category,
                         tagCount: tags.count,
                         fields: tagFields,
-                        library: model.library,
+                        service: model.service,
                         onChange: { save($0) },
                         onFieldsChange: { reloadTagFields() },
                         onDelete: {
-                            Writes.attempt("delete the category", report: $errorText) {
-                                try model.library.deleteCategory(category.id)
-                            }
-                            selection = nil
-                            reload()
+                            let service = model.service, categoryID = category.id
+                            Writes.run("delete the category", report: $errorText, then: { _ in
+                                selection = nil
+                                reload()
+                            }) { try await service.deleteCategory(categoryID) }
                         })
                         // Identity must come from the PARENT's selection:
                         // the inspector copies the category into @State,
@@ -525,7 +525,7 @@ struct CategoryManagerView: View {
                             aliases: aliases[tag.id] ?? [],
                             siblings: tags.filter { $0.id != tag.id },
                             fields: tagFields,
-                            library: model.library,
+                            service: model.service,
                             onChange: { reloadTags() })
                             .id(tag.id)
                     } else {
@@ -554,12 +554,10 @@ struct CategoryManagerView: View {
     private func reload() {
         categoryGeneration += 1
         let generation = categoryGeneration
-        let library = model.library
+        let service = model.service
         Task {
             do {
-                let fetched = try await library.writer.read {
-                    try TagCategory.order(sql: "sortOrder, name").fetchAll($0)
-                }
+                let fetched = try await service.categories()
                 guard generation == categoryGeneration else { return }
                 categories = fetched
                 if selection == nil, let first = categories.first {
@@ -578,12 +576,10 @@ struct CategoryManagerView: View {
     private func reloadCategoriesOnly() {
         categoryGeneration += 1
         let generation = categoryGeneration
-        let library = model.library
+        let service = model.service
         Task {
             do {
-                let fetched = try await library.writer.read {
-                    try TagCategory.order(sql: "sortOrder, name").fetchAll($0)
-                }
+                let fetched = try await service.categories()
                 guard generation == categoryGeneration else { return }
                 categories = fetched
             } catch { errorText = "\(error)" }
@@ -597,26 +593,17 @@ struct CategoryManagerView: View {
         }
         tagGeneration += 1
         let generation = tagGeneration
-        let library = model.library
+        let service = model.service
         Task {
             do {
-                let fetched = try await library.writer.read {
-                    try Tag.filter(sql: "tagCategoryID = ?", arguments: [categoryID])
-                        .order(sql: "sortOrder, name").fetchAll($0)
-                }
-                let aliasRows = try await library.writer.read { try TagAlias.fetchAll($0) }
-                // One grouped query, never a count per row — and off the
-                // main actor like the reads above it: a synchronous call
-                // here ran on the main thread, since this task is the
-                // view's.
-                let counts = try await Task.detached(priority: .userInitiated) {
-                    try library.tagUsageCounts(inCategory: categoryID)
-                }.value
+                // The tags, their aliases and a count per tag, in one
+                // answer: one grouped query, never a count per row.
+                let table = try await service.categoryTable(categoryID: categoryID)
                 guard generation == tagGeneration else { return }
+                let fetched = table.tags
                 tags = fetched
-                aliases = Dictionary(grouping: aliasRows, by: \.tagID)
-                    .mapValues { $0.map(\.alias).sorted() }
-                usage = counts
+                aliases = table.aliases
+                usage = table.usage
                 if let selectedTagID, !fetched.contains(where: { $0.id == selectedTagID }) {
                     self.selectedTagID = nil
                 }
@@ -635,7 +622,7 @@ struct CategoryManagerView: View {
             return
         }
         readingAllTags = true
-        let library = model.library
+        let service = model.service
         Task {
             defer {
                 readingAllTags = false
@@ -645,19 +632,17 @@ struct CategoryManagerView: View {
                 }
             }
             do {
-                // The whole vocabulary and a library-wide usage count: off
-                // the main actor. This task is the view's, so the
-                // synchronous calls ran on the main thread after every edit.
-                let (index, usage) = try await Task.detached(priority: .userInitiated) {
-                    let vocabulary = try library.vocabulary()
-                    let aliasRows = try library.writer.read { try TagAlias.fetchAll($0) }
-                    let aliases = Dictionary(grouping: aliasRows, by: \.tagID).mapValues { $0.map(\.alias) }
-                    return (
-                        TagSearchEntry.index(vocabulary: vocabulary, aliases: aliases),
-                        try library.tagUsageCounts())
+                // The whole vocabulary and a library-wide usage count,
+                // asked of the library; folding every name for the search
+                // is this side's work, and off the main actor.
+                let read = try await service.vocabularyIndex()
+                let index = await Task.detached(priority: .userInitiated) {
+                    TagSearchEntry.index(
+                        vocabulary: read.vocabulary.map { (category: $0.category, tags: $0.tags) },
+                        aliases: read.aliases)
                 }.value
                 allIndex = index
-                allUsage = usage
+                allUsage = read.usage
             } catch { errorText = "\(error)" }
         }
     }
@@ -667,38 +652,52 @@ struct CategoryManagerView: View {
             tagFields = []
             return
         }
-        tagFields = (try? model.library.fields(scope: .tag, categoryID: categoryID)) ?? []
+        let service = model.service
+        Task {
+            let fields = (try? await service.fields(scope: .tag, categoryID: categoryID)) ?? []
+            // Another category may have been picked while this was asked.
+            guard case .category(let now) = selection, now == categoryID else { return }
+            tagFields = fields
+        }
     }
 
     private func reloadItemFields() {
-        itemFields = (try? model.library.fields(scope: .mediaItem)) ?? []
+        let service = model.service
+        Task { itemFields = (try? await service.fields(scope: .mediaItem, categoryID: nil)) ?? [] }
     }
 
     // MARK: - Writes
 
     private func save(_ category: TagCategory) {
-        do {
-            try model.library.updateCategory(category)
-            errorText = nil
-            // Narrow update: patch the edited row in place so the click
-            // settles instantly, then refresh the (small) category table
-            // in the background. Tags are untouched by a config edit.
-            if let index = categories.firstIndex(where: { $0.id == category.id }) {
-                categories[index] = category
-            }
-            reloadCategoriesOnly()
-        } catch { errorText = "\(error)" }
+        let service = model.service
+        Task {
+            do {
+                try await service.updateCategory(category)
+                errorText = nil
+                // Narrow update: patch the edited row in place so the
+                // click settles as soon as the library has it, then
+                // refresh the (small) category table in the background.
+                // Tags are untouched by a config edit.
+                if let index = categories.firstIndex(where: { $0.id == category.id }) {
+                    categories[index] = category
+                }
+                reloadCategoriesOnly()
+            } catch { errorText = "\(error)" }
+        }
     }
 
     private func createCategory() {
-        do {
-            let order = (categories.map(\.sortOrder).max() ?? 0) + 10
-            let category = TagCategory(name: "New Category", sortOrder: order)
-            try model.library.createCategory(category)
-            reload()
-            selection = .category(category.id)
-            inspectorTab = .category
-        } catch { errorText = "\(error)" }
+        let order = (categories.map(\.sortOrder).max() ?? 0) + 10
+        let category = TagCategory(name: "New Category", sortOrder: order)
+        let service = model.service
+        Task {
+            do {
+                try await service.createCategory(category)
+                reload()
+                selection = .category(category.id)
+                inspectorTab = .category
+            } catch { errorText = "\(error)" }
+        }
     }
 
     /// Reordering writes every row's position once, rather than saving
@@ -709,11 +708,14 @@ struct CategoryManagerView: View {
         guard categories.indices.contains(target) else { return }
         var ordered = categories
         ordered.swapAt(index, target)
-        do {
-            try model.library.setCategoryOrder(ordered.map(\.id))
-            categories = ordered
-            reloadCategoriesOnly()
-        } catch { errorText = "\(error)" }
+        let service = model.service, moved = ordered
+        Task {
+            do {
+                try await service.setCategoryOrder(moved.map(\.id))
+                categories = moved
+                reloadCategoriesOnly()
+            } catch { errorText = "\(error)" }
+        }
     }
 
     /// The + button: the create sheet, not a row called "New tag" to
@@ -727,19 +729,22 @@ struct CategoryManagerView: View {
     private func performMerge(in category: TagCategory) {
         let sources = Array(mergePicks)
         guard sources.count > 1 || (mergeTargetIsNew && !sources.isEmpty) else { return }
-        do {
-            let target: LibraryDatabase.MergeTarget = mergeTargetIsNew
-                ? .newTag(named: mergeNewName)
-                : .existing(mergeTargetID ?? sources[0])
-            try model.library.mergeTags(sources, into: target, keepNamesAsAliases: true)
-            errorText = "\(sources.count) tags merged — names kept as aliases"
-            mergeMode = false
-            mergePicks = []
-            mergeNewName = ""
-            mergeTargetID = nil
-            mergeTargetIsNew = false
-            reloadTags()
-        } catch { errorText = "\(error)" }
+        let target: TagMergeTarget = mergeTargetIsNew
+            ? .newTag(named: mergeNewName)
+            : .existing(mergeTargetID ?? sources[0])
+        let service = model.service
+        Task {
+            do {
+                _ = try await service.mergeTags(sources, into: target)
+                errorText = "\(sources.count) tags merged — names kept as aliases"
+                mergeMode = false
+                mergePicks = []
+                mergeNewName = ""
+                mergeTargetID = nil
+                mergeTargetIsNew = false
+                reloadTags()
+            } catch { errorText = "\(error)" }
+        }
     }
 }
 

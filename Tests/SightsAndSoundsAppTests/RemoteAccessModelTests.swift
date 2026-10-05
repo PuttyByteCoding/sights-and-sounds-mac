@@ -2,6 +2,7 @@ import AppKit
 import CoreImage
 import Foundation
 import SightsAndSoundsKit
+import SwiftUI
 import Testing
 
 @testable import SightsAndSoundsApp
@@ -308,6 +309,34 @@ import Testing
             #expect(message.contains("could not be counted"))
             #expect(!message.contains(" 0 "))
         }
+    }
+
+    /// Which of the app's other windows open on a library another Mac
+    /// holds. Written out, so that adding a window means deciding.
+    @Test func whichWindowsWorkOnARemoteLibraryIsWrittenDown() {
+        let working = AuxWindowRequest.Kind.allCases.filter(\.worksOnARemoteLibrary)
+        #expect(Set(working) == [.player, .categories])
+    }
+
+    /// A write asked of the service reports a failure where the view
+    /// shows its errors, and says afterwards whether it worked.
+    @Test func aServiceWriteSaysWhetherItWorked() async {
+        struct Refused: Error, CustomStringConvertible { var description: String { "the library said no" } }
+        let report = Reported()
+        let binding = Binding<String?>(get: { report.text }, set: { report.text = $0 })
+
+        Writes.run("save the thing", report: binding, then: { report.outcomes.append($0) }) {}
+        await eventually("the first write is answered") { report.outcomes == [true] }
+        #expect(report.text == nil)
+
+        Writes.run("save the thing", report: binding, then: { report.outcomes.append($0) }) { throw Refused() }
+        await eventually("the second write is answered") { report.outcomes == [true, false] }
+        #expect(report.text == "Could not save the thing: the library said no")
+    }
+
+    @MainActor final class Reported {
+        var text: String?
+        var outcomes: [Bool] = []
     }
 
     @Test func aMacsHistoryIsSaidInALine() {
