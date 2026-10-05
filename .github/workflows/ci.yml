@@ -62,10 +62,15 @@ jobs:
       # time, and a hundred tests standing in that queue made the run as
       # long as the queue and failed a test for its time limit. They run
       # on a developer's Mac, where `swift test` runs everything.
+      #
+      # And one at a time. Run together, a few tests that do heavy sums
+      # in an unoptimised build (the Media Signal meters, mostly) hold all
+      # three of this machine's cores for half a minute, in which nothing
+      # else finishes and whichever test needs the machine to keep up
+      # fails: a different one each time. Alone, each test has the
+      # machine to itself.
       - name: Test (the merge gate)
-        env:
-          SAS_MERGE_GATE: "1"
-        run: swift test
+        run: ./scripts/run-tests.sh --merge-gate
 
   bundle:
     name: App bundle

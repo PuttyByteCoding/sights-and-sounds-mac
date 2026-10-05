@@ -331,7 +331,8 @@ A merge waits for fewer tests than there are. The ones that write a real
 video are marked `.writesVideo` and left out on CI, where there is no
 hardware encoder and they queue for a minute and more; on a Mac they take
 a moment, and `swift test` runs them with everything else. See
-`Tests/*/MergeGate.swift`.
+`Tests/*/MergeGate.swift`. CI also runs its tests one at a time: together,
+a few that do heavy sums starve the rest on its three cores.
 
 The build must be free of warnings; CI runs both guards beside the build and tests.
 
