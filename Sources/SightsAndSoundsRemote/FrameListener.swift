@@ -81,9 +81,10 @@ public final class FrameListener: @unchecked Sendable {
         if let old { await Self.cancel(old) }
         for connection in stale { await connection.close() }
         // The port is the client's address for this host: it must not
-        // move. It can take a moment to come free.
+        // move. It is not shared, so it cannot be listened on again until
+        // the old listener has let go of it, which takes a moment.
         var lastError: (any Error)?
-        for _ in 0..<20 {
+        for _ in 0..<50 {
             do {
                 let (listener, _) = try await listen(keys: keys, port: port, generation: generation)
                 lock.withLock { self.listener = listener }

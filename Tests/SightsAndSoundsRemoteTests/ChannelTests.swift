@@ -151,6 +151,36 @@ import Testing
         await #expect(throws: ChannelError.self) { _ = try await connect(echo, old) }
     }
 
+    /// Over and over, as devices are paired and revoked: each time the
+    /// key just put in connects at the first try, and the key just taken
+    /// out does not complete a handshake. There is never a moment when
+    /// the old listener and the new one are both there to be reached.
+    @Test(.timeLimit(.minutes(2)))
+    func theKeysCanBeReplacedAgainAndAgain() async throws {
+        var current = ChannelKey.random(identity: "device-0")
+        let echo = try await Echo(keys: [current])
+        defer { echo.stop() }
+
+        for round in 1...12 {
+            let next = ChannelKey.random(identity: "device-\(round)")
+            // A connection is open when the keys change, as one would be.
+            let open = try await connect(echo, current)
+            try await echo.listener.replaceKeys([next])
+            #expect(echo.listener.port == echo.port)
+
+            let fresh = try await connect(echo, next)
+            try await fresh.send(Frame(kind: 4, payload: Data("round \(round)".utf8)))
+            #expect(try await fresh.receive().payload == Data("round \(round)".utf8))
+            await fresh.close()
+
+            await #expect(throws: ChannelError.self, "round \(round): the old key completed a handshake") {
+                _ = try await connect(echo, current)
+            }
+            await open.close()
+            current = next
+        }
+    }
+
     /// Revoking a device has to end what it is doing, not only stop it
     /// starting again: a connection it already has open is closed. The
     /// listener cannot tell whose connection is whose, so every one made
