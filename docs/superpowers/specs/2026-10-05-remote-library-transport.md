@@ -65,10 +65,11 @@ id and its token. The host answers with its name and the libraries it offers,
 or refuses and closes: unknown device, revoked, or a version the two do not
 share ("update the other Mac"). Nothing else is answered before that.
 
-**The address.** The host listens on a port it chose, on every interface but
-loopback, and takes a connection only from an address on a private network
-(10/8, 172.16/12, 192.168/16, link-local, and the IPv6 equivalents). Nothing
-is advertised.
+**The address.** The host listens on a port it chose, and takes a connection
+only from an address on a private network (10/8, 172.16/12, 192.168/16,
+link-local, and the IPv6 equivalents) or from the Mac itself. Loopback is
+taken because it costs nothing in safety — a caller there still needs a
+key — and it is how both ends are tried on one Mac. Nothing is advertised.
 
 ## Pairing
 

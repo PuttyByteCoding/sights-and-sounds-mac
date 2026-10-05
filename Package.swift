@@ -21,6 +21,14 @@ let package = Package(
             name: "SightsAndSoundsKit",
             dependencies: [.product(name: "GRDB", package: "GRDB.swift")]
         ),
+        // A library held by another Mac: the encrypted channel between the
+        // two, and each end of it. Network.framework and Foundation only —
+        // no dependency of its own, and nothing of AppKit, so it carries
+        // to the other platforms with the Kit.
+        .target(
+            name: "SightsAndSoundsRemote",
+            dependencies: ["SightsAndSoundsKit"]
+        ),
         .executableTarget(
             name: "SightsAndSoundsApp",
             dependencies: ["SightsAndSoundsKit"],
@@ -34,6 +42,10 @@ let package = Package(
         .testTarget(
             name: "SightsAndSoundsKitTests",
             dependencies: ["SightsAndSoundsKit"]
+        ),
+        .testTarget(
+            name: "SightsAndSoundsRemoteTests",
+            dependencies: ["SightsAndSoundsRemote", "SightsAndSoundsKit"]
         ),
         // The app's models, where they can be driven without a window —
         // the Tag Analysis preview transport was the first to need it.
