@@ -1,7 +1,5 @@
-8	Sources/SightsAndSoundsApp/BackgroundTasksView.swift
 1	Sources/SightsAndSoundsApp/Browse/BrowseModel.swift
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
 6	Sources/SightsAndSoundsApp/Search/SearchSettingsPane.swift
 6	Sources/SightsAndSoundsApp/SettingsView.swift
 9	Sources/SightsAndSoundsApp/SightsAndSoundsApp.swift
-22	Sources/SightsAndSoundsApp/SweepPanel.swift

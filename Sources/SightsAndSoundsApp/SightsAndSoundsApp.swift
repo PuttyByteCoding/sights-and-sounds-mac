@@ -306,6 +306,38 @@ final class AppModel {
         return LocalLibraryService(library: try library(for: libraryID), runner: try runner(for: libraryID))
     }
 
+    /// A library something has open, with a service to ask it through.
+    struct OpenLibrary: Identifiable {
+        let id: UUID
+        let name: String
+        let service: any LibraryService
+        /// Held by another Mac.
+        let isRemote: Bool
+    }
+
+    /// Every library something already has open, on this Mac or on
+    /// another. For what looks across libraries on a timer — Background
+    /// Tasks — so it opens no file, builds no runner and connects to
+    /// nothing: a library on this Mac that has no runner yet gets a
+    /// service that can read its jobs and start none. `withAWindow`
+    /// keeps only the libraries with a window of their own.
+    func openLibraries(withAWindow: Bool = false) -> [OpenLibrary] {
+        var result: [OpenLibrary] = []
+        for ref in libraries {
+            guard let library = openHandles[ref.id], !withAWindow || openLibraryIDs.contains(ref.id)
+            else { continue }
+            let service = runners[ref.id].map { LocalLibraryService(library: library, runner: $0) }
+                ?? LocalLibraryService(library: library)
+            result.append(OpenLibrary(id: ref.id, name: ref.name, service: service, isRemote: false))
+        }
+        for open in remoteLibraries.openLibraries {
+            result.append(OpenLibrary(
+                id: open.ref.id, name: "\(open.ref.library.name) — \(open.ref.host.name)",
+                service: open.service, isRemote: true))
+        }
+        return result
+    }
+
     // MARK: - Libraries on other Macs
 
     /// The Macs this one has been paired with, and their libraries.

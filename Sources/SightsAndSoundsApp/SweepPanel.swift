@@ -29,36 +29,6 @@ struct SweepPanel: View {
     @State private var confirmRecalc: SweepKind?
     @State private var errorText: String?
 
-    enum SweepKind: String, CaseIterable, Identifiable {
-        case contentHash, fingerprint, metadata, signal, thumbnails, duplicates
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .contentHash: "Content Hashes (MD5)"
-            case .fingerprint: "Audio Fingerprints"
-            case .metadata: "Embedded Metadata"
-            case .signal: "Media Signal"
-            case .thumbnails: "Thumbnails"
-            case .duplicates: "Duplicate Check"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .contentHash: "Identity hash per file — duplicates and the migration boundary key off it."
-            case .fingerprint: "Acoustic fingerprints for near-duplicate matching."
-            case .metadata: "The ffprobe pairs Tag Analysis mines."
-            case .signal: "What each file declares about its encoding, and how its frames are really timed."
-            case .thumbnails: "The grid's stills. A file with no frame to show is skipped until retried."
-            case .duplicates: "Pairs flagged from hashes and fingerprints. Rejected pairs stay rejected, so there is nothing to recalculate."
-            }
-        }
-
-        var canRecalculate: Bool { self != .duplicates }
-        var canRetry: Bool { self != .duplicates }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -114,8 +84,10 @@ struct SweepPanel: View {
         }
     }
 
-    private var openLibraries: [LibraryRef] {
-        app.libraries.filter { app.openLibraryIDs.contains($0.id) }
+    /// The libraries with a window open, on this Mac or another: a
+    /// sweep is the library's own work, done where its files are.
+    private var openLibraries: [AppModel.OpenLibrary] {
+        app.openLibraries(withAWindow: true)
     }
 
     private func row(_ kind: SweepKind) -> some View {
@@ -176,59 +148,27 @@ struct SweepPanel: View {
     private func refreshStatuses() {
         statusGeneration += 1
         let generation = statusGeneration
-        guard let libraryID, let library = try? app.library(for: libraryID) else {
+        guard let libraryID, let service = try? app.service(for: libraryID) else {
             statuses = [:]
             return
         }
-        Task.detached(priority: .utility) {
-            var next: [SweepKind: SweepStatus] = [:]
-            next[.contentHash] = try? library.contentHashStatus()
-            next[.fingerprint] = try? library.fingerprintStatus()
-            next[.metadata] = try? library.metadataSweepStatus()
-            next[.signal] = try? library.signalStatus()
-            next[.thumbnails] = try? library.thumbnailStatus(libraryID: libraryID)
-            await MainActor.run {
-                guard generation == statusGeneration else { return }
-                statuses = next
-            }
+        Task {
+            let next = (try? await service.sweepStatuses()) ?? [:]
+            guard generation == statusGeneration else { return }
+            statuses = next
         }
     }
 
-    private func sweep(_ kind: SweepKind, before prepare: @escaping @Sendable (LibraryDatabase) throws -> Void = { _ in }) {
-        guard let libraryID,
-              let library = try? app.library(for: libraryID),
-              let runner = try? app.runner(for: libraryID)
-        else { return }
+    private func sweep(_ kind: SweepKind, after preparation: SweepPreparation = .nothing) {
+        guard let libraryID, let service = try? app.service(for: libraryID) else { return }
         running[libraryID, default: []].insert(kind)
         errorText = nil
         Task {
             do {
-                try prepare(library)
-                let kinds: [String]
-                switch kind {
-                case .contentHash:
-                    _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
-                    kinds = [ContentHashJob.kind]
-                case .fingerprint:
-                    _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
-                    kinds = [FingerprintCaptureJob.kind]
-                case .metadata:
-                    _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
-                    kinds = [MetadataSweepJob.kind]
-                case .signal:
-                    _ = try await runner.enqueueUnlessPending(MediaSignalJob.self)
-                    kinds = [MediaSignalJob.kind]
-                case .thumbnails:
-                    _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
-                    kinds = [ThumbnailBatchJob.kind]
-                case .duplicates:
-                    _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
-                    _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
-                    kinds = [HashDuplicateSweepJob.kind, FingerprintMatchSweepJob.kind]
-                }
+                try await service.startSweep(kind, after: preparation)
                 // This row's sweep, not the whole queue: each row stayed
                 // "running" until every other sweep queued had finished.
-                for kind in kinds { try await runner.waitUntilNonePending(of: kind) }
+                try await Self.waitUntilNonePending(of: kind, on: service)
             } catch {
                 errorText = "\(error)"
             }
@@ -237,32 +177,47 @@ struct SweepPanel: View {
         }
     }
 
-    private func verify(_ kind: SweepKind) { sweep(kind) }
-
-    private func retryFailed(_ kind: SweepKind) {
-        sweep(kind) { library in
-            switch kind {
-            case .contentHash: try library.retryContentHashFailures()
-            case .fingerprint: try library.retryFingerprintFailures()
-            case .metadata: try library.retryMetadataSweepFailures()
-            case .signal: try library.retrySignalFailures()
-            case .thumbnails: try library.retryThumbnailFailures()
-            case .duplicates: break
+    /// Returns when none of a sweep's jobs is queued or running. Asked
+    /// of the service on a timer rather than waited for in one request:
+    /// a sweep of a large library takes hours, and the library may be on
+    /// another Mac.
+    static func waitUntilNonePending(
+        of kind: SweepKind, on service: any LibraryService, every interval: Duration = .seconds(1)
+    ) async throws {
+        for jobKind in kind.jobKinds {
+            while try await service.jobQueue(kind: jobKind, startingQueue: false).pendingCount > 0 {
+                try await Task.sleep(for: interval)
             }
         }
     }
 
-    private func recalculate(_ kind: SweepKind) {
-        guard let libraryID else { return }
-        sweep(kind) { library in
-            switch kind {
-            case .contentHash: try library.resetContentHashes()
-            case .fingerprint: try library.resetFingerprints()
-            case .metadata: try library.resetMetadataSweepAll()
-            case .signal: try library.resetSignalFindings()
-            case .thumbnails: try library.resetThumbnails(libraryID: libraryID)
-            case .duplicates: break
-            }
+    private func verify(_ kind: SweepKind) { sweep(kind) }
+
+    private func retryFailed(_ kind: SweepKind) { sweep(kind, after: .forgetFailures) }
+
+    private func recalculate(_ kind: SweepKind) { sweep(kind, after: .forgetEverything) }
+}
+
+extension SweepKind {
+    var title: String {
+        switch self {
+        case .contentHash: "Content Hashes (MD5)"
+        case .fingerprint: "Audio Fingerprints"
+        case .metadata: "Embedded Metadata"
+        case .signal: "Media Signal"
+        case .thumbnails: "Thumbnails"
+        case .duplicates: "Duplicate Check"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .contentHash: "Identity hash per file — duplicates and the migration boundary key off it."
+        case .fingerprint: "Acoustic fingerprints for near-duplicate matching."
+        case .metadata: "The ffprobe pairs Tag Analysis mines."
+        case .signal: "What each file declares about its encoding, and how its frames are really timed."
+        case .thumbnails: "The grid's stills. A file with no frame to show is skipped until retried."
+        case .duplicates: "Pairs flagged from hashes and fingerprints. Rejected pairs stay rejected, so there is nothing to recalculate."
         }
     }
 }

@@ -26,6 +26,8 @@ struct BackgroundTasksView: View {
         let name: String
         var jobs: [JobRecord]
         var isPaused: Bool
+        /// False for a library on another Mac that did not answer.
+        var isAnswering = true
 
         var running: JobRecord? { jobs.first { $0.state == .running } }
         var queued: Int { jobs.count { $0.state == .queued } }
@@ -168,12 +170,14 @@ struct BackgroundTasksView: View {
 
     // MARK: - Table
 
-    private var visibleJobs: [(job: JobRecord, libraryID: UUID, library: String)] {
+    private var visibleJobs: [(job: JobRecord, libraryID: UUID, library: String, rowID: String)] {
         lanes
             .flatMap { lane in lane.jobs.map { ($0, lane.id, lane.name) } }
             .filter { filter.admits($0.0) }
             .sorted { $0.0.createdAt > $1.0.createdAt }
-            .map { (job: $0.0, libraryID: $0.1, library: $0.2) }
+            // By lane as well: a library open here and through another
+            // Mac shows the same job in both lanes.
+            .map { (job: $0.0, libraryID: $0.1, library: $0.2, rowID: "\($0.1)/\($0.0.id)") }
     }
 
     private var table: some View {
@@ -207,7 +211,7 @@ struct BackgroundTasksView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(visibleJobs, id: \.job.id) { entry in
+                        ForEach(visibleJobs, id: \.rowID) { entry in
                             JobRow(
                                 job: entry.job,
                                 library: entry.library,
@@ -253,22 +257,13 @@ struct BackgroundTasksView: View {
         case .cancel:
             cancel(job, in: libraryID)
         case .runNext:
-            Task {
-                guard let runner = try? app.runner(for: libraryID) else { return }
-                _ = try? await runner.runNext(job.id)
-                // The runner is serialized: this changes what starts
-                // next, never what stops.
-                show("Moved to the front of this library's queue")
-            }
+            // The runner is serialized: this changes what starts next,
+            // never what stops.
+            ask(libraryID, "Moved to the front of this library's queue") { try await $0.moveJobToFront(id: job.id) }
         case .retry, .runAgain:
-            Task {
-                guard let runner = try? app.runner(for: libraryID) else { return }
-                _ = try? await runner.retry(job.id)
-                // Started, not waited for: the toast and the list waited
-                // for the whole queue to empty.
-                await runner.startDraining()
-                show("Queued again")
-            }
+            // Started, not waited for: the toast and the list waited for
+            // the whole queue to empty.
+            ask(libraryID, "Queued again") { try await $0.retryJob(id: job.id) }
         case .copyError:
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(job.error ?? "", forType: .string)
@@ -276,21 +271,34 @@ struct BackgroundTasksView: View {
         }
     }
 
-    private func cancel(_ job: JobRecord, in libraryID: UUID) {
+    /// One thing asked of a library's queue, through its service — this
+    /// Mac's runner, or the Mac's that holds the library. What it did is
+    /// said only once it has been done.
+    private func ask(
+        _ libraryID: UUID, _ done: String,
+        _ body: @escaping @Sendable (any LibraryService) async throws -> Void
+    ) {
         Task {
-            guard let runner = try? app.runner(for: libraryID) else { return }
-            await runner.requestCancel(job.id)
-            show(job.state == .running
-                ? "Cancelling after the current item"
-                : "Removed from the queue")
+            do {
+                try await body(try app.service(for: libraryID))
+                show(done)
+            } catch {
+                show("That did not work: \(error)")
+            }
+            await refresh()
+        }
+    }
+
+    private func cancel(_ job: JobRecord, in libraryID: UUID) {
+        ask(libraryID, job.state == .running ? "Cancelling after the current item" : "Removed from the queue") {
+            try await $0.cancelJob(id: job.id)
         }
     }
 
     private func clearFinished() {
         Task {
             for lane in lanes {
-                guard let runner = try? app.runner(for: lane.id) else { continue }
-                _ = try? await runner.deleteFinished()
+                try? await app.service(for: lane.id).clearFinishedJobs()
             }
             await refresh()
             show("Finished jobs cleared from the list")
@@ -299,9 +307,11 @@ struct BackgroundTasksView: View {
 
     private func setLanePaused(_ lane: Lane, _ paused: Bool) {
         Task {
-            guard let runner = try? app.runner(for: lane.id) else { return }
-            await runner.setPaused(paused)
-            if !paused { await runner.startDraining() }
+            do {
+                try await app.service(for: lane.id).setQueuePaused(paused)
+            } catch {
+                show("That did not work: \(error)")
+            }
             await refresh()
         }
     }
@@ -318,25 +328,35 @@ struct BackgroundTasksView: View {
         lanes = await Self.lanes(of: app)
     }
 
-    /// Lanes for the libraries something already opened. This polls
-    /// once a second, so it never opens a handle or builds a runner
-    /// itself: that used to wake every registered library on each tick,
-    /// on the main actor — retrying a missing drive every second, and
-    /// starting runners (and their queued work) for libraries nobody
-    /// had opened. A closed library has no runner, so nothing of its is
-    /// running; its history shows once it is opened. The job reads
-    /// await off the main actor.
+    /// Lanes for the libraries something already opened, on this Mac or
+    /// another. This polls once a second, so it never opens a handle,
+    /// builds a runner or makes a connection itself: that used to wake
+    /// every registered library on each tick, on the main actor —
+    /// retrying a missing drive every second, and starting runners (and
+    /// their queued work) for libraries nobody had opened. A closed
+    /// library has no runner, so nothing of its is running; its history
+    /// shows once it is opened. Each library is asked through its
+    /// service, all at once, so one that is slow to answer — another
+    /// Mac — does not hold the others' lanes back longer than itself.
     static func lanes(of app: AppModel) async -> [Lane] {
-        var result: [Lane] = []
-        for ref in app.libraries {
-            guard let library = app.openLibrary(for: ref.id) else { continue }
-            let jobs = (try? await library.writer.read { db in
-                try JobRecord.order(sql: "createdAt DESC").limit(40).fetchAll(db)
-            }) ?? []
-            let paused = await app.existingRunner(for: ref.id)?.isPaused ?? app.tasksPaused
-            result.append(Lane(id: ref.id, name: ref.name, jobs: jobs, isPaused: paused))
+        let open = app.openLibraries()
+        let tasksPaused = app.tasksPaused
+        let answers = await withTaskGroup(of: (Int, JobLane?).self) { group -> [Int: JobLane] in
+            for (index, library) in open.enumerated() {
+                let service = library.service
+                group.addTask { (index, try? await service.jobLane(limit: 40)) }
+            }
+            var answered: [Int: JobLane] = [:]
+            for await (index, lane) in group { answered[index] = lane }
+            return answered
         }
-        return result
+        return open.enumerated().map { index, library in
+            guard let lane = answers[index] else {
+                return Lane(id: library.id, name: library.name, jobs: [], isPaused: false, isAnswering: false)
+            }
+            // No runner yet: the queue would start as the app's switch says.
+            return Lane(id: library.id, name: library.name, jobs: lane.jobs, isPaused: lane.isPaused ?? tasksPaused)
+        }
     }
 }
 
@@ -386,7 +406,8 @@ private struct LaneCard: View {
                         .foregroundStyle(Theme.Text.disabled)
                 }
             } else {
-                Text(lane.isPaused ? "paused · waiting for work" : "no job running")
+                Text(!lane.isAnswering ? "not answering"
+                    : lane.isPaused ? "paused · waiting for work" : "no job running")
                     .font(Theme.ui(11.5))
                     .foregroundStyle(Theme.Text.disabled)
             }

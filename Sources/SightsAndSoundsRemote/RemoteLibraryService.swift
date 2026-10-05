@@ -607,4 +607,16 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func enableExtension(_ fileExtension: String) async throws {
         try await tell(.enableExtension(fileExtension: fileExtension))
     }
+
+    // MARK: QueueManaging
+
+    public func jobLane(limit: Int) async throws -> JobLane { try await ask(.jobLane(limit: limit)) }
+    public func moveJobToFront(id: UUID) async throws { try await tell(.moveJobToFront(id: id)) }
+    public func retryJob(id: UUID) async throws { try await tell(.retryJob(id: id)) }
+    public func clearFinishedJobs() async throws { try await tell(.clearFinishedJobs) }
+    public func setQueuePaused(_ paused: Bool) async throws { try await tell(.setQueuePaused(paused: paused)) }
+    public func sweepStatuses() async throws -> [SweepKind: SweepStatus] { try await ask(.sweepStatuses) }
+    public func startSweep(_ kind: SweepKind, after preparation: SweepPreparation) async throws {
+        try await tell(.startSweep(kind: kind, preparation: preparation))
+    }
 }

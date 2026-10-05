@@ -29,12 +29,14 @@ private struct QueuePauseWatch: ViewModifier {
 
     func body(content: Content) -> some View {
         content.task(id: Key(active: active, libraryID: libraryID)) {
-            guard active, let libraryID, let runner = try? app.runner(for: libraryID) else {
+            // The library's own queue, wherever it is: for one another
+            // Mac holds, that Mac's.
+            guard active, let libraryID, let service = try? app.service(for: libraryID) else {
                 paused = false
                 return
             }
             while !Task.isCancelled {
-                let isPaused = await runner.isPaused
+                let isPaused = (try? await service.jobLane(limit: 0))?.isPaused ?? false
                 // A read the key change cancelled must not land after the
                 // new watch's own first read.
                 guard !Task.isCancelled else { return }

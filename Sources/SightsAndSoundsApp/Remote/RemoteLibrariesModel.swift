@@ -211,6 +211,14 @@ final class RemoteLibrariesModel {
         return service
     }
 
+    /// The remote libraries something here has a service for — a window
+    /// open on them — by name. Nothing is connected to in order to say.
+    var openLibraries: [(ref: RemoteLibraryRef, service: RemoteLibraryService)] {
+        services
+            .compactMap { id, service in ref(for: id).map { (ref: $0, service: service) } }
+            .sorted { $0.ref.library.name.localizedStandardCompare($1.ref.library.name) == .orderedAscending }
+    }
+
     /// A window on the library has opened.
     func windowOpened(_ windowID: UUID) {
         guard ref(for: windowID) != nil else { return }

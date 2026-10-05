@@ -793,6 +793,61 @@ import Testing
         #expect(!aWriteIsARead)
     }
 
+    /// Background Tasks, from another Mac: the lane is the host's queue,
+    /// and pausing, moving, retrying, clearing and sweeping are done to
+    /// it there.
+    @Test(.timeLimit(.minutes(1)))
+    func theHostsQueueIsSeenAndSteered() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let statuses = try await remote.sweepStatuses()
+        let directStatuses = try await local.sweepStatuses()
+        #expect(statuses == directStatuses)
+        #expect(statuses[.contentHash] != nil)
+
+        try await remote.startSweep(.contentHash, after: .nothing)
+        try await remote.startSweep(.duplicates, after: .forgetFailures)
+        let lane = try await remote.jobLane(limit: 40)
+        let directLane = try await local.jobLane(limit: 40)
+        #expect(lane == directLane)
+        #expect(lane.isPaused == true)
+        let queued = lane.jobs.map(\.kind).sorted()
+        #expect(queued == (SweepKind.contentHash.jobKinds + SweepKind.duplicates.jobKinds).sorted())
+
+        let hash = try #require(lane.jobs.first { $0.kind == SweepKind.contentHash.jobKinds[0] })
+        try await remote.moveJobToFront(id: hash.id)
+        try await remote.cancelJob(id: hash.id)
+        try await remote.retryJob(id: hash.id)
+        // A retry is a row of its own; the one retried stays as it ended.
+        let original = try await remote.job(id: hash.id)
+        #expect(original?.state == .cancelled)
+        let again = try await remote.jobLane(limit: 40)
+        #expect(again.jobs.contains { $0.kind == hash.kind && $0.state == .queued })
+
+        let other = try #require(again.jobs.first { $0.kind == SweepKind.duplicates.jobKinds[0] })
+        try await remote.cancelJob(id: other.id)
+        try await remote.clearFinishedJobs()
+        let cleared = try await remote.jobLane(limit: 40)
+        #expect(!cleared.jobs.contains { $0.state == .cancelled })
+
+        // Pause is the host's queue's, set from here.
+        try await remote.setQueuePaused(true)
+        let paused = await rig.runner.isPaused
+        #expect(paused)
+
+        let reads: [ServiceRequest] = [.jobLane(limit: 1), .sweepStatuses]
+        let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
+        #expect(everyReadIsARead)
+        let writes: [ServiceRequest] = [
+            .moveJobToFront(id: hash.id), .retryJob(id: hash.id), .clearFinishedJobs,
+            .setQueuePaused(paused: true), .startSweep(kind: .signal, preparation: .forgetEverything),
+        ]
+        let aWriteIsARead = writes.contains { $0.onlyReads }
+        #expect(!aWriteIsARead)
+    }
+
     /// Get Info, from another Mac: the host's own counts, and the two
     /// settings that are the library's to keep.
     @Test(.timeLimit(.minutes(1)))
