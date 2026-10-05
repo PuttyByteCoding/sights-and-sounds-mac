@@ -537,4 +537,15 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func jobQueue(kind: String, startingQueue: Bool) async throws -> JobQueueState {
         try await ask(.jobQueue(kind: kind, startingQueue: startingQueue))
     }
+
+    // MARK: PropertiesManaging
+
+    public func libraryProperties() async throws -> LibraryProperties { try await ask(.libraryProperties) }
+    public func renameLibrary(to name: String) async throws { try await tell(.renameLibrary(name: name)) }
+    public func setSeparatorCharacters(_ characters: String) async throws {
+        try await tell(.setSeparatorCharacters(characters: characters))
+    }
+    public func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
+        try await tell(.setExtensionOverrides(video: video, audio: audio))
+    }
 }

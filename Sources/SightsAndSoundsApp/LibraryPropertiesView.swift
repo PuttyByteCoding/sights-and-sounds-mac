@@ -12,39 +12,13 @@ struct LibraryPropertiesView: View {
     @Environment(\.openWindow) private var openWindow
     let libraryID: UUID
 
-    private struct SourceLine: Identifiable, Sendable {
-        var id: UUID
-        var name: String
-        var rootPath: String
-        var enabled: Bool
-        var itemCount: Int
-    }
+    /// What the window shows: the library's own answer, wherever the
+    /// library is.
+    private typealias Snapshot = LibraryProperties
 
-    private struct Snapshot: Sendable {
-        var info: LibraryInfo?
-        var filePath: String?
-        var fileBytes: Int64
-        var migrations: Int
-        var videoCount = 0
-        var audioCount = 0
-        var songs = 0
-        var clips = 0
-        var exportedClips = 0
-        var mediaBytes: Int64 = 0
-        var sources: [SourceLine] = []
-        var hashed = 0
-        var hashable = 0
-        var thumbnailsOnDisk = 0
-        var thumbnailFailures = 0
-        var fingerprints = 0
-        var ocrItems = 0
-        var pendingDuplicates = 0
-        var categories = 0
-        var tags = 0
-        var fields = 0
-        var jobsLogged = 0
-        var lastBackup: Date?
-    }
+    /// True for a library another Mac holds. Its file, its backups and
+    /// its place in that Mac's list of libraries are that Mac's.
+    private var isRemote: Bool { app.remoteLibraries.ref(for: libraryID) != nil }
 
     @State private var snapshot: Snapshot?
     @State private var errorText: String?
@@ -125,6 +99,7 @@ struct LibraryPropertiesView: View {
                                 [URL(fileURLWithPath: path)])
                         }
                         .buttonStyle(SecondaryButtonStyle(compact: true))
+                        .unavailableRemotely(isRemote)
                     }
                 }
                 row(
@@ -220,11 +195,15 @@ struct LibraryPropertiesView: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.control)
                                 .fill(Theme.Surface.well)
                                 .stroke(Theme.Border.standard, lineWidth: 1))
+                    // The name is also the one in the list of libraries
+                    // on the Mac that holds it, which only that Mac can
+                    // change: renamed from here the two would disagree.
                     Button("Rename") { rename() }
                         .buttonStyle(SecondaryButtonStyle(compact: true))
                         .disabled(
-                            draftName.trimmingCharacters(in: .whitespaces).isEmpty
+                            isRemote || draftName.trimmingCharacters(in: .whitespaces).isEmpty
                                 || draftName == snapshot.info?.name)
+                        .help(isRemote ? "A library is renamed on the Mac that holds it" : "")
                 }
             }
 
@@ -419,125 +398,53 @@ struct LibraryPropertiesView: View {
     // MARK: - Writes
 
     private func saveSeparators() {
-        do {
-            let library = try app.library(for: libraryID)
-            let value = separators
-            try library.writer.write { db in
-                try db.execute(
-                    sql: "UPDATE libraryInfo SET separatorCharacters = ?", arguments: [value])
-            }
-            statusText = "Separators saved."
-        } catch { statusText = "\(error)" }
+        let value = separators
+        Task {
+            do {
+                try await app.service(for: libraryID).setSeparatorCharacters(value)
+                statusText = "Separators saved."
+            } catch { statusText = "\(error)" }
+        }
     }
 
     private enum ExtensionKind { case video, audio }
 
     private func setOverride(video: [String]?, audio: [String]?, changing: ExtensionKind) {
-        do {
-            let library = try app.library(for: libraryID)
-            let info = try library.info()
-            try library.setExtensionOverrides(
-                video: changing == .video ? video : info?.videoExtensionsOverride,
-                audio: changing == .audio ? audio : info?.audioExtensionsOverride)
-            Task { await load() }
-        } catch { statusText = "\(error)" }
+        // The other kind's override is kept as the window last read it.
+        let info = snapshot?.info
+        saveOverrides(
+            video: changing == .video ? video : info?.videoExtensionsOverride,
+            audio: changing == .audio ? audio : info?.audioExtensionsOverride)
     }
 
     private func removeExtension(_ ext: String, isVideo: Bool) {
-        do {
-            let library = try app.library(for: libraryID)
-            guard let info = try library.info() else { return }
-            if isVideo {
-                try library.setExtensionOverrides(
-                    video: (info.videoExtensionsOverride ?? []).filter { $0 != ext },
-                    audio: info.audioExtensionsOverride)
-            } else {
-                try library.setExtensionOverrides(
-                    video: info.videoExtensionsOverride,
-                    audio: (info.audioExtensionsOverride ?? []).filter { $0 != ext })
-            }
-            Task { await load() }
-        } catch { statusText = "\(error)" }
+        guard let info = snapshot?.info else { return }
+        if isVideo {
+            saveOverrides(
+                video: (info.videoExtensionsOverride ?? []).filter { $0 != ext },
+                audio: info.audioExtensionsOverride)
+        } else {
+            saveOverrides(
+                video: info.videoExtensionsOverride,
+                audio: (info.audioExtensionsOverride ?? []).filter { $0 != ext })
+        }
+    }
+
+    private func saveOverrides(video: [String]?, audio: [String]?) {
+        Task {
+            do {
+                try await app.service(for: libraryID).setExtensionOverrides(video: video, audio: audio)
+                await load()
+            } catch { statusText = "\(error)" }
+        }
     }
 
     private func load() async {
         do {
-            let library = try app.library(for: libraryID)
-            let ref = app.libraries.first { $0.id == libraryID }
-            let loaded = try await Task.detached(priority: .userInitiated) { () -> Snapshot in
-                var snapshot = Snapshot(
-                    info: try library.info(),
-                    filePath: ref?.filePath,
-                    fileBytes: ref.flatMap {
-                        try? FileManager.default.attributesOfItem(atPath: $0.filePath)[.size]
-                            as? Int64
-                    } ?? 0,
-                    migrations: try library.appliedMigrations().count)
-
-                let base = snapshot
-                let counted: Snapshot = try await library.writer.read { db -> Snapshot in
-                    var filled = base
-                    func count(_ sql: String) throws -> Int {
-                        try Int.fetchOne(db, sql: sql) ?? 0
-                    }
-                    filled.videoCount = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE kind = 0 AND clipExported = 0")
-                    filled.audioCount = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE kind = 1 AND clipExported = 0")
-                    // Songs and clips are one kind of named range now,
-                    // so Contents says which is which.
-                    filled.songs = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE segmentRole = 'song' AND clipExported = 0")
-                    filled.clips = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE segmentRole = 'clip' AND clipExported = 0")
-                    filled.exportedClips = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE isExportedClip")
-                    filled.mediaBytes = try Int64.fetchOne(
-                        db,
-                        sql: "SELECT COALESCE(SUM(fileSize), 0) FROM mediaItem WHERE parentMediaItemID IS NULL")
-                        ?? 0
-                    filled.hashed = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE contentHash IS NOT NULL")
-                    filled.hashable = try count(
-                        "SELECT COUNT(*) FROM mediaItem WHERE parentMediaItemID IS NULL AND clipExported = 0")
-                    filled.thumbnailFailures = try count(
-                        "SELECT COUNT(*) FROM thumbnailState WHERE failureMessage IS NOT NULL")
-                    filled.fingerprints = try count("SELECT COUNT(*) FROM audioFingerprint")
-                    filled.ocrItems = try count(
-                        "SELECT COUNT(DISTINCT mediaItemID) FROM ocrTextLine")
-                    filled.categories = try count("SELECT COUNT(*) FROM tagCategory")
-                    filled.tags = try count("SELECT COUNT(*) FROM tag")
-                    filled.fields = try count("SELECT COUNT(*) FROM fieldDefinition")
-                    filled.jobsLogged = try count("SELECT COUNT(*) FROM job")
-                    let sources = try Source.order(sql: "name").fetchAll(db)
-                    filled.sources = try sources.map { source in
-                        SourceLine(
-                            id: source.id, name: source.name, rootPath: source.rootPath,
-                            enabled: source.enabled,
-                            itemCount: try Int.fetchOne(
-                                db,
-                                sql: "SELECT COUNT(*) FROM mediaItem WHERE sourceID = ? AND clipExported = 0",
-                                arguments: [source.id]) ?? 0)
-                    }
-                    return filled
-                }
-                snapshot = counted
-
-                snapshot.pendingDuplicates = try library.pendingCandidates().count
-                // Last backup comes from the backups on disk — the only
-                // place that fact exists.
-                snapshot.lastBackup = LibraryDatabase
-                    .backups(in: LibraryDatabase.defaultBackupDirectory())
-                    .first { $0.libraryName == snapshot.info?.name }?.createdAt
-                // Disk state IS the thumbnail truth (the sweep's rule).
-                if let info = snapshot.info {
-                    let dir = ThumbnailStore.root
-                        .appendingPathComponent(info.libraryID.uuidString, isDirectory: true)
-                    snapshot.thumbnailsOnDisk = (try? FileManager.default
-                        .contentsOfDirectory(atPath: dir.path).count) ?? 0
-                }
-                return snapshot
-            }.value
+            // The counts are made by the library, off the main actor
+            // and wherever it is: a properties window must never
+            // beachball on a big library.
+            let loaded = try await app.service(for: libraryID).libraryProperties()
             snapshot = loaded
             draftName = loaded.info?.name ?? ""
             separators = loaded.info?.separatorCharacters ?? "-._"
@@ -550,29 +457,32 @@ struct LibraryPropertiesView: View {
     /// is their home. Updates the identity row and the registry.
     private func rename() {
         let name = draftName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        do {
-            let library = try app.library(for: libraryID)
-            try library.writer.write { db in
-                try db.execute(sql: "UPDATE libraryInfo SET name = ?", arguments: [name])
+        guard !name.isEmpty, !isRemote else { return }
+        Task {
+            do {
+                try await app.service(for: libraryID).renameLibrary(to: name)
+                // The list of libraries takes the name from the library.
+                try app.appDatabase?.register(try app.library(for: libraryID))
+                app.refresh()
+                statusText = "Renamed to \u{201C}\(name)\u{201D}."
+                await load()
+            } catch {
+                statusText = "Rename failed: \(error)"
             }
-            try app.appDatabase?.register(library)
-            app.refresh()
-            statusText = "Renamed to “\(name)”."
-            Task { await load() }
-        } catch {
-            statusText = "Rename failed: \(error)"
         }
     }
 
     private func backUp() {
-        do {
-            let library = try app.library(for: libraryID)
-            let url = try library.backup(into: LibraryDatabase.defaultBackupDirectory())
-            statusText = "Backed up to \(url.lastPathComponent)"
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        } catch {
-            statusText = "Backup failed: \(error)"
+        Task {
+            do {
+                let backup = try await app.service(for: libraryID).backUp()
+                statusText = "Backed up to \(backup.lastPathComponent)"
+                // On the Mac that made it; from another it is named above.
+                if !isRemote { NSWorkspace.shared.activateFileViewerSelecting([backup]) }
+                await load()
+            } catch {
+                statusText = "Backup failed: \(error)"
+            }
         }
     }
 }

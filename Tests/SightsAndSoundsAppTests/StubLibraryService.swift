@@ -268,6 +268,21 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.jobQueue(kind: kind, startingQueue: startingQueue) }
     }
 
+    // MARK: PropertiesManaging
+
+    func libraryProperties() async throws -> LibraryProperties {
+        try await run { try await base.libraryProperties() }
+    }
+    func renameLibrary(to name: String) async throws {
+        try await run { try await base.renameLibrary(to: name) }
+    }
+    func setSeparatorCharacters(_ characters: String) async throws {
+        try await run { try await base.setSeparatorCharacters(characters) }
+    }
+    func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
+        try await run { try await base.setExtensionOverrides(video: video, audio: audio) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

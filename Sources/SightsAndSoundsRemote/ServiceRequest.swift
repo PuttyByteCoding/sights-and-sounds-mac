@@ -128,6 +128,12 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case revertMoveSession(sessionID: UUID)
     case jobQueue(kind: String, startingQueue: Bool)
 
+    // PropertiesManaging
+    case libraryProperties
+    case renameLibrary(name: String)
+    case setSeparatorCharacters(characters: String)
+    case setExtensionOverrides(video: [String]?, audio: [String]?)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -145,7 +151,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              // queue started twice is a queue started: safe to ask again.
              .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback,
              // Like the repair queue: asking may start it, and asking again is the same.
-             .organisePlan, .moveSessions, .jobQueue:
+             .organisePlan, .moveSessions, .jobQueue, .libraryProperties:
             true
         default:
             false
@@ -427,6 +433,18 @@ extension ServiceRequest {
             return try json(await service.revertMoveSession(sessionID: sessionID))
         case .jobQueue(let kind, let startingQueue):
             return try json(await service.jobQueue(kind: kind, startingQueue: startingQueue))
+
+        case .libraryProperties:
+            return try json(await service.libraryProperties())
+        case .renameLibrary(let name):
+            try await service.renameLibrary(to: name)
+            return nothing
+        case .setSeparatorCharacters(let characters):
+            try await service.setSeparatorCharacters(characters)
+            return nothing
+        case .setExtensionOverrides(let video, let audio):
+            try await service.setExtensionOverrides(video: video, audio: audio)
+            return nothing
         }
     }
 }

@@ -137,9 +137,14 @@ struct SightsAndSoundsApp: App {
         WindowGroup(id: "properties", for: LibraryRef.ID.self) { $libraryID in
             if let libraryID {
                 if model.remoteLibraries.ref(for: libraryID) != nil {
-                    NotAvailableRemotelyView(what: "Library Properties")
+                    // Asked of the other Mac. Its connection is the
+                    // library window's, kept while either is open.
+                    LibraryPropertiesView(libraryID: libraryID)
+                        .environment(model)
                         .uiZoomed()
                         .appWindowAppearance()
+                        .onAppear { model.remoteLibraries.windowOpened(libraryID) }
+                        .onDisappear { model.remoteLibraries.windowClosed(libraryID) }
                 } else {
                     LibraryPropertiesView(libraryID: libraryID)
                         .environment(model)
@@ -290,6 +295,15 @@ final class AppModel {
 
     private func remoteAccessTurnedOff() {
         servedToOtherMacs = [:]
+    }
+
+    /// The service for a library, by the id its windows go by: the
+    /// other Mac's for a library held there, and one over this Mac's
+    /// own file otherwise. For a window that is not part of a library
+    /// window and so has no model to take one from.
+    func service(for libraryID: UUID) throws -> any LibraryService {
+        if let remote = remoteLibraries.service(for: libraryID) { return remote }
+        return LocalLibraryService(library: try library(for: libraryID), runner: try runner(for: libraryID))
     }
 
     // MARK: - Libraries on other Macs

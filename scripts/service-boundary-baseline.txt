@@ -2,7 +2,6 @@
 1	Sources/SightsAndSoundsApp/Browse/BrowseModel.swift
 4	Sources/SightsAndSoundsApp/Browse/ImportRun.swift
 10	Sources/SightsAndSoundsApp/Browse/ImportView.swift
-12	Sources/SightsAndSoundsApp/LibraryPropertiesView.swift
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
 6	Sources/SightsAndSoundsApp/Search/SearchSettingsPane.swift
 6	Sources/SightsAndSoundsApp/SettingsView.swift

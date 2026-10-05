@@ -217,7 +217,6 @@ struct BrowseView: View {
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
                         }
-                        .disabled(model.isRemote)
                         Divider()
                         Button("Organise…", systemImage: "folder.badge.gearshape") {
                             openAux(.organise)

@@ -716,6 +716,31 @@ import Testing
         }
     }
 
+    /// Get Info, from another Mac: the host's own counts, and the two
+    /// settings that are the library's to keep.
+    @Test(.timeLimit(.minutes(1)))
+    func aLibrarysPropertiesAreTheHostsCount() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let properties = try await remote.libraryProperties()
+        let direct = try await local.libraryProperties()
+        #expect(properties == direct)
+        #expect(properties.info?.name == "Rig")
+        #expect(properties.sources.map(\.name) == ["Away", "Here"])
+
+        try await remote.setSeparatorCharacters("._")
+        try await remote.setExtensionOverrides(video: ["mkv"], audio: nil)
+        let info = try #require(try rig.library.info())
+        #expect(info.separatorCharacters == "._")
+        #expect(info.videoExtensionsOverride == ["mkv"] && info.audioExtensionsOverride == nil)
+        #expect(ServiceRequest.libraryProperties.onlyReads)
+        #expect(!ServiceRequest.renameLibrary(name: "x").onlyReads)
+        #expect(!ServiceRequest.setSeparatorCharacters(characters: "x").onlyReads)
+        #expect(!ServiceRequest.setExtensionOverrides(video: nil, audio: nil).onlyReads)
+    }
+
     @Test func whichOrganiseRequestsAreAskedTwice() {
         #expect(ServiceRequest.organisePlan(template: "x", itemIDs: []).onlyReads)
         #expect(ServiceRequest.moveSessions.onlyReads)
