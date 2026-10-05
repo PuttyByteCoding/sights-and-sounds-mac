@@ -47,13 +47,15 @@ import Testing
     /// frame went through it, and whether the listener counted a
     /// handshake.
     private func expectRefused(
-        _ echo: Echo, _ key: ChannelKey, _ what: String,
+        _ echo: Echo, _ key: ChannelKey, _ what: String, resuming: Bool = false,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async {
         let before = echo.listener.handshakes
-        let connection: FrameConnection
+        let connection = resuming
+            ? FrameConnection(resuming: "127.0.0.1", port: echo.port, key: key)
+            : FrameConnection(host: "127.0.0.1", port: echo.port, key: key)
         do {
-            connection = try await connect(echo, key)
+            try await connection.open(timeout: .seconds(5))
         } catch {
             #expect(error is ChannelError, "\(error)", sourceLocation: sourceLocation)
             return
@@ -191,7 +193,8 @@ import Testing
 
     /// A key the listener does not hold, tried straight after one it
     /// does has connected and gone: what the first left behind is of no
-    /// use to the second.
+    /// use to the second. On macOS 15 it was: the second connection
+    /// resumed the first one's session and showed no key at all.
     @Test(.timeLimit(.minutes(1)))
     func aKeyNotHeldIsRefusedStraightAfterOneThatIsHasConnected() async throws {
         let held = ChannelKey.random(identity: "device-held")
@@ -207,6 +210,28 @@ import Testing
         await expectRefused(
             echo, ChannelKey(identity: "device-held", key: ChannelKey.random(identity: "x").key),
             "the wrong key under a name that is held")
+    }
+
+    /// The same, from a caller that asks to resume — as this app's own
+    /// connections never do, and as anything else on the network might.
+    /// It is the listener that has to say no.
+    @Test(.timeLimit(.minutes(1)))
+    func aCallerThatAsksToResumeStillHasToShowAKey() async throws {
+        let held = ChannelKey.random(identity: "device-held")
+        let echo = try await Echo(keys: [held])
+        defer { echo.stop() }
+
+        for round in 1...3 {
+            let first = FrameConnection(resuming: "127.0.0.1", port: echo.port, key: held)
+            try await first.open(timeout: .seconds(5))
+            try await first.send(Frame(kind: 4, payload: Data("first".utf8)))
+            #expect(try await first.receive().payload == Data("first".utf8))
+            await first.close()
+
+            await expectRefused(
+                echo, ChannelKey.random(identity: "device-stranger"),
+                "round \(round), a key under a name not held, asking to resume", resuming: true)
+        }
     }
 
     /// Over and over, as devices are paired and revoked: each time the
