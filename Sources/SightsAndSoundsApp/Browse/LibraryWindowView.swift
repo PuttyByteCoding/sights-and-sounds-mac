@@ -1,5 +1,6 @@
 import SwiftUI
 import SightsAndSoundsKit
+import SightsAndSoundsRemote
 
 /// One library, one window: sidebar (sources, folders, filters) beside the
 /// filtered grid. The workspace is a shell composing independent scenes —
@@ -15,7 +16,7 @@ struct LibraryWindowView: View {
             if let model {
                 BrowseView()
                     .environment(model)
-                    .navigationTitle(model.libraryName)
+                    .navigationTitle(model.remoteHostName.map { "\(model.libraryName) — on \($0)" } ?? model.libraryName)
             } else if let openError {
                 ContentUnavailableView(
                     "Could Not Open Library",
@@ -25,14 +26,25 @@ struct LibraryWindowView: View {
                 ProgressView()
             }
         }
+        .environment(\.libraryIsRemote, model?.isRemote ?? false)
         .task { [app] in
             guard model == nil else { return }
             do {
-                model = BrowseModel(
-                    libraryID: libraryID,
-                    library: try app.library(for: libraryID),
-                    runner: try app.runner(for: libraryID),
-                    onWorkFinished: { [weak app] in app?.signalMaintenance(for: libraryID) })
+                if let remote = app.remoteLibraries.ref(for: libraryID),
+                   let service = app.remoteLibraries.service(for: libraryID) {
+                    // A library another Mac holds: the same window, asked
+                    // of that Mac.
+                    model = try BrowseModel(
+                        libraryID: libraryID, name: remote.library.name, hostName: remote.host.name,
+                        service: service,
+                        connection: RemoteConnectionNote.notes(of: service, hostName: remote.host.name))
+                } else {
+                    model = BrowseModel(
+                        libraryID: libraryID,
+                        library: try app.library(for: libraryID),
+                        runner: try app.runner(for: libraryID),
+                        onWorkFinished: { [weak app] in app?.signalMaintenance(for: libraryID) })
+                }
             } catch {
                 openError = "\(error)"
             }
@@ -102,6 +114,7 @@ struct BrowseView: View {
                     // top of the sidebar says both where a filter came from
                     // and what is currently on — and being in the sidebar,
                     // it stays visible while the player owns this column.
+                    if let note = model.connectionNote { RemoteConnectionBanner(note: note) }
                     if !model.offlineItems.isEmpty { OfflineBanner() }
                     ItemGridView()
                 }
@@ -169,12 +182,14 @@ struct BrowseView: View {
                         openAux(.importMedia)
                     }
                     .help("Add source folders and scan them for new files")
+                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button("Tag Manager", systemImage: "tag.square") {
                         openAux(.categories)
                     }
                     .help("Author this library's vocabulary — categories, tags, aliases and fields")
+                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button {
@@ -186,28 +201,39 @@ struct BrowseView: View {
                     .help(model.pendingDuplicateCount > 0
                         ? "\(model.pendingDuplicateCount) duplicate pairs, plus the delete list and playback issues"
                         : "Duplicates, the delete list and playback issues")
+                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button("History", systemImage: "clock.arrow.circlepath") {
                         openAux(.watched)
                     }
                     .help("What you have played, and where you stopped")
+                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Menu {
+                        if model.isRemote {
+                            // The rest of this menu works on a database,
+                            // and this window has none.
+                            Text(NotAvailableRemotelyView.line)
+                        }
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
                         }
+                        .disabled(model.isRemote)
                         Divider()
                         Button("Organise…", systemImage: "folder.badge.gearshape") {
                             openAux(.organise)
                         }
+                        .disabled(model.isRemote)
                         Button("Maintenance…", systemImage: "checkmark.seal") {
                             openAux(.maintenance)
                         }
+                        .disabled(model.isRemote)
                         Button("Tag Analysis…", systemImage: "tag.square") {
                             openAux(.tagAnalysis)
                         }
+                        .disabled(model.isRemote)
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             // Off the main actor: a full backup of a large
                             // library used to beachball the window.
@@ -222,6 +248,7 @@ struct BrowseView: View {
                                 }
                             }
                         }
+                        .disabled(model.isRemote)
                         Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
                             model.writeTags(
                                 itemIDs: model.visibleItems.map(\.id),
@@ -229,6 +256,7 @@ struct BrowseView: View {
                         }
                         .disabled(model.visibleItems.isEmpty)
                         PurgeButton()
+                            .disabled(model.isRemote)
                     } label: {
                         Label("Maintenance", systemImage: "wrench.adjustable")
                     }
@@ -380,5 +408,48 @@ private struct OfflineBanner: View {
             fields and thumbnails are local and current. Only playback and file \
             operations are unavailable.
             """
+    }
+}
+
+/// How the connection to the Mac that holds a library stands, as words
+/// for the window, and nothing while it is fine.
+enum RemoteConnectionNote {
+    static func text(for state: RemoteLibraryService.State, hostName: String) -> String? {
+        switch state {
+        case .connected: nil
+        case .connecting: "Connecting to \(hostName)\u{2026}"
+        case .reconnecting: "\(hostName) is not answering. What is here is as it was last heard; trying again\u{2026}"
+        case .refused(let why): "\(hostName) will not have this Mac: \(why)"
+        }
+    }
+
+    static func notes(of service: RemoteLibraryService, hostName: String) -> AsyncStream<String?> {
+        let states = service.states()
+        return AsyncStream { continuation in
+            let task = Task {
+                for await state in states { continuation.yield(text(for: state, hostName: hostName)) }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
+/// The strip over the grid that says the other Mac is not being reached.
+private struct RemoteConnectionBanner: View {
+    let note: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "network.slash")
+            Text(note)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .font(Theme.ui(Theme.TypeScale.secondary))
+        .foregroundStyle(Theme.Status.warnText)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Theme.Surface.band)
     }
 }

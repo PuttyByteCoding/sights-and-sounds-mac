@@ -101,7 +101,9 @@ struct PlayerView: View {
             do {
                 let made = PlayerModel(
                     request: request,
-                    library: try app.library(for: request.libraryID),
+                    // The window's own handle: for a library another
+                    // Mac holds, the app has none to give.
+                    library: browse.isRemote ? browse.library : try app.library(for: request.libraryID),
                     appDatabase: app.appDatabase,
                     service: browse.service)
                 // Refresh in the library window takes the grid's current

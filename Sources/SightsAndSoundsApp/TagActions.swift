@@ -61,8 +61,26 @@ struct TagActionButtons: View {
     /// then swaps on that item alone rather than across the library.
     var itemID: UUID?
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.libraryIsRemote) private var libraryIsRemote
 
     var body: some View {
+        if libraryIsRemote {
+            // Taking the tag off the item goes through the library's
+            // service and works anywhere. The rest of this menu changes
+            // the vocabulary through a database, and a window on another
+            // Mac's library has none.
+            if let removal {
+                Button(removal.label, action: removal.action)
+                Divider()
+            }
+            Text(NotAvailableRemotelyView.line)
+        } else {
+            local
+        }
+    }
+
+    @ViewBuilder
+    private var local: some View {
         Button("Edit Tag…") { pending = .edit(tag) }
         Button(tag.isFavorite ? "Remove from Favourites" : "Add to Favourites") {
             pending = .toggleFavorite(tag)

@@ -47,6 +47,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <dict>
         <key>NSAllowsLocalNetworking</key><true/>
     </dict>
+    <key>NSLocalNetworkUsageDescription</key><string>Sights and Sounds connects to other Macs on your network only when you pair them with a code: to open a library another Mac holds, or to let an approved Mac open this one's.</string>
     <!-- What macOS shows when it asks for access to a library's media. -->
     <key>NSRemovableVolumesUsageDescription</key><string>Sights and Sounds reads and organises the media files in libraries kept on external drives.</string>
     <key>NSNetworkVolumesUsageDescription</key><string>Sights and Sounds reads and organises the media files in libraries kept on network shares.</string>

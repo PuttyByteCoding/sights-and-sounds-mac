@@ -265,9 +265,7 @@ private struct ItemCell: View {
                     tag: tag, library: model.library, libraryID: model.libraryID,
                     pending: $pending,
                     removal: TagRemoval(label: TagRemoval.label(for: item.kind)) {
-                        model.attempt("remove the tag") {
-                            try model.library.removeTag(tag.id, from: item.id)
-                        }
+                        Task { await model.removeTag(tag.id, from: item) }
                     },
                     itemID: item.id))
             })
@@ -384,6 +382,7 @@ private struct ItemCell: View {
         Button("Remove \(count) from Library…", systemImage: "minus.circle") {
             removal = model.removalRequest(for: selected)
         }
+        .unavailableRemotely(model.isRemote)
         Divider()
         Button("Write Tags to \(count) Files", systemImage: "square.and.pencil") {
             model.writeTags(itemIDs: selected.map(\.id), scope: "\(count) selected items")
@@ -398,16 +397,15 @@ private struct ItemCell: View {
             item.isFavorite ? "Remove from Favourites" : "Add to Favourites",
             systemImage: item.isFavorite ? "star.slash" : "star"
         ) {
-            model.attempt("change the favourite") {
-                _ = try model.library.toggleFlag(.favorite, itemID: item.id)
-            }
+            Task { await model.setFavorite(item, !item.isFavorite) }
         }
         Divider()
         // File-location actions, not media operations.
+        // A file on another Mac is not in this Mac's Finder.
         Button("Show in Finder", systemImage: "folder") { revealInFinder() }
-            .disabled(!model.isOnline(item))
+            .disabled(!model.isOnline(item) || model.isRemote)
         Button("Open Terminal at Folder", systemImage: "terminal") { openTerminal() }
-            .disabled(!model.isOnline(item))
+            .disabled(!model.isOnline(item) || model.isRemote)
         Divider()
         // The name as it is on disk, and a search-box-friendly form with
         // the punctuation turned into spaces. Neither needs the file online.
@@ -422,6 +420,7 @@ private struct ItemCell: View {
             // at this video, over the whole listing, and opens it.
             model.openPlayerForAnalysis(at: item.id)
         }
+        .unavailableRemotely(model.isRemote)
         if item.parentMediaItemID != nil && !item.isExportedClip {
             Button("Export Clip to File", systemImage: "scissors") {
                 model.exportClip(item)
@@ -443,6 +442,7 @@ private struct ItemCell: View {
         Button("Remove from Library…", systemImage: "minus.circle") {
             removal = model.removalRequest(for: [item])
         }
+        .unavailableRemotely(model.isRemote)
         if item.parentMediaItemID == nil {
             Divider()
             Button("Optimize (Faststart)", systemImage: "bolt") {
@@ -583,6 +583,7 @@ private struct BulkBar: View {
                         itemIDs: model.selectedItems.map(\.id)))
             }
             .buttonStyle(SecondaryButtonStyle(compact: true))
+            .unavailableRemotely(model.isRemote)
             divider
             Button("Deselect · esc") { model.clearSelection() }
                 .buttonStyle(.plain)

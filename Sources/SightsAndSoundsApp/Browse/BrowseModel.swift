@@ -9,8 +9,18 @@ import SightsAndSoundsKit
 @Observable @MainActor
 final class BrowseModel {
     let libraryID: UUID
+    /// The database, for the surfaces that have not yet been moved onto
+    /// `service`. For a library another Mac holds there is none: it is
+    /// an empty one that takes no change, and those surfaces are not
+    /// offered.
     let library: LibraryDatabase
     let libraryName: String
+    /// The Mac that holds the library, when it is not this one.
+    let remoteHostName: String?
+    var isRemote: Bool { remoteHostName != nil }
+    /// How the connection to that Mac stands, when it is anything but
+    /// fine; nil for a library on this Mac.
+    private(set) var connectionNote: String?
 
     /// Which media kinds this listing includes. Several at once is
     /// allowed and none is not — the guard lives in `MediaKinds` and in
@@ -223,19 +233,50 @@ final class BrowseModel {
         }
     }
 
-    init(
+    convenience init(
         libraryID: UUID, library: LibraryDatabase, runner: JobRunner,
         fileAccess: any FileAccess = LiveFileAccess(),
         service: (any LibraryService)? = nil,
         onWorkFinished: @escaping () -> Void = {}
     ) {
+        self.init(
+            libraryID: libraryID, library: library,
+            libraryName: (try? library.info()?.name) ?? "Library", remoteHostName: nil,
+            // Given one, the window asks that; given none, it asks the
+            // library on this Mac.
+            service: service ?? LocalLibraryService(library: library, runner: runner, fileAccess: fileAccess),
+            onWorkFinished: onWorkFinished)
+    }
+
+    /// A window on a library another Mac holds. Everything it shows and
+    /// changes is asked of `service`.
+    ///
+    /// - Parameters:
+    ///   - libraryID: this Mac's id for the library, not the library's
+    ///     own; see `RemoteLibraryRef.windowID`.
+    ///   - connection: how the connection stands, as words to show, and
+    ///     nil whenever it is fine.
+    convenience init(
+        libraryID: UUID, name: String, hostName: String, service: any LibraryService,
+        connection: AsyncStream<String?>
+    ) throws {
+        self.init(
+            libraryID: libraryID, library: try LibraryDatabase.emptyAndReadOnly(),
+            libraryName: name, remoteHostName: hostName, service: service, onWorkFinished: {})
+        connectionWatch.task = Task { [weak self] in
+            for await note in connection { self?.connectionNote = note }
+        }
+    }
+
+    private init(
+        libraryID: UUID, library: LibraryDatabase, libraryName: String, remoteHostName: String?,
+        service: any LibraryService, onWorkFinished: @escaping () -> Void
+    ) {
         self.libraryID = libraryID
         self.library = library
-        self.libraryName = (try? library.info()?.name) ?? "Library"
-        // Given one, the window asks that; given none, it asks the
-        // library on this Mac.
+        self.libraryName = libraryName
+        self.remoteHostName = remoteHostName
         self.service = service
-            ?? LocalLibraryService(library: library, runner: runner, fileAccess: fileAccess)
         self.onWorkFinished = onWorkFinished
         refreshAll()
 
@@ -284,6 +325,8 @@ final class BrowseModel {
         deinit { task?.cancel() }
     }
     private let changeWatch = ChangeWatch()
+    /// The task reading how the connection to another Mac stands.
+    private let connectionWatch = ChangeWatch()
 
     /// How many hub deliveries have touched each domain. The windows that
     /// keep reads of their own — Tag Manager, Review, Maintenance,
@@ -650,6 +693,22 @@ final class BrowseModel {
 
     func setSourceEnabled(_ source: Source, _ enabled: Bool) async {
         await write { try await $0.setSourceEnabled(source.id, enabled) }
+    }
+
+    // MARK: - A tile's own changes
+
+    func setFavorite(_ item: MediaItem, _ isFavorite: Bool) async {
+        let id = item.id
+        await write(orSay: { "Could not change the favourite: \($0)" }) {
+            try await $0.setFavorite([id], isFavorite)
+        }
+    }
+
+    func removeTag(_ tagID: UUID, from item: MediaItem) async {
+        let id = item.id
+        await write(orSay: { "Could not remove the tag: \($0)" }) {
+            try await $0.removeTag(tagID, from: [id])
+        }
     }
 
     // MARK: - Sources & import
