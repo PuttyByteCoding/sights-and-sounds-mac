@@ -677,6 +677,9 @@ private struct LibraryImportSettingsPane: View {
     @State private var video = ""
     @State private var audio = ""
     @State private var statusText: String?
+    /// Only the newest reading lands: the picker can move on while a
+    /// library — one on another Mac — is still being asked.
+    @State private var loadGeneration = 0
 
     var body: some View {
         Form {
@@ -684,7 +687,7 @@ private struct LibraryImportSettingsPane: View {
             Section("Imported file extensions") {
                 Picker("Library", selection: $selectedLibraryID) {
                     Text("Choose…").tag(UUID?.none)
-                    ForEach(model.libraries) { library in
+                    ForEach(model.librariesForSettings) { library in
                         Text(library.name).tag(UUID?.some(library.id))
                     }
                 }
@@ -717,40 +720,40 @@ private struct LibraryImportSettingsPane: View {
 
     private func loadCurrent() {
         statusText = nil
-        guard let id = selectedLibraryID,
-              let library = try? model.library(for: id),
-              let info = try? library.info()
-        else {
-            overrideEnabled = false
-            video = ""
-            audio = ""
-            return
+        loadGeneration += 1
+        let generation = loadGeneration
+        // Nothing of the library before is left to be saved into this one.
+        overrideEnabled = false
+        video = ""
+        audio = ""
+        guard let id = selectedLibraryID, let service = try? model.settingsService(for: id) else { return }
+        Task {
+            guard let info = try? await service.libraryInfo(), generation == loadGeneration else { return }
+            overrideEnabled = info.videoExtensionsOverride != nil
+                || info.audioExtensionsOverride != nil
+            video = (info.videoExtensionsOverride
+                ?? AppSettingsStore.shared.current.videoExtensions).joined(separator: ", ")
+            audio = (info.audioExtensionsOverride
+                ?? AppSettingsStore.shared.current.audioExtensions).joined(separator: ", ")
         }
-        overrideEnabled = info.videoExtensionsOverride != nil
-            || info.audioExtensionsOverride != nil
-        video = (info.videoExtensionsOverride
-            ?? AppSettingsStore.shared.current.videoExtensions).joined(separator: ", ")
-        audio = (info.audioExtensionsOverride
-            ?? AppSettingsStore.shared.current.audioExtensions).joined(separator: ", ")
     }
 
     private func save() {
-        guard let id = selectedLibraryID, let library = try? model.library(for: id) else { return }
+        guard let id = selectedLibraryID, let service = try? model.settingsService(for: id) else { return }
         func parse(_ raw: String) -> [String] {
             raw.split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
                 .filter { !$0.isEmpty }
         }
-        do {
-            if overrideEnabled {
-                try library.setExtensionOverrides(video: parse(video), audio: parse(audio))
-                statusText = "Override saved."
-            } else {
-                try library.setExtensionOverrides(video: nil, audio: nil)
-                statusText = "Inheriting the app-wide lists."
+        let lists = overrideEnabled ? (video: parse(video), audio: parse(audio)) : nil
+        Task {
+            do {
+                try await service.setExtensionOverrides(video: lists?.video, audio: lists?.audio)
+                guard selectedLibraryID == id else { return }
+                statusText = lists == nil ? "Inheriting the app-wide lists." : "Override saved."
+            } catch {
+                statusText = "Save failed: \(error)"
             }
-        } catch {
-            statusText = "Save failed: \(error)"
         }
     }
 }

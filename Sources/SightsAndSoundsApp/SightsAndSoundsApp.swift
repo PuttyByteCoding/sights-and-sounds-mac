@@ -338,6 +338,33 @@ final class AppModel {
         return result
     }
 
+    /// A library Settings can be pointed at.
+    struct SettingsLibrary: Identifiable, Equatable {
+        let id: UUID
+        let name: String
+    }
+
+    /// The libraries Settings offers for what is kept per library: every
+    /// one on this Mac, open or shut, and those on other Macs that have a
+    /// window open — a Mac is not connected to just to list it.
+    var librariesForSettings: [SettingsLibrary] {
+        libraries.map { SettingsLibrary(id: $0.id, name: $0.name) }
+            + remoteLibraries.openLibraries.map {
+                SettingsLibrary(id: $0.ref.id, name: "\($0.ref.library.name) — \($0.ref.host.name)")
+            }
+    }
+
+    /// The service for a library chosen in Settings. One on this Mac is
+    /// opened if it was shut, and is given no runner: nothing in Settings
+    /// starts work. One on another Mac is asked through the connection
+    /// its window has.
+    func settingsService(for libraryID: UUID) throws -> any LibraryService {
+        if let open = remoteLibraries.openLibraries.first(where: { $0.ref.id == libraryID }) {
+            return open.service
+        }
+        return LocalLibraryService(library: try library(for: libraryID))
+    }
+
     // MARK: - Libraries on other Macs
 
     /// The Macs this one has been paired with, and their libraries.

@@ -400,9 +400,16 @@ import Testing
         // Paired and not open: no lane, and nothing is connected to ask.
         #expect(await BackgroundTasksView.lanes(of: app).isEmpty)
         #expect(app.openLibraries(withAWindow: true).isEmpty)
+        #expect(!app.librariesForSettings.contains { $0.id == ref.id })
 
-        _ = try #require(remote.service(for: ref.id))
+        let open = try #require(remote.service(for: ref.id))
         app.libraryWindowAppeared(ref.id)
+        // Settings offers it while it is open, and asks it through the
+        // connection its window has.
+        #expect(app.librariesForSettings.contains(
+            AppModel.SettingsLibrary(id: ref.id, name: "Concerts — The Den Mac")))
+        #expect(try app.settingsService(for: ref.id) as AnyObject === open)
+        #expect(try await app.settingsService(for: ref.id).libraryInfo()?.name == "Concerts")
         // The other Mac's queue is paused, and has one sweep waiting.
         try await other.service.startSweep(.contentHash, after: .nothing)
 

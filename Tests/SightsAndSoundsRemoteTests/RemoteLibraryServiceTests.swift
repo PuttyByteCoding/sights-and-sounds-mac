@@ -859,6 +859,13 @@ import Testing
         let properties = try await remote.libraryProperties()
         let direct = try await local.libraryProperties()
         #expect(properties == direct)
+        // What Settings asks, of a library chosen there.
+        let identity = try await remote.libraryInfo()
+        #expect(identity == properties.info)
+        let search = try await remote.searchSettings()
+        let directSearch = try await local.searchSettings()
+        #expect(search == directSearch)
+        #expect(ServiceRequest.libraryInfo.onlyReads && ServiceRequest.searchSettings.onlyReads)
         #expect(properties.info?.name == "Rig")
         #expect(properties.sources.map(\.name) == ["Away", "Here"])
 
