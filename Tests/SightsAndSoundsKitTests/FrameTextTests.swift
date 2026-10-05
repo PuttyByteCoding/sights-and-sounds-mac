@@ -6,7 +6,7 @@ import Testing
 /// thrown error when the frame itself cannot be produced — never a
 /// silent empty list for a broken read.
 @Suite struct FrameTextTests {
-    @Test func burnedInTextComesBackAsLines() async throws {
+    @Test(.writesVideo) func burnedInTextComesBackAsLines() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-frame-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

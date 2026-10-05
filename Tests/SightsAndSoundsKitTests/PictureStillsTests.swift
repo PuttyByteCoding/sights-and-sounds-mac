@@ -254,7 +254,7 @@ enum SyntheticPicture {
 }
 
 @Suite struct PictureStillsStageTests {
-    @Test func theStageDecodesAndMeasuresASynthesizedClip() async throws {
+    @Test(.writesVideo) func theStageDecodesAndMeasuresASynthesizedClip() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-stills-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("clip.mp4")

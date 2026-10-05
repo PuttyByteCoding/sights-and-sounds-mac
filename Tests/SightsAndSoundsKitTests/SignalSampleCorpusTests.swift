@@ -39,7 +39,7 @@ struct SignalSampleCorpusTests {
     /// and then decodes; all fifty together swamped the machine.
     static let width = 3
 
-    @Test func theReadingsMatchWhatEachSampleWasMadeWith() async throws {
+    @Test(.writesVideo) func theReadingsMatchWhatEachSampleWasMadeWith() async throws {
         let ffmpeg = try #require(FfmpegTool.path(), "ffmpeg is needed to make the samples")
         var pending = SignalSamples.all[...]
         try await withThrowingTaskGroup(of: [String].self) { group in
@@ -205,7 +205,7 @@ struct SignalSampleCorpusTests {
         return dir
     }
 
-    @Test func aFailedRunLeavesNoLibraryFile() async throws {
+    @Test(.writesVideo) func aFailedRunLeavesNoLibraryFile() async throws {
         let dir = try folder()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("Signal Samples.sqlite")
@@ -218,7 +218,7 @@ struct SignalSampleCorpusTests {
         #expect(left.isEmpty, "left behind: \(left)")
     }
 
-    @Test func anExistingLibraryIsNeverOpened() async throws {
+    @Test(.writesVideo) func anExistingLibraryIsNeverOpened() async throws {
         let dir = try folder()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("Signal Samples.sqlite")
@@ -256,7 +256,7 @@ struct SignalSampleCorpusTests {
     /// renamed one would turn every "must not be drawn" truth about it into
     /// a pass that can never fail. Each name a truth uses must be one the
     /// rules still weigh.
-    @Test func everyEvidenceAndConclusionATruthNamesIsInTheRules() {
+    @Test(.writesVideo) func everyEvidenceAndConclusionATruthNamesIsInTheRules() {
         let rules = SignalInferenceRules.rules
         let keys = Set(rules.flatMap { Array($0.supports.keys) + Array($0.contradicts.keys) })
         let categories = Set(rules.map(\.category))

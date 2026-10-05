@@ -143,7 +143,7 @@ import Testing
         }
     }
 
-    @Test func encodeProducesANewItemOrGuidance() async throws {
+    @Test(.writesVideo) func encodeProducesANewItemOrGuidance() async throws {
         let f = try await FfmpegFixture()
         defer { f.tearDown() }
         let record = try await EncodeJob.enqueue(on: f.runner, itemID: f.item.id, preset: .h264)
@@ -165,7 +165,7 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("v.mp4").path))
     }
 
-    @Test func blockRemovalCutsTheHiddenRange() async throws {
+    @Test(.writesVideo) func blockRemovalCutsTheHiddenRange() async throws {
         let f = try await FfmpegFixture()
         defer { f.tearDown() }
         _ = try f.library.addBlock(to: f.item.id, startSeconds: 2, endSeconds: 4)
@@ -191,7 +191,7 @@ import Testing
         #expect(try f.library.blocks(of: f.item.id).count == 1)
     }
 
-    @Test func blockRemovalWithoutBlocksRefuses() async throws {
+    @Test(.writesVideo) func blockRemovalWithoutBlocksRefuses() async throws {
         let f = try await FfmpegFixture()
         defer { f.tearDown() }
         let record = try await BlockRemovalJob.enqueue(on: f.runner, itemID: f.item.id)

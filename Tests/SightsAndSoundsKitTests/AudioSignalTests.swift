@@ -244,7 +244,7 @@ enum SyntheticSound {
         #expect(findings.value("audio.integratedLoudnessLufs") != nil)
     }
 
-    @Test func aFileWithNoSoundTrackSaysSoAndDoesNotFail() async throws {
+    @Test(.writesVideo) func aFileWithNoSoundTrackSaysSoAndDoesNotFail() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-audio-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("silent.mp4")

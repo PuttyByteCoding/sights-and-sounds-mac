@@ -5,7 +5,7 @@ import Testing
 
 /// Phase 5b: the background workers — content hashing and thumbnail
 /// sweeps — plus the signal-driven enqueue dedupe.
-@Suite struct WorkerTests {
+@Suite(.writesVideo) struct WorkerTests {
 
     struct WorkerFixture {
         let library: LibraryDatabase

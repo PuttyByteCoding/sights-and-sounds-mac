@@ -59,7 +59,7 @@ import Testing
         }
     }
 
-    @Test func importDiscoversProbesAndInserts() async throws {
+    @Test(.writesVideo) func importDiscoversProbesAndInserts() async throws {
         let f = try await ImportFixture()
         defer { f.tearDown() }
 
@@ -92,7 +92,7 @@ import Testing
         #expect(seen != nil)
     }
 
-    @Test func reimportIsIdempotentAndFindsOnlyNewFiles() async throws {
+    @Test(.writesVideo) func reimportIsIdempotentAndFindsOnlyNewFiles() async throws {
         let f = try await ImportFixture()
         defer { f.tearDown() }
         _ = try await f.runImport()
@@ -108,7 +108,7 @@ import Testing
         #expect(try f.items.count == 4)
     }
 
-    @Test func serializedQueueRunsBackToBack() async throws {
+    @Test(.writesVideo) func serializedQueueRunsBackToBack() async throws {
         let f = try await ImportFixture()
         defer { f.tearDown() }
 

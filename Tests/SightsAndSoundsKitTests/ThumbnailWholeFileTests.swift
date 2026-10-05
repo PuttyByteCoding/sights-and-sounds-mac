@@ -8,7 +8,7 @@ import Testing
 /// cache file used to be written in place, so a crash mid-write left a
 /// truncated file — and the sweep, checking only that a file existed,
 /// never made it again.
-@Suite struct ThumbnailWholeFileTests {
+@Suite(.writesVideo) struct ThumbnailWholeFileTests {
     @Test func aTruncatedThumbnailIsMadeAgain() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-thumb-whole-\(UUID().uuidString)", isDirectory: true)

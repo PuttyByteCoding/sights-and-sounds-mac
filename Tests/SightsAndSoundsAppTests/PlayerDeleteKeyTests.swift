@@ -10,7 +10,7 @@ import Testing
 /// field — so what it does must not depend on where the keyboard was.
 /// Marking advances; unmarking stays put, the bound-key rule, so what
 /// you just restored is still in front of you.
-@Suite @MainActor struct PlayerDeleteKeyTests {
+@Suite(.writesVideo) @MainActor struct PlayerDeleteKeyTests {
     private func makeLibrary() async throws -> (LibraryDatabase, Source, URL) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("player-delete-\(UUID().uuidString)", isDirectory: true)

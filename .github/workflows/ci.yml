@@ -56,7 +56,15 @@ jobs:
         run: brew install ffmpeg chromaprint
       - name: Build, with zero warnings
         run: ./scripts/check-build-warnings.sh
-      - name: Test
+      # What a merge waits for is not every test. The tests that write a
+      # real video are left out here (Tests/*/MergeGate.swift): this
+      # machine has no hardware encoder, the videos are encoded one at a
+      # time, and a hundred tests standing in that queue made the run as
+      # long as the queue and failed a test for its time limit. They run
+      # on a developer's Mac, where `swift test` runs everything.
+      - name: Test (the merge gate)
+        env:
+          SAS_MERGE_GATE: "1"
         run: swift test
 
   bundle:

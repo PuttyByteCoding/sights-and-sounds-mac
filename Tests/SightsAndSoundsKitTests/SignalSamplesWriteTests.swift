@@ -7,7 +7,7 @@ import Testing
 /// generation that takes minutes held a cooperative-pool thread on a
 /// semaphore, and cancelling the generation stopped nothing until ffmpeg
 /// exited on its own. It goes through the async, cancellable call now.
-@Suite struct SignalSamplesWriteTests {
+@Suite(.writesVideo) struct SignalSamplesWriteTests {
     @Test(.timeLimit(.minutes(1)))
     func cancellingAWriteStopsTheTool() async throws {
         let dir = FileManager.default.temporaryDirectory

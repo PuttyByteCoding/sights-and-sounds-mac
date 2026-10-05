@@ -69,7 +69,7 @@ import Testing
         try await waitUntil { model.itemTags[item.id]?.map(\.name) == ["Band A"] || !GridDisplaySettings.shared.grid.needsTagData }
     }
 
-    @Test func anOpenPlayerSeesATagRenamedInAnotherWindow() async throws {
+    @Test(.writesVideo) func anOpenPlayerSeesATagRenamedInAnotherWindow() async throws {
         let (library, source, item, tag) = try await makeLibrary()
         // The tag panel only loads for an item that can play.
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)

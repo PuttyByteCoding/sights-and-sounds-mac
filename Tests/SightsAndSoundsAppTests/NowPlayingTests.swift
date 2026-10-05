@@ -10,7 +10,7 @@ import Testing
 /// Playing, the keyboard's media keys, headphone buttons — and answers
 /// them. It did neither: play/pause on the keyboard went to whatever
 /// else had last played.
-@Suite(.serialized) @MainActor struct NowPlayingTests {
+@Suite(.serialized, .writesVideo) @MainActor struct NowPlayingTests {
     private func waitUntil(_ what: String, _ condition: @MainActor () -> Bool) async throws {
         for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(25)) }
         #expect(condition(), "timed out: \(what)")

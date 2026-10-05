@@ -6,7 +6,7 @@ import Testing
 /// Phase 7b against real synthesized media: clip authoring + the partial
 /// path-unique index, stream-copied clip export, remux with
 /// archive-before-write.
-@Suite struct OperationsTests {
+@Suite(.writesVideo) struct OperationsTests {
 
     struct OpsFixture {
         let library: LibraryDatabase

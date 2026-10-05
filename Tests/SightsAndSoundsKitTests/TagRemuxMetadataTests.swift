@@ -12,7 +12,7 @@ import Testing
 /// category's own field) silently never landed under a success. They
 /// are now named as not written.
 @Suite struct TagRemuxMetadataTests {
-    @Test func theRemuxKeepsStreamLanguagesAndWritesCustomFields() async throws {
+    @Test(.writesVideo) func theRemuxKeepsStreamLanguagesAndWritesCustomFields() async throws {
         guard let ffmpeg = FfmpegTool.path(), TagWriters.ffprobePath() != nil else { return }
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-remux-meta-\(UUID().uuidString)", isDirectory: true)
@@ -46,7 +46,7 @@ import Testing
     /// `album_artist` and `track`. Given the Vorbis names, it dropped both
     /// — standard fields, not custom ones — and nothing said so. Every
     /// standard field now lands.
-    @Test func everyStandardFieldReachesAnMP4() async throws {
+    @Test(.writesVideo) func everyStandardFieldReachesAnMP4() async throws {
         guard FfmpegTool.path() != nil, TagWriters.ffprobePath() != nil else { return }
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("sas-remux-mp4-\(UUID().uuidString)", isDirectory: true)
