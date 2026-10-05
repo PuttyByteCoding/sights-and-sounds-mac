@@ -103,12 +103,24 @@ struct SightsAndSoundsApp: App {
         WindowGroup(id: "aux", for: AuxWindowRequest.self) { $request in
             if let request {
                 if model.remoteLibraries.ref(for: request.libraryID) != nil {
-                    // None of these has been moved onto the library's
-                    // service yet, and there is no database here to give
-                    // them.
-                    NotAvailableRemotelyView(what: request.title ?? request.kind.title)
-                        .uiZoomed()
-                        .appWindowAppearance()
+                    if request.kind == .player {
+                        // A player asks everything of the library's
+                        // service, so it is the same for a library on
+                        // another Mac.
+                        AuxiliaryWindowView(request: request)
+                            .environment(model)
+                            .uiZoomed()
+                            .appWindowAppearance()
+                            .onAppear { model.remoteLibraries.windowOpened(request.libraryID) }
+                            .onDisappear { model.remoteLibraries.windowClosed(request.libraryID) }
+                    } else {
+                        // None of the others has been moved onto the
+                        // library's service yet, and there is no
+                        // database here to give them.
+                        NotAvailableRemotelyView(what: request.title ?? request.kind.title)
+                            .uiZoomed()
+                            .appWindowAppearance()
+                    }
                 } else {
                     AuxiliaryWindowView(request: request)
                         .environment(model)
@@ -341,6 +353,7 @@ final class AppModel {
     }
 
     func libraryWindowAppeared(_ libraryID: UUID) {
+        remoteLibraries.windowOpened(libraryID)
         openLibraryIDs.insert(libraryID)
         refreshOfflineCount(for: libraryID)
     }
@@ -348,8 +361,9 @@ final class AppModel {
     func libraryWindowDisappeared(_ libraryID: UUID) {
         openLibraryIDs.remove(libraryID)
         offlineSourceCounts[libraryID] = nil
-        // A window on another Mac's library: its connections go with it.
-        remoteLibraries.closeService(for: libraryID)
+        // A window on another Mac's library: its connections go with
+        // the last window on it.
+        remoteLibraries.windowClosed(libraryID)
         // The one moment the counts are both current and free: the handle
         // is open and the user is done with it.
         cacheSummary(for: libraryID)

@@ -297,6 +297,19 @@ import Testing
         #expect(question.detail.contains("192.168.1.66"))
     }
 
+    /// The delete question says how many items lose the tag, and a count
+    /// that could not be had is never said as none.
+    @Test func theDeleteQuestionNeverSaysNoneForUnknown() {
+        #expect(TagActionCopy.deleteMessage(uses: 0).hasPrefix("Removes the tag from 0 items."))
+        #expect(TagActionCopy.deleteMessage(uses: 1).hasPrefix("Removes the tag from 1 item."))
+        #expect(TagActionCopy.deleteMessage(uses: 12).hasPrefix("Removes the tag from 12 items."))
+        for unknown in [nil, -1] as [Int?] {
+            let message = TagActionCopy.deleteMessage(uses: unknown)
+            #expect(message.contains("could not be counted"))
+            #expect(!message.contains(" 0 "))
+        }
+    }
+
     @Test func aMacsHistoryIsSaidInALine() {
         var device = ApprovedDevice(
             id: UUID(), name: "Studio MacBook", approvedAt: Date(timeIntervalSince1970: 1_000_000),

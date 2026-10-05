@@ -89,7 +89,7 @@ struct TagTable: View {
     /// The shared tag menu's edit, alias and delete — the host's sheet
     /// and confirmation answer them.
     @Binding var pending: TagAction?
-    let library: LibraryDatabase
+    let service: any LibraryService
     let libraryID: UUID
 
     var body: some View {
@@ -260,7 +260,7 @@ struct TagTable: View {
     private func rowMenu(_ tag: Tag) -> some View {
         Button(tag.hiddenByDefault ? "Unhide" : "Hide by default") { onHide(tag) }
         Divider()
-        TagActionButtons(tag: tag, library: library, libraryID: libraryID, pending: $pending)
+        TagActionButtons(tag: tag, service: service, libraryID: libraryID, pending: $pending)
     }
 }
 

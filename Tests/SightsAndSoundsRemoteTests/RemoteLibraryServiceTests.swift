@@ -489,6 +489,76 @@ import Testing
         #expect(ServiceRequest.run(request: .validation, wait: .none).refusalForAnotherMac == nil)
     }
 
+    // MARK: - Managing tags
+
+    /// A tag's menu and the Edit Tag sheet, from another Mac: each read
+    /// is the host's answer, each change lands in the host's library.
+    @Test(.timeLimit(.minutes(1)))
+    func tagsAreManagedInTheHostsLibrary() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.fullVocabulary() == local.fullVocabulary())
+        #expect(try await remote.fullVocabulary().map(\.category.name).contains("Internal"))
+        #expect(try await remote.tagUsageCounts(categoryID: rig.band.id) == [rig.alpha.id: 1, rig.beta.id: 0])
+        #expect(try await remote.tagDetails(tagID: rig.alpha.id) == local.tagDetails(tagID: rig.alpha.id))
+        #expect(try await remote.tagDetails(tagID: rig.alpha.id).aliases == ["A"])
+
+        try await remote.setTagFavorite(rig.beta.id, true)
+        #expect(try await rig.library.writer.read { try SightsAndSoundsKit.Tag.fetchOne($0, key: rig.beta.id) }?.isFavorite == true)
+
+        // The sheet's Save, making a tag and changing one.
+        let made = try await remote.saveTag(TagDraft(
+            tagID: nil, categoryID: rig.band.id, name: "Gamma", notes: "Made from the other Mac.",
+            hiddenByDefault: false, ignoredByAnalysis: true, isFavorite: false, aliases: ["G"]))
+        #expect(try await rig.library.writer.read { try SightsAndSoundsKit.Tag.fetchOne($0, key: made.id) } == made)
+        #expect(try await remote.tagDetails(tagID: made.id).aliases == ["G"])
+        let changed = try await remote.saveTag(TagDraft(
+            tagID: made.id, categoryID: rig.band.id, name: "Gamma Ray", notes: "",
+            hiddenByDefault: true, ignoredByAnalysis: true, isFavorite: true, aliases: []))
+        #expect(changed.name == "Gamma Ray" && changed.hiddenByDefault && changed.isFavorite)
+        try await remote.removeAlias("G", fromTag: made.id)
+        #expect(try await remote.tagDetails(tagID: made.id).aliases.isEmpty)
+
+        // The menu: replace on one item, replace everywhere, make an alias, delete.
+        try await remote.replaceTag(rig.alpha.id, with: rig.beta.id, on: rig.a.id)
+        #expect(try rig.tagIDs(of: rig.a) == [rig.beta.id, rig.y1995.id])
+        try await remote.replaceTag(rig.beta.id, with: made.id, on: nil)
+        #expect(try rig.tagIDs(of: rig.a) == [made.id, rig.y1995.id])
+        try await remote.convertTagToAlias(rig.beta.id, of: made.id)
+        #expect(try await remote.tagDetails(tagID: made.id).aliases == ["Beta"])
+        try await remote.deleteTag(made.id)
+        #expect(try rig.tagIDs(of: rig.a) == [rig.y1995.id])
+
+        // What the host's library refuses is said in its words, and the
+        // connection is none the worse.
+        do {
+            _ = try await remote.saveTag(TagDraft(
+                tagID: made.id, categoryID: rig.band.id, name: "Gone", notes: "",
+                hiddenByDefault: false, ignoredByAnalysis: false, isFavorite: false, aliases: []))
+            Issue.record("a tag that had been deleted was saved")
+        } catch let error as RemoteError {
+            #expect(error == .failed("that tag is no longer in the library"))
+        }
+        #expect(remote.state == .connected)
+    }
+
+    @Test func onlyTheTagReadsAreAskedTwice() {
+        #expect(ServiceRequest.fullVocabulary.onlyReads)
+        #expect(ServiceRequest.tagUsageCounts(categoryID: UUID()).onlyReads)
+        #expect(ServiceRequest.tagDetails(tagID: UUID()).onlyReads)
+        #expect(!ServiceRequest.setTagFavorite(tagID: UUID(), isFavorite: true).onlyReads)
+        #expect(!ServiceRequest.convertTagToAlias(tagID: UUID(), targetID: UUID()).onlyReads)
+        #expect(!ServiceRequest.replaceTag(tagID: UUID(), targetID: UUID(), itemID: nil).onlyReads)
+        #expect(!ServiceRequest.deleteTag(tagID: UUID()).onlyReads)
+        #expect(!ServiceRequest.removeAlias(alias: "x", tagID: UUID()).onlyReads)
+        let draft = TagDraft(
+            tagID: nil, categoryID: UUID(), name: "x", notes: "", hiddenByDefault: false,
+            ignoredByAnalysis: false, isFavorite: false, aliases: [])
+        #expect(!ServiceRequest.saveTag(draft: draft).onlyReads)
+    }
+
     // MARK: - The connection
 
     @Test(.timeLimit(.minutes(1)))

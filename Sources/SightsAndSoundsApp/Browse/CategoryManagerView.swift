@@ -102,7 +102,7 @@ struct CategoryManagerView: View {
     private func tagSheet(_ mode: TagSheet.Mode) -> some View {
         TagSheet(
             mode: mode,
-            library: model.library,
+            service: model.service,
             libraryID: model.libraryID,
             categories: categories,
             onSaved: { tag in
@@ -377,10 +377,10 @@ struct CategoryManagerView: View {
                             reloadTags()
                         },
                         pending: $pending,
-                        library: model.library,
+                        service: model.service,
                         libraryID: model.libraryID)
                         .tagActions(
-                            $pending, library: model.library, libraryID: model.libraryID,
+                            $pending, service: model.service, libraryID: model.libraryID,
                             categories: categories,
                             onChange: {
                                 reloadTags()

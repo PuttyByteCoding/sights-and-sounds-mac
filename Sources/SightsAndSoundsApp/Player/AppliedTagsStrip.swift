@@ -41,7 +41,7 @@ struct AppliedTagsStrip: View {
                     .accessibilityHint("Removes the tag")
                     .contextMenu {
                         TagActionButtons(
-                            tag: pill.tag, library: model.library, libraryID: model.libraryID,
+                            tag: pill.tag, service: model.service, libraryID: model.libraryID,
                             pending: $pending, itemID: model.item?.id)
                     }
                 }
@@ -54,7 +54,7 @@ struct AppliedTagsStrip: View {
                 Rectangle().fill(Theme.Border.standard).frame(height: 1)
             }
             .tagActions(
-                $pending, library: model.library, libraryID: model.libraryID,
+                $pending, service: model.service, libraryID: model.libraryID,
                 categories: model.itemTags.map(\.category),
                 onChange: { model.refreshTagging() })
         }

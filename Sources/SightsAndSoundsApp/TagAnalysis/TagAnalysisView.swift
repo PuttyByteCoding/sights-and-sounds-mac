@@ -809,7 +809,7 @@ private struct DecidePane: View {
                     if let fallback = categoryID ?? model.categories.first?.id {
                         TagSheet(
                             mode: .create(categoryID: fallback, name: seedText.text),
-                            library: model.library,
+                            service: LocalLibraryService(library: model.library),
                             libraryID: model.libraryID,
                             categories: model.categories
                         ) { tag in

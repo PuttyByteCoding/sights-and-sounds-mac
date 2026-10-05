@@ -353,4 +353,26 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func setSearchFormats(_ formats: SearchFormats, replacingUnreadable: Bool) async throws {
         try await tell(.setSearchFormats(formats: formats, replacingUnreadable: replacingUnreadable))
     }
+
+    // MARK: TagManaging
+
+    public func fullVocabulary() async throws -> [CategoryTags] { try await ask(.fullVocabulary) }
+    public func tagUsageCounts(categoryID: UUID) async throws -> [UUID: Int] {
+        try await ask(.tagUsageCounts(categoryID: categoryID))
+    }
+    public func tagDetails(tagID: UUID) async throws -> TagDetails { try await ask(.tagDetails(tagID: tagID)) }
+    public func setTagFavorite(_ tagID: UUID, _ isFavorite: Bool) async throws {
+        try await tell(.setTagFavorite(tagID: tagID, isFavorite: isFavorite))
+    }
+    public func convertTagToAlias(_ tagID: UUID, of targetID: UUID) async throws {
+        try await tell(.convertTagToAlias(tagID: tagID, targetID: targetID))
+    }
+    public func replaceTag(_ tagID: UUID, with targetID: UUID, on itemID: UUID?) async throws {
+        try await tell(.replaceTag(tagID: tagID, targetID: targetID, itemID: itemID))
+    }
+    public func deleteTag(_ tagID: UUID) async throws { try await tell(.deleteTag(tagID: tagID)) }
+    public func removeAlias(_ alias: String, fromTag tagID: UUID) async throws {
+        try await tell(.removeAlias(alias: alias, tagID: tagID))
+    }
+    public func saveTag(_ draft: TagDraft) async throws -> Tag { try await ask(.saveTag(draft: draft)) }
 }

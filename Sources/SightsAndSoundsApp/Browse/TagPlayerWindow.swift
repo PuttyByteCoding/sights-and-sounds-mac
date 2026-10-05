@@ -12,12 +12,16 @@ import SightsAndSoundsKit
 /// thing that plays.
 @MainActor
 func openTagPlayerWindow(
-    tag: Tag, library: LibraryDatabase, libraryID: UUID, openWindow: OpenWindowAction
+    tag: Tag, service: any LibraryService, libraryID: UUID, openWindow: OpenWindowAction
 ) {
-    let ids = ((try? library.items(withTag: tag.id, limit: 10_000))?.items ?? []).map(\.id)
-    openWindow(
-        id: "aux",
-        value: AuxWindowRequest(
-            libraryID: libraryID, kind: .player, itemIDs: ids,
-            title: "Tag: \(tag.name)", tagID: tag.id))
+    Task {
+        // The library's own answer to "the items with this tag", which
+        // is also what Refresh in that window asks again.
+        let ids = ((try? await service.queueItems(.tag(id: tag.id, name: tag.name))) ?? []).map(\.id)
+        openWindow(
+            id: "aux",
+            value: AuxWindowRequest(
+                libraryID: libraryID, kind: .player, itemIDs: ids,
+                title: "Tag: \(tag.name)", tagID: tag.id))
+    }
 }

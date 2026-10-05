@@ -464,7 +464,7 @@ private struct CheckboxCategoryView: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     TagActionButtons(
-                        tag: tag, library: model.library, libraryID: model.libraryID,
+                        tag: tag, service: model.service, libraryID: model.libraryID,
                         pending: $pending,
                         removal: on ? TagRemoval(
                             label: TagRemoval.label(for: model.item?.kind ?? .video)
@@ -474,7 +474,7 @@ private struct CheckboxCategoryView: View {
             }
         }
         .tagActions(
-            $pending, library: model.library, libraryID: model.libraryID,
+            $pending, service: model.service, libraryID: model.libraryID,
             categories: model.panelVocabulary.map(\.category),
             onChange: { model.refreshTagging() })
     }
@@ -671,7 +671,7 @@ private struct PillCategoryView: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     TagActionButtons(
-                        tag: suggestion.tag, library: model.library,
+                        tag: suggestion.tag, service: model.service,
                         libraryID: model.libraryID, pending: $pending)
                 }
     }
@@ -731,7 +731,7 @@ private struct PillCategoryView: View {
                         }
                         .contextMenu {
                             TagActionButtons(
-                                tag: tag, library: model.library, libraryID: model.libraryID,
+                                tag: tag, service: model.service, libraryID: model.libraryID,
                                 pending: $pending,
                                 removal: TagRemoval(
                                     label: TagRemoval.label(for: model.item?.kind ?? .video)
@@ -826,14 +826,14 @@ private struct PillCategoryView: View {
             highlightedID = nil
         }
         .tagActions(
-            $pending, library: model.library, libraryID: model.libraryID,
+            $pending, service: model.service, libraryID: model.libraryID,
             categories: model.panelVocabulary.map(\.category),
             onChange: { model.refreshTagging() },
             onDismiss: restoreFieldFocus)
         .movableSheet(isPresented: $creating, onDismiss: restoreFieldFocus) {
             TagSheet(
                 mode: .create(categoryID: entry.category.id, name: query),
-                library: model.library,
+                service: model.service,
                 libraryID: model.libraryID,
                 categories: model.panelVocabulary.map(\.category)
             ) { tag in
@@ -937,6 +937,7 @@ private struct GlobalTagField: View {
             screenReadRequests: model.screenReadRequests,
             categories: model.panelVocabulary.map(\.category),
             library: model.library,
+            service: model.service,
             libraryID: model.libraryID,
             focus: focus,
             focusID: PlayerModel.universalFieldFocusID,
