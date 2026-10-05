@@ -222,7 +222,7 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments] {
         try await run { try await base.unsavedSegmentsOfMarked(itemIDs: itemIDs) }
     }
-    func purgeMarked(itemIDs: [UUID]) async throws -> LibraryDatabase.PurgeOutcome {
+    func purgeMarked(itemIDs: [UUID]?) async throws -> LibraryDatabase.PurgeOutcome {
         try await run { try await base.purgeMarked(itemIDs: itemIDs) }
     }
     func playbackIssueEvidence(itemID: UUID) async throws -> PlaybackIssueEvidence? {
@@ -233,6 +233,21 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     }
     func repairQueue(startingQueue: Bool) async throws -> RepairQueue {
         try await run { try await base.repairQueue(startingQueue: startingQueue) }
+    }
+
+    // MARK: MaintenanceManaging
+
+    func maintenanceSnapshot(includingBackups: Bool) async throws -> MaintenanceSnapshot {
+        try await run { try await base.maintenanceSnapshot(includingBackups: includingBackups) }
+    }
+    func acceptDiskSize(itemID: UUID) async throws {
+        try await run { try await base.acceptDiskSize(itemID: itemID) }
+    }
+    func previewWriteback(itemIDs: [UUID]?) async throws -> WritebackPreview {
+        try await run { try await base.previewWriteback(itemIDs: itemIDs) }
+    }
+    func backUp() async throws -> URL {
+        try await run { try await base.backUp() }
     }
 
     // MARK: BrowseListing

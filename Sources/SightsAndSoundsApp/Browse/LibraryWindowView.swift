@@ -210,9 +210,9 @@ struct BrowseView: View {
                 ToolbarItem {
                     Menu {
                         if model.isRemote {
-                            // The rest of this menu works on a database,
-                            // and this window has none.
-                            Text(NotAvailableRemotelyView.line)
+                            // What is greyed out below still works on a
+                            // database, and this window has none.
+                            Text("Some of these are not available for a remote library yet")
                         }
                         Button("Library Properties…", systemImage: "info.circle") {
                             openWindow(id: "properties", value: model.libraryID)
@@ -226,7 +226,6 @@ struct BrowseView: View {
                         Button("Maintenance…", systemImage: "checkmark.seal") {
                             openAux(.maintenance)
                         }
-                        .disabled(model.isRemote)
                         Button("Tag Analysis…", systemImage: "tag.square") {
                             openAux(.tagAnalysis)
                         }
@@ -236,16 +235,21 @@ struct BrowseView: View {
                             // library used to beachball the window.
                             Task {
                                 do {
-                                    let url = try await model.library.backUp(
-                                        into: LibraryDatabase.defaultBackupDirectory())
+                                    // Made by the library, on the Mac that
+                                    // holds it: there the file is shown, and
+                                    // from another Mac it is named.
+                                    let backup = try await model.service.backUp()
                                     model.errorMessage = nil
-                                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                                    if let host = model.remoteHostName {
+                                        model.showSearchNotice("Backed up on \(host): \(backup.lastPathComponent)")
+                                    } else {
+                                        NSWorkspace.shared.activateFileViewerSelecting([backup])
+                                    }
                                 } catch {
                                     model.errorMessage = "Backup failed: \(error)"
                                 }
                             }
                         }
-                        .disabled(model.isRemote)
                         Button("Write Tags to Filtered Items", systemImage: "square.and.pencil") {
                             model.writeTags(
                                 itemIDs: model.visibleItems.map(\.id),

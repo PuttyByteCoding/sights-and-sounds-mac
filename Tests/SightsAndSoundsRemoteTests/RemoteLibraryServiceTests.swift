@@ -656,6 +656,33 @@ import Testing
         #expect(try await remote.repairQueue(startingQueue: false).pending == [rig.a.id])
     }
 
+    /// The Maintenance window, from another Mac.
+    @Test(.timeLimit(.minutes(1)))
+    func maintenanceIsReadFromTheHostsLibrary() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.maintenanceSnapshot(includingBackups: false)
+            == local.maintenanceSnapshot(includingBackups: false))
+        #expect(try await remote.maintenanceSnapshot(includingBackups: false).backups == nil)
+        // An item on a drive that is not plugged in: previewed as
+        // skipped, with no file read.
+        let preview = try await remote.previewWriteback(itemIDs: [rig.unmounted.id])
+        #expect(preview == (try await local.previewWriteback(itemIDs: [rig.unmounted.id])))
+        #expect(preview.files.map(\.itemID) == [rig.unmounted.id])
+        #expect(preview.files.first?.skipReason != nil)
+        #expect(remote.state == .connected)
+    }
+
+    @Test func whichMaintenanceRequestsAreAskedTwice() {
+        #expect(ServiceRequest.maintenanceSnapshot(includingBackups: true).onlyReads)
+        #expect(ServiceRequest.previewWriteback(itemIDs: nil).onlyReads)
+        #expect(!ServiceRequest.acceptDiskSize(itemID: UUID()).onlyReads)
+        #expect(!ServiceRequest.backUp.onlyReads, "a backup asked for twice is two backups")
+        #expect(!ServiceRequest.purgeMarked(itemIDs: nil).onlyReads)
+    }
+
     @Test func whichReviewRequestsAreAskedTwice() {
         for read in [
             ServiceRequest.reviewLists, .mergeableTags(keeperID: UUID(), loserID: UUID()),

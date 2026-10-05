@@ -110,10 +110,16 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case rejectDuplicate(candidateID: UUID)
     case keepBothDuplicates(candidateID: UUID)
     case unsavedSegmentsOfMarked(itemIDs: [UUID]?)
-    case purgeMarked(itemIDs: [UUID])
+    case purgeMarked(itemIDs: [UUID]?)
     case playbackIssueEvidence(itemID: UUID)
     case queueRepair(itemID: UUID, recipe: RepairRecipe)
     case repairQueue(startingQueue: Bool)
+
+    // MaintenanceManaging
+    case maintenanceSnapshot(includingBackups: Bool)
+    case acceptDiskSize(itemID: UUID)
+    case previewWriteback(itemIDs: [UUID]?)
+    case backUp
 
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
@@ -130,7 +136,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .signalSummary, .unsavedSegments, .reviewLists, .mergeableTags, .unsavedSegmentsOfMarked,
              // Asking how the repair queue stands may start it, and a
              // queue started twice is a queue started: safe to ask again.
-             .playbackIssueEvidence, .repairQueue:
+             .playbackIssueEvidence, .repairQueue, .maintenanceSnapshot, .previewWriteback:
             true
         default:
             false
@@ -390,6 +396,16 @@ extension ServiceRequest {
             return try json(await service.queueRepair(itemID: itemID, recipe: recipe))
         case .repairQueue(let startingQueue):
             return try json(await service.repairQueue(startingQueue: startingQueue))
+
+        case .maintenanceSnapshot(let includingBackups):
+            return try json(await service.maintenanceSnapshot(includingBackups: includingBackups))
+        case .acceptDiskSize(let itemID):
+            try await service.acceptDiskSize(itemID: itemID)
+            return nothing
+        case .previewWriteback(let itemIDs):
+            return try json(await service.previewWriteback(itemIDs: itemIDs))
+        case .backUp:
+            return try json(await service.backUp())
         }
     }
 }

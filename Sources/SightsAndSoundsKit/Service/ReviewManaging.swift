@@ -29,8 +29,9 @@ public protocol ReviewManaging: Sendable {
     func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments]
 
     /// Delete the marked items' files, to the Trash where the volume
-    /// has one, and take the items out of the library.
-    func purgeMarked(itemIDs: [UUID]) async throws -> LibraryDatabase.PurgeOutcome
+    /// has one, and take the items out of the library. Of these items,
+    /// those that are marked; or with nil, every marked item.
+    func purgeMarked(itemIDs: [UUID]?) async throws -> LibraryDatabase.PurgeOutcome
 
     // MARK: Playback issues
 
@@ -125,7 +126,7 @@ extension LocalLibraryService {
         try library.unsavedSegments(ofFlagged: itemIDs)
     }
 
-    public func purgeMarked(itemIDs: [UUID]) async throws -> LibraryDatabase.PurgeOutcome {
+    public func purgeMarked(itemIDs: [UUID]?) async throws -> LibraryDatabase.PurgeOutcome {
         try library.purgeDeleted(itemIDs: itemIDs, fileAccess: fileAccess)
     }
 

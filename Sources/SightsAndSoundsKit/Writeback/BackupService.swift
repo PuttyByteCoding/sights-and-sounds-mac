@@ -154,7 +154,7 @@ extension LibraryDatabase {
     /// The backups home: the settings-chosen directory, else Application
     /// Support/SightsAndSounds/Backups.
     /// One backup on disk, as the list shows it.
-    public struct BackupFile: Sendable, Equatable, Identifiable {
+    public struct BackupFile: Codable, Sendable, Equatable, Identifiable {
         public var url: URL
         public var createdAt: Date
         public var bytes: Int64

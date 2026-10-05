@@ -500,7 +500,7 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func unsavedSegmentsOfMarked(itemIDs: [UUID]?) async throws -> [LibraryDatabase.UnsavedSegments] {
         try await ask(.unsavedSegmentsOfMarked(itemIDs: itemIDs))
     }
-    public func purgeMarked(itemIDs: [UUID]) async throws -> LibraryDatabase.PurgeOutcome {
+    public func purgeMarked(itemIDs: [UUID]?) async throws -> LibraryDatabase.PurgeOutcome {
         try await ask(.purgeMarked(itemIDs: itemIDs))
     }
     public func playbackIssueEvidence(itemID: UUID) async throws -> PlaybackIssueEvidence? {
@@ -512,4 +512,15 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func repairQueue(startingQueue: Bool) async throws -> RepairQueue {
         try await ask(.repairQueue(startingQueue: startingQueue))
     }
+
+    // MARK: MaintenanceManaging
+
+    public func maintenanceSnapshot(includingBackups: Bool) async throws -> MaintenanceSnapshot {
+        try await ask(.maintenanceSnapshot(includingBackups: includingBackups))
+    }
+    public func acceptDiskSize(itemID: UUID) async throws { try await tell(.acceptDiskSize(itemID: itemID)) }
+    public func previewWriteback(itemIDs: [UUID]?) async throws -> WritebackPreview {
+        try await ask(.previewWriteback(itemIDs: itemIDs))
+    }
+    public func backUp() async throws -> URL { try await ask(.backUp) }
 }

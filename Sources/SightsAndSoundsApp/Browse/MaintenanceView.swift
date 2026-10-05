@@ -321,10 +321,13 @@ struct MaintenanceView: View {
                         Text(ByteCountFormatter.string(fromByteCount: backup.bytes, countStyle: .file))
                             .font(Theme.mono(10.5))
                             .foregroundStyle(Theme.Text.quaternary)
+                        // A backup of another Mac's library is a file
+                        // on that Mac.
                         Button("Reveal") {
                             NSWorkspace.shared.activateFileViewerSelecting([backup.url])
                         }
                         .buttonStyle(SecondaryButtonStyle(compact: true))
+                        .unavailableRemotely(model.isRemote)
                     }
                     .padding(10)
                     .background(
@@ -398,10 +401,14 @@ struct MaintenanceView: View {
         case .missingFile:
             if let itemID = finding.mediaItemID {
                 Button("Mark for Deletion") {
-                    Writes.attempt("mark the item for deletion", report: $errorText) {
-                        try model.library.stage(.toDelete, itemID: itemID)
+                    let service = model.service
+                    Writes.run("mark the item for deletion", report: $errorText, then: { _ in reload() }) {
+                        // One the library could not mark comes back with
+                        // why, and is said like any other failure.
+                        if let failure = try await service.setStaging(.toDelete, on: true, itemIDs: [itemID]).first {
+                            throw MarkFailure(reason: failure.reason)
+                        }
                     }
-                    reload()
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             }
@@ -419,8 +426,10 @@ struct MaintenanceView: View {
         case .sizeMismatch:
             if let itemID = finding.mediaItemID {
                 Button("Accept Disk Size") {
-                    try? model.library.acceptDiskSize(for: itemID)
-                    reload()
+                    let service = model.service
+                    Writes.run("accept the size on disk", report: $errorText, then: { _ in reload() }) {
+                        try await service.acceptDiskSize(itemID: itemID)
+                    }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             }
@@ -520,6 +529,7 @@ struct MaintenanceView: View {
                         [LibraryDatabase.defaultBackupDirectory()])
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
+                .unavailableRemotely(model.isRemote)
                 Button("Back up now") { backUp() }
                     .buttonStyle(PrimaryButtonStyle())
             case .validation:
@@ -572,26 +582,20 @@ struct MaintenanceView: View {
 
     // MARK: - Actions
 
-    private var scopeIDs: [UUID] {
-        wholeLibrary
-            ? ((try? model.library.writer.read { db in
-                try UUID.fetchAll(db, sql: "SELECT id FROM mediaItem WHERE parentMediaItemID IS NULL")
-            }) ?? [])
-            : (scope ?? [])
-    }
+    /// The items a preview is of: the ones the window was opened on,
+    /// or — with nil — every item that is a file of its own, which the
+    /// library works out for itself.
+    private var scopeIDs: [UUID]? { wholeLibrary ? nil : (scope ?? []) }
 
     private func runPreview() {
         previewing = true
         status = nil
-        let library = model.library, ids = scopeIDs
-        Task.detached(priority: .userInitiated) {
-            // Reading each file's current tags is an ffprobe per file —
-            // off the main actor, always.
-            let result = try? library.previewWriteback(itemIDs: ids)
-            await MainActor.run {
-                preview = result
-                previewing = false
-            }
+        let service = model.service, ids = scopeIDs
+        Task {
+            // Reading each file's current tags is an ffprobe per file:
+            // the library does it, wherever it is, and this waits.
+            preview = try? await service.previewWriteback(itemIDs: ids)
+            previewing = false
         }
     }
 
@@ -606,13 +610,16 @@ struct MaintenanceView: View {
     }
 
     private func backUp() {
-        do {
-            let url = try model.library.backup(into: LibraryDatabase.defaultBackupDirectory())
-            status = "Backed up to \(url.lastPathComponent)"
-            errorText = nil
-            reload()
-        } catch {
-            errorText = "Backup failed: \(error)"
+        let service = model.service
+        Task {
+            do {
+                let backup = try await service.backUp()
+                status = "Backed up to \(backup.lastPathComponent)"
+                errorText = nil
+                reload()
+            } catch {
+                errorText = "Backup failed: \(error)"
+            }
         }
     }
 
@@ -629,22 +636,29 @@ struct MaintenanceView: View {
     }
 
     private func askBeforePurging() {
-        do {
-            let unsaved = try model.library.unsavedSegments(ofFlagged: nil)
-            if unsaved.isEmpty { confirmPurge = true } else { unsavedSegments = unsaved }
-        } catch {
-            errorText = "\(error)"
+        let service = model.service
+        Task {
+            do {
+                let unsaved = try await service.unsavedSegmentsOfMarked(itemIDs: nil)
+                if unsaved.isEmpty { confirmPurge = true } else { unsavedSegments = unsaved }
+            } catch {
+                errorText = "\(error)"
+            }
         }
     }
 
-    /// Off the main actor, like Review's: a file move per item.
+    /// Everything marked, like Review's purge of what is ticked: a file
+    /// move per item, done by the library wherever it is.
     private func purge() {
-        let library = model.library
+        let service = model.service
         isPurging = true
         Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                Result { try library.purgeDeleted() }
-            }.value
+            let result: Result<LibraryDatabase.PurgeOutcome, any Error>
+            do {
+                result = .success(try await service.purgeMarked(itemIDs: nil))
+            } catch {
+                result = .failure(error)
+            }
             isPurging = false
             finishPurge(result)
         }
@@ -691,32 +705,18 @@ struct MaintenanceView: View {
         reloading = true
         let withBackups = reloadWantsBackups
         reloadWantsBackups = false
-        let library = model.library
+        let service = model.service
         Task {
-            // One typed statement per read: the CI toolchain cannot
-            // type-check the reads as one tuple expression in time.
-            let read = await Task.detached(priority: .userInitiated) { () -> MaintenanceSnapshot in
-                var snapshot = MaintenanceSnapshot()
-                snapshot.findings = (try? library.validationFindings()) ?? []
-                if withBackups {
-                    snapshot.backups = LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory())
-                }
-                let runs: [TagWriteRun]? = try? library.writer.read { db in
-                    try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
-                }
-                snapshot.runs = runs ?? []
-                let staged: Int? = try? library.writer.read { db in
-                    try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
-                }
-                snapshot.staged = staged ?? 0
-                snapshot.reclaimable = (try? library.reclaimableBytes()) ?? 0
-                return snapshot
-            }.value
-            findings = read.findings
-            if withBackups { backups = read.backups }
-            runs = read.runs
-            stagedCount = read.staged
-            reclaimable = read.reclaimable
+            // One answer from the library. If it cannot be had, what is
+            // on screen stays: an empty window would say there is
+            // nothing to see.
+            if let read = try? await service.maintenanceSnapshot(includingBackups: withBackups) {
+                findings = read.findings
+                if let listed = read.backups { backups = listed }
+                runs = read.runs
+                stagedCount = read.stagedCount
+                reclaimable = read.reclaimableBytes
+            }
             reloading = false
             if reloadAgain {
                 reloadAgain = false
@@ -730,11 +730,8 @@ struct MaintenanceView: View {
     }
 }
 
-/// What the Maintenance window reads in one reload.
-private struct MaintenanceSnapshot: Sendable {
-    var findings: [ValidationFinding] = []
-    var backups: [LibraryDatabase.BackupFile] = []
-    var runs: [TagWriteRun] = []
-    var staged = 0
-    var reclaimable: Int64 = 0
+/// Why the library would not mark an item for deletion, in its words.
+private struct MarkFailure: Error, CustomStringConvertible {
+    let reason: String
+    var description: String { reason }
 }
