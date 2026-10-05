@@ -42,6 +42,44 @@ import Testing
         return connection
     }
 
+    /// A key the listener does not hold gets no connection. When it gets
+    /// one all the same, how far it got is what says why: whether a
+    /// frame went through it, and whether the listener counted a
+    /// handshake.
+    private func expectRefused(
+        _ echo: Echo, _ key: ChannelKey, _ what: String,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
+        let before = echo.listener.handshakes
+        let connection: FrameConnection
+        do {
+            connection = try await connect(echo, key)
+        } catch {
+            #expect(error is ChannelError, "\(error)", sourceLocation: sourceLocation)
+            return
+        }
+        var outcome = "a frame went out and came back"
+        let giveUp = Task {
+            try? await Task.sleep(for: .seconds(3))
+            await connection.close()
+        }
+        do {
+            try await connection.send(Frame(kind: 4, payload: Data("probe".utf8)))
+            _ = try await connection.receive()
+        } catch {
+            outcome = "no frame came back (\(error))"
+        }
+        giveUp.cancel()
+        await connection.close()
+        let after = echo.listener.handshakes
+        Issue.record(
+            """
+            \(what): the connection opened. Then \(outcome). The listener handed out \
+            \(after.admitted - before.admitted) and dropped \(after.stale - before.stale) as taken under replaced keys.
+            """,
+            sourceLocation: sourceLocation)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func framesCrossInBothDirections() async throws {
         let key = ChannelKey.random(identity: "device-a")
@@ -148,7 +186,27 @@ import Testing
         try await after.send(Frame(kind: 4, payload: Data("new".utf8)))
         #expect(try await after.receive().payload == Data("new".utf8))
         await after.close()
-        await #expect(throws: ChannelError.self) { _ = try await connect(echo, old) }
+        await expectRefused(echo, old, "the key that was taken out")
+    }
+
+    /// A key the listener does not hold, tried straight after one it
+    /// does has connected and gone: what the first left behind is of no
+    /// use to the second.
+    @Test(.timeLimit(.minutes(1)))
+    func aKeyNotHeldIsRefusedStraightAfterOneThatIsHasConnected() async throws {
+        let held = ChannelKey.random(identity: "device-held")
+        let echo = try await Echo(keys: [held])
+        defer { echo.stop() }
+
+        let first = try await connect(echo, held)
+        try await first.send(Frame(kind: 4, payload: Data("first".utf8)))
+        #expect(try await first.receive().payload == Data("first".utf8))
+        await first.close()
+
+        await expectRefused(echo, ChannelKey.random(identity: "device-stranger"), "a key under a name not held")
+        await expectRefused(
+            echo, ChannelKey(identity: "device-held", key: ChannelKey.random(identity: "x").key),
+            "the wrong key under a name that is held")
     }
 
     /// Over and over, as devices are paired and revoked: each time the

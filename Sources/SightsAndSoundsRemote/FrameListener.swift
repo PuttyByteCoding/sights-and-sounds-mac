@@ -22,6 +22,12 @@ public final class FrameListener: @unchecked Sendable {
         let generation: Int
     }
 
+    /// How many handshakes have completed here: those handed out, and
+    /// those dropped because the keys had been replaced while they were
+    /// under way.
+    private var counts = (admitted: 0, stale: 0)
+    var handshakes: (admitted: Int, stale: Int) { lock.withLock { counts } }
+
     /// Connections, each already open: the handshake is done and the
     /// suite checked.
     public let connections: AsyncStream<FrameConnection>
@@ -117,7 +123,11 @@ public final class FrameListener: @unchecked Sendable {
     /// were, with a key that is no longer one of them.
     private func admit(_ connection: FrameConnection, takenUnder generation: Int) -> Bool {
         lock.withLock {
-            guard generation == self.generation else { return false }
+            guard generation == self.generation else {
+                counts.stale += 1
+                return false
+            }
+            counts.admitted += 1
             live = live.filter { $0.value.connection != nil }
             live[ObjectIdentifier(connection)] = Live(connection: connection, generation: generation)
             return true
