@@ -21,6 +21,15 @@ public actor FrameConnection {
         peer = "\(host):\(port)"
     }
 
+    /// A connection from a caller that asks to resume an earlier one —
+    /// which this app never does, and a host has to refuse all the same.
+    init(resuming host: String, port: UInt16, key: ChannelKey) {
+        connection = NWConnection(
+            host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? .any,
+            using: ChannelSecurity.parameters(keys: [key], resumesSessions: true))
+        peer = "\(host):\(port)"
+    }
+
     /// A connection a listener took, to be opened.
     init(accepted connection: NWConnection) {
         self.connection = connection
