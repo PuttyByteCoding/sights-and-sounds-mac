@@ -4,7 +4,6 @@
 17	Sources/SightsAndSoundsApp/Browse/CategoryManagerView.swift
 4	Sources/SightsAndSoundsApp/Browse/ImportRun.swift
 10	Sources/SightsAndSoundsApp/Browse/ImportView.swift
-2	Sources/SightsAndSoundsApp/Browse/ItemGridView.swift
 1	Sources/SightsAndSoundsApp/Browse/LibraryWindowView.swift
 11	Sources/SightsAndSoundsApp/Browse/MaintenanceView.swift
 2	Sources/SightsAndSoundsApp/Browse/OperationsView.swift
