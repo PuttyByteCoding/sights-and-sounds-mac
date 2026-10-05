@@ -219,7 +219,6 @@ import Testing
         app.askAboutAMac = { _ in true }
         let access = app.remoteAccess
         defer { Task { await access.shutDown() } }
-        await access.setOn(false)
         await access.setOn(true)
         #expect(access.isOn, "\(access.problem ?? "")")
         await access.beginPairing(address: "127.0.0.1")
@@ -242,6 +241,23 @@ import Testing
         #expect(!app.isServedToOtherMacs(ref.id))
         try await app.restoreLibrary(id: ref.id, from: backup)
         await access.revoke(saved.id)
+    }
+
+    /// Each app model in a test run keeps its remote-access files to
+    /// itself: one that turns remote access on does not turn it on for
+    /// the next one made.
+    @Test(.timeLimit(.minutes(1)))
+    func oneAppModelsRemoteAccessIsNotAnothers() async throws {
+        let first = AppModel()
+        await first.remoteAccess.setOn(true)
+        #expect(first.remoteAccess.isOn)
+        defer { Task { await first.remoteAccess.shutDown() } }
+
+        let second = AppModel()
+        #expect(second.remoteAccessFolder != first.remoteAccessFolder)
+        await second.remoteAccess.startIfLeftOn()
+        #expect(!second.remoteAccess.isOn, "remote access came on in a model that never turned it on")
+        #expect(second.remoteAccess.devices.isEmpty)
     }
 
     // MARK: - What is shown
