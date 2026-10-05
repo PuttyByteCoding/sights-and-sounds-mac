@@ -133,6 +133,8 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
 
     // PropertiesManaging
     case libraryProperties
+    case libraryInfo
+    case searchSettings
     case renameLibrary(name: String)
     case setSeparatorCharacters(characters: String)
     case setExtensionOverrides(video: [String]?, audio: [String]?)
@@ -193,7 +195,8 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .itemAnalysis, .metadataSweepState, .analysisRules, .ruleCovering, .dryRun, .dryRuns,
              .jsonSchemas, .existingTags, .job,
              // A scan lists a folder and a probe measures a file; neither writes.
-             .importOverview, .scanSource, .probeFile, .importBoxes, .jobLane, .sweepStatuses:
+             .importOverview, .scanSource, .probeFile, .importBoxes, .jobLane, .sweepStatuses,
+             .libraryInfo, .searchSettings:
             true
         default:
             false
@@ -502,6 +505,10 @@ extension ServiceRequest {
 
         case .libraryProperties:
             return try json(await service.libraryProperties())
+        case .libraryInfo:
+            return try json(await service.libraryInfo())
+        case .searchSettings:
+            return try json(await service.searchSettings())
         case .renameLibrary(let name):
             try await service.renameLibrary(to: name)
             return nothing

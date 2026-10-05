@@ -544,6 +544,8 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     // MARK: PropertiesManaging
 
     public func libraryProperties() async throws -> LibraryProperties { try await ask(.libraryProperties) }
+    public func libraryInfo() async throws -> LibraryInfo? { try await ask(.libraryInfo) }
+    public func searchSettings() async throws -> SearchSettings { try await ask(.searchSettings) }
     public func renameLibrary(to name: String) async throws { try await tell(.renameLibrary(name: name)) }
     public func setSeparatorCharacters(_ characters: String) async throws {
         try await tell(.setSeparatorCharacters(characters: characters))

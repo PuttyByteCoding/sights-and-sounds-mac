@@ -282,6 +282,12 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func libraryProperties() async throws -> LibraryProperties {
         try await run { try await base.libraryProperties() }
     }
+    func libraryInfo() async throws -> LibraryInfo? {
+        try await run { try await base.libraryInfo() }
+    }
+    func searchSettings() async throws -> SearchSettings {
+        try await run { try await base.searchSettings() }
+    }
     func renameLibrary(to name: String) async throws {
         try await run { try await base.renameLibrary(to: name) }
     }

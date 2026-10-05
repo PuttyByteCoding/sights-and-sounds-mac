@@ -103,6 +103,28 @@ import Testing
         #expect(left == 0)
     }
 
+    /// Settings is pointed at any library on this Mac, open or shut.
+    /// Choosing one opens it and nothing more: no runner is built,
+    /// because nothing in Settings starts work.
+    @Test func settingsAsksALibraryWithoutStartingItsQueue() async throws {
+        let app = AppModel()
+        let ref = try register(app, "Settings")
+        app.refresh()
+        #expect(app.librariesForSettings.contains(AppModel.SettingsLibrary(id: ref.id, name: "Settings")))
+        #expect(app.openLibrary(for: ref.id) == nil)
+
+        let service = try app.settingsService(for: ref.id)
+        #expect(app.existingRunner(for: ref.id) == nil)
+        try await service.setExtensionOverrides(video: ["mkv"], audio: nil)
+        #expect(try await service.libraryInfo()?.videoExtensionsOverride == ["mkv"])
+        #expect(try app.library(for: ref.id).info()?.videoExtensionsOverride == ["mkv"])
+        let search = try await service.searchSettings()
+        #expect(search.formats == .empty && search.sample == nil)
+        #expect(app.existingRunner(for: ref.id) == nil)
+
+        #expect(throws: (any Error).self) { _ = try app.settingsService(for: UUID()) }
+    }
+
     final class Flag: @unchecked Sendable {
         private let lock = NSLock()
         private var value = false
