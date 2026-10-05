@@ -716,6 +716,83 @@ import Testing
         }
     }
 
+    /// Import, from another Mac: the folder is listed and the files are
+    /// measured on the host, the import is a job in the host's queue,
+    /// and a path that is not a file of a source is not taken.
+    @Test(.timeLimit(.minutes(1)))
+    func importIsScannedAndQueuedWhereTheFilesAre() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+        try Data("c".utf8).write(to: rig.root.appendingPathComponent("set/c.mp4"))
+
+        let outcome = try await remote.scanSource(sourceID: rig.source.id)
+        let new = outcome.candidates.filter { $0.isNew }.map(\.relativePath)
+        #expect(new == ["set/c.mp4"])
+        let overview = try await remote.importOverview()
+        let directOverview = try await local.importOverview()
+        #expect(overview == directOverview)
+        #expect(overview.online[rig.away.id] == false)
+        let probe = try await remote.probeFile(sourceID: rig.source.id, relativePath: "set/c.mp4")
+        #expect(probe == ProbeResult())
+
+        let boxes = [ImportBox(source: .category(rig.band.id), sticky: true, stickyTagIDs: [rig.alpha.id])]
+        try await remote.setImportBoxes(boxes)
+        let kept = try await remote.importBoxes()
+        #expect(kept == boxes)
+
+        // The rig's queue is paused: the job is queued, seen, and stopped.
+        let staging = ImportStaging(tagIDs: [rig.alpha.id], fieldValues: [:], clearsNeedsReview: true, marksFavorite: false)
+        let queued = try await remote.run(
+            .importFiles(sourceID: rig.source.id, relativePaths: ["set/c.mp4"], staging: staging), wait: .none)
+        let job = try #require(queued)
+        let row = try await remote.job(id: job.id)
+        #expect(row?.state == .queued && row?.kind == ImportJob.kind)
+        try await remote.cancelJob(id: job.id)
+        let stopped = try await remote.job(id: job.id)
+        #expect(stopped?.state == .cancelled)
+        let nobody = try await remote.job(id: UUID())
+        #expect(nobody == nil)
+
+        // What an import ends with: the host's own workers, queued there.
+        try await remote.wakeWorkers()
+        let woken = try await rig.library.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT kind) FROM job WHERE state = 'queued'") ?? 0
+        }
+        #expect(woken == 5)
+
+        try await remote.enableExtension("xyz")
+        let after = try await remote.importOverview()
+        #expect(after.hasOverride && after.videoExtensions.contains("xyz"))
+
+        // Nothing that climbs out of a source, and nothing absolute.
+        let before = try await rig.library.writer.read { try JobRecord.fetchCount($0) }
+        for path in ["../elsewhere.mp4", "/etc/hosts", "set/../../up.mp4", "set//c.mp4", ""] {
+            let asked = try await askDirectly(
+                rig,
+                .run(request: .importFiles(sourceID: rig.source.id, relativePaths: ["set/c.mp4", path], staging: nil),
+                     wait: .none))
+            #expect(asked.kind == RemoteProtocol.Kind.failure, "an import of \(path) was accepted")
+            let measured = try await askDirectly(rig, .probeFile(sourceID: rig.source.id, relativePath: path))
+            #expect(measured.kind == RemoteProtocol.Kind.failure, "a probe of \(path) was accepted")
+        }
+        let afterRefusals = try await rig.library.writer.read { try JobRecord.fetchCount($0) }
+        #expect(afterRefusals == before)
+
+        let reads: [ServiceRequest] = [
+            .importOverview, .scanSource(sourceID: rig.source.id), .importBoxes, .job(id: job.id),
+            .probeFile(sourceID: rig.source.id, relativePath: "set/c.mp4"),
+        ]
+        let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
+        #expect(everyReadIsARead)
+        let writes: [ServiceRequest] = [
+            .setImportBoxes(boxes: []), .enableExtension(fileExtension: "xyz"), .cancelJob(id: job.id),
+            .wakeWorkers,
+        ]
+        let aWriteIsARead = writes.contains { $0.onlyReads }
+        #expect(!aWriteIsARead)
+    }
+
     /// Get Info, from another Mac: the host's own counts, and the two
     /// settings that are the library's to keep.
     @Test(.timeLimit(.minutes(1)))

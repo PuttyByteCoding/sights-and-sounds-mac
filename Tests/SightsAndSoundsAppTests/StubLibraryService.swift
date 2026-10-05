@@ -196,6 +196,15 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func runNextAndWait(jobID: UUID) async throws {
         try await run { try await base.runNextAndWait(jobID: jobID) }
     }
+    func job(id: UUID) async throws -> JobRecord? {
+        try await run { try await base.job(id: id) }
+    }
+    func cancelJob(id: UUID) async throws {
+        try await run { try await base.cancelJob(id: id) }
+    }
+    func wakeWorkers() async throws {
+        try await run { try await base.wakeWorkers() }
+    }
 
     // MARK: ReviewManaging
 
@@ -332,6 +341,27 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     }
     func deleteJsonSchema(id: UUID) async throws {
         try await run { try await base.deleteJsonSchema(id: id) }
+    }
+
+    // MARK: ImportManaging
+
+    func importOverview() async throws -> ImportOverview {
+        try await run { try await base.importOverview() }
+    }
+    func scanSource(sourceID: UUID) async throws -> ScanOutcome {
+        try await run { try await base.scanSource(sourceID: sourceID) }
+    }
+    func probeFile(sourceID: UUID, relativePath: String) async throws -> ProbeResult {
+        try await run { try await base.probeFile(sourceID: sourceID, relativePath: relativePath) }
+    }
+    func importBoxes() async throws -> [ImportBox] {
+        try await run { try await base.importBoxes() }
+    }
+    func setImportBoxes(_ boxes: [ImportBox]) async throws {
+        try await run { try await base.setImportBoxes(boxes) }
+    }
+    func enableExtension(_ fileExtension: String) async throws {
+        try await run { try await base.enableExtension(fileExtension) }
     }
 
     // MARK: BrowseListing

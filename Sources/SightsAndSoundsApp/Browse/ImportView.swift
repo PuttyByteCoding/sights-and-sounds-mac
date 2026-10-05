@@ -62,6 +62,9 @@ struct ImportView: View {
     @State private var boxes: [ImportBox] = []
     @State private var staging = StagingDraft()
     @State private var showConfigure = false
+    /// Saves of the boxes, one at a time in the order made: a save is a
+    /// request now, and an older one must not land on top of a newer.
+    @State private var boxWrites = WriteQueue()
 
     // Running
     @State private var run: ImportRun?
@@ -122,9 +125,7 @@ struct ImportView: View {
                 boxes: $boxes,
                 categories: model.vocabulary.map(\.category),
                 fields: itemFields,
-                onSave: { saved in
-                    try? model.library.setImportBoxes(saved)
-                })
+                onSave: { saved in saveBoxes(saved) })
         }
         .sheet(item: $finished) { summary in
             FinishedSheet(
@@ -165,9 +166,12 @@ struct ImportView: View {
                             onScan: { beginScan(source) })
                     }
                     HStack {
+                        // A source is a folder on the Mac that holds the
+                        // library, and is added there.
                         Button("Add Folder…") { addFolder() }
                             .buttonStyle(SecondaryButtonStyle(compact: true))
                             .help("Register a folder as a source and scan it — nothing is imported until you review the list")
+                            .unavailableRemotely(model.isRemote)
                         Spacer()
                     }
                     Text("Scans are additive: new files are imported, known files are skipped, and files missing from disk are never removed.")
@@ -476,7 +480,7 @@ struct ImportView: View {
                                 candidate: candidate,
                                 probe: probes[candidate.relativePath],
                                 isSelected: selection.paths.contains(candidate.relativePath),
-                                sourceRoot: selectedSource?.rootPath ?? "",
+                                measure: measurer(of: candidate.relativePath),
                                 onToggle: {
                                     guard !candidate.isKnown else { return }
                                     selection.toggleFile(candidate.relativePath)
@@ -737,13 +741,17 @@ struct ImportView: View {
         notice = nil
         step = .scan
         scanTask?.cancel()
-        let library = model.library
+        let service = model.service
         scanTask = Task {
             do {
-                let result = try await MediaScanner.scan(source: source, library: library)
+                // The folder is listed where it is: by the library's
+                // service, on the Mac that holds it.
+                let result = try await service.scanSource(sourceID: source.id)
+                guard !Task.isCancelled else { return }
+                let saved = (try? await service.importBoxes()) ?? []
                 guard !Task.isCancelled else { return }
                 outcome = result
-                boxes = (try? library.importBoxes()) ?? []
+                boxes = saved
                 // Sticky boxes arrive already filled.
                 staging = stickyDraft()
                 if probedSource != source.id {
@@ -764,21 +772,29 @@ struct ImportView: View {
     /// Enabling a skipped extension writes THIS LIBRARY's override, not
     /// the app-wide list — the question was about this drive.
     private func enableExtension(_ ext: String) {
-        let settings = AppSettingsStore.shared.current
-        do {
-            let info = try model.library.info()
-            let video = info?.effectiveVideoExtensions(appWide: settings.videoExtensions)
-                ?? Set(settings.videoExtensions)
-            let audio = info?.effectiveAudioExtensions(appWide: settings.audioExtensions)
-                ?? Set(settings.audioExtensions)
-            // Video by default: an unknown container is far more often
-            // video, and the lists are visible in Settings either way.
-            try model.library.setExtensionOverrides(
-                video: (video.union([ext])).sorted(), audio: audio.sorted())
-            if let selectedSource { beginScan(selectedSource) }
-        } catch {
-            notice = "Could not enable .\(ext): \(error)"
+        let service = model.service
+        Task {
+            do {
+                try await service.enableExtension(ext)
+                if let selectedSource { beginScan(selectedSource) }
+            } catch {
+                notice = "Could not enable .\(ext): \(error)"
+            }
         }
+    }
+
+    /// What measures one of the selected source's files, wherever the
+    /// source is. Nil when it could not be asked, so the row asks again
+    /// rather than keeping an empty answer.
+    private func measurer(of relativePath: String) -> @Sendable () async -> ProbeResult? {
+        guard let sourceID = selectedSource?.id else { return { nil } }
+        let service = model.service
+        return { try? await service.probeFile(sourceID: sourceID, relativePath: relativePath) }
+    }
+
+    private func saveBoxes(_ boxes: [ImportBox]) {
+        let service = model.service
+        boxWrites.send { try await service.setImportBoxes(boxes) }
     }
 
     private var importButtonTitle: String {
@@ -788,22 +804,19 @@ struct ImportView: View {
 
     private func beginImport() {
         guard let source = selectedSource, run?.isRunning != true else { return }
-        // The step changes only once there is a runner to import with:
-        // it used to switch first and strand the window on Import.
-        guard let runner = try? app.runner(for: model.libraryID) else {
-            notice = "Could not start the import: the library's task runner is unavailable."
-            return
-        }
-        let library = model.library
+        let service = model.service
         let imported = selection.paths
         let sent = staging
-        let resolved = staging.staging(in: library)
-        let groups = [ImportRun.Group(paths: imported.sorted(), staging: resolved.isEmpty ? nil : resolved)]
 
-        let run = ImportRun(runner: runner, library: library)
+        // A library whose jobs cannot be started says so in the run's
+        // own result, which brings the window back to Review.
+        let run = ImportRun(service: service)
         self.run = run
         step = .importing
-        run.start(sourceID: source.id, groups: groups) { result in
+        run.start(sourceID: source.id, preparing: {
+            let resolved = await sent.staging(through: service)
+            return [ImportRun.Group(paths: imported.sorted(), staging: resolved.isEmpty ? nil : resolved)]
+        }) { result in
             let tally = result.tally
             // Sticky boxes keep their values for the next import.
             persistSticky()
@@ -851,7 +864,7 @@ struct ImportView: View {
     private func setSticky(_ box: ImportBox, _ sticky: Bool) {
         guard let index = boxes.firstIndex(where: { $0.id == box.id }) else { return }
         boxes[index].sticky = sticky
-        try? model.library.setImportBoxes(boxes)
+        saveBoxes(boxes)
     }
 
     private func persistSticky() {
@@ -866,72 +879,31 @@ struct ImportView: View {
                 boxes[index].stickyValue = draft.fieldValues[fieldID]
             }
         }
-        try? model.library.setImportBoxes(boxes)
+        saveBoxes(boxes)
     }
 
     /// Counts, reachability, history and the effective extension lists —
     /// gathered off the main actor, published behind a generation guard.
     private func reload() async {
-        itemFields = (try? model.library.fields(scope: .mediaItem)) ?? []
         loadGeneration += 1
         let generation = loadGeneration
-        let library = model.library
-        let sources = model.sources
-        let appSettings = AppSettingsStore.shared.current
-
-        struct Loaded: Sendable {
-            var counts: [UUID: Int] = [:]
-            var online: [UUID: Bool] = [:]
-            var history: [JobRecord] = []
-            var video: [String] = []
-            var audio: [String] = []
-            var hasOverride = false
-        }
-        let loaded = await Task.detached { () -> Loaded in
-            var result = Loaded()
-            do {
-                // Sync read on purpose — the async overload's closure
-                // inference is ambiguous to the CI toolchain (Xcode 16),
-                // and this whole task is already off the main actor.
-                try library.writer.read { db in
-                    let rows = try Row.fetchAll(
-                        db, sql: "SELECT sourceID, COUNT(*) AS c FROM mediaItem GROUP BY sourceID")
-                    for row in rows {
-                        if let id = row["sourceID"] as UUID? {
-                            result.counts[id] = row["c"]
-                        }
-                    }
-                    result.history = try JobRecord
-                        .filter(sql: "kind = ?", arguments: [ImportJob.kind])
-                        .order(sql: "createdAt DESC")
-                        .limit(12)
-                        .fetchAll(db)
-                    let info = try LibraryInfo.fetchOne(db)
-                    result.hasOverride = info?.videoExtensionsOverride != nil
-                        || info?.audioExtensionsOverride != nil
-                    result.video = (info?.effectiveVideoExtensions(appWide: appSettings.videoExtensions)
-                        ?? Set(appSettings.videoExtensions.map { $0.lowercased() })).sorted()
-                    result.audio = (info?.effectiveAudioExtensions(appWide: appSettings.audioExtensions)
-                        ?? Set(appSettings.audioExtensions.map { $0.lowercased() })).sorted()
-                }
-            } catch {
-                // Leave the partial result — the rows render what loaded.
-            }
-            let fileAccess = LiveFileAccess()
-            for source in sources {
-                result.online[source.id] = source.isOnline(using: fileAccess)
-            }
-            return result
-        }.value
+        let service = model.service
+        let fields = (try? await service.fields(scope: .mediaItem, categoryID: nil)) ?? []
+        // Leave what is shown when the library could not be asked.
+        let overview = try? await service.importOverview()
+        let saved = boxes.isEmpty ? try? await service.importBoxes() : nil
 
         guard generation == loadGeneration else { return }
-        itemCounts = loaded.counts
-        online = loaded.online
-        history = loaded.history
-        videoExtensions = loaded.video
-        audioExtensions = loaded.audio
-        hasOverride = loaded.hasOverride
-        if boxes.isEmpty { boxes = (try? library.importBoxes()) ?? [] }
+        itemFields = fields
+        if let overview {
+            itemCounts = overview.itemCounts
+            online = overview.online
+            history = overview.history
+            videoExtensions = overview.videoExtensions
+            audioExtensions = overview.audioExtensions
+            hasOverride = overview.hasOverride
+        }
+        if boxes.isEmpty, let saved { boxes = saved }
     }
 }
 
@@ -956,10 +928,10 @@ struct StagingDraft: Equatable {
 
     /// Resolve the pending names against the library, then hand the job
     /// a payload of ids.
-    func staging(in library: LibraryDatabase) -> ImportStaging {
+    func staging(through service: any LibraryService) async -> ImportStaging {
         var ids = tagIDs
         for pending in pendingNames {
-            if let tag = try? library.ensureTag(
+            if let tag = try? await service.ensureTag(
                 named: pending.name, inCategory: pending.categoryID) {
                 ids.append(tag.id)
             }
@@ -1042,7 +1014,8 @@ private struct CandidateRow: View {
     let candidate: ScanCandidate
     let probe: ProbeResult?
     let isSelected: Bool
-    let sourceRoot: String
+    /// Measures the file, on the Mac that has it.
+    let measure: @Sendable () async -> ProbeResult?
     let onToggle: () -> Void
     let onProbed: (ProbeResult) -> Void
 
@@ -1092,10 +1065,7 @@ private struct CandidateRow: View {
         .contentShape(Rectangle())
         .onTapAsButton(perform: onToggle)
         .task(id: candidate.relativePath) {
-            guard probe == nil, !sourceRoot.isEmpty else { return }
-            let url = URL(fileURLWithPath: sourceRoot, isDirectory: true)
-                .appendingPathComponent(candidate.relativePath)
-            let result = await MediaProbe.probe(url: url)
+            guard probe == nil, let result = await measure() else { return }
             onProbed(result)
         }
     }

@@ -24,13 +24,12 @@ struct AuxWindowRequest: Codable, Hashable {
         case bookmarkSearch
 
         /// Whether the surface asks everything of the library's service,
-        /// and so works on a library another Mac holds. The others still
-        /// work on a database; the list grows as they are moved.
+        /// and so works on a library another Mac holds. They all do now;
+        /// a new one says here which it is.
         var worksOnARemoteLibrary: Bool {
             switch self {
             case .player, .categories, .watched, .bookmarkSearch, .review, .maintenance, .organise,
-                 .operations, .tagAnalysis: true
-            case .importMedia: false
+                 .operations, .tagAnalysis, .importMedia: true
             }
         }
 

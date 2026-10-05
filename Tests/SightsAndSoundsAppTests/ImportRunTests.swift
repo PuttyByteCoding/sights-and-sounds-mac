@@ -26,15 +26,15 @@ import Testing
         try library.ensureInfo(name: "ImportRun")
         let source = Source(name: "Here", rootPath: root.path)
         try await library.writer.write { try source.insert($0) }
-        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: JobRunner(library: library)))
         let gate = Gate()
         defer { gate.open() }
         let enqueue = run.enqueue
         let counter = Counter()
-        run.enqueue = { runner, sourceID, paths, staging in
+        run.enqueue = { service, sourceID, paths, staging in
             // The first folder queues at once; the second waits for the gate.
             if counter.next() > 1 { await gate.hold() }
-            return try await enqueue(runner, sourceID, paths, staging)
+            return try await enqueue(service, sourceID, paths, staging)
         }
 
         var finished = false
@@ -70,7 +70,7 @@ import Testing
         try library.ensureInfo(name: "ImportRunEarly")
         let source = Source(name: "Here", rootPath: "/tmp/sas-import-run-\(UUID().uuidString)")
         try await library.writer.write { try source.insert($0) }
-        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: JobRunner(library: library)))
 
         var finished = false
         run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { _ in finished = true }
@@ -95,7 +95,7 @@ import Testing
         try library.ensureInfo(name: "ImportRunLive")
         let source = Source(name: "Here", rootPath: root.path)
         try await library.writer.write { try source.insert($0) }
-        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: JobRunner(library: library)))
         #expect(!run.isRunning)
 
         var finished = false
@@ -164,7 +164,7 @@ import Testing
         _ = try await runner.enqueue(LongSweep.self)
         await runner.startDraining()
 
-        let run = ImportRun(runner: runner, library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: runner))
         var finished = false
         run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { _ in finished = true }
         for _ in 0..<400 where run.running == nil { try await Task.sleep(for: .milliseconds(10)) }
@@ -188,11 +188,11 @@ import Testing
         let runner = JobRunner(library: library, paused: true)
         let gate = Gate()
         defer { gate.open() }
-        let run = ImportRun(runner: runner, library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: runner))
         let enqueue = run.enqueue
-        run.enqueue = { runner, sourceID, paths, staging in
+        run.enqueue = { service, sourceID, paths, staging in
             await gate.hold()
-            return try await enqueue(runner, sourceID, paths, staging)
+            return try await enqueue(service, sourceID, paths, staging)
         }
 
         var finished = false
@@ -219,7 +219,7 @@ import Testing
         // A root that does not exist: the job refuses it as offline.
         let source = Source(name: "Gone", rootPath: "/tmp/sas-import-gone-\(UUID().uuidString)")
         try await library.writer.write { try source.insert($0) }
-        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: JobRunner(library: library)))
         var outcome: ImportRun.Outcome?
         run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
         for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
@@ -235,12 +235,74 @@ import Testing
         try library.ensureInfo(name: "ImportRunCancelled")
         let source = Source(name: "Here", rootPath: "/tmp/sas-import-cancel-\(UUID().uuidString)")
         try await library.writer.write { try source.insert($0) }
-        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: JobRunner(library: library)))
         var outcome: ImportRun.Outcome?
         run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
         run.cancel()
         for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
         #expect(try #require(outcome).cancelled)
+    }
+
+    /// The run asks the library's service for everything — the words
+    /// staged becoming tags, the job, its row — so it is the same run
+    /// for a library another Mac holds.
+    @Test(.timeLimit(.minutes(1)))
+    func aRunGoesThroughTheLibrarysService() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("import-run-service-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try DemoMediaFactory.writeAudio(to: root.appendingPathComponent("a.m4a"), seconds: 1)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunService")
+        let source = Source(name: "Here", rootPath: root.path)
+        let band = TagCategory(name: "Band")
+        try await library.writer.write { db in
+            try source.insert(db)
+            try band.insert(db)
+        }
+        let stub = StubLibraryService(LocalLibraryService(library: library, runner: JobRunner(library: library)))
+        // As for a library another Mac holds: nothing here reaches a file.
+        stub.filesAreOnThisMac = false
+        let run = ImportRun(service: stub)
+        run.pollInterval = .milliseconds(20)
+        let draft = StagingDraft(pendingNames: [PendingTagName(name: "Alpha", categoryID: band.id)])
+
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, preparing: {
+            let staged = await draft.staging(through: stub)
+            return [ImportRun.Group(paths: ["a.m4a"], staging: staged)]
+        }) { outcome = $0 }
+        #expect(run.isRunning, "the run did not count as running while its groups were made ready")
+        for _ in 0..<800 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+
+        let got = try #require(outcome)
+        #expect(got.failures.isEmpty && !got.cancelled, "\(got)")
+        #expect(got.tally.inserted == 1)
+        #expect(stub.calls("ensureTag(named:inCategory:)") == 1)
+        #expect(stub.calls("run(_:wait:)") == 1)
+        #expect(stub.calls("jobQueue(kind:startingQueue:)") == 1)
+        #expect(stub.calls("job(id:)") >= 1)
+        // What was staged is on what was imported.
+        let item = try #require(try await library.writer.read { try MediaItem.fetchOne($0) })
+        let tags = try await stub.itemTags(itemID: item.id).flatMap(\.tags).map(\.name)
+        #expect(tags == ["Alpha"])
+    }
+
+    /// A library whose jobs cannot be started says so in the run's own
+    /// result; the window used to check for a runner before it began.
+    @Test(.timeLimit(.minutes(1)))
+    func aLibraryThatCannotStartJobsIsAFailureNotAHang() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "ImportRunJobless")
+        let source = Source(name: "Here", rootPath: "/tmp/sas-import-jobless-\(UUID().uuidString)")
+        try await library.writer.write { try source.insert($0) }
+        let run = ImportRun(service: LocalLibraryService(library: library))
+        var outcome: ImportRun.Outcome?
+        run.start(sourceID: source.id, groups: [.init(paths: ["a.mp4"])]) { outcome = $0 }
+        for _ in 0..<400 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }
+        let got = try #require(outcome)
+        #expect(got.failures == ["\(ServiceError.noJobRunner)"])
+        #expect(!run.isRunning)
     }
 
     /// Per-folder imports are one job each, and the overlay restarted at
@@ -256,7 +318,7 @@ import Testing
         try library.ensureInfo(name: "ImportRunFolders")
         let source = Source(name: "Here", rootPath: root.path)
         try await library.writer.write { try source.insert($0) }
-        let run = ImportRun(runner: JobRunner(library: library), library: library)
+        let run = ImportRun(service: LocalLibraryService(library: library, runner: JobRunner(library: library)))
         var outcome: ImportRun.Outcome?
         run.start(sourceID: source.id, groups: [.init(paths: ["one/a.m4a"]), .init(paths: ["two/b.m4a"])]) {
             outcome = $0

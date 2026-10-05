@@ -4,7 +4,7 @@ import Foundation
 /// What probing a media file yields — the file-measured half of a
 /// `MediaItem`. Kept as a struct so import and future re-probe jobs share
 /// one shape.
-public struct ProbeResult: Sendable, Equatable {
+public struct ProbeResult: Codable, Sendable, Equatable {
     public var durationSeconds: Double?
     public var width: Int?
     public var height: Int?

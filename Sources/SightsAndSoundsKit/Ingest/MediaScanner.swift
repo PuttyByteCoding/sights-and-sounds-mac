@@ -8,7 +8,7 @@ import GRDB
 /// probing four thousand candidates up front would make the scan cost as
 /// much as the import it exists to precede. The window probes the rows on
 /// screen and shows `—` until they resolve; the insert probes for real.
-public struct ScanCandidate: Sendable, Equatable, Identifiable {
+public struct ScanCandidate: Codable, Sendable, Equatable, Identifiable {
     public var relativePath: String
     public var folderPath: String
     public var fileName: String
@@ -44,7 +44,7 @@ public struct ScanCandidate: Sendable, Equatable, Identifiable {
 }
 
 /// What one scan found, and what it deliberately did not list.
-public struct ScanOutcome: Sendable, Equatable {
+public struct ScanOutcome: Codable, Sendable, Equatable {
     public var candidates: [ScanCandidate]
     /// Extensions seen under the root that no enabled list claims, with
     /// counts. Free during enumeration, and it answers the question the
