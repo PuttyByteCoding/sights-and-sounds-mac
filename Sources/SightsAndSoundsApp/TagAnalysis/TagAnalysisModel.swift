@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 import Observation
 import SightsAndSoundsKit
 
@@ -13,7 +12,10 @@ import SightsAndSoundsKit
 final class TagAnalysisModel {
 
     let session: TagAnalysisSession
-    var library: LibraryDatabase { session.library }
+    var service: any LibraryService { session.service }
+    /// This window's writes, one at a time in the order they were asked
+    /// for, and waited for by a quit.
+    private let writes = WriteQueue()
     var libraryID: UUID { session.libraryID }
 
     private(set) var analysis: ItemAnalysis = .empty
@@ -57,6 +59,9 @@ final class TagAnalysisModel {
     /// The item the reload in flight (or the last one) was for — the
     /// guard that drops results for an item the player has left.
     private var loadedItemID: UUID?
+    /// Only the newest reload lands: two for one video (a tag applied,
+    /// then its sweep finishing) can be answered out of order.
+    private var reloadGeneration = 0
 
     init(session: TagAnalysisSession) {
         self.session = session
@@ -111,7 +116,8 @@ final class TagAnalysisModel {
     /// evidence and judging nothing tag-worthy IS an analysis.
     private func markAnalyzed(_ id: UUID?) {
         guard let id else { return }
-        try? library.markAnalyzed(id)
+        let service = service
+        writes.send { try await service.markAnalyzed(itemID: id) }
     }
 
     /// The window is going away: the companion's half of the session
@@ -211,24 +217,28 @@ final class TagAnalysisModel {
         loadedItemID = itemID
         isLoading = true
         session.companionWillReload()
-        let library = library
+        reloadGeneration += 1
+        let generation = reloadGeneration
+        let service = service
         Task {
+            // The reading is the service's: off the main actor, and on
+            // the Mac that has the files.
+            let outcome: Result<ItemAnalysisAnswer, any Error>
             do {
-                let rules = try library.analysisRules()
-                let categories = try library.vocabulary().map(\.category)
-                let analysis = try await Task.detached(priority: .userInitiated) {
-                    try library.analyzeItem(itemID, rules: rules)
-                }.value
-                guard itemID == self.currentItemID else { return }
-                self.currentItem = try await library.writer.read {
-                    try MediaItem.fetchOne($0, key: itemID)
-                }
-                self.rules = rules
-                self.categories = categories
-                self.analysis = analysis
-                self.session.companionDidReload(analysis)
-                self.loadError = nil
+                outcome = .success(try await service.itemAnalysis(itemID: itemID))
             } catch {
+                outcome = .failure(error)
+            }
+            guard generation == self.reloadGeneration, itemID == self.currentItemID else { return }
+            switch outcome {
+            case .success(let answer):
+                self.currentItem = answer.item
+                self.rules = answer.rules
+                self.categories = answer.categories
+                self.analysis = answer.analysis
+                self.session.companionDidReload(answer.analysis)
+                self.loadError = nil
+            case .failure(let error):
                 self.loadError = "\(error)"
                 self.session.companionDidReload(.empty)
             }
@@ -263,6 +273,20 @@ final class TagAnalysisModel {
     }
     private var jobsWaitedOn: [WaitKey: Int] = [:]
 
+    /// Videos whose library is being asked whether they still need a
+    /// sweep. The answer takes a moment, and walking away and back in
+    /// that moment must not ask — and then queue — twice.
+    private var sweepQuestions: Set<UUID> = []
+
+    /// True when nobody is already asking about this video.
+    func beginSweepQuestion(for itemID: UUID) -> Bool {
+        sweepQuestions.insert(itemID).inserted
+    }
+
+    func endSweepQuestion(for itemID: UUID) {
+        sweepQuestions.remove(itemID)
+    }
+
     func beginSweep(for itemID: UUID, _ wait: Wait = .metadataSweep) {
         isLoading = true
         jobsWaitedOn[WaitKey(item: itemID, wait: wait), default: 0] += 1
@@ -292,14 +316,13 @@ final class TagAnalysisModel {
     }
 
     /// Create (or find by name) then apply — the decide pane's Assign.
-    func applyNew(value: String, categoryID: UUID) {
+    func applyNew(value: String, categoryID: UUID) async {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        do {
-            let tag = try library.ensureTag(named: trimmed, inCategory: categoryID)
-            applyNow(tag)
-        } catch {
-            loadError = "\(error)"
+        let service = service
+        switch await writes.run({ try await service.ensureTag(named: trimmed, inCategory: categoryID) }) {
+        case .success(let tag): applyNow(tag)
+        case .failure(let error): loadError = "\(error)"
         }
     }
 
@@ -309,44 +332,43 @@ final class TagAnalysisModel {
     /// Implemented as an authored ignore RULE — candidates become rules —
     /// so reversing it is deleting the rule, and the Ignored status
     /// filter is the list the comp promises.
-    func ignoreRule(for candidate: AnalysisCandidate) {
+    func ignoreRule(for candidate: AnalysisCandidate) async {
         let matcher: RuleMatcher = candidate.key.flatMap { key in
             key.isEmpty ? nil : .keyEquals(key: key)
         } ?? .valueStartsWith(prefix: candidate.value)
-        do {
-            try library.saveAnalysisRule(
-                RuleEngine.Rule(id: UUID(), matcher: matcher, actions: [.ignore]))
-            reload()
-        } catch {
-            loadError = "\(error)"
+        await write {
+            try await $0.saveAnalysisRule(RuleEngine.Rule(id: UUID(), matcher: matcher, actions: [.ignore]))
+        }
+    }
+
+    /// One write to the rules or the vocabulary, then the analysis again
+    /// under it. A failure is said, and what is on screen stays.
+    private func write(_ body: @escaping @Sendable (any LibraryService) async throws -> Void) async {
+        let service = service
+        switch await writes.run({ try await body(service) }) {
+        case .success: reload()
+        case .failure(let error): loadError = "\(error)"
         }
     }
 
     /// The comp's "Hide the prefix": a pathRootStartsWith + hidePrefix
     /// rule, so the never-useful leading token stops appearing.
-    func hidePrefixRule(root: String) {
+    func hidePrefixRule(root: String) async {
         let trimmed = root.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        do {
-            try library.saveAnalysisRule(
+        await write {
+            try await $0.saveAnalysisRule(
                 RuleEngine.Rule(
                     id: UUID(), matcher: .pathRootStartsWith(root: trimmed),
                     actions: [.hidePrefix]))
-            reload()
-        } catch {
-            loadError = "\(error)"
         }
     }
 
     /// The comp's "Add as an alias": folds this spelling into an existing
     /// tag. Vocabulary, not tagging — it writes immediately, because an
     /// alias belongs to the library, not to this video.
-    func addAlias(_ value: String, toTag tagID: UUID) {
-        do {
-            try library.addAlias(value.trimmingCharacters(in: .whitespacesAndNewlines), toTag: tagID)
-            reload()
-        } catch {
-            loadError = "\(error)"
-        }
+    func addAlias(_ value: String, toTag tagID: UUID) async {
+        let alias = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        await write { try await $0.addAlias(alias, toTag: tagID) }
     }
 }

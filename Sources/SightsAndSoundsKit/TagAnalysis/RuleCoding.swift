@@ -161,3 +161,28 @@ extension LibraryDatabase {
         }
     }
 }
+
+/// A rule sent to another Mac travels as it is stored: the matcher and
+/// the actions in the wire vocabulary above, so there is one encoding of
+/// a rule, and a type this build does not know survives the trip as it
+/// survives being saved.
+extension RuleEngine.Rule: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, matcher, actions
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            matcher: try RuleCoding.decodeMatcher(try container.decode(String.self, forKey: .matcher)),
+            actions: try RuleCoding.decodeActions(try container.decode(String.self, forKey: .actions)))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(RuleCoding.encode(matcher), forKey: .matcher)
+        try container.encode(RuleCoding.encode(actions), forKey: .actions)
+    }
+}

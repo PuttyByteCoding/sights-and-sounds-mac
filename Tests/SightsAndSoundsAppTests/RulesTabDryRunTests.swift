@@ -13,16 +13,16 @@ import Testing
         #expect(condition())
     }
 
-    private func model() throws -> RulesTabModel {
+    private func model() async throws -> RulesTabModel {
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Rules")
-        let model = RulesTabModel(library: library)
-        model.addRule()
+        let model = RulesTabModel(service: LocalLibraryService(library: library))
+        await model.addRule()
         return model
     }
 
     @Test func theDryRunAnswersForTheNewestDraft() async throws {
-        let model = try model()
+        let model = try await model()
         for _ in 0..<3 {
             model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: $0.matcher, actions: $0.actions + [.ignore]) }
         }
@@ -37,7 +37,7 @@ import Testing
     /// beside it, and the answer on screen must still end on the newest
     /// draft.
     @Test func editsSlowerThanTheSettleEndOnTheNewestDraft() async throws {
-        let model = try model()
+        let model = try await model()
         for _ in 0..<3 {
             model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: $0.matcher, actions: $0.actions + [.ignore]) }
             try await Task.sleep(for: .milliseconds(250))
@@ -72,7 +72,7 @@ import Testing
             for walk in held { walk.resume() }
         }
 
-        func walk(_ library: LibraryDatabase, _ rule: RuleEngine.Rule) async throws -> RuleDryRun {
+        func walk(_ service: any LibraryService, _ rule: RuleEngine.Rule) async throws -> RuleDryRun {
             lock.withLock {
                 running += 1
                 counts.started += 1
@@ -87,7 +87,7 @@ import Testing
                 if goNow { walk.resume() }
             }
             defer { lock.withLock { running -= 1; counts.finished += 1 } }
-            return try library.dryRun(rule)
+            return try await service.dryRun(of: rule)
         }
     }
 
@@ -95,7 +95,7 @@ import Testing
     /// wait at a gate, and whose rule is re-shown with its answer cleared
     /// and a gated walk under way.
     private func modelWithAGatedWalk() async throws -> (RulesTabModel, GatedWalks) {
-        let model = try model()
+        let model = try await model()
         try await waitUntil { model.dryRun != nil }
         let rule = try #require(model.draft)
         let walks = GatedWalks()
@@ -159,9 +159,9 @@ import Testing
     }
 
     @Test func applyRunsAndReportsWithoutBlocking() async throws {
-        let model = try model()
+        let model = try await model()
         model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: .keyEquals(key: "artist"), actions: [.ignore]) }
-        model.saveDraft()
+        await model.saveDraft()
         model.applySelected()
         #expect(model.isApplying)
         try await waitUntil { !model.isApplying && model.lastApplied != nil }
@@ -172,11 +172,11 @@ import Testing
     /// cleared the result pane, and then the finished Apply wrote its
     /// result into it — "Rule applied" under a rule that was not.
     @Test func anApplyResultLandsOnlyOnTheRuleApplied() async throws {
-        let model = try model()
+        let model = try await model()
         let applied = try #require(model.draft)
         model.updateDraft { $0 = RuleEngine.Rule(id: $0.id, matcher: .keyEquals(key: "artist"), actions: [.ignore]) }
-        model.saveDraft()
-        model.addRule()   // another rule, selected
+        await model.saveDraft()
+        await model.addRule()   // another rule, selected
         model.select(try #require(model.rules.first { $0.id == applied.id }))
         model.applySelected()
         model.select(try #require(model.rules.first { $0.id != applied.id }))
@@ -189,7 +189,7 @@ import Testing
     /// walk running and queued a second: two whole-queue walks for one
     /// action (a new rule from triage reloads, then selects).
     @Test func aReplacedImmediateRequestNeverWalks() async throws {
-        let model = try model()
+        let model = try await model()
         try await waitUntil { model.dryRun != nil }
         let walks = GatedWalks()
         model.walkDryRun = walks.walk

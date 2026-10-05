@@ -741,6 +741,75 @@ import Testing
         #expect(!ServiceRequest.setExtensionOverrides(video: nil, audio: nil).onlyReads)
     }
 
+    /// Tag Analysis, from another Mac: the video is read on the host,
+    /// where its file is, and the rules and schemas are the library's.
+    @Test(.timeLimit(.minutes(1)))
+    func tagAnalysisIsDoneWhereTheFilesAre() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        let rule = RuleEngine.Rule(
+            id: UUID(), matcher: .keyEquals(key: "artist"), actions: [.assignCategory(category: "Band")])
+        try await remote.saveAnalysisRule(rule)
+        let rules = try await remote.analysisRules()
+        #expect(rules == [rule])
+        let covering = try await remote.ruleCovering(key: "artist", value: "Anyone")
+        #expect(covering == rule)
+
+        let answer = try await remote.itemAnalysis(itemID: rig.a.id)
+        let direct = try await local.itemAnalysis(itemID: rig.a.id)
+        #expect(answer == direct)
+        #expect(answer.item?.id == rig.a.id)
+        #expect(answer.rules == [rule])
+        #expect(!answer.analysis.readerReports.isEmpty)
+
+        let run = try await remote.dryRun(of: rule)
+        let directRun = try await local.dryRun(of: rule)
+        #expect(run == directRun)
+        let runs = try await remote.dryRuns(of: [rule])
+        #expect(runs == [rule.id: run])
+        let applied = try await remote.applyAnalysisRule(rule)
+        #expect(applied.itemsUpdated == 0)
+
+        let sweep = try await remote.metadataSweepState(itemID: rig.a.id)
+        let directSweep = try await local.metadataSweepState(itemID: rig.a.id)
+        #expect(sweep == directSweep)
+        try await remote.resetMetadataSweep(itemIDs: [rig.a.id])
+        try await remote.markAnalyzed(itemID: rig.a.id)
+        let stamped = try await rig.library.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tagAnalysisState") ?? 0
+        }
+        #expect(stamped == 1)
+
+        let schema = try await remote.saveJsonSchema(id: nil, named: "Notes", keys: [SchemaKey(key: "venue")])
+        let schemas = try await remote.jsonSchemas()
+        #expect(schemas.map(\.id) == [schema.id])
+        try await remote.deleteJsonSchema(id: schema.id)
+        let none = try await remote.jsonSchemas()
+        #expect(none.isEmpty)
+
+        try await remote.moveAnalysisRule(id: rule.id, up: true)
+        try await remote.deleteAnalysisRule(id: rule.id)
+        let left = try await remote.analysisRules()
+        #expect(left.isEmpty)
+
+        let reads: [ServiceRequest] = [
+            .itemAnalysis(itemID: rig.a.id), .metadataSweepState(itemID: rig.a.id), .analysisRules,
+            .ruleCovering(key: nil, value: "x"), .dryRun(rule: rule), .dryRuns(rules: [rule]), .jsonSchemas,
+        ]
+        let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
+        #expect(everyReadIsARead)
+        let writes: [ServiceRequest] = [
+            .markAnalyzed(itemID: rig.a.id), .resetMetadataSweep(itemIDs: []), .saveAnalysisRule(rule: rule),
+            .deleteAnalysisRule(id: rule.id), .moveAnalysisRule(id: rule.id, up: true),
+            .applyAnalysisRule(rule: rule), .saveJsonSchema(id: nil, name: "x", keys: []),
+            .deleteJsonSchema(id: rule.id),
+        ]
+        let aWriteIsARead = writes.contains { $0.onlyReads }
+        #expect(!aWriteIsARead)
+    }
+
     @Test func whichOrganiseRequestsAreAskedTwice() {
         #expect(ServiceRequest.organisePlan(template: "x", itemIDs: []).onlyReads)
         #expect(ServiceRequest.moveSessions.onlyReads)

@@ -227,7 +227,6 @@ struct BrowseView: View {
                         Button("Tag Analysis…", systemImage: "tag.square") {
                             openAux(.tagAnalysis)
                         }
-                        .disabled(model.isRemote)
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             // Off the main actor: a full backup of a large
                             // library used to beachball the window.

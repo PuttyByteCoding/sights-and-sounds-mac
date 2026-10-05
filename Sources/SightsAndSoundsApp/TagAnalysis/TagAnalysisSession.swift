@@ -15,7 +15,9 @@ import SightsAndSoundsKit
 final class TagAnalysisSession {
     let id: UUID
     let libraryID: UUID
-    let library: LibraryDatabase
+    /// The library, as the player was given it: held on this Mac or on
+    /// another.
+    let service: any LibraryService
 
     // MARK: Written by the player
 
@@ -36,10 +38,10 @@ final class TagAnalysisSession {
     private(set) var isAnalyzing = false
     private(set) var companionIsOpen = false
 
-    init(libraryID: UUID, library: LibraryDatabase) {
+    init(libraryID: UUID, service: any LibraryService) {
         self.id = UUID()
         self.libraryID = libraryID
-        self.library = library
+        self.service = service
     }
 
     func playerDidShow(itemID: UUID?, position: (index: Int, count: Int)?) {

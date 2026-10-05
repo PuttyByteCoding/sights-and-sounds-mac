@@ -120,8 +120,8 @@ struct TagAnalysisView: View {
             }
             let made = TagAnalysisModel(session: session)
             model = made
-            rules = RulesTabModel(library: session.library)
-            schemas = SchemasTabModel(library: session.library)
+            rules = RulesTabModel(service: session.service)
+            schemas = SchemasTabModel(service: session.service)
             focused = true
             sweepCurrentIfNeeded(made)
         }
@@ -158,24 +158,28 @@ struct TagAnalysisView: View {
     private func sweepCurrentIfNeeded(_ model: TagAnalysisModel) {
         // Not while this video's sweep is still waiting: it is unswept
         // until that runs, and each walk away and back queued another.
+        // Nor while the library is still being asked about it: the
+        // answer takes a moment, longer from another Mac.
         guard let id = model.currentItemID, !model.isWaitingOnMetadataSweep,
-              (try? browse.library.unsweptCount(in: [id])) ?? 0 > 0
+              model.beginSweepQuestion(for: id)
         else { return }
-        model.beginSweep(for: id)
-        // A sweep of it already waiting (queued before this window was
-        // reopened) is waited on, not queued again.
-        if let waiting = try? browse.library.pendingMetadataSweep(of: id),
-           let runner = try? app.runner(for: browse.libraryID) {
-            Task {
-                // Moved ahead as a sweep queued here would be: a retried
-                // one (from Background Tasks) waits at the back otherwise.
-                _ = try? await runner.runNext(waiting)
-                try? await runner.waitUntilSettled([waiting])
+        let service = browse.service
+        Task {
+            let state = try? await service.metadataSweepState(itemID: id)
+            model.endSweepQuestion(for: id)
+            guard let state, state.isUnswept, !model.isWaitingOnMetadataSweep else { return }
+            model.beginSweep(for: id)
+            // A sweep of it already waiting (queued before this window was
+            // reopened) is waited on, not queued again — and moved ahead
+            // as a sweep queued here would be: a retried one (from
+            // Background Tasks) waits at the back otherwise.
+            if let waiting = state.waitingJob {
+                try? await service.runNextAndWait(jobID: waiting)
                 model.finishSweep(for: id)
+                return
             }
-            return
+            browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
         }
-        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
     }
 
     private var header: some View {
@@ -235,9 +239,12 @@ struct TagAnalysisView: View {
                 .help("Read on-screen text with Vision — resumable; click again to scan further")
                 Button("Rescan This Video") {
                     guard let id = model.currentItemID else { return }
-                    try? browse.library.resetMetadataSweep(itemIDs: [id])
                     model.beginSweep(for: id)
-                    browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
+                    let service = browse.service
+                    Task {
+                        try? await service.resetMetadataSweep(itemIDs: [id])
+                        browse.sweepMetadata(itemIDs: [id]) { model.finishSweep(for: id) }
+                    }
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .disabled(model.isLoading || model.isWaitingOnJob || model.currentItemID == nil)
@@ -263,8 +270,10 @@ struct TagAnalysisView: View {
 
     private func makeRule(key: String?, value: String) {
         guard let rules else { return }
-        rules.makeRule(key: key, value: value)
-        mode = .rules
+        Task {
+            await rules.makeRule(key: key, value: value)
+            mode = .rules
+        }
     }
 }
 
@@ -663,7 +672,7 @@ private struct CandidateTableRow: View {
     private var quickAccept: some View {
         if model.status(of: row) == .undecided {
             if let name = candidate.category, let category = model.category(named: name) {
-                plusButton { model.applyNew(value: candidate.value, categoryID: category.id) }
+                plusButton { Task { await model.applyNew(value: candidate.value, categoryID: category.id) } }
             } else if let finding = row.findings.first(where: { !$0.alreadyApplied }) {
                 plusButton { model.applyNow(finding.tag) }
             }
@@ -697,9 +706,9 @@ private struct FramesStrip: View {
     }
 
     var body: some View {
-        if !times.isEmpty, let item = model.currentItem,
-           let fileURL = browse.fileURL(for: item)
-        {
+        // A video on this Mac whose drive is away has no frames to show;
+        // one on another Mac is read through its service.
+        if !times.isEmpty, let item = model.currentItem, browse.isRemote || browse.fileURL(for: item) != nil {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Matching frames").modifier(Theme.sectionLabel())
@@ -716,7 +725,8 @@ private struct FramesStrip: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(times.prefix(10), id: \.self) { seconds in
-                                StripStill(itemID: item.id, fileURL: fileURL, seconds: seconds)
+                                StripStill(
+                                    itemID: item.id, file: browse.fileResolver(for: item), seconds: seconds)
                             }
                         }
                     }
@@ -734,7 +744,9 @@ private struct FramesStrip: View {
 
 private struct StripStill: View {
     let itemID: UUID
-    let fileURL: URL
+    /// Where the video is read from: its file on this Mac, or what a
+    /// library on another Mac plays it through.
+    let file: @Sendable () async -> URL?
     let seconds: Double
     @State private var image: NSImage?
 
@@ -757,6 +769,7 @@ private struct StripStill: View {
                 .padding(3)
         }
         .task(id: "\(itemID)-\(seconds)") {
+            guard let fileURL = await file() else { return }
             let data = await EvidenceFrameProvider.shared.frame(
                 itemID: itemID, fileURL: fileURL, atSeconds: seconds)
             if let data { image = NSImage(data: data) }
@@ -809,7 +822,7 @@ private struct DecidePane: View {
                     if let fallback = categoryID ?? model.categories.first?.id {
                         TagSheet(
                             mode: .create(categoryID: fallback, name: seedText.text),
-                            service: LocalLibraryService(library: model.library),
+                            service: model.service,
                             libraryID: model.libraryID,
                             categories: model.categories
                         ) { tag in
@@ -1058,7 +1071,8 @@ private struct DecidePane: View {
         case .assign:
             Button("Apply") {
                 guard let categoryID else { return }
-                model.applyNew(value: editedValue, categoryID: categoryID)
+                let value = editedValue
+                Task { await model.applyNew(value: value, categoryID: categoryID) }
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(
@@ -1072,18 +1086,19 @@ private struct DecidePane: View {
             .disabled(target == nil)
         case .alias:
             Button("Add Alias") {
-                if let target { model.addAlias(editedValue, toTag: target.tag.id) }
+                let value = editedValue
+                if let target { Task { await model.addAlias(value, toTag: target.tag.id) } }
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(target == nil || editedValue.trimmingCharacters(in: .whitespaces).isEmpty)
         case .ignoreKey:
             Button(candidate.key == nil ? "Ignore This Text" : "Ignore This Key") {
-                model.ignoreRule(for: candidate)
+                Task { await model.ignoreRule(for: candidate) }
             }
             .buttonStyle(PrimaryButtonStyle())
         case .hidePrefix:
             Button("Hide the Prefix") {
-                model.hidePrefixRule(root: candidate.value)
+                Task { await model.hidePrefixRule(root: candidate.value) }
             }
             .buttonStyle(PrimaryButtonStyle())
         }
