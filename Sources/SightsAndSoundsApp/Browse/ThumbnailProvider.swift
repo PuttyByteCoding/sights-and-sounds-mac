@@ -126,6 +126,12 @@ actor ThumbnailProvider {
         await withCheckedContinuation { turnQueue.append($0) }
     }
 
+    /// Requests standing in line for a render slot, and thumbnails
+    /// somebody is still waiting for. What a test waits on, in place of
+    /// guessing how long each takes to come about.
+    var queuedForATurn: Int { turnQueue.count }
+    var thumbnailsWaitedFor: Int { waiting.count }
+
     private func finishTurn() {
         if let next = turnQueue.popLast() {
             next.resume()  // the slot passes straight to it
