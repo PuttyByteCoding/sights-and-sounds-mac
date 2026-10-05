@@ -303,10 +303,11 @@ import SightsAndSoundsKit
     func anAnswerGivenAfterTheCodeRanOutStillCounts() async throws {
         try await withRig { rig in
             rig.approver.hold()
-            let code = try await rig.code(lifetime: .milliseconds(300))
+            let code = try await rig.code()
             let asking = Task { try await RemotePairing.pair(with: code, as: "In Time") }
             await eventually("the host's user is asked") { rig.approver.asked.count == 1 }
-            try await Task.sleep(for: .milliseconds(600))
+            await rig.host.pairingTimeIsUp()
+            #expect(await rig.host.pairingCode == code, "the code went while the question was up")
 
             rig.approver.release()
             let saved = try await asking.value
