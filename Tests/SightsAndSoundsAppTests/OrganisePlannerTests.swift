@@ -208,6 +208,45 @@ import Testing
         try await waitUntil { planner.plannedIDs == later }
     }
 
+    /// A request that arrives while a walk is running waits out its own
+    /// pause like any other. The walk that was running used to take it up
+    /// the moment it ended, pause or no pause — so a listing refresh that
+    /// landed during a walk was walked at once, and the next, and the
+    /// next, for as long as an import kept them coming.
+    @Test func aRequestThatArrivesDuringAWalkStillWaitsOutItsPause() async throws {
+        let (planner, plans, library) = try planner()
+        let first = [UUID()], later = [UUID(), UUID()]
+        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], library: library)
+        try await waitUntil { plans.started == 1 }
+        // The walk is held at the gate. A request arrives, to be walked
+        // after a pause far longer than this test.
+        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
+                        settle: .seconds(60))
+        plans.open()
+        try await waitUntil { planner.plannedIDs == first }
+        // Time for a walk to start that should not.
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(plans.started == 1, "the request was walked before its pause was over")
+        #expect(planner.plannedIDs == first)
+        planner.cancel()
+    }
+
+    /// And one whose pause ran out while the walk was running is not
+    /// forgotten: it is walked when the walk ends.
+    @Test func aRequestWhosePauseEndedDuringAWalkIsWalkedAfterIt() async throws {
+        let (planner, plans, library) = try planner()
+        let first = [UUID()], later = [UUID(), UUID()]
+        planner.preview(template: "%Band", ids: first, categoryNames: ["Band"], library: library)
+        try await waitUntil { plans.started == 1 }
+        planner.preview(template: "%Band", ids: later, categoryNames: ["Band"], library: library,
+                        settle: .milliseconds(50))
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(plans.started == 1, "a second walk began beside the first")
+        plans.open()
+        try await waitUntil { planner.plannedIDs == later }
+        #expect(plans.started == 2)
+    }
+
     @Test func aPlanThatFailsLeavesMoveAvailableOnNothing() async throws {
         let planner = OrganisePlanner()
         planner.makePlan = { _, _, _ in throw CancellationError() }
