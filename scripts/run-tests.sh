@@ -9,19 +9,22 @@
 # Every test is the default, and it is what to run on your own Mac
 # between builds. A merge waits for fewer: CI leaves out the tests that
 # write a real video (they are marked `.writesVideo`; see
-# Tests/*/MergeGate.swift for why), and --merge-gate runs exactly what
-# CI runs, for when a pull request's check fails and you want to see it
-# here.
+# Tests/*/MergeGate.swift for why), and runs the rest one at a time, so
+# that a test doing heavy work cannot starve the others on a machine
+# with three cores. --merge-gate is exactly what CI runs, for when a
+# pull request's check fails and you want to see it here.
 #
 # Portable to bash 3.2. Run from anywhere inside the repo.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+order=()
 if [ "${1:-}" = "--merge-gate" ]; then
     shift
     export SAS_MERGE_GATE=1
-    echo "run-tests: the merge gate — tests that write a real video are left out"
+    order=(--no-parallel)
+    echo "run-tests: the merge gate — one at a time, without the tests that write a real video"
 else
     # Set in the shell or not, a plain run is every test.
     unset SAS_MERGE_GATE
@@ -29,6 +32,6 @@ else
 fi
 
 if [ $# -gt 0 ]; then
-    exec swift test --filter "$1"
+    exec swift test ${order[@]+"${order[@]}"} --filter "$1"
 fi
-exec swift test
+exec swift test ${order[@]+"${order[@]}"}
