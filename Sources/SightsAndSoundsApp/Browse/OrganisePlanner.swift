@@ -119,7 +119,11 @@ final class OrganisePlanner {
                 plannedIDs = request.ids
                 plannedTemplate = request.template
             }
-            startWalk()
+            // What arrived meanwhile is walked now only if its pause is
+            // over. One still pausing is its own settle's to start; taken
+            // up here it was walked the moment this ended, and under a
+            // stream of requests each walk ran straight into the next.
+            if settling == nil { startWalk() }
         }
     }
 
