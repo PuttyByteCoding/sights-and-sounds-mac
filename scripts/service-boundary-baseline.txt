@@ -1,5 +1,5 @@
 8	Sources/SightsAndSoundsApp/BackgroundTasksView.swift
-3	Sources/SightsAndSoundsApp/Browse/BrowseModel.swift
+1	Sources/SightsAndSoundsApp/Browse/BrowseModel.swift
 14	Sources/SightsAndSoundsApp/Browse/CategoryInspector.swift
 17	Sources/SightsAndSoundsApp/Browse/CategoryManagerView.swift
 4	Sources/SightsAndSoundsApp/Browse/ImportRun.swift
@@ -16,11 +16,10 @@
 1	Sources/SightsAndSoundsApp/Browse/SignalSummaryView.swift
 1	Sources/SightsAndSoundsApp/Browse/TagPlayerWindow.swift
 16	Sources/SightsAndSoundsApp/Browse/TagSheet.swift
-4	Sources/SightsAndSoundsApp/Browse/WatchedView.swift
+3	Sources/SightsAndSoundsApp/Browse/WatchedView.swift
 12	Sources/SightsAndSoundsApp/LibraryPropertiesView.swift
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
 2	Sources/SightsAndSoundsApp/Player/OcrLinesPanel.swift
-1	Sources/SightsAndSoundsApp/Player/PlayerModel.swift
 2	Sources/SightsAndSoundsApp/Search/BookmarkSearchView.swift
 2	Sources/SightsAndSoundsApp/Search/SearchCommands.swift
 6	Sources/SightsAndSoundsApp/Search/SearchSettingsPane.swift

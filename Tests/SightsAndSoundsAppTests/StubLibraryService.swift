@@ -23,6 +23,7 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     private var finished: [String: Int] = [:]
     private var streams = 0
     private var events: [PlaybackEvent] = []
+    private var filesHere = true
 
     init(_ base: LocalLibraryService) {
         self.base = base
@@ -41,6 +42,11 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func calls(_ operation: String) -> Int { lock.withLock { started[operation, default: 0] } }
     /// How many calls of this operation have returned or thrown.
     func answered(_ operation: String) -> Int { lock.withLock { finished[operation, default: 0] } }
+    /// False to stand in for a library another Mac holds.
+    var filesAreOnThisMac: Bool {
+        get { lock.withLock { filesHere } }
+        set { lock.withLock { filesHere = newValue } }
+    }
     /// Every playback event that reached the library, in order.
     var playbackEvents: [PlaybackEvent] { lock.withLock { events } }
     /// Change streams handed out and not yet let go of.

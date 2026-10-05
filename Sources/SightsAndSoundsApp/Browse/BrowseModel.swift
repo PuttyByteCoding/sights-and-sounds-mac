@@ -180,7 +180,6 @@ final class BrowseModel {
         }
     }
 
-    private let fileAccess: any FileAccess
     /// What this window asks of its library. The reads and writes are
     /// moving onto it from `library` a group at a time; once they all
     /// have, a window can be given a library held by another Mac.
@@ -230,7 +229,6 @@ final class BrowseModel {
         service: (any LibraryService)? = nil,
         onWorkFinished: @escaping () -> Void = {}
     ) {
-        self.fileAccess = fileAccess
         self.libraryID = libraryID
         self.library = library
         self.libraryName = (try? library.info()?.name) ?? "Library"
@@ -1015,19 +1013,28 @@ final class BrowseModel {
         return fileURL(for: item)
     }
 
-    /// Absolute file URL (an embedded clip resolves to its parent's
-    /// file), or nil while the item's source is offline.
+    /// The item's file on this Mac (an embedded clip's is its parent's
+    /// file), for the Finder, a drag and Quick Look. nil while the item's
+    /// source is offline or disabled — and always for a library another
+    /// Mac holds, whose paths are that Mac's.
+    ///
+    /// Worked out from what the window already holds: the source's folder
+    /// and the item's path. It used to ask the database, and check the
+    /// drive, every time.
     func fileURL(for item: MediaItem) -> URL? {
-        (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil
+        guard service.filesAreOnThisMac, isOnline(item), let source = source(for: item) else { return nil }
+        return source.fileURL(for: item)
     }
 
-    /// The same lookup as something that can be handed off and run
-    /// later, away from the main actor — what a thumbnail request takes,
-    /// so a tile never pays for database reads and a reachability check
-    /// just to find its thumbnail was cached all along.
-    func fileResolver(for item: MediaItem) -> @Sendable () -> URL? {
-        let library = library, fileAccess = fileAccess
-        return { (try? library.resolvedFileURL(for: item, fileAccess: fileAccess)) ?? nil }
+    /// Where the item can be read from, as something to be asked later
+    /// and away from the main actor — what a thumbnail request takes, so
+    /// a tile never pays for the lookup just to find its thumbnail was
+    /// cached all along. It is where the item plays from: this Mac's file,
+    /// or for a library held elsewhere whatever the service plays it
+    /// through.
+    func fileResolver(for item: MediaItem) -> @Sendable () async -> URL? {
+        let service = service, itemID = item.id
+        return { (try? await service.playable(itemID: itemID))?.url }
     }
 
     // MARK: - Operations
