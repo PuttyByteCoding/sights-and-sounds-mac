@@ -156,8 +156,8 @@ struct UniversalTagField: View {
     /// A bump asks for a screen read as if ⇧↓ were pressed — numpad 2.
     var screenReadRequests = 0
     let categories: [TagCategory]
-    let library: LibraryDatabase
-    /// What a tag made from here is made through.
+    /// What a tag made from here is made through, and what is asked
+    /// which tags a frame's text names.
     let service: any LibraryService
     let libraryID: UUID
     /// The caller's focus walk, keyed by `focusID` — which is what puts
@@ -620,13 +620,13 @@ struct UniversalTagField: View {
         screenError = nil
         let ticket = screenReads.begin(for: itemID)
         let settings = AppSettingsStore.shared.current.ocr
-        let library = library
+        let service = service
         Task {
             let outcome = await Task.detached(priority: .userInitiated) { () -> Result<ScreenRead, Error> in
                 do {
                     let lines = try await OcrJob.readLines(
                         fileURL: screenFrame.fileURL, atSeconds: screenFrame.seconds, settings: settings)
-                    let findings = try library.existingTags(inLines: lines)
+                    let findings = try await service.existingTags(inLines: lines)
                     return .success(ScreenRead(findings: findings, lines: lines))
                 } catch {
                     return .failure(error)

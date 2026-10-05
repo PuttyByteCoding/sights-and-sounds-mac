@@ -561,6 +561,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func resetMetadataSweep(itemIDs: [UUID]) async throws {
         try await tell(.resetMetadataSweep(itemIDs: itemIDs))
     }
+    public func existingTags(inLines lines: [String]) async throws -> [ExistingTagFinding] {
+        try await ask(.existingTags(lines: lines))
+    }
     public func analysisRules() async throws -> [RuleEngine.Rule] { try await ask(.analysisRules) }
     public func saveAnalysisRule(_ rule: RuleEngine.Rule) async throws {
         try await tell(.saveAnalysisRule(rule: rule))

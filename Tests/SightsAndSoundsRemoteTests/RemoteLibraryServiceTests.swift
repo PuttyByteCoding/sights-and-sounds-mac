@@ -772,6 +772,13 @@ import Testing
         let applied = try await remote.applyAnalysisRule(rule)
         #expect(applied.itemsUpdated == 0)
 
+        // What the tag field asks about text it read off a frame here.
+        let lines = ["with Alpha tonight", "and nobody else"]
+        let found = try await remote.existingTags(inLines: lines)
+        let directFound = try await local.existingTags(inLines: lines)
+        #expect(found == directFound)
+        #expect(found.map(\.tag.id) == [rig.alpha.id])
+
         let sweep = try await remote.metadataSweepState(itemID: rig.a.id)
         let directSweep = try await local.metadataSweepState(itemID: rig.a.id)
         #expect(sweep == directSweep)
@@ -797,6 +804,7 @@ import Testing
         let reads: [ServiceRequest] = [
             .itemAnalysis(itemID: rig.a.id), .metadataSweepState(itemID: rig.a.id), .analysisRules,
             .ruleCovering(key: nil, value: "x"), .dryRun(rule: rule), .dryRuns(rules: [rule]), .jsonSchemas,
+            .existingTags(lines: []),
         ]
         let everyReadIsARead = reads.allSatisfy { $0.onlyReads }
         #expect(everyReadIsARead)

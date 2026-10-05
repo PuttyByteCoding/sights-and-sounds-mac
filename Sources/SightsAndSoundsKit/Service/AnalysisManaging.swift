@@ -22,6 +22,12 @@ public protocol AnalysisManaging: Sendable {
     /// reads it again.
     func resetMetadataSweep(itemIDs: [UUID]) async throws
 
+    /// The library's tags named in these lines of text, by name or by
+    /// alias: one finding per tag, with the first line it was found in.
+    /// What the tag field asks about the text it has just read off a
+    /// frame.
+    func existingTags(inLines lines: [String]) async throws -> [ExistingTagFinding]
+
     // MARK: Rules
 
     /// The rules, in the order they are applied.
@@ -105,6 +111,10 @@ extension LocalLibraryService {
 
     public func resetMetadataSweep(itemIDs: [UUID]) async throws {
         try library.resetMetadataSweep(itemIDs: itemIDs)
+    }
+
+    public func existingTags(inLines lines: [String]) async throws -> [ExistingTagFinding] {
+        try library.existingTags(inLines: lines)
     }
 
     public func analysisRules() async throws -> [RuleEngine.Rule] {

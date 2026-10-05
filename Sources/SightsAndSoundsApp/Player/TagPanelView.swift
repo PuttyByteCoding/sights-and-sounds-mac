@@ -936,7 +936,6 @@ private struct GlobalTagField: View {
             },
             screenReadRequests: model.screenReadRequests,
             categories: model.panelVocabulary.map(\.category),
-            library: model.library,
             service: model.service,
             libraryID: model.libraryID,
             focus: focus,

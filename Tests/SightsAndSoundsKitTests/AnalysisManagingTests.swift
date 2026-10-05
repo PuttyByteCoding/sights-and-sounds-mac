@@ -78,6 +78,19 @@ import Testing
         #expect(try f.library.unsweptCount(in: [f.named.id]) == 1)
     }
 
+    @Test func tagsNamedInLinesOfTextAreFound() async throws {
+        let f = try await Fixture()
+        try f.library.addAlias("Jonesy", toTag: try #require(try f.library.vocabulary().flatMap(\.tags).first).id)
+        let lines = ["recorded by Mike Jones", "nothing here", "thanks Jonesy and Mike Jones"]
+        let found = try await f.service.existingTags(inLines: lines)
+        #expect(found == (try f.library.existingTags(inLines: lines)))
+        // One finding per tag, in the first line that names it.
+        #expect(found.map(\.tag.name) == ["Mike Jones"])
+        #expect(found.first?.foundIn == "recorded by Mike Jones")
+        #expect(try await f.service.existingTags(inLines: ["thanks Jonesy"]).first?.matchedText == "Jonesy")
+        #expect(try await f.service.existingTags(inLines: []).isEmpty)
+    }
+
     @Test func rulesAreKeptInOrderAndFoundByWhatTheyCover() async throws {
         let f = try await Fixture()
         let first = rule(.keyEquals(key: "artist"), [.assignCategory(category: "Taper")])
