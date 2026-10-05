@@ -80,6 +80,23 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case removeAlias(alias: String, tagID: UUID)
     case saveTag(draft: TagDraft)
 
+    // VocabularyManaging
+    case categories
+    case categoryTable(categoryID: UUID)
+    case vocabularyIndex
+    case fields(scope: FieldScope, categoryID: UUID?)
+    case fieldValues(tagID: UUID)
+    case takenNames(categoryID: UUID)
+    case createCategory(category: TagCategory)
+    case updateCategory(category: TagCategory)
+    case deleteCategory(categoryID: UUID)
+    case mergeTags(sourceIDs: [UUID], target: TagMergeTarget)
+    case setTagHidden(tagID: UUID, hidden: Bool)
+    case setTagNotes(tagID: UUID, notes: String)
+    case setFieldValue(value: String, tagID: UUID, field: FieldDefinition)
+    case createField(field: FieldDefinition)
+    case deleteField(fieldID: UUID)
+
     /// Asking again changes nothing: it is safe to ask a second time
     /// when the first try was lost with its connection. A request that
     /// changes the library is never asked twice on the client's own
@@ -90,7 +107,8 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
              .savedFilterCounts, .tileMenuFacts, .thumbnailQueueStatus, .storedThumbnail, .listing, .playable,
              .opened,
              .itemTags, .tagging, .segments, .searchContext, .recentlyWatched, .items, .queueItems,
-             .tagMembership, .pendingTextScan, .textLines, .fullVocabulary, .tagUsageCounts, .tagDetails:
+             .tagMembership, .pendingTextScan, .textLines, .fullVocabulary, .tagUsageCounts, .tagDetails, .categories,
+             .categoryTable, .vocabularyIndex, .fields, .fieldValues, .takenNames:
             true
         default:
             false
@@ -278,6 +296,44 @@ extension ServiceRequest {
             return nothing
         case .saveTag(let draft):
             return try json(await service.saveTag(draft))
+
+        case .categories:
+            return try json(await service.categories())
+        case .categoryTable(let categoryID):
+            return try json(await service.categoryTable(categoryID: categoryID))
+        case .vocabularyIndex:
+            return try json(await service.vocabularyIndex())
+        case .fields(let scope, let categoryID):
+            return try json(await service.fields(scope: scope, categoryID: categoryID))
+        case .fieldValues(let tagID):
+            return try json(await service.fieldValues(tagID: tagID))
+        case .takenNames(let categoryID):
+            return try json(await service.takenNames(categoryID: categoryID))
+        case .createCategory(let category):
+            try await service.createCategory(category)
+            return nothing
+        case .updateCategory(let category):
+            try await service.updateCategory(category)
+            return nothing
+        case .deleteCategory(let categoryID):
+            try await service.deleteCategory(categoryID)
+            return nothing
+        case .mergeTags(let sourceIDs, let target):
+            return try json(await service.mergeTags(sourceIDs, into: target))
+        case .setTagHidden(let tagID, let hidden):
+            try await service.setTagHidden(tagID, hidden)
+            return nothing
+        case .setTagNotes(let tagID, let notes):
+            try await service.setTagNotes(tagID, notes)
+            return nothing
+        case .setFieldValue(let value, let tagID, let field):
+            try await service.setFieldValue(value, tagID: tagID, field: field)
+            return nothing
+        case .createField(let field):
+            return try json(await service.createField(field))
+        case .deleteField(let fieldID):
+            try await service.deleteField(fieldID)
+            return nothing
         }
     }
 }

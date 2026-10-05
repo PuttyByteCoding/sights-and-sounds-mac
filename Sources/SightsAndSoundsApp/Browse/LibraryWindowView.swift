@@ -189,7 +189,6 @@ struct BrowseView: View {
                         openAux(.categories)
                     }
                     .help("Author this library's vocabulary — categories, tags, aliases and fields")
-                    .unavailableRemotely(model.isRemote)
                 }
                 ToolbarItem {
                     Button {

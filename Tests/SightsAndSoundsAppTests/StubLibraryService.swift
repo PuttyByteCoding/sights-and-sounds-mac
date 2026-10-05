@@ -134,6 +134,54 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
         try await run { try await base.saveTag(draft) }
     }
 
+    // MARK: VocabularyManaging
+
+    func categories() async throws -> [TagCategory] {
+        try await run { try await base.categories() }
+    }
+    func categoryTable(categoryID: UUID) async throws -> CategoryTable {
+        try await run { try await base.categoryTable(categoryID: categoryID) }
+    }
+    func vocabularyIndex() async throws -> VocabularyIndex {
+        try await run { try await base.vocabularyIndex() }
+    }
+    func fields(scope: FieldScope, categoryID: UUID?) async throws -> [FieldDefinition] {
+        try await run { try await base.fields(scope: scope, categoryID: categoryID) }
+    }
+    func fieldValues(tagID: UUID) async throws -> [UUID: String] {
+        try await run { try await base.fieldValues(tagID: tagID) }
+    }
+    func takenNames(categoryID: UUID) async throws -> Set<String> {
+        try await run { try await base.takenNames(categoryID: categoryID) }
+    }
+    func createCategory(_ category: TagCategory) async throws {
+        try await run { try await base.createCategory(category) }
+    }
+    func updateCategory(_ category: TagCategory) async throws {
+        try await run { try await base.updateCategory(category) }
+    }
+    func deleteCategory(_ categoryID: UUID) async throws {
+        try await run { try await base.deleteCategory(categoryID) }
+    }
+    func mergeTags(_ sourceIDs: [UUID], into target: TagMergeTarget) async throws -> SightsAndSoundsKit.Tag {
+        try await run { try await base.mergeTags(sourceIDs, into: target) }
+    }
+    func setTagHidden(_ tagID: UUID, _ hidden: Bool) async throws {
+        try await run { try await base.setTagHidden(tagID, hidden) }
+    }
+    func setTagNotes(_ tagID: UUID, _ notes: String) async throws {
+        try await run { try await base.setTagNotes(tagID, notes) }
+    }
+    func setFieldValue(_ value: String, tagID: UUID, field: FieldDefinition) async throws {
+        try await run { try await base.setFieldValue(value, tagID: tagID, field: field) }
+    }
+    func createField(_ field: FieldDefinition) async throws -> FieldDefinition {
+        try await run { try await base.createField(field) }
+    }
+    func deleteField(_ fieldID: UUID) async throws {
+        try await run { try await base.deleteField(fieldID) }
+    }
+
     // MARK: BrowseListing
 
     func listing(_ request: ListingRequest) async throws -> BrowseListingAnswer {

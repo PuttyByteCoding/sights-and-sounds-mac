@@ -8,7 +8,7 @@ struct CategoryInspector: View {
     @State var category: TagCategory
     let tagCount: Int
     let fields: [FieldDefinition]
-    let library: LibraryDatabase
+    let service: any LibraryService
     let onChange: (TagCategory) -> Void
     let onFieldsChange: () -> Void
     let onDelete: () -> Void
@@ -109,7 +109,7 @@ struct CategoryInspector: View {
                         .foregroundStyle(Theme.Text.disabled)
                         .fixedSize(horizontal: false, vertical: true)
                     FieldList(
-                        fields: fields, library: library, scope: .tag,
+                        fields: fields, service: service, scope: .tag,
                         categoryID: category.id, onChange: onFieldsChange)
                 }
 
@@ -196,7 +196,7 @@ struct TagInspector: View {
     let aliases: [String]
     let siblings: [Tag]
     let fields: [FieldDefinition]
-    let library: LibraryDatabase
+    let service: any LibraryService
     let onChange: () -> Void
 
     @State private var name: String = ""
@@ -240,11 +240,14 @@ struct TagInspector: View {
                             // Renaming onto an existing name is refused by
                             // the kit: merging is a deliberate operation,
                             // not a rename side effect.
-                            do {
-                                try library.renameTag(tag.id, to: name)
-                                errorText = nil
-                            } catch { errorText = "\(error)" }
-                            onChange()
+                            let service = service, tagID = tag.id, name = name
+                            Task {
+                                do {
+                                    try await service.renameTag(tagID, to: name)
+                                    errorText = nil
+                                } catch { errorText = "\(error)" }
+                                onChange()
+                            }
                         }
                 }
 
@@ -252,10 +255,10 @@ struct TagInspector: View {
                     Toggle(isOn: Binding(
                         get: { tag.isFavorite },
                         set: { on in
-                            Writes.attempt("change the favourite", report: $errorText) {
-                                try library.setTagFavorite(tag.id, on)
+                            let tagID = tag.id
+                            Writes.run("change the favourite", report: $errorText, then: { _ in onChange() }) {
+                                [service] in try await service.setTagFavorite(tagID, on)
                             }
-                            onChange()
                         })
                     ) {
                         Text("Favourite").font(Theme.ui(12))
@@ -264,10 +267,10 @@ struct TagInspector: View {
                     Toggle(isOn: Binding(
                         get: { tag.hiddenByDefault },
                         set: { on in
-                            Writes.attempt("change whether the tag is hidden", report: $errorText) {
-                                try library.setTagHidden(tag.id, on)
-                            }
-                            onChange()
+                            let tagID = tag.id
+                            Writes.run(
+                                "change whether the tag is hidden", report: $errorText, then: { _ in onChange() }
+                            ) { [service] in try await service.setTagHidden(tagID, on) }
                         })
                     ) {
                         Text("Hidden").font(Theme.ui(12))
@@ -324,10 +327,10 @@ struct TagInspector: View {
                                         .font(Theme.ui(11))
                                         .foregroundStyle(Theme.Text.secondary)
                                     Button {
-                                        Writes.attempt("remove the alias", report: $errorText) {
-                                            try library.removeAlias(alias, fromTag: tag.id)
+                                        let tagID = tag.id
+                                        Writes.run("remove the alias", report: $errorText, then: { _ in onChange() }) {
+                                            [service] in try await service.removeAlias(alias, fromTag: tagID)
                                         }
-                                        onChange()
                                     } label: {
                                         Image(systemName: "xmark")
                                             .font(Theme.ui(8))
@@ -355,10 +358,13 @@ struct TagInspector: View {
                         .onSubmit {
                             // The text stays in the field when it could not
                             // be added, so it can be corrected.
-                            if Writes.attempt("add the alias", report: $errorText, {
-                                try library.addAlias(newAlias, toTag: tag.id)
-                            }) { newAlias = "" }
-                            onChange()
+                            let alias = newAlias, tagID = tag.id
+                            Writes.run("add the alias", report: $errorText, then: { worked in
+                                // Not if something else has been typed
+                                // while the library was answering.
+                                if worked, newAlias == alias { newAlias = "" }
+                                onChange()
+                            }) { [service] in try await service.addAlias(alias, toTag: tagID) }
                         }
                 }
 
@@ -393,11 +399,10 @@ struct TagInspector: View {
                                         .fill(Theme.Surface.well)
                                         .stroke(Theme.Border.standard, lineWidth: 1))
                                 .onSubmit {
-                                    Writes.attempt("save \(field.name)", report: $errorText) {
-                                        try library.setFieldValue(
-                                            values[field.id] ?? "", ofTag: tag.id, field: field)
+                                    let value = values[field.id] ?? "", tagID = tag.id
+                                    Writes.run("save \(field.name)", report: $errorText, then: { _ in onChange() }) {
+                                        [service] in try await service.setFieldValue(value, tagID: tagID, field: field)
                                     }
-                                    onChange()
                                 }
                             }
                         }
@@ -416,10 +421,13 @@ struct TagInspector: View {
                         .labelsHidden()
                         Button("Convert") {
                             guard let convertTarget else { return }
-                            do {
-                                try library.convertTagToAlias(tag.id, of: convertTarget)
-                                onChange()
-                            } catch { errorText = "\(error)" }
+                            let service = service, tagID = tag.id
+                            Task {
+                                do {
+                                    try await service.convertTagToAlias(tagID, of: convertTarget)
+                                    onChange()
+                                } catch { errorText = "\(error)" }
+                            }
                         }
                         .buttonStyle(SecondaryButtonStyle(compact: true))
                         .disabled(convertTarget == nil)
@@ -430,10 +438,10 @@ struct TagInspector: View {
                             "Delete \u{201C}\(tag.name)\u{201D}?", isPresented: $confirmDelete
                         ) {
                             Button("Delete", role: .destructive) {
-                                Writes.attempt("delete the tag", report: $errorText) {
-                                    try library.deleteTag(tag.id)
+                                let tagID = tag.id
+                                Writes.run("delete the tag", report: $errorText, then: { _ in onChange() }) {
+                                    [service] in try await service.deleteTag(tagID)
                                 }
-                                onChange()
                             }
                         } message: {
                             Text("Removes the tag from \(uses) items. Consider Convert to alias instead — that keeps the taggings and folds the name into another tag.")
@@ -452,7 +460,9 @@ struct TagInspector: View {
         .onAppear {
             name = tag.name
             notes = tag.notes
-            values = (try? library.fieldValues(ofTag: tag.id)) ?? [:]
+        }
+        .task(id: tag.id) {
+            values = (try? await service.fieldValues(tagID: tag.id)) ?? [:]
         }
         // Leaving the tag (another selected, or the window closing) is
         // when the list needs to know the notes moved.
@@ -460,19 +470,26 @@ struct TagInspector: View {
             // A pause not yet reached still saves.
             if let pending = notesSave, !pending.isCancelled {
                 pending.cancel()
-                saveNotes(notes)
+                // The window is told when that last write has landed,
+                // so what it re-reads has it.
+                saveNotes(notes, then: onChange)
+            } else if notesChanged {
+                onChange()
             }
-            if notesChanged { onChange() }
         }
     }
 
-    private func saveNotes(_ text: String) {
+    private func saveNotes(_ text: String, then: @escaping () -> Void = {}) {
         notesSave = nil
-        do {
-            try library.setTagNotes(tag.id, text)
-            notesChanged = true
-            errorText = nil
-        } catch { errorText = "\(error)" }
+        let service = service, tagID = tag.id
+        Task {
+            do {
+                try await service.setTagNotes(tagID, text)
+                notesChanged = true
+                errorText = nil
+            } catch { errorText = "\(error)" }
+            then()
+        }
     }
 }
 
@@ -482,7 +499,7 @@ struct FieldList: View {
     /// error line of its own.
     @State private var failure: String?
     let fields: [FieldDefinition]
-    let library: LibraryDatabase
+    let service: any LibraryService
     let scope: FieldScope
     let categoryID: UUID?
     let onChange: () -> Void
@@ -512,10 +529,10 @@ struct FieldList: View {
                     }
                     Spacer(minLength: 0)
                     Button {
-                        Writes.attempt("delete the field", report: $failure) {
-                            try library.deleteField(field.id)
+                        let fieldID = field.id
+                        Writes.run("delete the field", report: $failure, then: { _ in onChange() }) {
+                            [service] in try await service.deleteField(fieldID)
                         }
-                        onChange()
                     } label: {
                         Image(systemName: "xmark")
                             .font(Theme.ui(9))
@@ -560,10 +577,11 @@ struct FieldList: View {
             name: newName, dataType: newType, scope: scope,
             tagCategoryID: scope == .tag ? categoryID : nil,
             sortOrder: (fields.map(\.sortOrder).max() ?? 0) + 10)
-        if Writes.attempt("add the field", report: $failure, { _ = try library.createField(field) }) {
-            newName = ""
-        }
-        onChange()
+        let asked = newName
+        Writes.run("add the field", report: $failure, then: { worked in
+            if worked, newName == asked { newName = "" }
+            onChange()
+        }) { [service] in _ = try await service.createField(field) }
     }
 }
 
@@ -573,7 +591,7 @@ struct FieldEditor: View {
     let title: String
     let subtitle: String
     let fields: [FieldDefinition]
-    let library: LibraryDatabase
+    let service: any LibraryService
     let scope: FieldScope
     let categoryID: UUID?
     let onChange: () -> Void
@@ -589,7 +607,7 @@ struct FieldEditor: View {
                     .foregroundStyle(Theme.Text.disabled)
             }
             FieldList(
-                fields: fields, library: library, scope: scope,
+                fields: fields, service: service, scope: scope,
                 categoryID: categoryID, onChange: onChange)
             Spacer()
         }
@@ -606,7 +624,7 @@ struct PasteTagListSheet: View {
     /// error line of its own.
     @State private var failure: String?
     let category: TagCategory
-    let library: LibraryDatabase
+    let service: any LibraryService
     let onDone: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -680,39 +698,32 @@ struct PasteTagListSheet: View {
     private func loadExisting() {
         // Names AND aliases: an alias is a name, so pasting one must not
         // create a rival spelling of the tag it already points at.
-        existingNames = (try? library.writer.read { db -> Set<String> in
-            let names = try String.fetchAll(
-                db, sql: "SELECT name FROM tag WHERE tagCategoryID = ?", arguments: [category.id])
-            let aliases = try String.fetchAll(
-                db,
-                sql: """
-                SELECT tagAlias.alias FROM tagAlias \
-                JOIN tag ON tag.id = tagAlias.tagID WHERE tag.tagCategoryID = ?
-                """,
-                arguments: [category.id])
-            return Set((names + aliases).map { $0.lowercased() })
-        }) ?? []
+        let service = service, categoryID = category.id
+        Task { existingNames = (try? await service.takenNames(categoryID: categoryID)) ?? [] }
     }
 
     private func create() {
         // Every name is tried; the sheet stays open when any could not
         // be created, so what happened is on screen rather than lost
         // with the sheet.
-        var failed: [String] = []
-        for name in newNames {
-            do {
-                _ = try library.ensureTag(named: name, inCategory: category.id)
-            } catch {
-                AppLog.shared.error("writes", "Could not create the tag \(name): \(error)")
-                failed.append(name)
+        let names = newNames, service = service, categoryID = category.id
+        Task {
+            var failed: [String] = []
+            for name in names {
+                do {
+                    _ = try await service.ensureTag(named: name, inCategory: categoryID)
+                } catch {
+                    AppLog.shared.error("writes", "Could not create the tag \(name): \(error)")
+                    failed.append(name)
+                }
             }
+            onDone()
+            guard failed.isEmpty else {
+                failure = "\(failed.count) of \(names.count) tags could not be created: "
+                    + failed.prefix(5).joined(separator: ", ")
+                return
+            }
+            dismiss()
         }
-        onDone()
-        guard failed.isEmpty else {
-            failure = "\(failed.count) of \(newNames.count) tags could not be created: "
-                + failed.prefix(5).joined(separator: ", ")
-            return
-        }
-        dismiss()
     }
 }

@@ -103,10 +103,10 @@ struct SightsAndSoundsApp: App {
         WindowGroup(id: "aux", for: AuxWindowRequest.self) { $request in
             if let request {
                 if model.remoteLibraries.ref(for: request.libraryID) != nil {
-                    if request.kind == .player {
-                        // A player asks everything of the library's
-                        // service, so it is the same for a library on
-                        // another Mac.
+                    if request.kind.worksOnARemoteLibrary {
+                        // These ask everything of the library's
+                        // service, so they are the same for a library
+                        // on another Mac.
                         AuxiliaryWindowView(request: request)
                             .environment(model)
                             .uiZoomed()

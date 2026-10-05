@@ -544,6 +544,75 @@ import Testing
         #expect(remote.state == .connected)
     }
 
+    /// The Tag Manager, from another Mac: its reads are the host's
+    /// answers, its changes land in the host's library.
+    @Test(.timeLimit(.minutes(1)))
+    func theVocabularyIsAuthoredInTheHostsLibrary() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let remote = rig.remote, local = rig.local
+
+        #expect(try await remote.categories() == local.categories())
+        #expect(try await remote.categories().map(\.name) == ["Band", "Year", "Internal"])
+        #expect(try await remote.categoryTable(categoryID: rig.band.id) == local.categoryTable(categoryID: rig.band.id))
+        #expect(try await remote.categoryTable(categoryID: rig.band.id).aliases == [rig.alpha.id: ["A"]])
+        #expect(try await remote.vocabularyIndex() == local.vocabularyIndex())
+        #expect(try await remote.takenNames(categoryID: rig.band.id) == ["alpha", "beta", "a"])
+
+        // A category made, changed and deleted.
+        var venue = TagCategory(name: "Venue", sortOrder: 5)
+        try await remote.createCategory(venue)
+        venue.name = "Place"
+        try await remote.updateCategory(venue)
+        #expect(try await local.categories().map(\.name).contains("Place"))
+        try await remote.deleteCategory(venue.id)
+        #expect(try await local.categories().map(\.name) == ["Band", "Year", "Internal"])
+
+        // A field made, filled in on a tag, and deleted.
+        let formed = try await remote.createField(
+            FieldDefinition(name: "Formed", scope: .tag, tagCategoryID: rig.band.id))
+        #expect(try await remote.fields(scope: .tag, categoryID: rig.band.id) == [formed])
+        #expect(try await remote.fields(scope: .mediaItem, categoryID: nil).isEmpty)
+        try await remote.setFieldValue("1995", tagID: rig.alpha.id, field: formed)
+        #expect(try await remote.fieldValues(tagID: rig.alpha.id) == [formed.id: "1995"])
+        #expect(try rig.library.fieldValues(ofTag: rig.alpha.id) == [formed.id: "1995"])
+        try await remote.deleteField(formed.id)
+        #expect(try await remote.fields(scope: .tag, categoryID: rig.band.id).isEmpty)
+
+        // One tag's flags and notes.
+        try await remote.setTagHidden(rig.beta.id, true)
+        try await remote.setTagNotes(rig.beta.id, "From the other Mac.")
+        let beta = try await rig.library.writer.read { try SightsAndSoundsKit.Tag.fetchOne($0, key: rig.beta.id) }
+        #expect(beta?.hiddenByDefault == true && beta?.notes == "From the other Mac.")
+
+        // A merge, into a tag that does not exist yet.
+        let merged = try await remote.mergeTags([rig.alpha.id, rig.beta.id], into: .newTag(named: "Alphabet"))
+        #expect(merged.name == "Alphabet")
+        #expect(try rig.tagIDs(of: rig.a) == [merged.id, rig.y1995.id])
+        #expect(try await remote.categoryTable(categoryID: rig.band.id).tags.map(\.name) == ["Alphabet"])
+        #expect(remote.state == .connected)
+    }
+
+    @Test func onlyTheVocabularysReadsAreAskedTwice() {
+        for read in [
+            ServiceRequest.categories, .categoryTable(categoryID: UUID()), .vocabularyIndex,
+            .fields(scope: .tag, categoryID: nil), .fieldValues(tagID: UUID()), .takenNames(categoryID: UUID()),
+        ] {
+            #expect(read.onlyReads, "\(read)")
+        }
+        let category = TagCategory(name: "x", sortOrder: 0)
+        let field = FieldDefinition(name: "x", scope: .mediaItem)
+        for write in [
+            ServiceRequest.createCategory(category: category), .updateCategory(category: category),
+            .deleteCategory(categoryID: UUID()), .mergeTags(sourceIDs: [], target: .existing(UUID())),
+            .setTagHidden(tagID: UUID(), hidden: true), .setTagNotes(tagID: UUID(), notes: ""),
+            .setFieldValue(value: "", tagID: UUID(), field: field), .createField(field: field),
+            .deleteField(fieldID: UUID()),
+        ] {
+            #expect(!write.onlyReads, "\(write)")
+        }
+    }
+
     @Test func onlyTheTagReadsAreAskedTwice() {
         #expect(ServiceRequest.fullVocabulary.onlyReads)
         #expect(ServiceRequest.tagUsageCounts(categoryID: UUID()).onlyReads)

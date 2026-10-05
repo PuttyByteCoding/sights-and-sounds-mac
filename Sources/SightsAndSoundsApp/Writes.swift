@@ -24,6 +24,31 @@ enum Writes {
     }
 }
 
+extension Writes {
+    /// The same for a write asked of the library's service, which is
+    /// answered later — at once for a library on this Mac, after a trip
+    /// to another Mac otherwise. A failure is reported the same way;
+    /// `then` runs once it is known whether it worked, for callers that
+    /// do something after.
+    static func run(
+        _ what: String, report: Binding<String?>,
+        then: @escaping @MainActor (Bool) -> Void = { _ in },
+        _ body: @escaping @Sendable () async throws -> Void
+    ) {
+        Task { @MainActor in
+            do {
+                try await body()
+                then(true)
+            } catch {
+                let message = "Could not \(what): \(error)"
+                AppLog.shared.error("writes", message)
+                report.wrappedValue = message
+                then(false)
+            }
+        }
+    }
+}
+
 extension View {
     /// For a view with nowhere of its own to show an error.
     func failureAlert(_ failure: Binding<String?>) -> some View {

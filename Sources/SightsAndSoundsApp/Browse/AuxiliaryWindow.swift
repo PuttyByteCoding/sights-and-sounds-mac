@@ -23,6 +23,17 @@ struct AuxWindowRequest: Codable, Hashable {
         /// Firefox bookmarks matching one item's search values (spec 17).
         case bookmarkSearch
 
+        /// Whether the surface asks everything of the library's service,
+        /// and so works on a library another Mac holds. The others still
+        /// work on a database; the list grows as they are moved.
+        var worksOnARemoteLibrary: Bool {
+            switch self {
+            case .player, .categories: true
+            case .review, .organise, .maintenance, .importMedia, .operations, .watched, .tagAnalysis,
+                 .bookmarkSearch: false
+            }
+        }
+
         var title: String {
             switch self {
             case .categories: "Tag Manager"
