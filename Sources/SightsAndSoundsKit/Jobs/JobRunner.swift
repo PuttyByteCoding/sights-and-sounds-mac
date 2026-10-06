@@ -317,7 +317,7 @@ public actor JobRunner {
             let job = try type.init(payload: record.payload)
             do {
                 try await job.run(context)
-                let summary = try? await library.writer.read { db -> String? in
+                let summary = try? await library.read { db -> String? in
                     try String.fetchOne(
                         db, sql: "SELECT summary FROM job WHERE id = ?", arguments: [jobID])
                 }

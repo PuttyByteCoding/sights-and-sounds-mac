@@ -13,7 +13,7 @@ extension LocalLibraryService {
     }
 
     public func tagDetails(tagID: UUID) async throws -> TagDetails {
-        let aliases = try await library.writer.read { db in
+        let aliases = try await library.read { db in
             try TagAlias.filter(sql: "tagID = ?", arguments: [tagID]).fetchAll(db).map(\.alias)
         }
         return TagDetails(aliases: aliases, fieldValueCount: try library.fieldValues(ofTag: tagID).count)
@@ -47,7 +47,7 @@ extension LocalLibraryService {
         let name = draft.name.trimmingCharacters(in: .whitespaces)
         let tagID: UUID
         if let existingID = draft.tagID {
-            guard let existing = try await library.writer.read({ try Tag.fetchOne($0, key: existingID) }) else {
+            guard let existing = try await library.read({ try Tag.fetchOne($0, key: existingID) }) else {
                 throw ServiceError.noSuchTag
             }
             // Only what differs is written, each through the library's
@@ -75,7 +75,7 @@ extension LocalLibraryService {
             if !draft.notes.isEmpty { try library.setTagNotes(created.id, draft.notes) }
             tagID = created.id
         }
-        guard let saved = try await library.writer.read({ try Tag.fetchOne($0, key: tagID) }) else {
+        guard let saved = try await library.read({ try Tag.fetchOne($0, key: tagID) }) else {
             throw ServiceError.noSuchTag
         }
         return saved

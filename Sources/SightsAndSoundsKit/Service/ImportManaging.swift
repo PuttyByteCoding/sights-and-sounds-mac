@@ -48,7 +48,7 @@ public struct ImportOverview: Codable, Equatable, Sendable {
 extension LocalLibraryService {
     public func importOverview() async throws -> ImportOverview {
         let appSettings = AppSettingsStore.shared.current
-        var overview = try await library.writer.read { db -> ImportOverview in
+        var overview = try await library.read { db -> ImportOverview in
             var result = ImportOverview()
             let rows = try Row.fetchAll(db, sql: "SELECT sourceID, COUNT(*) AS c FROM mediaItem GROUP BY sourceID")
             for row in rows {
@@ -67,7 +67,7 @@ extension LocalLibraryService {
                 ?? Set(appSettings.audioExtensions.map { $0.lowercased() })).sorted()
             return result
         }
-        let sources = try await library.writer.read { try Source.fetchAll($0) }
+        let sources = try await library.read { try Source.fetchAll($0) }
         for source in sources {
             overview.online[source.id] = source.isOnline(using: fileAccess)
         }
@@ -108,7 +108,7 @@ extension LocalLibraryService {
     }
 
     private func source(_ id: UUID) async throws -> Source {
-        guard let source = try await library.writer.read({ try Source.fetchOne($0, key: id) }) else {
+        guard let source = try await library.read({ try Source.fetchOne($0, key: id) }) else {
             throw ServiceError.noSuchSource
         }
         return source

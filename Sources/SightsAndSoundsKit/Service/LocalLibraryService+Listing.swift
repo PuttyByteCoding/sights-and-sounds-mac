@@ -47,7 +47,7 @@ extension LocalLibraryService {
             // Sendable, and Swift 6.4 resolves a read inside an async
             // context to the async overload. The explicit closure type
             // keeps the older CI toolchain's inference unambiguous.
-            let links = try await library.writer.read { db -> [(item: UUID, tag: UUID)] in
+            let links = try await library.read { db -> [(item: UUID, tag: UUID)] in
                 try Row.fetchAll(db, sql: "SELECT mediaItemID, tagID FROM mediaItemTag")
                     .map { (item: $0["mediaItemID"], tag: $0["tagID"]) }
             }

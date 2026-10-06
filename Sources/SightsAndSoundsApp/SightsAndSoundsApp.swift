@@ -473,7 +473,7 @@ final class AppModel {
         guard let library = try? library(for: libraryID) else { return }
         Task.detached(priority: .utility) {
             let access: any FileAccess = LiveFileAccess()
-            guard let sources = try? await library.writer.read({ try Source.fetchAll($0) }) else { return }
+            guard let sources = try? await library.read({ try Source.fetchAll($0) }) else { return }
             let offline = sources.filter { $0.enabled && !$0.isOnline(using: access) }.count
             await MainActor.run {
                 // Only for a library still open: the window may have closed

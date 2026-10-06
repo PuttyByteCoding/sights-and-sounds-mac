@@ -5,7 +5,7 @@ import GRDB
 
 extension LocalLibraryService {
     public func playable(itemID: UUID) async throws -> Playable {
-        let item = try await library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+        let item = try await library.read { try MediaItem.fetchOne($0, key: itemID) }
         // Embedded clips resolve to the PARENT's file. The lookup touches
         // the filesystem, which is why it is here and not on the main
         // actor: a slow volume used to hitch the UI on every item switch.
@@ -34,7 +34,7 @@ extension LocalLibraryService {
             vocabulary: try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) },
             // An alias IS a name, so typing "SBD" must offer "Soundboard".
             aliases: Dictionary(
-                grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
+                grouping: try await library.read { try TagAlias.fetchAll($0) },
                 by: \.tagID
             ).mapValues { $0.map(\.alias) },
             keyBindings: try library.keyBindings())
@@ -75,7 +75,7 @@ extension LocalLibraryService {
     public func textLines(itemID: UUID) async throws -> [OcrTextLine] {
         // Explicit return type — the async `read` overload's inference
         // is ambiguous to the CI toolchain (Xcode 16).
-        try await library.writer.read { db -> [OcrTextLine] in
+        try await library.read { db -> [OcrTextLine] in
             try OcrTextLine
                 .filter(sql: "mediaItemID = ?", arguments: [itemID])
                 .order(sql: "timeSeconds")

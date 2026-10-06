@@ -75,7 +75,7 @@ public struct MediaSignalJob: Job {
 
         // Only sources reachable right now. An offline drive must leave no
         // marker: a marker means "looked, and this is what was there".
-        let sources = try await library.writer.read { db in
+        let sources = try await library.read { db in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
         let online = Set(

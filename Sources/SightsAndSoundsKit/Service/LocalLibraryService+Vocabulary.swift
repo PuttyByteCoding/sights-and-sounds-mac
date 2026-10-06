@@ -5,13 +5,13 @@ import GRDB
 
 extension LocalLibraryService {
     public func categories() async throws -> [TagCategory] {
-        try await library.writer.read { try TagCategory.order(sql: "sortOrder, name").fetchAll($0) }
+        try await library.read { try TagCategory.order(sql: "sortOrder, name").fetchAll($0) }
     }
 
     public func categoryTable(categoryID: UUID) async throws -> CategoryTable {
         // One read, so the tags, their aliases and their counts are of
         // the same moment.
-        try await library.writer.read { db in
+        try await library.read { db in
             let tags = try Tag.filter(sql: "tagCategoryID = ?", arguments: [categoryID])
                 .order(sql: "sortOrder, name").fetchAll(db)
             let aliasRows = try TagAlias.fetchAll(
@@ -38,7 +38,7 @@ extension LocalLibraryService {
 
     public func vocabularyIndex() async throws -> VocabularyIndex {
         let vocabulary = try library.vocabulary().map { CategoryTags(category: $0.category, tags: $0.tags) }
-        let aliasRows = try await library.writer.read { try TagAlias.fetchAll($0) }
+        let aliasRows = try await library.read { try TagAlias.fetchAll($0) }
         return VocabularyIndex(
             vocabulary: vocabulary,
             aliases: Dictionary(grouping: aliasRows, by: \.tagID).mapValues { $0.map(\.alias) },
@@ -54,7 +54,7 @@ extension LocalLibraryService {
     }
 
     public func takenNames(categoryID: UUID) async throws -> Set<String> {
-        try await library.writer.read { db in
+        try await library.read { db in
             let names = try String.fetchAll(
                 db, sql: "SELECT name FROM tag WHERE tagCategoryID = ?", arguments: [categoryID])
             // An alias is a name: pasting one must not make a rival

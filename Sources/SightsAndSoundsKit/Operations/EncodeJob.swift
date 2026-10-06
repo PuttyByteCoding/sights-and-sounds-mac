@@ -68,12 +68,12 @@ public struct EncodeJob: Job {
             return
         }
         let library = context.library
-        guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: payload.itemID) })
+        guard let item = try await library.read({ try MediaItem.fetchOne($0, key: payload.itemID) })
         else { throw ClipError.itemNotFound }
         guard item.parentMediaItemID == nil else { throw ClipError.notAClip }
         guard let fileURL = try library.resolvedFileURL(for: item, fileAccess: fileAccess),
               fileAccess.isReachable(fileURL),
-              let source = try await library.writer.read({ try Source.fetchOne($0, key: item.sourceID) })
+              let source = try await library.read({ try Source.fetchOne($0, key: item.sourceID) })
         else { throw MoveError.sourceUnavailable }
 
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)

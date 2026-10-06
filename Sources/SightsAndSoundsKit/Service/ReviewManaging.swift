@@ -88,7 +88,7 @@ extension LocalLibraryService {
     public func reviewLists() async throws -> ReviewLists {
         let candidates = try library.pendingCandidates()
         let ids = Array(Set(candidates.flatMap { [$0.itemAID, $0.itemBID] }))
-        let (items, marked, flagged) = try await library.writer.read { db in
+        let (items, marked, flagged) = try await library.read { db in
             (
                 Dictionary(uniqueKeysWithValues: try MediaItem.fetchAll(db, keys: ids).map { ($0.id, $0) }),
                 try MediaItem.filter(sql: "markedForDeletion = 1").order(sql: "relativePath").fetchAll(db),

@@ -59,7 +59,7 @@ extension LocalLibraryService {
             .filter { !$0.category.hiddenFromBrowse }
             .map { CategoryTags(category: $0.category, tags: $0.tags) }
         let aliases = Dictionary(
-            grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
+            grouping: try await library.read { try TagAlias.fetchAll($0) },
             by: \.tagID
         ).mapValues { $0.map(\.alias) }
         return BrowseVocabulary(categories: categories, aliases: aliases)
@@ -109,7 +109,7 @@ extension LocalLibraryService {
     }
 
     public func thumbnailQueueStatus() async throws -> ThumbnailQueueStatus? {
-        try await library.writer.read { db -> ThumbnailQueueStatus? in
+        try await library.read { db -> ThumbnailQueueStatus? in
             guard
                 let row = try JobRecord.fetchOne(
                     db,

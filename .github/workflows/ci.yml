@@ -27,6 +27,8 @@ jobs:
         run: ./scripts/check-kit-portable.sh
       - name: Service boundary check
         run: ./scripts/check-service-boundary.sh
+      - name: Async reads check
+        run: ./scripts/check-no-pooled-async-reads.sh
 
   test:
     name: Build & test

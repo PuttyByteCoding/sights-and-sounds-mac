@@ -89,7 +89,7 @@ public enum SweepPreparation: String, Codable, Sendable {
 
 extension LocalLibraryService {
     public func jobLane(limit: Int) async throws -> JobLane {
-        let jobs = try await library.writer.read { db in
+        let jobs = try await library.read { db in
             try JobRecord.order(sql: "createdAt DESC").limit(limit).fetchAll(db)
         }
         return JobLane(jobs: jobs, isPaused: await runner?.isPaused)

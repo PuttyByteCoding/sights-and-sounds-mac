@@ -74,7 +74,7 @@ extension LocalLibraryService {
         properties.migrations = try library.appliedMigrations().count
 
         let base = properties
-        properties = try await library.writer.read { db -> LibraryProperties in
+        properties = try await library.read { db -> LibraryProperties in
             var filled = base
             func count(_ sql: String) throws -> Int {
                 try Int.fetchOne(db, sql: sql) ?? 0

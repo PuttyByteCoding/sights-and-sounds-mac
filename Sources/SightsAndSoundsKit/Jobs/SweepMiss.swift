@@ -23,7 +23,7 @@ enum SweepMiss {
 extension LibraryDatabase {
     func sweepMiss(for item: MediaItem, source: Source, fileAccess: any FileAccess) async throws -> SweepMiss {
         guard source.isOnline(using: fileAccess) else { return .sourceGone }
-        let current = try await writer.read { db in
+        let current = try await read { db in
             try String.fetchOne(
                 db, sql: "SELECT relativePath FROM mediaItem WHERE id = ?", arguments: [item.id])
         }

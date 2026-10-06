@@ -194,7 +194,7 @@ public struct RemoveFromLibraryJob: Job {
             var failed = 0
             for (index, itemID) in payload.itemIDs.enumerated() {
                 try await context.checkCancellation()
-                guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: itemID) })
+                guard let item = try await library.read({ try MediaItem.fetchOne($0, key: itemID) })
                 else { continue }
                 // A segment has no tags of its own in the file; a show
                 // does. Nothing to write means nothing to lose.
