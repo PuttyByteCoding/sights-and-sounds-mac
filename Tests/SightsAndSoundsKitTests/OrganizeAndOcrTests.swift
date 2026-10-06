@@ -211,5 +211,13 @@ import Testing
         }
         #expect(joined != nil)
         #expect(abs((joined!.durationSeconds ?? 0) - 6.0) < 1.5)
+        // A stream copy: ffmpeg's stamp on the joined file is ours.
+        let history = try library.rewrites(of: joined!.id)
+        #expect(history.map(\.operation) == [.joined])
+        #expect(history.first?.tool == "ffmpeg" && history.first?.reencoded == false)
+        var facts = try library.signalFacts(itemID: joined!.id)
+        facts.declared["ffprobe.format.encoder"] = "Lavf61.7.100"
+        let evidence = SignalEvidenceRules.evidence(from: facts)
+        #expect(!evidence.contains { $0.key == "transcoderNamed" }, "our own join was read as a transcode")
     }
 }

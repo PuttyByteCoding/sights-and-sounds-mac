@@ -93,7 +93,11 @@ public struct BlockRemovalJob: Job {
             videoStreamCount: probe.videoStreamCount, audioStreamCount: probe.audioStreamCount,
             sampleRate: probe.sampleRate, audioChannels: probe.audioChannels,
             ingestDate: Date(), needsReview: false, isEdited: true)
-        try await library.writer.write { try edited.insert($0) }
+        try await library.writer.write { db in
+            try edited.insert(db)
+            try LibraryDatabase.recordRewrite(
+                edited.id, .blocksRemoved, tool: "ffmpeg", reencoded: true, note: "from \(item.fileName)", in: db)
+        }
 
         await context.reportProgress(current: 1, total: 1)
         let removed = duration - keep.reduce(0) { $0 + ($1.end - $1.start) }
