@@ -842,11 +842,11 @@ final class PlayerModel {
         guard let action = PlayerKeyMap.action(
             character: character, shift: shift, numpad: numpad, settings: skipSettings)
         else { return false }
-        // The D key is the ordinary mark, which may move on.
-        if action == .toggleMarkedForDeletion {
-            markForDeletion()
-        } else {
-            perform(action)
+        // The D and R keys are the ordinary marks, which may move on.
+        switch action {
+        case .toggleMarkedForDeletion: markForDeletion()
+        case .toggleNeedsReview: markNeedsReview()
+        default: perform(action)
         }
         return true
     }
@@ -1530,6 +1530,20 @@ final class PlayerModel {
         } else {
             perform(.toggleMarkedForDeletion)
         }
+    }
+
+    /// R and the toolbar button: Needs Review on or off, moving on after
+    /// a mark when the setting says so. Clearing the mark stays put, as
+    /// unmarking for deletion does: what you just cleared is still in
+    /// front of you. Nothing moves unless the mark actually landed.
+    func markNeedsReview() {
+        guard let item else { return }
+        let marking = !item.needsReview
+        perform(.toggleNeedsReview)
+        guard AppSettingsStore.shared.current.needsReviewMarkAdvances,
+              marking, self.item?.needsReview == true else { return }
+        if triageMode { triageCount += 1 }
+        goNext()
     }
 
     // MARK: - Blocks
