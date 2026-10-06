@@ -144,4 +144,39 @@ import Testing
         }
         #expect(try stored(library, items[2].id)?.isFavorite == false)
     }
+
+    @Test func theSelectionIsMarkedNeedsReviewAndThenReviewed() async throws {
+        let (model, library, items, _) = try await makeModel()
+        model.click(items[0].id, extend: false, range: false)
+        model.click(items[2].id, extend: false, range: false)
+        await model.markSelectionNeedsReview()
+        #expect(try stored(library, items[0].id)?.needsReview == true)
+        #expect(try stored(library, items[2].id)?.needsReview == true)
+        #expect(try stored(library, items[1].id)?.needsReview == false)
+
+        try await waitUntil { model.items.filter(\.needsReview).count == 2 }
+        model.click(items[0].id, extend: false, range: false)
+        model.click(items[2].id, extend: false, range: false)
+        await model.markSelectionReviewed()
+        #expect(try stored(library, items[0].id)?.needsReview == false)
+        #expect(try stored(library, items[2].id)?.needsReview == false)
+    }
+
+    /// The Remove list is read from the library, not from what the tiles
+    /// draw: a tile view that shows no tags still offers the selection's.
+    @Test func theSelectionsTagsAreKnownWhateverTheTilesShow() async throws {
+        let (model, library, items, tag) = try await makeModel()
+        try library.assignTag(tag.id, to: [items[1].id])
+        model.click(items[0].id, extend: false, range: false)
+        try await waitUntil { model.selectionTagIDs.isEmpty }
+        model.click(items[1].id, extend: false, range: false)
+        try await waitUntil { model.selectionTagIDs == [tag.id] }
+        #expect(model.tagsOnSelection.map(\.id) == [tag.id])
+
+        // A tag taken off the selection leaves the list.
+        await model.removeTagFromSelection(tag.id)
+        try await waitUntil { model.selectionTagIDs.isEmpty }
+        model.clearSelection()
+        #expect(model.selectionTagIDs.isEmpty)
+    }
 }
