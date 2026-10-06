@@ -246,6 +246,8 @@ private struct ItemCell: View {
     @State private var pending: TagAction?
     /// "Remove from Library…" asked, not yet answered.
     @State private var removal: RemovalRequest?
+    /// The selection menu's "Find a Tag…" sheet is up.
+    @State private var findingTag = false
 
     var body: some View {
         TileCard(
@@ -298,6 +300,15 @@ private struct ItemCell: View {
                         model.removeFromLibrary(request, writingTagsFirst: writingTagsFirst)
                     },
                     onCancel: { removal = nil })
+            }
+            .sheet(isPresented: $findingTag) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    BulkTagPicker()
+                    Button("Done") { findingTag = false }
+                        .keyboardShortcut(.defaultAction)
+                        .padding(12)
+                }
+                .background(Theme.Surface.dialog)
             }
             // Out to the Finder or another app, as the file itself. A clip
             // or an offline item hands over nothing.
@@ -376,15 +387,59 @@ private struct ItemCell: View {
         if selected.contains(where: \.playbackIssue) {
             Button("Clear Playback Issue on \(count)", systemImage: "play.circle") { model.unmarkSelectionWontPlay() }
         }
-        Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") { Task { await model.markSelectionReviewed() } }
+        if selected.contains(where: { !$0.needsReview }) {
+            Button("Mark \(count) as Needs Review", systemImage: "flag") {
+                Task { await model.markSelectionNeedsReview() }
+            }
+        }
+        if selected.contains(where: \.needsReview) {
+            Button("Mark \(count) Reviewed", systemImage: "checkmark.circle") {
+                Task { await model.markSelectionReviewed() }
+            }
+        }
         Button("Remove \(count) from Library…", systemImage: "minus.circle") {
             Task { removal = await model.removalRequest(for: selected) }
         }
+        Divider()
+        addTagMenu(count)
+        removeTagMenu(count)
         Divider()
         Button("Write Tags to \(count) Files", systemImage: "square.and.pencil") {
             model.writeTags(itemIDs: selected.map(\.id), scope: "\(count) selected items")
         }
         Button("Examine \(count)", systemImage: "waveform.badge.magnifyingglass") { model.examineSelection() }
+    }
+
+    /// Every tag, a submenu per category, and a search for a vocabulary
+    /// too long to scroll. `assignTag` per item, so a single-select
+    /// category still replaces rather than accumulates.
+    @ViewBuilder private func addTagMenu(_ count: Int) -> some View {
+        Menu("Add Tag to \(count)", systemImage: "tag") {
+            Button("Find a Tag…") { findingTag = true }
+            Divider()
+            ForEach(model.vocabulary.filter { !$0.tags.isEmpty }) { entry in
+                Menu(entry.category.name) {
+                    ForEach(entry.tags.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) { tag in
+                        Button(tag.name) { Task { await model.applyTagToSelection(tag.id) } }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Only the tags something selected carries. Taking a tag off an item
+    /// that lacks it does nothing, so a mixed selection is safe.
+    @ViewBuilder private func removeTagMenu(_ count: Int) -> some View {
+        let pills = model.tagsOnSelection
+        if !pills.isEmpty {
+            Menu("Remove Tag from \(count)", systemImage: "tag.slash") {
+                ForEach(pills) { pill in
+                    Button("\(pill.categoryName): \(pill.name)") {
+                        Task { await model.removeTagFromSelection(pill.id) }
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder private var itemMenu: some View {
@@ -546,8 +601,13 @@ private struct BulkBar: View {
                 .popover(isPresented: $showTagRemover, arrowEdge: .top) {
                     BulkTagRemover()
                 }
-            Button("Mark reviewed") { Task { await model.markSelectionReviewed() } }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
+            Menu("Review") {
+                Button("Mark as needs review") { Task { await model.markSelectionNeedsReview() } }
+                Button("Mark reviewed") { Task { await model.markSelectionReviewed() } }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Put these on the Needs Review list, or take them off it")
             divider
             // Mark and unmark as a pair, so a mixed selection can be
             // brought to either state in one click.
@@ -613,9 +673,7 @@ private struct BulkTagRemover: View {
             Text("Remove tags from \(model.selection.count) items")
                 .modifier(Theme.sectionLabel())
             if pills.isEmpty {
-                Text(GridDisplaySettings.shared.grid.needsTagData
-                    ? "The selected items carry no tags."
-                    : "The tile view shows no tags, so there is nothing to pick from here. Choose a view that shows tags.")
+                Text("The selected items carry no tags.")
                     .font(Theme.ui(11.5))
                     .foregroundStyle(Theme.Text.quaternary)
                     .fixedSize(horizontal: false, vertical: true)

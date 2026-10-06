@@ -552,6 +552,7 @@ final class BrowseModel {
                 case .success(let answer):
                     self.items = answer.items
                     self.pruneSelection()
+                    self.refreshSelectionTags()
                     self.itemTags = answer.tags
                     self.itemMissingCategories = answer.missingCategories
                     self.duplicateFlaggedIDs = answer.duplicateIDs
@@ -738,7 +739,14 @@ final class BrowseModel {
     /// The tiles picked out for a bulk action. Held here rather than in
     /// the grid view so the bulk bar, the queue and the context menu all
     /// read one answer.
-    private(set) var selection: Set<UUID> = []
+    private(set) var selection: Set<UUID> = [] {
+        didSet { if selection != oldValue { refreshSelectionTags() } }
+    }
+    /// Every tag something selected carries, read from the library, for
+    /// the Remove Tag lists. Not from what the tiles draw: a tile view
+    /// that shows no tags left those lists empty.
+    private(set) var selectionTagIDs: Set<UUID> = []
+    private var selectionTagsGeneration = 0
     /// Where a shift-click measures from.
     private var selectionAnchor: UUID?
 
@@ -784,6 +792,24 @@ final class BrowseModel {
     /// selection that outlived its listing had the bar counting items the
     /// grid no longer showed, Delete acting on the visible few, and Add
     /// Tag acting on all of them.
+    /// Read the selection's tags again: when it changes, and when the
+    /// listing does (a tag written anywhere refreshes the listing).
+    private func refreshSelectionTags() {
+        selectionTagsGeneration += 1
+        let generation = selectionTagsGeneration
+        let ids = Array(selection)
+        guard !ids.isEmpty else {
+            selectionTagIDs = []
+            return
+        }
+        let service = service
+        Task { [weak self] in
+            let membership = try? await service.tagMembership(itemIDs: ids)
+            guard let self, self.selectionTagsGeneration == generation, let membership else { return }
+            self.selectionTagIDs = membership.values.reduce(into: Set<UUID>()) { $0.formUnion($1) }
+        }
+    }
+
     private func pruneSelection() {
         if let focused = focusedItemID, !visibleItems.contains(where: { $0.id == focused }) {
             focusedItemID = nil
@@ -864,6 +890,14 @@ final class BrowseModel {
         // cleared for an action that then failed would have to be made
         // again to retry it.
         guard await write({ try await $0.setNeedsReview(ids, false) }) != nil else { return }
+        clearSelection()
+    }
+
+    /// Put the selection on the Needs Review worklist: the other half of
+    /// Mark Reviewed, for files that want another look.
+    func markSelectionNeedsReview() async {
+        let ids = selectedItems.map(\.id)
+        guard await write({ try await $0.setNeedsReview(ids, true) }) != nil else { return }
         clearSelection()
     }
 
@@ -966,20 +1000,18 @@ final class BrowseModel {
     }
 
     /// The tags any selected item carries, in category order, for the
-    /// bulk bar's Remove picker. Only what the grid already knows: when
-    /// the tile view draws no tags this is empty, and the picker says so.
+    /// Remove Tag lists of the bulk bar and the selection's menu.
     var tagsOnSelection: [TagPill] {
-        var seen: Set<UUID> = []
-        var pills: [TagPill] = []
-        for item in selectedItems {
-            for pill in itemTags[item.id] ?? [] where seen.insert(pill.id).inserted {
-                pills.append(pill)
-            }
-        }
-        let order = Dictionary(uniqueKeysWithValues: vocabulary.enumerated().map { ($1.category.id, $0) })
-        return pills.sorted {
-            let (a, b) = (order[$0.categoryID] ?? .max, order[$1.categoryID] ?? .max)
-            return a == b ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : a < b
+        guard !selectionTagIDs.isEmpty else { return [] }
+        return vocabulary.flatMap { entry in
+            entry.tags
+                .filter { selectionTagIDs.contains($0.id) }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .map {
+                    TagPill(
+                        id: $0.id, name: $0.name, categoryID: entry.category.id,
+                        categoryName: entry.category.name, colorIndex: entry.category.colorIndex)
+                }
         }
     }
 
