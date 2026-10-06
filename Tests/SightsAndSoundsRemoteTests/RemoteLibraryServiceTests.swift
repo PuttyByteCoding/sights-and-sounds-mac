@@ -481,6 +481,30 @@ import Testing
         #expect(reply.kind == RemoteProtocol.Kind.answer)
     }
 
+    /// A recipe is a command line. One written on another Mac is not run
+    /// here: only the recipes the app ships, as they ship.
+    @Test(.timeLimit(.minutes(1)))
+    func aRepairFromAnotherMacRunsOnlyARecipeTheAppShips() async throws {
+        let rig = try await RemoteRig()
+        defer { rig.tearDown() }
+        let written = RepairRecipe(
+            name: "Rebuild the index (faststart remux)", tool: "sh",
+            argumentTemplate: ["-c", "touch /tmp/sas-not-a-repair"], estimate: "seconds")
+        let reply = try await askDirectly(rig, .queueRepair(itemID: rig.a.id, recipe: written))
+        #expect(reply.kind == RemoteProtocol.Kind.failure, "a command line from another Mac was queued")
+        #expect(try await rig.library.writer.read { try JobRecord.fetchCount($0) } == 0)
+
+        // The shipped ones pass, under whatever id the other Mac's copy
+        // was given; one with its arguments changed does not.
+        for shipped in RepairRecipe.shipped {
+            var copy = shipped
+            copy.id = UUID()
+            #expect(ServiceRequest.queueRepair(itemID: UUID(), recipe: copy).refusalForAnotherMac == nil)
+            copy.argumentTemplate.append("-y")
+            #expect(ServiceRequest.queueRepair(itemID: UUID(), recipe: copy).refusalForAnotherMac != nil)
+        }
+    }
+
     @Test func onlyWhatReachesOutsideTheLibraryIsHeldBack() {
         #expect(ServiceRequest.addSource(name: "x", rootPath: "/tmp").refusalForAnotherMac != nil)
         #expect(ServiceRequest.sourceStates.refusalForAnotherMac == nil)
@@ -649,10 +673,10 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("set/a.mp4").path))
         #expect(try rig.row(rig.a) != nil)
 
-        // A repair is queued on the host with the recipe sent from here.
-        let recipe = RepairRecipe(
-            name: "remux", matchPattern: nil, tool: "ffmpeg", argumentTemplate: ["{input}", "{output}"],
-            estimate: "seconds")
+        // A repair is queued on the host with the recipe sent from here:
+        // one the app ships, as another Mac may only send.
+        var recipe = try #require(RepairRecipe.shipped.first)
+        recipe.id = UUID()
         let job = try await remote.queueRepair(itemID: rig.a.id, recipe: recipe)
         #expect(job.kind == RepairJob.kind)
         #expect(try await remote.repairQueue(startingQueue: false).pending == [rig.a.id])
