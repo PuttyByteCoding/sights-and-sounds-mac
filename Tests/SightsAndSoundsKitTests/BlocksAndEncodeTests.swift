@@ -163,6 +163,11 @@ import Testing
         #expect(abs((encoded!.durationSeconds ?? 0) - 6.0) < 1.0)
         // Additive: the original is untouched.
         #expect(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("v.mp4").path))
+        // ffmpeg stamps the new file; its history says the encode was ours.
+        let history = try f.library.rewrites(of: encoded!.id)
+        #expect(history.map(\.operation) == [.encoded])
+        #expect(history.first?.tool == "ffmpeg" && history.first?.reencoded == true)
+        #expect(history.first?.note?.contains("v.mp4") == true)
     }
 
     @Test(.writesVideo) func blockRemovalCutsTheHiddenRange() async throws {
@@ -189,6 +194,10 @@ import Testing
         // Original file and its blocks untouched.
         #expect(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("v.mp4").path))
         #expect(try f.library.blocks(of: f.item.id).count == 1)
+        let history = try f.library.rewrites(of: edited!.id)
+        #expect(history.map(\.operation) == [.blocksRemoved])
+        #expect(history.first?.tool == "ffmpeg" && history.first?.reencoded == true)
+        #expect(try f.library.rewrites(of: f.item.id).isEmpty, "the original was not rewritten")
     }
 
     @Test(.writesVideo) func blockRemovalWithoutBlocksRefuses() async throws {

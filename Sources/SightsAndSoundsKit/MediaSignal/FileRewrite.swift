@@ -16,6 +16,8 @@ public struct FileRewrite: Codable, Equatable, Identifiable, Sendable, Fetchable
         /// Not this app's doing: the file changed outside it, and Maintenance
         /// accepted the size on disk.
         case changedOutside
+        /// A new file this app made from others; the note names them.
+        case encoded, joined, blocksRemoved
 
         var phrase: String {
             switch self {
@@ -25,6 +27,9 @@ public struct FileRewrite: Codable, Equatable, Identifiable, Sendable, Fetchable
             case .repair: "repaired"
             case .swapRecovered: "file swap settled after relaunch"
             case .changedOutside: "changed outside the app"
+            case .encoded: "encoded here"
+            case .joined: "joined here from parts"
+            case .blocksRemoved: "made here with blocks cut out"
             }
         }
     }

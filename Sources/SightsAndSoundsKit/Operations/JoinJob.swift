@@ -163,7 +163,11 @@ public struct JoinJob: Job {
             videoStreamCount: probe.videoStreamCount, audioStreamCount: probe.audioStreamCount,
             sampleRate: probe.sampleRate, audioChannels: probe.audioChannels,
             ingestDate: Date(), needsReview: false)
-        try await library.writer.write { try joined.insert($0) }
+        try await library.writer.write { db in
+            try joined.insert(db)
+            try LibraryDatabase.recordRewrite(
+                joined.id, .joined, tool: "ffmpeg", reencoded: false, note: "\(parts.count) parts", in: db)
+        }
 
         await context.reportProgress(current: 1, total: 1)
         await context.setSummary("joined \(parts.count) parts → \(joined.fileName)")
