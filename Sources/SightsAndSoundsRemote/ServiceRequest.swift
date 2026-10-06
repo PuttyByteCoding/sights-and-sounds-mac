@@ -234,6 +234,17 @@ extension ServiceRequest {
                 return "That is not a file of one of the library's sources."
             }
             return nil
+        case .queueRepair(_, let recipe):
+            // A recipe is a tool and its command line, run here as this
+            // Mac's user. One written on the other Mac could name any
+            // program; only the recipes the app ships, unchanged, are run
+            // for another Mac. This Mac's own recipes are run from here.
+            guard RepairRecipe.shipped.contains(where: {
+                $0.tool == recipe.tool && $0.argumentTemplate == recipe.argumentTemplate
+            }) else {
+                return "Only the repairs the app comes with can be run from another Mac. Run this one on the Mac that holds the library."
+            }
+            return nil
         default:
             return nil
         }
