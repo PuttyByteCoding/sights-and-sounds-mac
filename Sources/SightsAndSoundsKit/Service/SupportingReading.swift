@@ -56,7 +56,7 @@ public struct WatchHistory: Codable, Equatable, Sendable {
 
 extension LocalLibraryService {
     public func searchSettings() async throws -> SearchSettings {
-        let first = try await library.writer.read { try MediaItem.order(sql: "relativePath").fetchOne($0) }
+        let first = try await library.read { try MediaItem.order(sql: "relativePath").fetchOne($0) }
         return SearchSettings(
             formats: try library.searchFormats(),
             storedFormatsUnreadable: try library.storedSearchFormatsAreUnreadable(),
@@ -69,7 +69,7 @@ extension LocalLibraryService {
     }
 
     public func signalSummary(itemID: UUID) async throws -> SignalSummary? {
-        guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: itemID) }) else {
+        guard let item = try await library.read({ try MediaItem.fetchOne($0, key: itemID) }) else {
             return nil
         }
         return try library.signalSummary(for: item)

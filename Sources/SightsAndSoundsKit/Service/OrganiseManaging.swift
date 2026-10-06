@@ -65,7 +65,7 @@ extension LocalLibraryService {
     }
 
     public func jobQueue(kind: String, startingQueue: Bool) async throws -> JobQueueState {
-        let pending = try await library.writer.read { db in
+        let pending = try await library.read { db in
             try JobRecord
                 .filter(sql: "kind = ? AND state IN (?, ?)",
                         arguments: [kind, JobState.queued.rawValue, JobState.running.rawValue])

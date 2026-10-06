@@ -48,7 +48,7 @@ extension LocalLibraryService {
     }
 
     public func job(id: UUID) async throws -> JobRecord? {
-        try await library.writer.read { try JobRecord.fetchOne($0, key: id) }
+        try await library.read { try JobRecord.fetchOne($0, key: id) }
     }
 
     public func cancelJob(id: UUID) async throws {

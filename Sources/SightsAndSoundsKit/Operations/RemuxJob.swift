@@ -47,7 +47,7 @@ public struct RemuxJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: payload.itemID) })
+        guard let item = try await library.read({ try MediaItem.fetchOne($0, key: payload.itemID) })
         else { throw ClipError.itemNotFound }
         guard item.parentMediaItemID == nil else { throw ClipError.notAClip }
         guard let fileURL = try library.resolvedFileURL(for: item, fileAccess: fileAccess),
@@ -82,7 +82,7 @@ public struct RemuxJob: Job {
         // 2. Archive the original and land the result — only now that the
         //    replacement is verified. A remux always lands as .mp4; the
         //    path follows so the row stays honest.
-        guard let source = try await library.writer.read({
+        guard let source = try await library.read({
             try Source.fetchOne($0, key: item.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)

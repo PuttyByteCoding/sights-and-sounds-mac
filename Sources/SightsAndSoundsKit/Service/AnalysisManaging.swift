@@ -95,7 +95,7 @@ extension LocalLibraryService {
         let rules = try library.analysisRules()
         let categories = try library.vocabulary().map(\.category)
         let analysis = try library.analyzeItem(itemID, rules: rules, fileAccess: fileAccess)
-        let item = try await library.writer.read { try MediaItem.fetchOne($0, key: itemID) }
+        let item = try await library.read { try MediaItem.fetchOne($0, key: itemID) }
         return ItemAnalysisAnswer(item: item, rules: rules, categories: categories, analysis: analysis)
     }
 

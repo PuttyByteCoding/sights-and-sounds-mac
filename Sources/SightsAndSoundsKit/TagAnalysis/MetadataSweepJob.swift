@@ -74,7 +74,7 @@ public struct MetadataSweepJob: Job {
         // source must leave no marker at all — a marker would mean "swept,
         // nothing found" and the item would never be revisited once the
         // drive came back.
-        let sources = try await library.writer.read { db in
+        let sources = try await library.read { db in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
         let onlineSources = Set(

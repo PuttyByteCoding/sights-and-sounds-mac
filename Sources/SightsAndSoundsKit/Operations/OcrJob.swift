@@ -97,7 +97,7 @@ public struct OcrJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: payload.itemID) })
+        guard let item = try await library.read({ try MediaItem.fetchOne($0, key: payload.itemID) })
         else { throw ClipError.itemNotFound }
         guard item.kind == .video else {
             throw AVExport.ExportFailure(message: "OCR reads video frames — audio items have none")
@@ -109,7 +109,7 @@ public struct OcrJob: Job {
               fileAccess.isReachable(fileURL)
         else { throw MoveError.sourceUnavailable }
 
-        let scannedThrough = try await library.writer.read { db in
+        let scannedThrough = try await library.read { db in
             try OcrProgress.fetchOne(db, key: item.id)?.scannedThroughSeconds
         } ?? 0
         guard scannedThrough < duration else {

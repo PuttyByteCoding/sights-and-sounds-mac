@@ -98,7 +98,7 @@ public struct JoinJob: Job {
         let library = context.library
         let folder = MediaPath.normalize(payload.folderPath)
         let sourceIDValue = payload.sourceID
-        let discovered = try await library.writer.read { db -> [MediaItem] in
+        let discovered = try await library.read { db -> [MediaItem] in
             try MediaItem.fetchAll(
                 db,
                 sql: """
@@ -119,7 +119,7 @@ public struct JoinJob: Job {
         }
         let parts = ordered
         guard parts.count >= 2 else { throw NotEnoughParts() }
-        guard let source = try await library.writer.read({
+        guard let source = try await library.read({
             try Source.fetchOne($0, key: sourceIDValue)
         }), source.enabled, source.isOnline(using: fileAccess)
         else { throw MoveError.sourceUnavailable }

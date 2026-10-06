@@ -73,7 +73,7 @@ public struct ImportJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        guard let source = try await library.writer.read({
+        guard let source = try await library.read({
             try Source.fetchOne($0, key: payload.sourceID)
         }) else {
             throw ImportError.sourceMissing
@@ -86,7 +86,7 @@ public struct ImportJob: Job {
 
         // Effective extension sets: the library's override replaces the
         // app-wide lists; absent, it inherits them. Resolved once per run.
-        let info = try await library.writer.read { try LibraryInfo.fetchOne($0) }
+        let info = try await library.read { try LibraryInfo.fetchOne($0) }
         let appSettings = AppSettingsStore.shared.current
         let videoSet = info?.effectiveVideoExtensions(appWide: appSettings.videoExtensions)
             ?? MediaProbe.videoExtensions
@@ -143,7 +143,7 @@ public struct ImportJob: Job {
         // looked up per file: scanning every known path for every
         // candidate made a full rescan quadratic — 40,000 items was over a
         // billion string comparisons.
-        let exactKnown = try await library.writer.read { db in
+        let exactKnown = try await library.read { db in
             Set(try String.fetchAll(
                 db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?", arguments: [source.id]))
         }

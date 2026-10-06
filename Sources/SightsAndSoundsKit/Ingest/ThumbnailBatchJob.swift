@@ -70,7 +70,7 @@ public struct ThumbnailBatchJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        let sources = try await library.writer.read { db in
+        let sources = try await library.read { db in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
         let onlineSources = Set(
@@ -80,7 +80,7 @@ public struct ThumbnailBatchJob: Job {
 
         // Audio has no frames to thumbnail; failures recorded earlier are
         // skipped until retried.
-        let candidates = try await library.writer.read { db in
+        let candidates = try await library.read { db in
             try MediaItem.fetchAll(
                 db,
                 sql: """

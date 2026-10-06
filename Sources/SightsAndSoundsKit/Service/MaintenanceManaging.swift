@@ -54,10 +54,10 @@ extension LocalLibraryService {
         let findings = (try? library.validationFindings()) ?? []
         let backups = includingBackups
             ? LibraryDatabase.backups(in: LibraryDatabase.defaultBackupDirectory()) : nil
-        let runs = (try? await library.writer.read { db in
+        let runs = (try? await library.read { db in
             try TagWriteRun.order(sql: "startedAt DESC").limit(6).fetchAll(db)
         }) ?? []
-        let staged = (try? await library.writer.read { db in
+        let staged = (try? await library.read { db in
             try MediaItem.filter(sql: "markedForDeletion = 1").fetchCount(db)
         }) ?? 0
         return MaintenanceSnapshot(
@@ -74,7 +74,7 @@ extension LocalLibraryService {
         if let itemIDs {
             ids = itemIDs
         } else {
-            ids = try await library.writer.read { db in
+            ids = try await library.read { db in
                 try UUID.fetchAll(db, sql: "SELECT id FROM mediaItem WHERE parentMediaItemID IS NULL")
             }
         }

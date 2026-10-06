@@ -43,13 +43,13 @@ public struct ClipExportJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        guard let clip = try await library.writer.read({ try MediaItem.fetchOne($0, key: payload.clipID) })
+        guard let clip = try await library.read({ try MediaItem.fetchOne($0, key: payload.clipID) })
         else { throw ClipError.itemNotFound }
         guard clip.parentMediaItemID != nil,
               let start = clip.clipStartSeconds, let end = clip.clipEndSeconds
         else { throw ClipError.notAClip }
         guard let parentFile = try library.resolvedFileURL(for: clip, fileAccess: fileAccess),
-              let parent = try await library.writer.read({
+              let parent = try await library.read({
                   try MediaItem.fetchOne($0, key: clip.parentMediaItemID!)
               })
         else { throw MoveError.sourceUnavailable }
@@ -57,7 +57,7 @@ public struct ClipExportJob: Job {
         // Output beside the parent, named by the clip's label.
         var outputRelative = Self.outputRelativePath(
             parentFolder: parent.folderPath, parentFileName: parent.fileName, label: clip.notes)
-        guard let source = try await library.writer.read({
+        guard let source = try await library.read({
             try Source.fetchOne($0, key: parent.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)

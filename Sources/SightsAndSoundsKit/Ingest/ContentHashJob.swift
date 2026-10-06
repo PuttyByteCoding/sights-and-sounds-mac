@@ -32,7 +32,7 @@ public struct ContentHashJob: Job {
         // Work is decided per run: unhashed files (a segment has no bytes
         // of its own — hashing it would hash its parent again), no prior
         // failure row, on enabled sources that are reachable right now.
-        let sources = try await library.writer.read { db in
+        let sources = try await library.read { db in
             Dictionary(uniqueKeysWithValues: try Source.fetchAll(db).map { ($0.id, $0) })
         }
         let onlineSources = Set(
@@ -40,7 +40,7 @@ public struct ContentHashJob: Job {
                 .filter { $0.enabled && $0.isOnline(using: fileAccess) }
                 .map(\.id))
 
-        let pending = try await library.writer.read { db in
+        let pending = try await library.read { db in
             try MediaItem.fetchAll(
                 db,
                 sql: """

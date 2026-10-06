@@ -651,10 +651,10 @@ private struct ConfigurationSheet: View {
             let loaded = try await Task.detached(priority: .userInitiated) {
                 let vocabulary = try library.vocabulary()
                 let aliases = Dictionary(
-                    grouping: try await library.writer.read { try TagAlias.fetchAll($0) },
+                    grouping: try await library.read { try TagAlias.fetchAll($0) },
                     by: \.tagID
                 ).mapValues { $0.map(\.alias) }
-                let fields = try await library.writer.read {
+                let fields = try await library.read {
                     try FieldDefinition.order(sql: "name").fetchAll($0)
                 }
                 return Snapshot(categories: vocabulary, aliases: aliases, fields: fields)

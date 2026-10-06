@@ -45,7 +45,7 @@ public struct RepairJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        guard let item = try await library.writer.read({
+        guard let item = try await library.read({
             try MediaItem.fetchOne($0, key: payload.itemID)
         }) else { throw ClipError.itemNotFound }
         guard item.parentMediaItemID == nil else { throw RepairError.cannotRepairClip }
@@ -76,7 +76,7 @@ public struct RepairJob: Job {
         await context.reportProgress(current: 1, total: 3)
 
         // 3. Archive the original, only now that the result is verified.
-        guard let source = try await library.writer.read({
+        guard let source = try await library.read({
             try Source.fetchOne($0, key: item.sourceID)
         }) else { throw MoveError.sourceUnavailable }
         let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
@@ -119,7 +119,7 @@ public struct RepairJob: Job {
         do {
             try library.unstage(.playbackIssue, itemID: item.id, fileAccess: fileAccess)
         } catch {
-            let whereLeft = (try? await library.writer.read { try MediaItem.fetchOne($0, key: item.id) })??
+            let whereLeft = (try? await library.read { try MediaItem.fetchOne($0, key: item.id) })??
                 .relativePath ?? item.relativePath
             putBack = "; it could not be moved back out of the playback-issues folder and is at \(whereLeft): \(error)"
             AppLog.shared.warning("repair", "\(item.fileName): repaired, but \(putBack.dropFirst(2))")

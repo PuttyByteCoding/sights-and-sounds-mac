@@ -168,14 +168,14 @@ public enum MediaScanner {
 
         // Effective extension sets: the library's override replaces the
         // app-wide lists; absent, it inherits them. Resolved once per run.
-        let info = try await library.writer.read { try LibraryInfo.fetchOne($0) }
+        let info = try await library.read { try LibraryInfo.fetchOne($0) }
         let appSettings = AppSettingsStore.shared.current
         let videoSet = info?.effectiveVideoExtensions(appWide: appSettings.videoExtensions)
             ?? MediaProbe.videoExtensions
         let audioSet = info?.effectiveAudioExtensions(appWide: appSettings.audioExtensions)
             ?? MediaProbe.audioExtensions
 
-        let existing = try await library.writer.read { db in
+        let existing = try await library.read { db in
             Set(try String.fetchAll(
                 db, sql: "SELECT relativePath FROM mediaItem WHERE sourceID = ?",
                 arguments: [source.id]

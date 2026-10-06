@@ -79,7 +79,7 @@ public struct WritebackJob: Job {
         }
 
         // Resolve this item's fields.
-        let tags = try await library.writer.read { db -> [String: [String]] in
+        let tags = try await library.read { db -> [String: [String]] in
             let rows = try Row.fetchAll(
                 db,
                 sql: """
@@ -165,7 +165,7 @@ public struct WritebackJob: Job {
 
         for (index, itemID) in payload.itemIDs.enumerated() {
             try await context.checkCancellation()
-            guard let item = try await library.writer.read({ try MediaItem.fetchOne($0, key: itemID) }),
+            guard let item = try await library.read({ try MediaItem.fetchOne($0, key: itemID) }),
                   item.parentMediaItemID == nil
             else {
                 skipped += 1
@@ -229,10 +229,10 @@ public struct RestoreTagsJob: Job {
             return
         }
         let library = context.library
-        guard let snapshot = try await library.writer.read({
+        guard let snapshot = try await library.read({
             try EmbeddedTagSnapshot.fetchOne($0, key: payload.snapshotID)
         }) else { throw SnapshotMissing() }
-        guard let item = try await library.writer.read({
+        guard let item = try await library.read({
             try MediaItem.fetchOne($0, key: snapshot.mediaItemID)
         }), let url = try library.resolvedFileURL(for: item, fileAccess: fileAccess),
             fileAccess.isReachable(url)

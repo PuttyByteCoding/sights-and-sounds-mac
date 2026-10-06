@@ -53,14 +53,14 @@ public struct ValidationJob: Job {
 
     public func run(_ context: JobContext) async throws {
         let library = context.library
-        let sources = try await library.writer.read { db -> [Source] in
+        let sources = try await library.read { db -> [Source] in
             try Source.fetchAll(db)
         }
         let online = sources.filter { $0.enabled && $0.isOnline(using: fileAccess) }
         // The library's extension lists, as the import uses them: with the
         // app-wide lists, the orphan check flagged files an import would
         // skip and missed ones it would take.
-        let info = try await library.writer.read { try LibraryInfo.fetchOne($0) }
+        let info = try await library.read { try LibraryInfo.fetchOne($0) }
         let appSettings = AppSettingsStore.shared.current
         let videoSet = info?.effectiveVideoExtensions(appWide: appSettings.videoExtensions)
             ?? MediaProbe.videoExtensions
@@ -79,7 +79,7 @@ public struct ValidationJob: Job {
             let root = URL(fileURLWithPath: source.rootPath, isDirectory: true)
             let sourceIDValue = source.id
 
-            let items = try await library.writer.read { db -> [MediaItem] in
+            let items = try await library.read { db -> [MediaItem] in
                 try MediaItem.fetchAll(
                     db,
                     sql: """
