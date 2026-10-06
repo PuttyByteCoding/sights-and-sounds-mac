@@ -151,4 +151,33 @@ import Testing
         // queue moved on, a busy machine could still be writing it.
         try await waitUntil { (try? stored(library, a.id))??.markedForDeletion == true }
     }
+
+    /// The same setting for Needs Review: R and the toolbar button move
+    /// on after marking when it is on; clearing the mark stays put.
+    @Test func withItsSettingOnMarkingNeedsReviewMovesOn() async throws {
+        let (library, source, root) = try await makeLibrary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try await insert(library, source, root, "a.mp4", variant: 0)
+        let b = try await insert(library, source, root, "b.mp4", variant: 1)
+        let model = PlayerModel(
+            request: PlayerRequest(
+                libraryID: UUID(), itemID: a.id, playlist: [a.id, b.id], name: "Two"),
+            library: library, appDatabase: nil)
+        defer { model.shutdown() }
+        try await waitUntil { model.item?.id == a.id && model.fileURL != nil }
+
+        AppSettingsStore.shared.update { $0.needsReviewMarkAdvances = false }
+        defer { AppSettingsStore.shared.update { $0.needsReviewMarkAdvances = false } }
+        #expect(model.handle(character: "r", shift: false, numpad: false))
+        try await waitUntil { model.item?.needsReview == true }
+        #expect(model.item?.id == a.id)  // off: stays put
+
+        AppSettingsStore.shared.update { $0.needsReviewMarkAdvances = true }
+        model.markNeedsReview()  // clearing never moves, setting or not
+        try await waitUntil { model.item?.needsReview == false }
+        #expect(model.item?.id == a.id)
+        model.markNeedsReview()  // marking does
+        try await waitUntil { model.item?.id == b.id }
+        try await waitUntil { (try? stored(library, a.id))??.needsReview == true }
+    }
 }

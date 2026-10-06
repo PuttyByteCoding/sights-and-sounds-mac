@@ -29,6 +29,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// moves: what was just restored stays in front of you.
     public var deletionMarkAdvances: Bool
 
+    /// The same for Needs Review (R, the toolbar button): marking moves
+    /// on, clearing the mark never does.
+    public var needsReviewMarkAdvances: Bool
+
     /// Which elements the player's info bar shows.
     public var infoBar: InfoBarSettings
 
@@ -142,6 +146,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         startVideosMuted: Bool = true,
         loopVideos: Bool = true,
         deletionMarkAdvances: Bool = false,
+        needsReviewMarkAdvances: Bool = false,
         infoBar: InfoBarSettings = InfoBarSettings(),
         keyMap: KeyMapStyle = .mac,
         grid: GridSettings = GridSettings(),
@@ -174,6 +179,7 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.startVideosMuted = startVideosMuted
         self.loopVideos = loopVideos
         self.deletionMarkAdvances = deletionMarkAdvances
+        self.needsReviewMarkAdvances = needsReviewMarkAdvances
         self.infoBar = infoBar
         self.keyMap = keyMap
         self.grid = grid
@@ -215,6 +221,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
             ?? defaults.loopVideos
         deletionMarkAdvances = container.lenient(Bool.self, forKey: .deletionMarkAdvances)
             ?? defaults.deletionMarkAdvances
+        needsReviewMarkAdvances = container.lenient(Bool.self, forKey: .needsReviewMarkAdvances)
+            ?? defaults.needsReviewMarkAdvances
         infoBar = container.lenient(InfoBarSettings.self, forKey: .infoBar)
             ?? defaults.infoBar
         keyMap = container.lenient(KeyMapStyle.self, forKey: .keyMap)

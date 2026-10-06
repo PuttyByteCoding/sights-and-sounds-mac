@@ -1032,10 +1032,10 @@ private struct FlagButtons: View {
         _ flag: PlayerToggleFlag, on: Bool, _ glyph: String, _ help: String
     ) -> some View {
         Button {
-            if flag == .markedForDeletion {
-                model.markForDeletion()
-            } else {
-                model.perform(action(for: flag))
+            switch flag {
+            case .markedForDeletion: model.markForDeletion()
+            case .needsReview: model.markNeedsReview()
+            default: model.perform(action(for: flag))
             }
         } label: {
             Text(glyph)
