@@ -171,6 +171,40 @@ enum Theme {
         static let hide = Color(hex: 0xD07A6A)
     }
 
+    // MARK: - Job families
+
+    /// The five families a background job belongs to, each with the hue
+    /// the tasks window draws it in. Colour says family; the state pill
+    /// says status — two encodings of two facts, never two of one.
+    ///
+    /// Its own palette, not borrowed: ingest used to read the player's
+    /// song colour and operations a tag-category hue, so a change meant
+    /// for one surface would have moved the other.
+    enum JobFamily: CaseIterable, Sendable {
+        /// Import, content hashing, thumbnails — getting files in and
+        /// described.
+        case ingest
+        /// Duplicate sweeps and the fingerprints they match on.
+        case duplicates
+        /// Edits to the media itself — export, remux, encode, block
+        /// removal, OCR, join, reorganise.
+        case operations
+        /// Tag write-back and its restore.
+        case writeback
+        /// Validation.
+        case validation
+
+        var color: Color {
+            switch self {
+            case .ingest: Color(hex: 0x6FBFB0)
+            case .duplicates: Color(hex: 0xC58BB8)
+            case .operations: Color(hex: 0x8B93E8)
+            case .writeback: Color(hex: 0xE9A23B)
+            case .validation: Color(hex: 0x9DBF7F)
+            }
+        }
+    }
+
     // MARK: - Motion
 
     /// How long a listing takes to settle after the filter changes.
