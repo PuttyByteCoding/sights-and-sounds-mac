@@ -63,7 +63,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
 // MARK: - Badge
 
-/// The 9px uppercase plate that sits beside a name — `OPEN`, an offline
+/// The 10px uppercase plate that sits beside a name — `OPEN`, an offline
 /// count, a status word. Deliberately tiny and deliberately not grey: at
 /// this size only a tinted plate reads.
 struct ThemeBadge: View {
@@ -73,12 +73,87 @@ struct ThemeBadge: View {
 
     var body: some View {
         Text(text)
-            .font(Theme.ui(9, .bold))
+            .font(Theme.ui(10, .bold))
             .foregroundStyle(foreground)
             .padding(.vertical, 1.5)
             .padding(.horizontal, 6)
             .background(RoundedRectangle(cornerRadius: Theme.Radius.chip).fill(fill))
             .fixedSize()
+    }
+}
+
+// MARK: - Icon button
+
+/// An icon-only button with a hit target and a name.
+///
+/// A bare glyph in a `.plain` button is exactly as big as its strokes —
+/// an 8pt × is a 6pt target — and says nothing to VoiceOver. This gives
+/// every such button the same 22pt minimum square, a rectangular content
+/// shape so the whole square takes the click, and a required label that
+/// doubles as the tooltip unless a longer `help` is given.
+///
+/// The symbol initialiser draws the glyph in `Theme.Text.meta`: a glyph
+/// that does something is an action, not a disabled control, so it is
+/// never drawn in `disabled`. The closure form takes any glyph — a
+/// `Text("★")`, a symbol whose colour follows state.
+struct IconButton<Glyph: View>: View {
+    private let label: String
+    private let help: String
+    private let action: () -> Void
+    private let glyph: Glyph
+
+    /// Minimum side of the clickable square.
+    static var minimumTarget: CGFloat { 22 }
+
+    init(
+        _ label: String, help: String? = nil,
+        action: @escaping () -> Void, @ViewBuilder glyph: () -> Glyph
+    ) {
+        self.label = label
+        self.help = help ?? label
+        self.action = action
+        self.glyph = glyph()
+    }
+
+    var body: some View {
+        Button(action: action) {
+            glyph
+                .frame(minWidth: Self.minimumTarget, minHeight: Self.minimumTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .help(help)
+    }
+}
+
+extension IconButton where Glyph == IconGlyph {
+    /// An SF Symbol glyph. `size` is the symbol's point size, never below
+    /// the type scale's 10 unless the caller has a reason (a pill's × sits
+    /// beside 11pt text and is sized to it).
+    init(
+        _ label: String, systemImage: String,
+        size: CGFloat = Theme.TypeScale.sectionLabel, weight: Font.Weight = .regular,
+        color: Color = Theme.Text.meta, help: String? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.init(label, help: help, action: action) {
+            IconGlyph(systemImage: systemImage, size: size, weight: weight, color: color)
+        }
+    }
+}
+
+/// The glyph `IconButton` draws for its symbol initialiser.
+struct IconGlyph: View {
+    let systemImage: String
+    let size: CGFloat
+    let weight: Font.Weight
+    let color: Color
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(Theme.ui(size, weight))
+            .foregroundStyle(color)
     }
 }
 

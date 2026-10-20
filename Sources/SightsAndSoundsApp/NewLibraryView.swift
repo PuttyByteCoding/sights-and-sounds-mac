@@ -86,7 +86,7 @@ struct NewLibraryView: View {
                                 entry == step ? Theme.Text.primary : Theme.Text.tertiary)
                         Text(entry.subtitle)
                             .font(Theme.ui(10.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
@@ -120,7 +120,7 @@ struct NewLibraryView: View {
         HStack {
             Text(label)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             Text("\(value)")
                 .font(Theme.mono(11))
@@ -130,7 +130,7 @@ struct NewLibraryView: View {
 
     private func numberColor(_ entry: Step) -> Color {
         if entry.rawValue < step.rawValue { return Theme.Status.greenBright }
-        return entry == step ? Theme.Text.onAmber : Theme.Text.disabled
+        return entry == step ? Theme.Text.onAmber : Theme.Text.meta
     }
 
     private func numberFill(_ entry: Step) -> Color {
@@ -202,7 +202,7 @@ struct NewLibraryView: View {
                 .foregroundStyle(Theme.Accent.amber)
             Text("You choose where it goes when you create it.")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
         }
     }
 
@@ -224,8 +224,8 @@ struct NewLibraryView: View {
                                 .foregroundStyle(Theme.Text.primary)
                             Spacer(minLength: 0)
                             Text("\(entry.plan(named: "x").categories.count) categories")
-                                .font(Theme.mono(9.5))
-                                .foregroundStyle(Theme.Text.disabled)
+                                .font(Theme.mono(10))
+                                .foregroundStyle(Theme.Text.meta)
                         }
                         // One string, one place.
                         Text(entry.summary)
@@ -266,7 +266,7 @@ struct NewLibraryView: View {
             // fewer unrepresentable conflict.
             Text("Categories appear in the tag editor in this order — the first one takes the cursor.")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             ForEach($plan.categories) { $category in
                 CategoryPlanCard(
                     category: $category,
@@ -317,7 +317,7 @@ struct NewLibraryView: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
             Text("Adding a source registers the folder and runs a scan. Nothing enters the library until you confirm the import, so you can add these later without committing to anything.")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
             if let verification {
                 VStack(alignment: .leading, spacing: 5) {
@@ -358,7 +358,7 @@ struct NewLibraryView: View {
             } else {
                 Text(hint)
                     .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             Spacer()
             Button("Cancel") { dismiss() }
@@ -489,16 +489,8 @@ private struct CategoryPlanCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button(action: onMoveUp) {
-                    Image(systemName: "arrow.up").font(Theme.ui(9))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Text.disabled)
-                Button(action: onMoveDown) {
-                    Image(systemName: "arrow.down").font(Theme.ui(9))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Text.disabled)
+                IconButton("Move \(category.name) up", systemImage: "arrow.up", action: onMoveUp)
+                IconButton("Move \(category.name) down", systemImage: "arrow.down", action: onMoveDown)
                 // Excluding is not deleting: an unchecked category is
                 // never created, rather than written and then removed.
                 Toggle("", isOn: $category.include)
@@ -514,18 +506,18 @@ private struct CategoryPlanCard: View {
                 if category.name != category.originalName {
                     Text("was \(category.originalName)")
                         .font(Theme.ui(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 Spacer(minLength: 0)
                 Text(summary)
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                 Button {
                     expanded.toggle()
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(Theme.ui(9))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.ui(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .buttonStyle(.plain)
@@ -570,8 +562,8 @@ private struct CategoryPlanCard: View {
                                         .foregroundStyle(Theme.Text.secondary)
                                     if !tag.aliases.isEmpty {
                                         Text(tag.aliases.joined(separator: ", "))
-                                            .font(Theme.mono(9))
-                                            .foregroundStyle(Theme.Text.disabled)
+                                            .font(Theme.mono(10))
+                                            .foregroundStyle(Theme.Text.meta)
                                     }
                                 }
                                 .padding(.vertical, 3)

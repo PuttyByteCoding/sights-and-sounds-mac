@@ -61,7 +61,7 @@ struct WatchedView: View {
                 .foregroundStyle(Theme.Text.quaternary)
             Text("Play something and it lands here, with where you stopped.")
                 .font(Theme.ui(12.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -103,7 +103,7 @@ struct WatchedView: View {
                     .truncationMode(.middle)
                 Text(item.relativePath)
                     .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -116,7 +116,7 @@ struct WatchedView: View {
 
             Text("\(item.watchCount)")
                 .font(Theme.mono(11))
-                .foregroundStyle(item.watchCount == 0 ? Theme.Text.zeroCount : Theme.Text.disabled)
+                .foregroundStyle(item.watchCount == 0 ? Theme.Text.zeroCount : Theme.Text.meta)
                 .frame(width: 56, alignment: .trailing)
 
             stopped(item)
@@ -163,7 +163,7 @@ struct WatchedView: View {
         } else {
             Text("just started")
                 .font(Theme.ui(10.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
         }
     }
 

@@ -119,16 +119,10 @@ struct CategoryManagerView: View {
             HStack {
                 Text("Categories").modifier(Theme.sectionLabel())
                 Spacer()
-                Button {
-                    createCategory()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(Theme.ui(10, .semibold))
-                        .foregroundStyle(Theme.Text.tertiary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("New category")
-                .help("New category")
+                IconButton(
+                    "New category", systemImage: "plus", weight: .semibold,
+                    color: Theme.Text.tertiary
+                ) { createCategory() }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -166,14 +160,14 @@ struct CategoryManagerView: View {
                             .font(Theme.ui(12.5))
                             .foregroundStyle(Theme.Text.primary)
                         Text("scope mediaItem · applies to every item in the library")
-                            .font(Theme.mono(9))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.meta)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
                     Text("\(itemFields.count)")
                         .font(Theme.mono(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .padding(.vertical, 9)
                 .padding(.horizontal, 12)
@@ -201,7 +195,7 @@ struct CategoryManagerView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal")
-                    .font(Theme.ui(9))
+                    .font(Theme.ui(10))
                     .foregroundStyle(Theme.Text.disabled)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Theme.categoryHue(category.colorIndex))
@@ -215,12 +209,12 @@ struct CategoryManagerView: View {
                         if category.hiddenFromBrowse {
                             ThemeBadge(
                                 text: "hidden", fill: Theme.Surface.iconTile,
-                                foreground: Theme.Text.disabled)
+                                foreground: Theme.Text.meta)
                         }
                     }
                     Text(summary(of: category))
-                        .font(Theme.mono(9))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -415,7 +409,7 @@ struct CategoryManagerView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("Select a category, or create one.")
                         .font(Theme.ui(12.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -478,7 +472,7 @@ struct CategoryManagerView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("A media-item field applies to every item; there is nothing per-category to configure.")
                         .font(Theme.ui(11.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .multilineTextAlignment(.center)
                 }
                 .padding(20)
@@ -531,7 +525,7 @@ struct CategoryManagerView: View {
                     } else {
                         Text("Select a tag to configure it.")
                             .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .padding(20)
                             .frame(maxHeight: .infinity)
                     }

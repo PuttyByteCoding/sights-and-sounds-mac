@@ -48,7 +48,7 @@ struct CategoryInspector: View {
                         .labelsHidden()
                         Text("Renders every tag as a toggle instead of autocomplete. Small fixed sets only.")
                             .font(Theme.ui(10.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     toggleRow(
@@ -72,7 +72,7 @@ struct CategoryInspector: View {
                     HStack(spacing: 6) {
                         Text("\"dave-matthews-band\"")
                             .font(Theme.mono(10))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                         Text("→")
                             .font(Theme.ui(10))
                             .foregroundStyle(Theme.Text.disabled)
@@ -99,14 +99,14 @@ struct CategoryInspector: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("Blank writes an uppercased custom field. A standard key (ARTIST, DATE, PERFORMER) maps to the container's own tag.")
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 section("Tag fields") {
                     Text("Attach to every tag in this category — Venue gets a City, Taper gets Equipment.")
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .fixedSize(horizontal: false, vertical: true)
                     FieldList(
                         fields: fields, service: service, scope: .tag,
@@ -180,7 +180,7 @@ struct CategoryInspector: View {
             if let note {
                 Text(note)
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -224,8 +224,8 @@ struct TagInspector: View {
                         Text("Name").modifier(Theme.sectionLabel())
                         Spacer()
                         Text("\(uses) uses")
-                            .font(Theme.mono(9.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     TextField("Name", text: $name)
                         .textFieldStyle(.plain)
@@ -284,7 +284,7 @@ struct TagInspector: View {
                         Text("Notes").modifier(Theme.sectionLabel())
                         Text("anything worth remembering about this tag")
                             .font(Theme.ui(10))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     TextField("", text: $notes, axis: .vertical)
                         .textFieldStyle(.plain)
@@ -317,7 +317,7 @@ struct TagInspector: View {
                         Text("Aliases").modifier(Theme.sectionLabel())
                         Text("match on search & import")
                             .font(Theme.ui(10))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     if !aliases.isEmpty {
                         FlowRow(spacing: 5) {
@@ -326,19 +326,15 @@ struct TagInspector: View {
                                     Text(alias)
                                         .font(Theme.ui(11))
                                         .foregroundStyle(Theme.Text.secondary)
-                                    Button {
+                                    IconButton(
+                                        "Remove alias \(alias)", systemImage: "xmark", size: 8,
+                                        help: "Remove this alias"
+                                    ) {
                                         let tagID = tag.id
                                         Writes.run("remove the alias", report: $errorText, then: { _ in onChange() }) {
                                             [service] in try await service.removeAlias(alias, fromTag: tagID)
                                         }
-                                    } label: {
-                                        Image(systemName: "xmark")
-                                            .font(Theme.ui(8))
-                                            .foregroundStyle(Theme.Text.disabled)
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Remove alias \(alias)")
-                                    .help("Remove this alias")
                                 }
                                 .padding(.vertical, 3)
                                 .padding(.horizontal, 8)
@@ -378,8 +374,8 @@ struct TagInspector: View {
                                         .font(Theme.ui(11.5))
                                         .foregroundStyle(Theme.Text.tertiary)
                                     Text(field.dataType.rawValue)
-                                        .font(Theme.mono(9))
-                                        .foregroundStyle(Theme.Text.disabled)
+                                        .font(Theme.mono(10))
+                                        .foregroundStyle(Theme.Text.meta)
                                         .padding(.vertical, 1)
                                         .padding(.horizontal, 5)
                                         .background(
@@ -515,8 +511,8 @@ struct FieldList: View {
                         .font(Theme.ui(12))
                         .foregroundStyle(Theme.Text.secondary)
                     Text(field.dataType.rawValue)
-                        .font(Theme.mono(9))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .padding(.vertical, 1)
                         .padding(.horizontal, 5)
                         .background(
@@ -524,8 +520,8 @@ struct FieldList: View {
                                 .fill(Theme.Surface.iconTile))
                     if field.required {
                         Text("required")
-                            .font(Theme.ui(9.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .font(Theme.ui(10))
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     Spacer(minLength: 0)
                     Button {
@@ -535,8 +531,8 @@ struct FieldList: View {
                         }
                     } label: {
                         Image(systemName: "xmark")
-                            .font(Theme.ui(9))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .font(Theme.ui(10))
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Delete field \(field.name)")
@@ -566,7 +562,7 @@ struct FieldList: View {
             }
             Text("Number fields also store a numeric value so sorting is numeric, and dates normalize to ISO 8601 — this is what makes ordering by a field possible at all.")
                 .font(Theme.ui(10.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .failureAlert($failure)
@@ -604,7 +600,7 @@ struct FieldEditor: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text(subtitle)
                     .font(Theme.mono(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             FieldList(
                 fields: fields, service: service, scope: scope,
@@ -661,7 +657,7 @@ struct PasteTagListSheet: View {
                     .foregroundStyle(Theme.Status.green)
                 Text("\(duplicateCount) already exist")
                     .font(Theme.mono(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .buttonStyle(SecondaryButtonStyle())

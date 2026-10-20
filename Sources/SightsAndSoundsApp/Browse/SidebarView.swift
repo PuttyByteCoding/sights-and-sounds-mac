@@ -260,7 +260,7 @@ struct SidebarView: View {
                 if let slot {
                     Text(slot.mark).font(Theme.ui(10, .bold))
                 } else if let symbol {
-                    Image(systemName: symbol).font(Theme.ui(9))
+                    Image(systemName: symbol).font(Theme.ui(10))
                 }
             }
             .foregroundStyle(color)
@@ -275,12 +275,7 @@ struct SidebarView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
-            Button(action: remove) {
-                Image(systemName: "xmark")
-                    .font(Theme.ui(8))
-                    .foregroundStyle(Theme.Text.disabled)
-            }
-            .buttonStyle(.plain)
+            IconButton("Remove \(text) from the filter", systemImage: "xmark", size: 8, action: remove)
         }
         return Group {
             if let cycle {
@@ -363,10 +358,10 @@ struct SidebarView: View {
                 FilterCheckbox(isOn: false)
                 Text("Photo")
                     .font(Theme.ui(12.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 ThemeBadge(
                     text: "soon", fill: Theme.Surface.iconTile,
-                    foreground: Theme.Text.disabled)
+                    foreground: Theme.Text.meta)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 5)
@@ -422,7 +417,7 @@ struct SidebarView: View {
                 Button(action: addSource) {
                     Text("+ Add Source…")
                         .font(Theme.ui(12))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .padding(.vertical, 7)
                         .padding(.leading, 27)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -556,7 +551,7 @@ struct SidebarView: View {
             Image(systemName: current == .count
                 ? "arrow.down.circle" : "textformat.abc")
                 .font(Theme.ui(10))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -643,7 +638,7 @@ struct SidebarView: View {
             }
             Text("Click cycles through the slots. Right-click a tag to edit it.")
                 .font(Theme.ui(10.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 3)
         }
@@ -803,7 +798,7 @@ private struct CountText: View {
     var body: some View {
         Text("\(count)")
             .font(Theme.mono(size))
-            .foregroundStyle(count == 0 ? Theme.Text.zeroCount : Theme.Text.disabled)
+            .foregroundStyle(count == 0 ? Theme.Text.zeroCount : Theme.Text.meta)
     }
 }
 
@@ -819,7 +814,7 @@ private struct FilterCheckbox: View {
             .overlay {
                 if isOn {
                     Image(systemName: "checkmark")
-                        .font(Theme.ui(9, .bold))
+                        .font(Theme.ui(10, .bold))
                         .foregroundStyle(Theme.Text.onAmber)
                 }
             }
@@ -872,7 +867,7 @@ private struct TagQueryField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(Theme.ui(9))
+                .font(Theme.ui(10))
                 .foregroundStyle(Theme.Text.disabled)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
@@ -891,7 +886,7 @@ private struct TagQueryField: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(Theme.ui(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -928,13 +923,13 @@ private struct SourceRow: View {
                 .frame(width: 7, height: 7)
             Text(source.name)
                 .font(Theme.ui(12.5))
-                .foregroundStyle(source.enabled ? Theme.Text.primary : Theme.Text.disabled)
+                .foregroundStyle(source.enabled ? Theme.Text.primary : Theme.Text.meta)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if !source.enabled {
                 ThemeBadge(
                     text: "disabled", fill: Theme.Surface.iconTile,
-                    foreground: Theme.Text.disabled)
+                    foreground: Theme.Text.meta)
             } else if !model.onlineSourceIDs.contains(source.id) {
                 ThemeBadge(
                     text: "offline", fill: Theme.Status.warnBadgeFill,
@@ -1036,8 +1031,8 @@ private struct Chevron: View {
 
     var body: some View {
         Image(systemName: "chevron.right")
-            .font(Theme.ui(9))
-            .foregroundStyle(Theme.Text.disabled)
+            .font(Theme.ui(10))
+            .foregroundStyle(Theme.Text.meta)
             .rotationEffect(.degrees(expanded ? 90 : 0))
             .frame(width: 9)
             .motion(.easeOut(duration: 0.12), value: expanded)
@@ -1157,8 +1152,8 @@ private struct SlotRow: View {
                 .truncationMode(.middle)
             if hidden {
                 Image(systemName: "eye.slash")
-                    .font(Theme.ui(9))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.ui(10))
+                    .foregroundStyle(Theme.Text.meta)
             }
             Spacer(minLength: 0)
             CountText(count)
@@ -1252,7 +1247,7 @@ private struct SourceRenameSheet: View {
 
             Text("Enter saves · Esc to cancel")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
 
             HStack(spacing: 10) {
                 Spacer()
@@ -1328,7 +1323,7 @@ private struct SaveFilterSheet: View {
                 .focused($focused)
             Text(hint)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }

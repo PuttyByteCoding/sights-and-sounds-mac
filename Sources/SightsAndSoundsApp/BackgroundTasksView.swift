@@ -211,7 +211,7 @@ struct BackgroundTasksView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("Workers sleep until there is work. This is the normal state.")
                         .font(Theme.ui(12.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -246,7 +246,7 @@ struct BackgroundTasksView: View {
             } else {
                 Text("Select a job to see its timeline, payload and any error.")
                     .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .multilineTextAlignment(.center)
                     .padding(20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -445,7 +445,7 @@ private struct LaneCard: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text(lane.queued == 0 ? "no queue" : "\(lane.queued) queued")
                     .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 Spacer(minLength: 12)
                 Button(lane.isPaused ? "Resume" : "Pause") { onPause(!lane.isPaused) }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
@@ -458,21 +458,21 @@ private struct LaneCard: View {
                             .font(Theme.ui(12))
                             .foregroundStyle(Theme.Text.secondary)
                         Text(running.kind)
-                            .font(Theme.mono(9))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     ThemeProgressBar.determinate(
                         running.progressCurrent, of: running.progressTotal ?? 0,
                         running: !lane.isPaused)
                     Text(progressText(running))
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                 }
             } else {
                 Text(!lane.isAnswering ? "not answering"
                     : lane.isPaused ? "paused · waiting for work" : "no job running")
                     .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
         }
         .padding(11)
@@ -521,7 +521,7 @@ private struct JobRow: View {
                 if let summary = job.summary {
                     Text(summary)
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .lineLimit(1)
                 } else if let error = job.error {
                     Text(error)
@@ -552,7 +552,7 @@ private struct JobRow: View {
                 } else if let total = job.progressTotal, total > 0 {
                     Text("\(job.progressCurrent) of \(total)")
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 } else {
                     Text("—")
                         .font(Theme.mono(10))
@@ -562,15 +562,18 @@ private struct JobRow: View {
             .frame(width: 118, alignment: .leading)
             Text(elapsed)
                 .font(Theme.mono(10))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .frame(width: 92, alignment: .trailing)
             HStack(spacing: 6) {
                 StatePill(state: job.state)
                 if job.state == .queued || job.state == .running {
-                    Button("Cancel", action: onCancel)
-                        .buttonStyle(.plain)
-                        .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.quaternary)
+                    // Irreversible, so it gets a real target — the word
+                    // alone was a ~12pt one.
+                    IconButton("Cancel \(JobNames.displayName(job.kind))", action: onCancel) {
+                        Text("Cancel")
+                            .font(Theme.ui(10.5))
+                            .foregroundStyle(Theme.Text.quaternary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -606,7 +609,7 @@ private struct StatePill: View {
 
     var body: some View {
         Text(label)
-            .font(Theme.ui(9, .bold))
+            .font(Theme.ui(10, .bold))
             .foregroundStyle(color)
             .padding(.vertical, 1.5)
             .padding(.horizontal, 6)
@@ -630,7 +633,7 @@ private struct StatePill: View {
         case .running: Theme.Accent.amber
         case .succeeded: Theme.Status.green
         case .failed: Theme.Status.red
-        case .cancelled: Theme.Text.disabled
+        case .cancelled: Theme.Text.meta
         }
     }
 }
@@ -652,7 +655,7 @@ private struct JobInspector: View {
                         .foregroundStyle(Theme.Text.primary)
                     Text(job.kind)
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .textSelection(.enabled)
                     Text(library)
                         .font(Theme.ui(11.5))
@@ -745,7 +748,7 @@ private struct JobInspector: View {
         HStack {
             Text(label)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             Text(date?.formatted(date: .abbreviated, time: .standard) ?? "—")
                 .font(Theme.mono(10))

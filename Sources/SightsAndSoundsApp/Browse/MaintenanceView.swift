@@ -175,7 +175,7 @@ struct MaintenanceView: View {
                         ProgressView().controlSize(.small)
                         Text("Reading what the files say now…")
                             .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                 } else if let preview {
                     ForEach(preview.files) { file in
@@ -184,7 +184,7 @@ struct MaintenanceView: View {
                 } else {
                     Text("Preview reads each file's current tags, so you can see what a write would replace before it replaces it.")
                         .font(Theme.ui(12))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
             }
             .padding(14)
@@ -207,7 +207,7 @@ struct MaintenanceView: View {
                         .font(Theme.ui(12))
                         .foregroundStyle(
                             entry.category.writebackEnabled
-                                ? Theme.Text.secondary : Theme.Text.disabled)
+                                ? Theme.Text.secondary : Theme.Text.meta)
                     Text("→")
                         .font(Theme.ui(10))
                         .foregroundStyle(Theme.Text.disabled)
@@ -219,7 +219,7 @@ struct MaintenanceView: View {
                         .font(Theme.mono(10.5))
                         .foregroundStyle(
                             entry.category.writebackEnabled
-                                ? Theme.Accent.amber : Theme.Text.disabled)
+                                ? Theme.Accent.amber : Theme.Text.meta)
                     Spacer(minLength: 0)
                 }
             }
@@ -250,14 +250,14 @@ struct MaintenanceView: View {
                     // Skipped is a first-class outcome, listed by name.
                     Text("skipped · \(reason)")
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
             }
             ForEach(Array(file.fields.enumerated()), id: \.offset) { _, field in
                 HStack(alignment: .top, spacing: 8) {
                     Text(field.name)
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .frame(width: 120, alignment: .leading)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(field.newValues.joined(separator: "; "))
@@ -293,7 +293,7 @@ struct MaintenanceView: View {
                 if backups.isEmpty {
                     Text("No backups yet. Back up now writes one dated file into the backup folder.")
                         .font(Theme.ui(12))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 ForEach(backups) { backup in
                     HStack(spacing: 10) {
@@ -308,8 +308,8 @@ struct MaintenanceView: View {
                                 .truncationMode(.middle)
                             HStack(spacing: 8) {
                                 Text(backup.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(Theme.mono(9.5))
-                                    .foregroundStyle(Theme.Text.disabled)
+                                    .font(Theme.mono(10))
+                                    .foregroundStyle(Theme.Text.meta)
                                 if let name = backup.libraryName {
                                     Text(name)
                                         .font(Theme.ui(10.5))
@@ -349,7 +349,7 @@ struct MaintenanceView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("Run a sweep to compare the library against the disk.")
                         .font(Theme.ui(12.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -377,7 +377,7 @@ struct MaintenanceView: View {
                 PathText(path: finding.path, size: 11, color: Theme.Text.primary)
                 Text(finding.detail)
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             Spacer(minLength: 0)
             actionButton(for: finding)
@@ -451,8 +451,8 @@ struct MaintenanceView: View {
                                     .foregroundStyle(Theme.Text.secondary)
                                     .lineLimit(1)
                                 Text(run.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(Theme.mono(9.5))
-                                    .foregroundStyle(Theme.Text.disabled)
+                                    .font(Theme.mono(10))
+                                    .foregroundStyle(Theme.Text.meta)
                             }
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
