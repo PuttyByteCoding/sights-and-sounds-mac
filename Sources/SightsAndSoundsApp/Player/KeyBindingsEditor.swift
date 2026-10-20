@@ -126,7 +126,7 @@ struct KeyBindingsEditor: View {
                     if matches.isEmpty {
                         Text("No tag matches that.")
                             .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .padding(8)
                     }
                     let first = highlighted ?? matches.first

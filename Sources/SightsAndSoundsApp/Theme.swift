@@ -116,7 +116,12 @@ enum Theme {
         static let tertiary = Color(hex: 0xA79E90)
         /// 5.0:1 — the floor for text at 10–12px.
         static let quaternary = Color(hex: 0x8C8478)
-        /// 3.4:1 — non-informational only. Never a value someone reads.
+        /// Secondary data people read — counts, paths, timestamps, hints,
+        /// instructions. The same colour as `quaternary`, named for the
+        /// job: a value a decision depends on is never drawn dimmer than
+        /// this, however small the type.
+        static let meta = quaternary
+        /// 3.4:1 — controls that are actually disabled, decorative only.
         static let disabled = Color(hex: 0x6E6659)
         /// A count of zero. Dimmed rather than hidden: "exists, but
         /// nothing under these kinds" is the information (#96), and the
@@ -154,7 +159,7 @@ enum Theme {
         static let destructiveFill = Color(hex: 0x8A3428)
         static let destructiveText = Color(hex: 0xFFEDE8)
 
-        /// Badge fills: a tinted plate behind 9px uppercase text.
+        /// Badge fills: a tinted plate behind 10px uppercase text.
         static let goodBadgeFill = Color(hex: 0x1F3320)
         static let warnBadgeFill = Color(hex: 0x3A2C18)
         /// The warning tone in body copy, where `orange` would shout.

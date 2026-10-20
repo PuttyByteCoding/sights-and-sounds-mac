@@ -77,15 +77,15 @@ struct TagPanelView: View {
                 Text("Tags").modifier(Theme.sectionLabel())
                 Spacer()
                 Text(appliedCount == 0 ? "" : "\(appliedCount) applied")
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                 // The digits' mode, beside the fields it governs: a
                 // digit typed here stamps a tag or spells a name, and
                 // which one must be readable before the key goes down.
                 if model.hasDigitBindings {
                     Text(model.digitsStampTags ? "1–9 stamp tags" : "1–9 type")
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(model.digitsStampTags ? Theme.Accent.amber : Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(model.digitsStampTags ? Theme.Accent.amber : Theme.Text.meta)
                         .help(model.digitsStampTags
                             ? "Top-row digits apply their bound tags, inside a tag field too — ⇧⇧ to type"
                             : "Top-row digits type — ⇧⇧ to stamp")
@@ -174,7 +174,7 @@ struct TagPanelView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(Theme.ui(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -209,7 +209,7 @@ struct TagPanelView: View {
                 if matches.isEmpty {
                     Text("No tag or alias matches.")
                         .font(Theme.ui(12))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .padding(.vertical, 8)
                 }
                 ForEach(matches, id: \.entry.id) { match in
@@ -454,8 +454,8 @@ private struct CheckboxCategoryView: View {
                             .foregroundStyle(on ? Theme.Text.primary : Theme.Text.tertiary)
                         if isAltTarget, index < 9 {
                             Text("⌥\(index + 1)")
-                                .font(Theme.mono(9))
-                                .foregroundStyle(Theme.Text.disabled)
+                                .font(Theme.mono(10))
+                                .foregroundStyle(Theme.Text.meta)
                         }
                         Spacer(minLength: 0)
                     }
@@ -647,7 +647,7 @@ private struct PillCategoryView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "plus")
-                            .font(Theme.ui(9))
+                            .font(Theme.ui(10))
                             .foregroundStyle(hue)
                         Text(suggestion.tag.name)
                             .font(Theme.ui(11.5, active ? .medium : .regular))
@@ -656,8 +656,8 @@ private struct PillCategoryView: View {
                         // not explain it.
                         if let alias = suggestion.matchedAlias {
                             Text("(\(alias))")
-                                .font(Theme.mono(9.5))
-                                .foregroundStyle(Theme.Text.disabled)
+                                .font(Theme.mono(10))
+                                .foregroundStyle(Theme.Text.meta)
                         }
                         Spacer(minLength: 0)
                     }
@@ -710,16 +710,11 @@ private struct PillCategoryView: View {
                             Text(tag.name)
                                 .font(Theme.ui(11.5))
                                 .foregroundStyle(hue)
-                            Button {
-                                model.toggleTag(tag.id)
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(Theme.ui(8, .semibold))
-                                    .foregroundStyle(hue.opacity(0.7))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove tag \(tag.name)")
-                            .help("Remove this tag")
+                            IconButton(
+                                "Remove tag \(tag.name)", systemImage: "xmark",
+                                size: 8, weight: .semibold, color: hue.opacity(0.7),
+                                help: "Remove this tag"
+                            ) { model.toggleTag(tag.id) }
                         }
                         .padding(.vertical, 3)
                         .padding(.horizontal, 9)
@@ -793,7 +788,7 @@ private struct PillCategoryView: View {
                     }
                 if !query.isEmpty, activeID == nil {
                     Text("(New Tag)")
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Accent.amber)
                 }
             }

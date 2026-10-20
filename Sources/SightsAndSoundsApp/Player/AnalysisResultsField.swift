@@ -155,7 +155,7 @@ struct AnalysisResultsField: View {
                 if rows.isEmpty {
                     Text(session?.isAnalyzing == true ? "Scanning…" : "Nothing found for this video.")
                         .font(Theme.ui(11))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .padding(.horizontal, 8)
                 } else {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in

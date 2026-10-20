@@ -118,7 +118,7 @@ struct SweepPanel: View {
                 if queuePaused {
                     Text("tasks paused")
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 } else {
                     ProgressView().controlSize(.small)
                 }

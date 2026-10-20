@@ -48,7 +48,7 @@ struct QueueRailView: View {
                     if sections.isEmpty {
                         Text("No tags on this queue.")
                             .font(Theme.ui(Theme.TypeScale.secondary))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     ForEach(sections, id: \.category.id) { section in
                         VStack(alignment: .leading, spacing: 2) {

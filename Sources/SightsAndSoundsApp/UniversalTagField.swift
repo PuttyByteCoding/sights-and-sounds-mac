@@ -474,7 +474,7 @@ struct UniversalTagField: View {
                         .help("Reading the text on this frame")
                 } else if !query.isEmpty, frame.active == nil {
                     Text("(New Tag)")
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Accent.amber)
                 }
             }
@@ -564,13 +564,13 @@ struct UniversalTagField: View {
     private func note(_ text: String) -> some View {
         Text(text)
             .font(Theme.ui(11))
-            .foregroundStyle(Theme.Text.disabled)
+            .foregroundStyle(Theme.Text.meta)
             .padding(.horizontal, 8)
     }
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(Theme.ui(9.5, .semibold))
+            .font(Theme.ui(10, .semibold))
             .foregroundStyle(Theme.Text.quaternary)
             .padding(.horizontal, 8)
             .padding(.top, 2)
@@ -664,7 +664,7 @@ struct UniversalTagField: View {
                 }
                 if hit.fromAnalysis {
                     Text("analysis")
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Accent.amber)
                 }
                 Spacer(minLength: 6)
@@ -693,7 +693,7 @@ struct UniversalTagField: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Text("new tag")
-                    .font(Theme.mono(9.5))
+                    .font(Theme.mono(10))
                     .foregroundStyle(Theme.Accent.amber)
             }
             .padding(.horizontal, 8)

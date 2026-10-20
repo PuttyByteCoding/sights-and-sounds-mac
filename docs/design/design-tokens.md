@@ -27,7 +27,8 @@ controls; warm charcoal content. Decided Aug 2026.
 | Secondary | `#CFC6B8` | 10.4:1 | Row text |
 | Tertiary | `#A79E90` | 6.9:1 | Descriptions |
 | Quaternary | `#8C8478` | 5.0:1 | **Floor for text at 10–12px** |
-| Disabled only | `#6E6659` | 3.4:1 | Non-informational only |
+| Meta | `#8C8478` | 5.0:1 | Alias of Quaternary, named for the job: counts, paths, timestamps, hints, instructions — secondary data people read |
+| Disabled only | `#6E6659` | 3.4:1 | Controls that are actually disabled; decorative glyphs. Never a value someone reads |
 
 **Rule learned the hard way:** `#7C7466` and `#5E5749` fail AA below 12px. They were
 shipped on load-bearing data three separate times — a file path, an encode's predicted

@@ -147,7 +147,7 @@ struct TagSheet: View {
                     HStack(spacing: 7) {
                         Image(systemName: favorite ? "star.fill" : "star")
                             .font(Theme.ui(14))
-                            .foregroundStyle(favorite ? Theme.Accent.amber : Theme.Text.disabled)
+                            .foregroundStyle(favorite ? Theme.Accent.amber : Theme.Text.meta)
                         Text(favorite ? "Favorite" : "Not a favorite")
                             .font(Theme.ui(11.5))
                             .foregroundStyle(Theme.Text.tertiary)
@@ -164,14 +164,11 @@ struct TagSheet: View {
                             ForEach(aliases, id: \.self) { alias in
                                 HStack(spacing: 4) {
                                     Text(alias).font(Theme.ui(11.5))
-                                    Button {
+                                    IconButton("Remove alias \(alias)", help: "Remove this alias") {
                                         removeAlias(alias)
-                                    } label: {
+                                    } glyph: {
                                         Image(systemName: "xmark").font(Theme.ui(8, .semibold))
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Remove alias \(alias)")
-                                    .help("Remove this alias")
                                 }
                                 .padding(.vertical, 3)
                                 .padding(.horizontal, 8)
@@ -239,7 +236,7 @@ struct TagSheet: View {
 
             Text(hintLine)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
 
             if let errorText {
                 Text(errorText)

@@ -522,7 +522,7 @@ private struct LibraryPickerRow: View {
 
             Text(lastOpenedText)
                 .font(Theme.ui(11))
-                .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.disabled)
+                .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.meta)
                 .lineLimit(1)
                 .fixedSize()
         }

@@ -173,7 +173,7 @@ struct CommandPalette: View {
                             ? "Commands, windows, filters and your own tag names — all from this one field."
                             : "Tag names, category names and every window are searchable from here.")
                             .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .padding(16)
                     }
                     ForEach(PaletteCommand.Group.allCases, id: \.self) { group in
@@ -236,7 +236,7 @@ struct CommandPalette: View {
             if let key = command.keyEquivalent {
                 Text(key)
                     .font(Theme.mono(10))
-                    .foregroundStyle(isHighlighted ? Theme.Text.onAmber : Theme.Text.disabled)
+                    .foregroundStyle(isHighlighted ? Theme.Text.onAmber : Theme.Text.meta)
             }
         }
         .padding(.horizontal, 14)
@@ -251,8 +251,8 @@ struct CommandPalette: View {
         HStack(spacing: 14) {
             ForEach(legendItems, id: \.self) { item in
                 Text(item)
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
             }
             Spacer()
         }
