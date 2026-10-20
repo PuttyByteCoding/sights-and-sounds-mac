@@ -234,11 +234,19 @@ struct PlayerView: View {
         // reach the next item without closing the panel or grabbing the
         // mouse. Shift is the way through, in both maps, and it costs
         // only extending a selection by one character.
+        //
+        // And `?` — the one printable key that comes through. A fresh
+        // item lands the keyboard in the first tag field, so without
+        // this the cheat sheet typed a question mark into the tag.
         if NSApp.keyWindow?.firstResponder is NSTextView {
             if let scalar = press.key.character.unicodeScalars.first,
                (0xF704...0xF70C).contains(scalar.value) {
                 let index = Int(scalar.value - 0xF704) + 1
                 return model.handleBoundKey("F\(index)")
+            }
+            if let character = press.characters.first, PlayerKeyMap.opensKeyboardMap(character) {
+                showKeyMap = true
+                return true
             }
             if press.modifiers.contains(.numericPad), let character = press.characters.first,
                character.isNumber || character == "-" {
@@ -313,7 +321,7 @@ struct PlayerView: View {
         }
 
         // `?` is the keyboard map — chooser and permanent cheat sheet.
-        if character == "?" {
+        if PlayerKeyMap.opensKeyboardMap(character) {
             showKeyMap = true
             return true
         }
@@ -757,6 +765,16 @@ private struct PlayerContent: View {
                         title: "Tag Analysis", sessionID: session.id))
             }
             .help("Open the Tag Analysis companion beside this player")
+        }
+        ToolbarItem {
+            // The cheat sheet stands on its own in the toolbar — the
+            // comp's `?` — and stays in the More menu beside it, so the
+            // menu still lists everything the window can do.
+            Button("Keyboard map", systemImage: "questionmark") {
+                showKeyMap = true
+            }
+            .help("Keyboard map (?)")
+            .accessibilityLabel("Keyboard map")
         }
         ToolbarItem {
             Menu {
@@ -1948,7 +1966,8 @@ private struct QueueCell: View {
 
 /// Both maps side by side: the chooser, and thereafter the cheat sheet.
 /// Only four rows differ, and they are the highlighted ones.
-private struct KeyMapSheet: View {
+/// Internal, not private: the tests present it and send Esc.
+struct KeyMapSheet: View {
     @Environment(PlayerModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var choice = AppSettingsStore.shared.current.keyMap
@@ -2044,11 +2063,19 @@ private struct KeyMapSheet: View {
                     .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                // Esc leaves without changing the map; Return keeps the
+                // choice. Both reach here from the search field — the
+                // sheet took the keyboard on open, so it must give a
+                // keyboard way back out.
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                 Button("Done") {
                     AppSettingsStore.shared.update { $0.keyMap = choice }
                     dismiss()
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
             }
             .padding(16)
         }
