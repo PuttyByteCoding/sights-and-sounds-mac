@@ -311,6 +311,7 @@ private struct OcrTagSheet: View {
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(SecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 11)

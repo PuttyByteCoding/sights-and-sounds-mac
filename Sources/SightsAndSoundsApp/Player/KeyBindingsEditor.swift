@@ -169,7 +169,17 @@ struct KeyBindingsEditor: View {
 
             HStack {
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                // Done is the one button: the primary, so Return; and the
+                // way out, so Esc. A button carries one shortcut, so the
+                // cancel key is bound to an unseen twin of it.
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+                    .background {
+                        Button("Close") { dismiss() }
+                            .keyboardShortcut(.cancelAction)
+                            .hidden()
+                            .accessibilityHidden(true)
+                    }
             }
         }
         .padding(16)
