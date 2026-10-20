@@ -615,14 +615,13 @@ struct ImportView: View {
                     .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
                     .foregroundStyle(Theme.Text.primary)
                 if let progress {
-                    ProgressView(
-                        value: Double(progress.current),
-                        total: Double(max(progress.total, 1)))
+                    ThemeProgressBar.determinate(progress.current, of: progress.total, running: true)
                     Text("\(progress.current) of \(progress.total) probed and inserted")
                         .font(Theme.mono(11))
                         .foregroundStyle(Theme.Text.quaternary)
                 } else {
-                    ProgressView().controlSize(.small)
+                    // Started, no count yet: the same bar, working.
+                    ThemeProgressBar.indeterminate(running: true)
                 }
                 HStack(spacing: 9) {
                     Spacer()

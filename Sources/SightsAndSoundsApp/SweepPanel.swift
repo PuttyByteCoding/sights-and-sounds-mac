@@ -10,8 +10,15 @@ import SightsAndSoundsKit
 /// **Retry failed** deletes the failure rows first — a failure row is
 /// what stops a sweep re-probing a broken file forever, so retry IS row
 /// deletion. **Recalculate all** forgets the data itself, then sweeps.
+///
+/// Closed by default, under the lane cards: six rows and their buttons
+/// are ~320pt, which at the window's minimum height pushed the lanes
+/// and the table — the state of the machine — below the fold. The
+/// header row stays, and a sweep started here keeps running and keeps
+/// being watched whether the ledger is open or shut.
 struct SweepPanel: View {
     @Environment(AppModel.self) private var app
+    @Binding var isExpanded: Bool
 
     @State private var libraryID: UUID?
     @State private var statuses: [SweepKind: SweepStatus] = [:]
@@ -31,35 +38,22 @@ struct SweepPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Text("Sweeps").modifier(Theme.sectionLabel())
-                Picker("", selection: $libraryID) {
-                    ForEach(openLibraries) { library in
-                        Text(library.name).tag(UUID?.some(library.id))
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-                if let errorText {
-                    Text(errorText)
-                        .font(Theme.ui(11))
-                        .foregroundStyle(Theme.Status.orange)
-                }
-            }
+            header
 
-            if libraryID == nil {
-                Text("Open a library to run its sweeps.")
-                    .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.quaternary)
-            } else {
-                ForEach(SweepKind.allCases) { kind in
-                    row(kind)
+            if isExpanded {
+                if libraryID == nil {
+                    Text("Open a library to run its sweeps.")
+                        .font(Theme.ui(Theme.TypeScale.secondary))
+                        .foregroundStyle(Theme.Text.quaternary)
+                } else {
+                    ForEach(SweepKind.allCases) { kind in
+                        row(kind)
+                    }
                 }
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, isExpanded ? 10 : 7)
         .background(Theme.Surface.raised)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
@@ -81,6 +75,55 @@ struct SweepPanel: View {
             }
         } message: {
             Text("Every item's stored data for this kind is forgotten, then the sweep rebuilds it. Nothing else is touched.")
+        }
+    }
+
+    /// The disclosure row. Clicking the name toggles it — the whole
+    /// label, not just the chevron, as the sidebar's headers do, and
+    /// VoiceOver hears the state. Shut, it still shows a sweep in
+    /// flight and any error: closing the ledger must not hide a failure.
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button {
+                Motion.perform(.easeOut(duration: 0.12)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(Theme.ui(9))
+                        .foregroundStyle(Theme.Text.disabled)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 9)
+                        .motion(.easeOut(duration: 0.12), value: isExpanded)
+                    Text("Sweeps").modifier(Theme.sectionLabel())
+                    if !isExpanded, !runningHere.isEmpty {
+                        ThemeProgressBar.indeterminate(running: !queuePaused)
+                            .frame(width: 40)
+                            .help(queuePaused ? "A sweep is queued — tasks are paused" : "A sweep is running")
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Sweeps")
+            .accessibilityValue(isExpanded ? "expanded" : "collapsed")
+            .help(isExpanded ? "Hide the sweeps" : "Show the derived-data sweeps — verify, retry failed, recalculate")
+
+            if isExpanded {
+                Picker("", selection: $libraryID) {
+                    ForEach(openLibraries) { library in
+                        Text(library.name).tag(UUID?.some(library.id))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            Spacer()
+            if let errorText {
+                Text(errorText)
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Status.orange)
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -120,7 +163,8 @@ struct SweepPanel: View {
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.Text.disabled)
                 } else {
-                    ProgressView().controlSize(.small)
+                    ThemeProgressBar.indeterminate(running: true)
+                        .frame(width: 60)
                 }
             }
             Button("Verify") { verify(kind) }

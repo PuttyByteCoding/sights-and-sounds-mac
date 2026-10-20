@@ -20,6 +20,9 @@ struct BackgroundTasksView: View {
     @State private var selectedJob: JobRecord?
     @State private var filter: StateFilter = .all
     @State private var toast: String?
+    /// The sweeps ledger is shut unless it was left open: it is a
+    /// maintenance tool, and the lanes and table come first.
+    @AppStorage("backgroundTasks.sweepsExpanded") private var sweepsExpanded = false
 
     struct Lane: Identifiable {
         let id: UUID
@@ -57,10 +60,13 @@ struct BackgroundTasksView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Toolbar, banner, lanes, then the sweeps ledger shut, then
+            // the table: spec 06's order, with the sweeps where they do
+            // not push the state of the machine below the fold.
             toolbar
             if app.tasksPaused { pausedBanner }
-            SweepPanel()
             if !lanes.isEmpty { laneCards }
+            SweepPanel(isExpanded: $sweepsExpanded)
             HStack(spacing: 0) {
                 table
                 Rectangle().fill(Theme.Border.standard).frame(width: 1)
@@ -455,10 +461,9 @@ private struct LaneCard: View {
                             .font(Theme.mono(9))
                             .foregroundStyle(Theme.Text.disabled)
                     }
-                    ProgressView(
-                        value: Double(running.progressCurrent),
-                        total: Double(max(running.progressTotal ?? 1, 1)))
-                        .frame(height: 5)
+                    ThemeProgressBar.determinate(
+                        running.progressCurrent, of: running.progressTotal ?? 0,
+                        running: !lane.isPaused)
                     Text(progressText(running))
                         .font(Theme.mono(9.5))
                         .foregroundStyle(Theme.Text.disabled)
@@ -533,9 +538,19 @@ private struct JobRow: View {
                 .frame(width: 132, alignment: .leading)
             Group {
                 if job.state == .running, let total = job.progressTotal, total > 0 {
-                    ProgressView(value: Double(job.progressCurrent), total: Double(total))
+                    // The bar and the count: a bar alone says "some",
+                    // and the row beneath it, finished, says a number.
+                    HStack(spacing: 6) {
+                        ThemeProgressBar.determinate(job.progressCurrent, of: total, running: true)
+                        Text("\(job.progressCurrent) of \(total)")
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.disabled)
+                            .fixedSize()
+                    }
+                } else if job.state == .running {
+                    ThemeProgressBar.indeterminate(running: true)
                 } else if let total = job.progressTotal, total > 0 {
-                    Text("\(job.progressCurrent)/\(total)")
+                    Text("\(job.progressCurrent) of \(total)")
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.Text.disabled)
                 } else {
@@ -644,6 +659,17 @@ private struct JobInspector: View {
                         .foregroundStyle(Theme.Text.quaternary)
                 }
 
+                if job.state == .running {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Progress").modifier(Theme.sectionLabel())
+                        ThemeProgressBar.determinate(
+                            job.progressCurrent, of: job.progressTotal ?? 0, running: true)
+                        Text(progressText)
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.quaternary)
+                    }
+                }
+
                 if let summary = job.summary {
                     block(title: "Outcome", body: summary, tint: Theme.Text.secondary)
                 }
@@ -708,6 +734,13 @@ private struct JobInspector: View {
         }
     }
 
+    /// The same words the lane card uses for the same job.
+    private var progressText: String {
+        guard let total = job.progressTotal, total > 0 else { return "working…" }
+        let percent = Int(Double(job.progressCurrent) / Double(total) * 100)
+        return "\(job.progressCurrent) of \(total) · \(percent)%"
+    }
+
     private func timelineRow(_ label: String, _ date: Date?) -> some View {
         HStack {
             Text(label)
@@ -764,15 +797,24 @@ enum JobNames {
         }
     }
 
-    /// Colour by family, derived from the kind's prefix — ingest,
-    /// duplicates, operations, write-back, validation.
-    static func familyColor(_ kind: String) -> Color {
+    /// The family a kind belongs to, from the prefix every `Job.kind`
+    /// carries. Anything not named is an operation — the edits to media
+    /// are the family that grows. The prefixes are the kinds' real ones:
+    /// `hash`, `thumbnail` and `fingerprint` used to be listed here and
+    /// never matched `contentHash.sweep`, `thumbnails.sweep` or
+    /// `fingerprints.capture`, so those drew as operations.
+    static func family(_ kind: String) -> Theme.JobFamily {
         switch kind.split(separator: ".").first.map(String.init) ?? "" {
-        case "import", "hash", "thumbnail": Theme.Segment.song
-        case "duplicates", "fingerprint": Theme.Status.mauve
-        case "writeback", "restore": Theme.Accent.amber
-        case "validation": Color(hex: 0x9DBF7F)
-        default: Color(hex: 0x8B93E8)
+        case "import", "contentHash", "thumbnails", "mediaSignal", "tagAnalysis": .ingest
+        case "duplicates", "fingerprints": .duplicates
+        case "writeback": .writeback
+        case "validation": .validation
+        default: .operations
         }
+    }
+
+    /// Colour by family; the palette lives with the other tokens.
+    static func familyColor(_ kind: String) -> Color {
+        family(kind).color
     }
 }

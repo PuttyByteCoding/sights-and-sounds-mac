@@ -215,6 +215,39 @@ import Testing
         #expect(throws: (any Error).self) { _ = try app.settingsService(for: UUID()) }
     }
 
+    /// A row's dot is coloured by family, and the family is read off the
+    /// kind's prefix: every job the app ships lands in the family its
+    /// code lives under, and no two families share a hue. Pinned on the
+    /// real kinds because the table once listed `hash`, `thumbnail` and
+    /// `fingerprint`, which matched nothing, and three ingest jobs drew
+    /// as operations without anyone noticing.
+    @Test func everyJobKindHasItsFamilyAndEachFamilyItsOwnHue() {
+        let expected: [(String, Theme.JobFamily)] = [
+            (ImportJob.kind, .ingest), (ContentHashJob.kind, .ingest),
+            (ThumbnailBatchJob.kind, .ingest), (MediaSignalJob.kind, .ingest),
+            (MetadataSweepJob.kind, .ingest),
+            (HashDuplicateSweepJob.kind, .duplicates), (FingerprintCaptureJob.kind, .duplicates),
+            (FingerprintMatchSweepJob.kind, .duplicates),
+            (ClipExportJob.kind, .operations), (RemuxJob.kind, .operations),
+            (EncodeJob.kind, .operations), (BlockRemovalJob.kind, .operations),
+            (OcrJob.kind, .operations), (JoinJob.kind, .operations),
+            (ReorganizeJob.kind, .operations), (RepairJob.kind, .operations),
+            (RemoveFromLibraryJob.kind, .operations),
+            (WritebackJob.kind, .writeback), (RestoreTagsJob.kind, .writeback),
+            (ValidationJob.kind, .validation),
+        ]
+        for (kind, family) in expected {
+            #expect(JobNames.family(kind) == family, "\(kind)")
+            #expect(JobNames.familyColor(kind) == family.color, "\(kind)")
+        }
+        // A kind nobody has written yet is still drawn, as an operation.
+        #expect(JobNames.family("someday.newThing") == .operations)
+        #expect(JobNames.family("") == .operations)
+
+        let hues = Theme.JobFamily.allCases.map(\.color)
+        #expect(Set(hues).count == hues.count, "two families share a hue")
+    }
+
     final class Flag: @unchecked Sendable {
         private let lock = NSLock()
         private var value = false
