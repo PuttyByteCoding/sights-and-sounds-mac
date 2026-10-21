@@ -314,6 +314,11 @@ struct ThemeMenuLabel: View {
 extension Menu {
     /// A menu whose label is a `ThemeMenuLabel`: the system button chrome
     /// and indicator off, the label's own size kept.
+    ///
+    /// Main-actor by declaration: the menu styles are main-actor
+    /// isolated, and Swift 6.1 (CI's Xcode 16) does not infer that for
+    /// an extension on `Menu` the way newer compilers do.
+    @MainActor
     func themedMenu() -> some View {
         menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
