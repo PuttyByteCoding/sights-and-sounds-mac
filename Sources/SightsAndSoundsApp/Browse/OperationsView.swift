@@ -25,10 +25,18 @@ struct OperationsView: View {
     @State private var ocr = AppSettingsStore.shared.current.ocr
     @State private var ocrInterval = AppSettingsStore.shared.current.ocrSampleIntervalSeconds
     @State private var joinOrder: [UUID] = []
-    @State private var status: String?
+    @State private var status: StatusLineState?
     /// This set of files is queued: Run stays off until something about
     /// the run changes, so a second click cannot queue the same encode.
     @State private var queued = false
+    /// The selection has been read. Until then no operation is
+    /// "unavailable for this selection" — there is no selection yet.
+    @State private var firstRead = FirstRead()
+    /// Write-back's dry run over the selection: what it would overwrite.
+    /// An ffprobe per file, so it is run once, the first time Write Tags
+    /// is picked, not on every selection change.
+    @State private var writebackPreview: WritebackPreview?
+    @State private var previewingWriteback = false
 
     /// The rows the operation will act on. Unticking recomputes every
     /// number — nothing here hardcodes its own count.
@@ -51,7 +59,10 @@ struct OperationsView: View {
         .background(Theme.Surface.content)
         .task { await load() }
         // A different run is a new run: Run comes back on.
-        .onChange(of: operation) { queued = false }
+        .onChange(of: operation) { _, now in
+            queued = false
+            if now == .writeTags { previewWritebackIfNeeded() }
+        }
         .onChange(of: excluded) { queued = false }
         .onChange(of: preset) { queued = false }
         .onChange(of: remuxMode) { queued = false }
@@ -86,7 +97,8 @@ struct OperationsView: View {
     }
 
     private func operationRow(_ entry: Operation) -> some View {
-        let requirement = entry.unmetRequirement(for: items)
+        // Before the selection has been read nothing is unavailable yet.
+        let requirement = firstRead.landed ? entry.unmetRequirement(for: items) : nil
         let selected = operation == entry
         return Button {
             operation = entry
@@ -155,7 +167,12 @@ struct OperationsView: View {
                 if operation == .join, let report = joinReport, !report.isJoinable {
                     refusal(report)
                 }
-                inputOutputList
+                if firstRead.landed {
+                    inputOutputList
+                } else {
+                    FirstReadPlaceholder()
+                        .frame(height: 120)
+                }
             }
             .padding(16)
         }
@@ -176,7 +193,7 @@ struct OperationsView: View {
                 emphasis: .neutral)
         case .join:
             VStack(alignment: .leading, spacing: 6) {
-                Text("Drag to reorder — this is the order they will play in.")
+                Text("Use the arrows to reorder — this is the order they will play in.")
                     .font(Theme.ui(11))
                     .foregroundStyle(Theme.Text.meta)
                 ForEach(orderedJoinParts) { item in
@@ -312,6 +329,7 @@ struct OperationsView: View {
                                 fromByteCount: estimate.bytesAdded, countStyle: .file))
                     }
                     costRow(estimate.timeLabel, "≈ " + durationText(estimate.seconds))
+                    if operation == .writeTags { writebackCostRow }
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Guarantees").modifier(Theme.sectionLabel())
@@ -363,6 +381,42 @@ struct OperationsView: View {
         }
     }
 
+    /// Write-back is a wipe and rewrite, so the figure that decides it is
+    /// how many existing embedded values go away — the library's dry run
+    /// says, over the ticked rows. Amber when it is more than none.
+    @ViewBuilder private var writebackCostRow: some View {
+        HStack {
+            Text("existing values replaced")
+                .font(Theme.ui(11))
+                .foregroundStyle(Theme.Text.meta)
+            Spacer()
+            if previewingWriteback {
+                ProgressView().controlSize(.small)
+                    .help("Reading what the files say now")
+            } else if let count = writebackReplacedCount {
+                Text("\(count)")
+                    .font(Theme.mono(11))
+                    .foregroundStyle(count > 0 ? Theme.Accent.amber : Theme.Text.secondary)
+            } else {
+                Text("—")
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.Text.secondary)
+                    .help("The files could not be read")
+            }
+        }
+    }
+
+    /// Existing values the ticked rows would overwrite, from the dry run.
+    /// Recomputed from the ticked set like every other cost: the preview
+    /// is per file, so unticking a row drops its count.
+    private var writebackReplacedCount: Int? {
+        guard let writebackPreview else { return nil }
+        let ticked = Set(included.map(\.id))
+        return writebackPreview.writableFiles
+            .filter { ticked.contains($0.itemID) }
+            .reduce(0) { $0 + $1.replacedCount }
+    }
+
     // MARK: - Footer
 
     private var footer: some View {
@@ -371,16 +425,16 @@ struct OperationsView: View {
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.tertiary)
             Spacer()
-            if let status {
-                Text(status)
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Accent.amber)
-            }
-            Button(runnable ? "\(operation.verb) \(included.count) Files" : operation.blockedLabel(for: items)) {
+            StatusLine(status)
+            Button(
+                !firstRead.landed ? "Reading selection…"
+                    : runnable ? "\(operation.verb) \(included.count) Files"
+                    : operation.blockedLabel(for: items)
+            ) {
                 run()
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(!runnable || queued)
+            .disabled(!runnable || queued || !firstRead.landed)
         }
         .padding(.horizontal, 14)
         .frame(height: 62)
@@ -397,6 +451,7 @@ struct OperationsView: View {
     }
 
     private var summary: String {
+        guard firstRead.landed else { return "Reading the selection…" }
         if let requirement = operation.unmetRequirement(for: items) { return requirement }
         if operation == .join, let report = joinReport, !report.isJoinable {
             return "Nothing will be written — the parts do not match."
@@ -462,10 +517,10 @@ struct OperationsView: View {
                 // left the status (and a Run still enabled) until every
                 // job ahead had finished.
                 for request in requests { try await service.run(request, wait: .none) }
-                status = "Queued on this library — follow it in Background Tasks"
+                status = .notice("Queued on this library — follow it in Background Tasks")
             } catch {
                 queued = false
-                status = "\(error)"
+                status = .error("Could not queue: \(error)")
             }
         }
     }
@@ -476,6 +531,27 @@ struct OperationsView: View {
         let position = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
         items = fetched.sorted { (position[$0.id] ?? 0) < (position[$1.id] ?? 0) }
         joinOrder = items.map(\.id)
+        firstRead.land()
+        if operation == .writeTags { previewWritebackIfNeeded() }
+    }
+
+    /// The dry run over every file-of-its-own in the selection, once. It
+    /// reads each file's current tags (an ffprobe per file), so it is
+    /// asked for the first time Write Tags is picked and kept; the ticked
+    /// set then filters it rather than re-running it.
+    private func previewWritebackIfNeeded() {
+        guard firstRead.landed, writebackPreview == nil, !previewingWriteback else { return }
+        let ids = items.filter { Operation.writeTags.accepts($0) }.map(\.id)
+        guard !ids.isEmpty else { return }
+        previewingWriteback = true
+        let service = model.service
+        Task {
+            // A read that fails leaves the row at "—" with why in its
+            // tooltip; the write itself still snapshots before it touches
+            // anything.
+            writebackPreview = try? await service.previewWriteback(itemIDs: ids)
+            previewingWriteback = false
+        }
     }
 }
 

@@ -4,6 +4,10 @@ import SightsAndSoundsKit
 /// The debug log: the in-memory ring buffer, live, with level/category
 /// filters, search, and copy-out. Log lines can contain real file and
 /// tag names — copied text is private data like any other.
+///
+/// A standalone window, so it is painted from the tokens like every
+/// other content window: on a light system appearance it used to open
+/// white beside the charcoal ones.
 struct LogView: View {
     @State private var entries: [LogEntry] = []
     @State private var categories: [String] = []
@@ -41,40 +45,53 @@ struct LogView: View {
                     ForEach(categories, id: \.self) { Text($0).tag($0) }
                 }
                 .frame(width: 170)
-                TextField("Search…", text: $query)
-                    .textFieldStyle(.roundedBorder)
+                TextField("", text: $query, prompt: Text("Search…"))
+                    .themeField()
                 Button("Copy All", systemImage: "doc.on.doc") { copyAll() }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
                     .help("Copy the filtered lines — treat the text as private data")
             }
             .padding(10)
-            Divider()
+            .background(Theme.Surface.toolbar)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            }
 
             if shown.isEmpty {
-                ContentUnavailableView(
-                    "Nothing Logged Yet", systemImage: "text.alignleft",
-                    description: Text("Jobs, moves and errors appear here as they happen."))
+                VStack(spacing: 6) {
+                    Text("Nothing logged yet")
+                        .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
+                        .foregroundStyle(Theme.Text.secondary)
+                    Text("Jobs, moves and errors appear here as they happen.")
+                        .font(Theme.ui(Theme.TypeScale.body))
+                        .foregroundStyle(Theme.Text.quaternary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     List(shown) { entry in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(entry.date.formatted(date: .omitted, time: .standard))
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.tertiary)
+                                .font(Theme.mono(11))
+                                .foregroundStyle(Theme.Text.quaternary)
                             Text(entry.level.label)
-                                .font(.caption.monospaced())
+                                .font(Theme.mono(11))
                                 .foregroundStyle(color(for: entry.level))
                                 .frame(width: 52, alignment: .leading)
                             Text(entry.category)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
+                                .font(Theme.mono(11))
+                                .foregroundStyle(Theme.Text.tertiary)
                                 .frame(width: 72, alignment: .leading)
                             Text(entry.message)
-                                .font(.callout)
+                                .font(Theme.ui(Theme.TypeScale.body))
+                                .foregroundStyle(Theme.Text.primary)
                                 .textSelection(.enabled)
                         }
                         .id(entry.id)
                         .listRowSeparator(.hidden)
+                        .listRowBackground(Theme.Surface.content)
                     }
+                    .scrollContentBackground(.hidden)
                     .onScrollGeometryChange(for: Bool.self) { geometry in
                         geometry.contentOffset.y + geometry.containerSize.height
                             >= geometry.contentSize.height - 24
@@ -89,6 +106,7 @@ struct LogView: View {
                 }
             }
         }
+        .background(Theme.Surface.content)
         .frame(minWidth: 700, minHeight: 400)
         .task {
             while !Task.isCancelled {
@@ -106,10 +124,10 @@ struct LogView: View {
 
     private func color(for level: LogLevel) -> Color {
         switch level {
-        case .debug: .secondary
-        case .info: .primary
-        case .warning: .orange
-        case .error: .red
+        case .debug: Theme.Text.quaternary
+        case .info: Theme.Text.secondary
+        case .warning: Theme.Status.orange
+        case .error: Theme.Status.red
         }
     }
 

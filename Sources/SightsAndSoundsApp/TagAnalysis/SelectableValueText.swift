@@ -36,7 +36,7 @@ struct SelectableValueText: NSViewRepresentable {
         textView.onNewTag = onNewTag
         if textView.string != text {
             textView.string = text
-            textView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            textView.font = Fonts.monoFamily.flatMap { NSFont(name: $0, size: 11) } ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
             textView.textColor = NSColor(Theme.Text.secondary)
         }
     }

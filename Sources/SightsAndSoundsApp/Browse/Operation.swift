@@ -245,11 +245,18 @@ enum Operation: String, CaseIterable {
                 durations: items.compactMap(\.durationSeconds),
                 sampleIntervalSeconds: interval, level: ocr.recognitionLevel)
         case .writeTags:
+            // No estimate function exists for a tag write — the Maintenance
+            // window shows none — so this is a guess per file, and the row
+            // says so. What it would OVERWRITE is the figure that matters,
+            // and that comes from the library's dry run (`writebackCost`).
             return OperationEstimate(
                 filesWritten: items.count, bytesAdded: 0,
-                seconds: Double(items.count) * 0.5, timeLabel: "of writing")
+                seconds: Double(items.count) * Self.roughSecondsPerTagWrite, timeLabel: "of writing · rough")
         }
     }
+
+    /// A tag write is a tool invocation per file; this is a guess at one.
+    static let roughSecondsPerTagWrite: Double = 0.5
 
     func command(preset: EncodeJob.Preset, mode: RemuxJob.Mode) -> String {
         switch self {

@@ -68,6 +68,32 @@ staging boxes from the web import tool come with it.
    sources fail with a message, files missing from disk are never removed, sidecars are not
    consumed.
 
+## As built — deliberate simplifications (Oct 2026)
+
+Two parts of decision 5 and the layout below are not in the window, on purpose. They are
+simplifications the build chose, not gaps it has yet to fill:
+
+- **The stage rail applies per import.** There is no *Whole import / Per folder* switch,
+  no per-folder scope note, and the scan-scope rows carry no amber "has its own staging"
+  dot. One set of boxes applies to every selected file, and the rail says so in its one
+  line of copy (`stageRail` in `Browse/ImportView.swift`: "Applies to every selected file
+  in this import. Sticky boxes keep their values for the next one; the rest clear once it
+  lands."). A drive that wants one Band per folder is imported one folder at a time —
+  the scan scope's checkboxes make that a click per folder, and the sticky boxes carry
+  the shared values across. That is one payload per run and one code path, where the
+  per-folder switch would have been several payloads per run with a mode the rail had to
+  explain.
+- **The review table has no Resolution column.** It is `34 / 1fr / 92 / 76 / 118` —
+  checkbox, filename, duration, size, status (`fileTable` in `Browse/ImportView.swift`).
+  Resolution still comes back from the lazy probe (`ProbeResult`) and is shown where it
+  matters, in the player and on the grid's tiles; at review time the question is *is this the
+  file and is it new*, which name, duration and size answer, and a sixth column took the
+  width the filename needed.
+
+The step strip (`StepStrip`) uses numbered markers — a check on green for done, the
+number on amber for current, an outlined number for pending — rather than the dot the
+first build drew.
+
 ## Model changes
 
 | Change | Why | Where |

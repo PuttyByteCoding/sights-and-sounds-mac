@@ -172,13 +172,18 @@ struct WatchedView: View {
             Text(total > Self.displayLimit
                 ? "Showing the \(Self.displayLimit) most recent of \(total)."
                 : "One row per item, carrying its most recent play — watching something twice updates the row rather than adding one.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Theme.ui(Theme.TypeScale.secondary))
+                .foregroundStyle(Theme.Text.tertiary)
             Spacer()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(.bar)
+        // The window's own toolbar surface, not a system material: `.bar`
+        // tracks the system appearance and opened light under the table.
+        .background(Theme.Surface.toolbar)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
     }
 
     private func reload() {

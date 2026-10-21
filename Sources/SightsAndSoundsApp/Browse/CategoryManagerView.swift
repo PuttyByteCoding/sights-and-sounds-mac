@@ -31,6 +31,10 @@ struct CategoryManagerView: View {
     @State private var tagFields: [FieldDefinition] = []
     @State private var selectedTagID: UUID?
     @State private var errorText: String?
+    /// A write that WORKED and is worth a word — a merge's count. Shown
+    /// as a toast over the table for a moment, never in the red error
+    /// line: success and failure are not one colour.
+    @State private var noticeText: String?
 
     @State private var filter = ""
     /// The search across EVERY category: its text, the index it ranks
@@ -193,10 +197,10 @@ struct CategoryManagerView: View {
             selection = .category(category.id)
             inspectorTab = .category
         } label: {
+            // No drag handle: this is a ScrollView of buttons, not a List,
+            // and a grip that does nothing is a promise broken. Reorder
+            // is the context menu's Move Up / Move Down.
             HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .font(Theme.ui(10))
-                    .foregroundStyle(Theme.Text.disabled)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Theme.categoryHue(category.colorIndex))
                     .frame(width: 6, height: 6)
@@ -259,6 +263,44 @@ struct CategoryManagerView: View {
                 categoryCentre
             }
         }
+        // The same toast the tasks window shows after an action: a plate
+        // over the content, gone on its own. Amber-edged, because it
+        // reports a success — the error line stays red and stays put.
+        .overlay(alignment: .bottom) {
+            if let noticeText {
+                Text(noticeText)
+                    .font(Theme.ui(12.5))
+                    .foregroundStyle(Theme.Text.primary)
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.button)
+                            .fill(Theme.Surface.iconTile)
+                            .stroke(Theme.Accent.amber, lineWidth: 1))
+                    .padding(.bottom, 24)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: noticeText)
+    }
+
+    /// Shows a notice for a few seconds. A later notice replaces it and
+    /// takes over its clock, so the earlier one's timer cannot clear the
+    /// newer text early.
+    private func notice(_ message: String) {
+        noticeText = message
+        Task {
+            try? await Task.sleep(for: Self.noticeDuration)
+            if noticeText == message { noticeText = nil }
+        }
+    }
+
+    /// Long enough to read a count; short enough not to need dismissing.
+    static let noticeDuration: Duration = .seconds(4)
+
+    /// What a finished merge says. A notice, not an error.
+    static func mergeNotice(sources: Int) -> String {
+        "\(sources) tags merged — names kept as aliases"
     }
 
     /// The hits for the all-tags search, ranked the way every tag search
@@ -435,8 +477,7 @@ struct CategoryManagerView: View {
         let clusters = TagSimilarity.clusters(
             filtered, name: \.name, uses: { usage[$0.id] ?? 0 })
         return clusters.flatMap { cluster -> [TagTableRow] in
-            let header = TagTableRow(
-                clusterHeader: "\(cluster.count) variants · \(cluster[0].name)")
+            let header = TagTableRow(clusterCount: cluster.count, winner: cluster[0].name)
             return [header] + cluster.map { TagTableRow(tag: $0) }
         }
     }
@@ -478,14 +519,12 @@ struct CategoryManagerView: View {
                 .padding(20)
                 .frame(maxHeight: .infinity)
             } else if let category = selectedCategory {
-                Picker("", selection: $inspectorTab) {
-                    ForEach(InspectorTab.allCases, id: \.self) { tab in
-                        Text(tab.rawValue).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(10)
+                ThemeSegmentedControl(
+                    selection: $inspectorTab,
+                    options: InspectorTab.allCases.map { (value: $0, label: $0.rawValue) },
+                    emphasis: .neutral)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Rectangle().fill(Theme.Border.standard).frame(height: 1)
                 switch inspectorTab {
                 case .category:
@@ -730,7 +769,7 @@ struct CategoryManagerView: View {
         Task {
             do {
                 _ = try await service.mergeTags(sources, into: target)
-                errorText = "\(sources.count) tags merged — names kept as aliases"
+                notice(Self.mergeNotice(sources: sources.count))
                 mergeMode = false
                 mergePicks = []
                 mergeNewName = ""
@@ -752,18 +791,30 @@ struct TagSort: Equatable {
 
 /// A table row: a tag, or the header of a similarity cluster.
 struct TagTableRow: Identifiable {
+    /// A cluster's header: how many spellings, and the one that wins
+    /// (most used). Two parts, not one string, because the table sets
+    /// them differently — the count as an uppercase label, the name as
+    /// typed, so `northlight sessions` beside `Northlight Sessions` is
+    /// visible in the header that exists to show it.
+    struct ClusterHeader: Equatable {
+        var count: Int
+        var winner: String
+    }
+
     var tag: Tag?
-    var clusterHeader: String?
+    var clusterHeader: ClusterHeader?
 
     init(tag: Tag) {
         self.tag = tag
         self.clusterHeader = nil
     }
 
-    init(clusterHeader: String) {
+    init(clusterCount: Int, winner: String) {
         self.tag = nil
-        self.clusterHeader = clusterHeader
+        self.clusterHeader = ClusterHeader(count: clusterCount, winner: winner)
     }
 
-    var id: String { tag.map { $0.id.uuidString } ?? "header:\(clusterHeader ?? "")" }
+    var id: String {
+        tag.map { $0.id.uuidString } ?? "header:\(clusterHeader?.winner ?? "")"
+    }
 }

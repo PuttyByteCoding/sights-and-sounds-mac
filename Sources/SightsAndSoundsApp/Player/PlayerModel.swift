@@ -1780,6 +1780,15 @@ struct SegmentRow: Identifiable, Equatable {
             case .hide: "HIDE"
             }
         }
+
+        /// The kind as VoiceOver says it — the badge is for the eye.
+        var spokenName: String {
+            switch self {
+            case .song: "Song"
+            case .clip: "Clip"
+            case .hide: "Hide block"
+            }
+        }
     }
 
     var id: UUID
@@ -1792,6 +1801,17 @@ struct SegmentRow: Identifiable, Equatable {
     /// Only songs and clips are renameable rows — a hide block has no
     /// name to give, because it is not a thing you can browse to.
     var isRenameable: Bool { kind != .hide }
+
+    /// `0:12–1:30 · 1:18` — the range and, as the comp draws it, the
+    /// length beside it. One string so the row and VoiceOver agree.
+    var rangeText: String {
+        "\(TransportBarTime.format(start))–\(TransportBarTime.format(end)) · \(TransportBarTime.format(duration))"
+    }
+
+    /// What VoiceOver reads for the row: `Song Tweezer, 0:12–1:30 · 1:18`.
+    var accessibilityLabel: String {
+        "\(kind.spokenName) \(name), \(rangeText)"
+    }
 }
 
 extension Notification.Name {

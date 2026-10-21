@@ -249,6 +249,83 @@ struct PathText: View {
     }
 }
 
+// MARK: - Text field
+
+/// The app's text field: plain, on the well surface, with the standard
+/// stroke — the field every app dialog draws (New Library, Library
+/// Properties). A system `.roundedBorder` field on a charcoal dialog is
+/// the one control that reads as belonging to another window.
+struct ThemeFieldStyle: ViewModifier {
+    var font: Font = Theme.ui(Theme.TypeScale.row)
+
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(font)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(Theme.Surface.well)
+                    .stroke(Theme.Border.standard, lineWidth: 1))
+    }
+}
+
+extension View {
+    /// See `ThemeFieldStyle`.
+    func themeField(font: Font = Theme.ui(Theme.TypeScale.row)) -> some View {
+        modifier(ThemeFieldStyle(font: font))
+    }
+}
+
+// MARK: - Menu label
+
+/// The label of a `Menu` drawn as the compact secondary button beside
+/// it — Archivo, the subtle stroke, the same height — so a row of
+/// buttons and menus reads as one row. Pair with `themedMenu()`, which
+/// hides the system indicator this label replaces.
+struct ThemeMenuLabel: View {
+    let title: String
+    @State private var hovering = false
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+                .font(Theme.ui(Theme.TypeScale.secondary))
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(hovering ? Theme.Text.primary : Theme.Text.tertiary)
+        .lineLimit(1)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 11)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.button)
+                .stroke(
+                    hovering ? Theme.Border.subtleButtonHover : Theme.Border.subtleButton,
+                    lineWidth: 1))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+    }
+}
+
+extension Menu {
+    /// A menu whose label is a `ThemeMenuLabel`: the system button chrome
+    /// and indicator off, the label's own size kept.
+    ///
+    /// Main-actor by declaration: the menu styles are main-actor
+    /// isolated, and Swift 6.1 (CI's Xcode 16) does not infer that for
+    /// an extension on `Menu` the way newer compilers do.
+    @MainActor
+    func themedMenu() -> some View {
+        menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+    }
+}
+
 // MARK: - Progress bar
 
 /// The 5pt bar the comps draw for anything with a fraction: a well

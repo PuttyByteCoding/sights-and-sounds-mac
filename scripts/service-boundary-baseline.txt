@@ -1,4 +1,4 @@
 1	Sources/SightsAndSoundsApp/Browse/BrowseModel.swift
 1	Sources/SightsAndSoundsApp/NewLibraryView.swift
-3	Sources/SightsAndSoundsApp/SettingsView.swift
+1	Sources/SightsAndSoundsApp/SettingsView.swift
 9	Sources/SightsAndSoundsApp/SightsAndSoundsApp.swift

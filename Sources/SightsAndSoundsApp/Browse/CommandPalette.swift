@@ -209,17 +209,22 @@ struct CommandPalette: View {
         let isHighlighted = index == highlighted
         let requirement = unmetRequirement(command)
         return HStack(spacing: 9) {
+            // Unavailable, not hidden: the icon and title grey, but the
+            // requirement underneath stays at full strength — it is the
+            // one line that says why the command is out of reach, and
+            // halving the whole row made it the least legible thing on it.
             Image(systemName: command.symbol)
                 .font(Theme.ui(11))
                 .foregroundStyle(isHighlighted ? Theme.Text.onAmber : Theme.Text.disabled)
                 .frame(width: 16)
+                .opacity(requirement == nil ? 1 : 0.5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(command.title)
                     .font(Theme.ui(12.5))
                     .foregroundStyle(isHighlighted ? Theme.Text.onAmber : Theme.Text.primary)
-                // Unavailable, not hidden: changing the selection changes
-                // what is reachable, and that is only learnable if the
-                // greyed rows stay visible.
+                    .opacity(requirement == nil ? 1 : 0.5)
+                // Changing the selection changes what is reachable, and
+                // that is only learnable if the greyed rows stay visible.
                 if let requirement {
                     Text(requirement)
                         .font(Theme.ui(10.5))
@@ -241,7 +246,6 @@ struct CommandPalette: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .opacity(requirement == nil ? 1 : 0.5)
         .background(isHighlighted ? Theme.Accent.amber : Color.clear)
         .contentShape(Rectangle())
         .onTapAsButton { run(command) }

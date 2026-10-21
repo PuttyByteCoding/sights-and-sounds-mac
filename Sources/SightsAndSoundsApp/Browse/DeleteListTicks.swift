@@ -26,4 +26,13 @@ struct DeleteListTicks {
     mutating func untick(_ id: UUID) { ticked.remove(id) }
 
     mutating func clear() { ticked = [] }
+
+    /// What deleting the ticked files would free — the figure on the
+    /// Delete button and in its confirm. Summed over the ticked set, not
+    /// the whole flagged set: a file held back by unticking it frees
+    /// nothing. `sizes` is each listed file's size by id; a ticked id
+    /// not in it (restored meanwhile) counts for nothing.
+    func reclaimableBytes(sizes: [UUID: Int64]) -> Int64 {
+        ticked.reduce(0) { $0 + (sizes[$1] ?? 0) }
+    }
 }

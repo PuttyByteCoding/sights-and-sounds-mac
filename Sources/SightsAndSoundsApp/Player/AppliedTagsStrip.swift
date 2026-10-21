@@ -27,7 +27,7 @@ struct AppliedTagsStrip: View {
                         model.toggleTag(pill.tag.id)
                     } label: {
                         Text(pill.tag.name)
-                            .font(Theme.mono(10, .semibold))
+                            .font(Theme.ui(10, .semibold))
                             .foregroundStyle(hue)
                             .lineLimit(1)
                             .padding(.vertical, 2)

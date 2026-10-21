@@ -204,9 +204,7 @@ struct AnalysisResultsField: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                    .fill(active ? Theme.Surface.selectedRow : .clear))
+            .highlightedSuggestion(active)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

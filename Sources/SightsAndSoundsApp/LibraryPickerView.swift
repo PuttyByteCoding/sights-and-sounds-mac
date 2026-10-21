@@ -25,6 +25,14 @@ struct LibraryPickerView: View {
     @State private var showingNewLibrary = false
     @State private var showingConnect = false
     @State private var movingHost: SavedHost?
+    /// Progress of a demo or sample library being made. The buttons that
+    /// make them are items in the More… menu, and a closed menu cannot
+    /// say "working…" — so the picker says it, in the button row.
+    @State private var demoBusy: String?
+    @State private var samplesBusy: String?
+    /// The list takes the keyboard so ↑ and ↓ move the selection; Return
+    /// still opens it through the primary button's default action.
+    @FocusState private var listFocused: Bool
 
     private var remote: RemoteLibrariesModel { model.remoteLibraries }
 
@@ -112,34 +120,66 @@ struct LibraryPickerView: View {
     // MARK: - List
 
     private var libraryList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(model.libraries) { library in
-                    LibraryPickerRow(
-                        library: library,
-                        isSelected: selection == library.id,
-                        isOpen: model.openLibraryIDs.contains(library.id),
-                        offlineSourceCount: model.offlineSourceCounts[library.id],
-                        select: { selection = library.id },
-                        open: { open(library) })
-                }
-                // The claim the cached summary makes, stated where it is
-                // read rather than in a tooltip.
-                if !model.libraries.isEmpty {
-                    Text("Counts are as of each library's last close. Whether a drive is plugged in is only known for a library that is open.")
-                        .font(Theme.ui(11))
-                        .foregroundStyle(Theme.Text.quaternary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 6)
-                        .padding(.bottom, 10)
-                }
-                otherMacs
+        ScrollViewReader { scroller in
+            ScrollView {
+                libraryRows
+                    .padding(.horizontal, 12)
             }
-            .padding(.horizontal, 12)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(minHeight: 120)
+            // The list owns the keyboard: ↑↓ move the selection, and a
+            // selection moved off screen is brought back into it.
+            .focusable()
+            .focusEffectDisabled()
+            .focused($listFocused)
+            .onKeyPress(.upArrow) { moveSelection(-1) }
+            .onKeyPress(.downArrow) { moveSelection(1) }
+            .onChange(of: selection) { _, id in
+                guard let id else { return }
+                scroller.scrollTo(id)
+            }
+            .onAppear { listFocused = true }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(minHeight: 120)
+    }
+
+    private var libraryRows: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(model.libraries) { library in
+                LibraryPickerRow(
+                    library: library,
+                    isSelected: selection == library.id,
+                    isOpen: model.openLibraryIDs.contains(library.id),
+                    offlineSourceCount: model.offlineSourceCounts[library.id],
+                    select: { selection = library.id },
+                    open: { open(library) })
+                    .id(library.id)
+            }
+            // The claim the cached summary makes, stated where it is
+            // read rather than in a tooltip.
+            if !model.libraries.isEmpty {
+                Text("Counts are as of each library's last close. Whether a drive is plugged in is only known for a library that is open.")
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Text.quaternary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 6)
+                    .padding(.bottom, 10)
+            }
+            otherMacs
+        }
+    }
+
+    /// Every row that can be selected, in the order the list draws them:
+    /// this Mac's libraries, then each paired Mac's.
+    private var selectableIDs: [UUID] {
+        model.libraries.map(\.id) + remote.hosts.flatMap { $0.libraries.map(\.id) }
+    }
+
+    private func moveSelection(_ step: Int) -> KeyPress.Result {
+        guard let next = LibraryPickerKeys.selection(after: step, from: selection, in: selectableIDs)
+        else { return .ignored }
+        selection = next
+        return .handled
     }
 
     // MARK: - On other Macs
@@ -172,6 +212,7 @@ struct LibraryPickerView: View {
                     isOpen: model.openLibraryIDs.contains(library.id),
                     select: { selection = library.id },
                     open: { open(library.id) })
+                    .id(library.id)
             }
         }
     }
@@ -210,11 +251,11 @@ struct LibraryPickerView: View {
             // footnote.
             HStack(alignment: .top, spacing: 8) {
                 Circle()
-                    .fill(placement == .newWindow ? Theme.Status.green : Theme.Status.orange)
+                    .fill(placement == .newWindow ? Theme.Status.green : Theme.Accent.amber)
                     .frame(width: 6, height: 6)
                     .padding(.top, 5)
                 Text(placementNote)
-                    .font(Theme.ui(12))
+                    .font(Theme.ui(Theme.TypeScale.body))
                     .foregroundStyle(placement == .newWindow ? Theme.Text.tertiary : Theme.Status.warnText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -240,11 +281,21 @@ struct LibraryPickerView: View {
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Create a new library from a template")
             AddExistingLibraryButton()
-            DemoLibraryButton()
-            SignalSamplesLibraryButton()
-            Button("Connect to Another Mac…") { showingConnect = true }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-                .help("Open a library held by another Mac on this network, with a pairing code from that Mac")
+            // The three jump-offs nobody reaches for daily, folded into
+            // one menu: the comp draws three controls here, not seven.
+            Menu {
+                DemoLibraryButton(busyText: $demoBusy, inMenu: true)
+                SignalSamplesLibraryButton(busyText: $samplesBusy, inMenu: true)
+                Divider()
+                Button("Connect to Another Mac…", systemImage: "network") { showingConnect = true }
+                    .help("Open a library held by another Mac on this network, with a pairing code from that Mac")
+            } label: {
+                ThemeMenuLabel("More…")
+            }
+            .themedMenu()
+            .help("A demo library, Media Signal samples, or a library on another Mac")
+            if let demoBusy { LibraryGenerationLabel(text: demoBusy) }
+            if let samplesBusy { LibraryGenerationLabel(text: samplesBusy) }
 
             Spacer(minLength: 8)
 
@@ -338,6 +389,22 @@ struct LibraryPickerView: View {
     }
 }
 
+// MARK: - Keyboard
+
+/// Where ↑ and ↓ take the picker's selection. Pure, so the rule is
+/// tested without a window.
+enum LibraryPickerKeys {
+    /// No selection, or one that is no longer listed, lands on the first
+    /// row whichever way is pressed; otherwise the selection moves one
+    /// row and stops at either end. `nil` only when there is nothing to
+    /// select.
+    static func selection(after step: Int, from current: UUID?, in ids: [UUID]) -> UUID? {
+        guard !ids.isEmpty else { return nil }
+        guard let current, let index = ids.firstIndex(of: current) else { return ids[0] }
+        return ids[min(ids.count - 1, max(0, index + step))]
+    }
+}
+
 // MARK: - Other Macs
 
 /// One paired Mac: its name, where it is, and how asking it went.
@@ -352,9 +419,8 @@ private struct RemoteHostHeader: View {
             Image(systemName: "laptopcomputer")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.Text.quaternary)
-            Text("ON \(entry.host.name.uppercased())")
-                .font(Theme.ui(10.5, .semibold))
-                .foregroundStyle(Theme.Text.tertiary)
+            Text("On \(entry.host.name)")
+                .modifier(Theme.sectionLabel())
                 .lineLimit(1)
             Text("\(entry.host.address):\(String(entry.host.port))")
                 .font(Theme.mono(10.5))
@@ -424,39 +490,45 @@ private struct RemoteLibraryPickerRow: View {
     let open: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile)
-                .frame(width: 34, height: 34)
-                .overlay(
-                    Image(systemName: "network")
-                        .font(.system(size: 15))
-                        .foregroundStyle(isSelected ? Theme.Accent.amber : Theme.Text.quaternary))
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Text(library.library.name)
-                        .font(Theme.ui(13.5, .semibold))
-                        .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.secondary)
-                        .lineLimit(1)
-                    if isOpen {
-                        ThemeBadge(text: "OPEN")
+        // A button, so the row has a button's traits and reads as one
+        // thing to VoiceOver; the click's own count still tells a select
+        // from an open.
+        ClickButton(single: select, double: open) {
+            HStack(alignment: .top, spacing: 11) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile)
+                    .frame(width: 34, height: 34)
+                    .overlay(
+                        Image(systemName: "network")
+                            .font(.system(size: 15))
+                            .foregroundStyle(isSelected ? Theme.Accent.amber : Theme.Text.quaternary))
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text(library.library.name)
+                            .font(Theme.ui(13.5, .semibold))
+                            .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.secondary)
+                            .lineLimit(1)
+                        if isOpen {
+                            ThemeBadge(text: "OPEN")
+                        }
                     }
+                    Text("Held by \(library.host.name). Browsed, played and tagged from here; its files stay there.")
+                        .font(Theme.ui(10.5))
+                        .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
+                        .lineLimit(2)
+                        .padding(.top, 4)
                 }
-                Text("Held by \(library.host.name). Browsed, played and tagged from here; its files stay there.")
-                    .font(Theme.ui(10.5))
-                    .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
-                    .lineLimit(2)
-                    .padding(.top, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Theme.Surface.selectedRow : .clear))
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Theme.Surface.selectedRow : .clear))
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .onClicks(single: select, double: open)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -482,57 +554,63 @@ private struct LibraryPickerRow: View {
     @State private var confirmRemove = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            icon
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Text(library.name)
-                        .font(Theme.ui(13.5, .semibold))
-                        .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.secondary)
+        // A button, so the row has a button's traits and reads as one
+        // thing to VoiceOver; the click's own count still tells a select
+        // from an open.
+        ClickButton(single: select, double: open) {
+            HStack(alignment: .top, spacing: 11) {
+                icon
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text(library.name)
+                            .font(Theme.ui(13.5, .semibold))
+                            .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.secondary)
+                            .lineLimit(1)
+                        if isOpen {
+                            ThemeBadge(text: "OPEN")
+                        }
+                        if let offlineSourceCount, offlineSourceCount > 0 {
+                            ThemeBadge(
+                                text: "\(offlineSourceCount) SOURCE\(offlineSourceCount == 1 ? "" : "S") OFFLINE",
+                                fill: Theme.Status.warnBadgeFill,
+                                foreground: Theme.Status.orange)
+                        }
+                    }
+                    Text(summaryLine)
+                        .font(Theme.mono(10.5))
+                        .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
                         .lineLimit(1)
-                    if isOpen {
-                        ThemeBadge(text: "OPEN")
-                    }
-                    if let offlineSourceCount, offlineSourceCount > 0 {
-                        ThemeBadge(
-                            text: "\(offlineSourceCount) SOURCE\(offlineSourceCount == 1 ? "" : "S") OFFLINE",
-                            fill: Theme.Status.warnBadgeFill,
-                            foreground: Theme.Status.orange)
-                    }
-                }
-                Text(summaryLine)
-                    .font(Theme.mono(10.5))
-                    .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.top, 4)
-                PathText(
-                    path: library.filePath,
-                    color: isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
-                    .padding(.top, 3)
-                if let statusText {
-                    Text(statusText)
-                        .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.tertiary)
-                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .padding(.top, 4)
+                    PathText(
+                        path: library.filePath,
+                        color: isSelected ? Theme.Text.tertiary : Theme.Text.quaternary)
                         .padding(.top, 3)
+                    if let statusText {
+                        Text(statusText)
+                            .font(Theme.ui(10.5))
+                            .foregroundStyle(Theme.Text.tertiary)
+                            .lineLimit(2)
+                            .padding(.top, 3)
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(lastOpenedText)
-                .font(Theme.ui(11))
-                .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.meta)
-                .lineLimit(1)
-                .fixedSize()
+                Text(lastOpenedText)
+                    .font(Theme.ui(11))
+                    .foregroundStyle(isSelected ? Theme.Text.tertiary : Theme.Text.meta)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.button)
+                    .fill(isSelected ? Theme.Surface.selectedRow : .clear))
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Theme.Surface.selectedRow : .clear))
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .onClicks(single: select, double: open)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .contextMenu { contextMenu }
         .confirmationDialog(
             "Remove “\(library.name)” from this list? The library file on disk is NOT deleted — Add Existing… brings it back, never as a duplicate. Close this library's windows before removing.",

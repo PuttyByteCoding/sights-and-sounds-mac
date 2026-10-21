@@ -636,7 +636,7 @@ struct SidebarView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                 }
             }
-            Text("Click cycles through the slots. Right-click a tag to edit it.")
+            Text("Click cycles through the slots. Right-click a tag for its menu.")
                 .font(Theme.ui(10.5))
                 .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
@@ -895,10 +895,14 @@ private struct TagQueryField: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
+        // The same focused stroke as the rename and save-filter sheets:
+        // one field style, so focus looks like focus everywhere.
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(Theme.Surface.well)
-                .stroke(Theme.Border.standard, lineWidth: 1))
+                .stroke(
+                    focused ? Theme.Border.activeControl : Theme.Border.standard,
+                    lineWidth: focused ? 2 : 1))
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
     }
@@ -1053,7 +1057,7 @@ private struct CategoryHeader: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Theme.categoryHue(entry.category.colorIndex))
                 .frame(width: 6, height: 6)
-            Text("\(entry.category.name) (\(entry.tags.count))")
+            Text(entry.category.name)
                 .modifier(Theme.sectionLabel())
             Spacer(minLength: 0)
             // A collapsed category must still signal live selections —
@@ -1066,6 +1070,9 @@ private struct CategoryHeader: View {
                     .padding(.vertical, 1)
                     .background(Capsule().fill(Theme.Surface.iconTileSelected))
             }
+            // How many tags the category holds — a count, so in mono at
+            // the trailing edge like every other count in the sidebar.
+            CountText(entry.tags.count)
         }
     }
 
@@ -1098,7 +1105,11 @@ private struct TagFilterRow: View {
             // Right-click is free now that it no longer steps the cycle
             // backwards, and a context menu is where anyone looks for
             // "edit this" — ⌥-click was a chord you had to be told about.
+            // The slots head the menu, so any state is one click away
+            // and the reverse step is not missed.
             .contextMenu {
+                SlotMenuItems(term: .tag(tag.id))
+                Divider()
                 TagActionButtons(
                     tag: tag, service: model.service, libraryID: model.libraryID,
                     pending: $pending)
@@ -1107,6 +1118,39 @@ private struct TagFilterRow: View {
                 $pending, service: model.service, libraryID: model.libraryID,
                 categories: model.vocabulary.map(\.category),
                 onChange: {})
+    }
+}
+
+/// The four states a term can be in, as menu items: Required, Optional
+/// and Excluded tick the one the term is in and set it directly; Clear
+/// filter takes it out. A four-state cycle with no reverse is a guessing
+/// game every time you overshoot — this is the reverse, and more.
+private struct SlotMenuItems: View {
+    @Environment(BrowseModel.self) private var model
+    let term: FilterTerm
+
+    var body: some View {
+        let current = model.filter.slot(of: term)
+        ForEach(MediaFilter.TagSlot.allCases, id: \.self) { slot in
+            Toggle(
+                slot.menuTitle,
+                isOn: Binding(
+                    get: { current == slot },
+                    set: { model.filter.setSlot($0 ? slot : nil, for: term) }))
+        }
+        Button("Clear filter") { model.filter.setSlot(nil, for: term) }
+            .disabled(current == nil)
+    }
+}
+
+extension MediaFilter.TagSlot {
+    /// The slot's name as a menu item.
+    var menuTitle: String {
+        switch self {
+        case .required: "Required"
+        case .optional: "Optional"
+        case .excluded: "Excluded"
+        }
     }
 }
 

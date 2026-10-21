@@ -52,7 +52,16 @@ struct ReviewView: View {
     @State private var recipes: [RepairRecipe] = []
     @State private var pickedRecipeID: UUID?
     @State private var reclaimable: Int64 = 0
+    /// What deleting the TICKED files would free; `reclaimable` is the
+    /// whole flagged set, which is the headline, not the button.
+    private var reclaimableTicked: Int64 {
+        ticks.reclaimableBytes(
+            sizes: Dictionary(deleteList.map { ($0.id, $0.fileSize) }, uniquingKeysWith: { first, _ in first }))
+    }
     @State private var errorText: String?
+    /// The three queues' empty states are answers only once the first
+    /// read has landed.
+    @State private var firstRead = FirstRead()
     @State private var resolvedThisPass: [Mode: Int] = [:]
     @State private var confirmDelete = false
     @State private var isPurging = false
@@ -130,9 +139,10 @@ struct ReviewView: View {
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.Text.quaternary)
             Spacer()
+            // The promise of the screen, not decoration: readable.
             Text(mode.safety)
                 .font(Theme.ui(11.5))
-                .foregroundStyle(Theme.Text.meta)
+                .foregroundStyle(Theme.Text.tertiary)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -203,10 +213,40 @@ struct ReviewView: View {
                 }
             }
             .padding(12)
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            safetyBlock
         }
         .frame(width: 262)
         .background(Theme.Surface.sidebar)
     }
+
+    /// The three promises this window keeps, fixed to the foot of the
+    /// rail in the shape Maintenance's sidebar uses. Worded to what the
+    /// app does: deletions go to the Trash, repairs archive the original
+    /// — there is no operation log to revert either from.
+    private var safetyBlock: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Safety").modifier(Theme.sectionLabel())
+            ForEach(Self.safetyLines, id: \.self) { line in
+                HStack(alignment: .top, spacing: 6) {
+                    Circle().fill(Theme.Status.green)
+                        .frame(width: 5, height: 5)
+                        .padding(.top, 5)
+                    Text(line)
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(12)
+    }
+
+    static let safetyLines = [
+        "Deleting moves files to the Trash and their items out of the library; nothing leaves until you delete it here.",
+        "Every repair works on a copy, archives the original, and re-probes before replacing anything.",
+        "Neither is reverted from a log: a repair keeps its original under _Replaced, and a deleted file is in the Trash until that is emptied.",
+    ]
 
     private func candidateRow(_ candidate: DuplicateCandidate) -> some View {
         let a = itemsByID[candidate.itemAID]?.fileName ?? "?"
@@ -306,6 +346,8 @@ struct ReviewView: View {
                     onFailed: { decisionError = $0 })
                     .id(candidate.id)
             }
+        } else if !firstRead.landed {
+            FirstReadPlaceholder()
         } else {
             empty(
                 title: candidates.isEmpty ? "No pending duplicates" : "Pick a pair",
@@ -316,7 +358,9 @@ struct ReviewView: View {
     }
 
     @ViewBuilder private var deleteCentre: some View {
-        if deleteList.isEmpty {
+        if !firstRead.landed {
+            FirstReadPlaceholder()
+        } else if firstRead.showsEmpty(deleteList.isEmpty) {
             empty(
                 title: "Nothing marked for deletion",
                 detail: "Press D during a triage pass, or resolve a duplicate group, and the files land here.")
@@ -410,6 +454,8 @@ struct ReviewView: View {
                 evidence: evidence,
                 recipes: recipes,
                 pickedRecipeID: $pickedRecipeID)
+        } else if !firstRead.landed {
+            FirstReadPlaceholder()
         } else {
             empty(
                 title: issues.isEmpty ? "No playback issues" : "Pick a file",
@@ -442,12 +488,7 @@ struct ReviewView: View {
                 .foregroundStyle(Theme.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
-            if let errorText {
-                Text(errorText)
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Status.red)
-                    .lineLimit(2)
-            }
+            StatusLine(errorText.map { .error($0) })
             switch mode {
             case .duplicates:
                 EmptyView()
@@ -455,7 +496,13 @@ struct ReviewView: View {
                 Button("Restore selected") { restoreSelected() }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                     .disabled(deleteTicked.isEmpty)
-                Button(isPurging ? "Deleting…" : "Delete \(deleteTicked.count) files") { askBeforePurging() }
+                // The count and the bytes are the TICKED set's: what this
+                // button does, not what the list holds.
+                Button(isPurging
+                    ? "Deleting…"
+                    : "Delete \(deleteTicked.count) files · \(ByteCountFormatter.string(fromByteCount: reclaimableTicked, countStyle: .file))") {
+                    askBeforePurging()
+                }
                     .buttonStyle(DestructiveButtonStyle())
                     .disabled(deleteTicked.isEmpty || isPurging)
                     .unsavedSegmentsPrompt(
@@ -463,12 +510,16 @@ struct ReviewView: View {
                         deletableCount: deleteTicked.count - (unsavedSegments?.count ?? 0),
                         saveSegments: { model.saveSegmentsAsFiles($0) },
                         deleteTheOthers: { purge() })
+                    // The same shape as Maintenance's purge: a short titled
+                    // question, the count and the bytes in the body, a
+                    // destructive button that carries its count, Cancel.
                     .confirmationDialog(
                         "Delete \(deleteTicked.count) files?", isPresented: $confirmDelete
                     ) {
-                        Button("Delete", role: .destructive) { purge() }
+                        Button("Delete \(deleteTicked.count) Files", role: .destructive) { purge() }
+                        Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("The files move to the Trash and their items leave the library. On a volume that has no Trash they are deleted for good.")
+                        Text("\(deleteTicked.count) files move to the Trash and their items leave the library · \(ByteCountFormatter.string(fromByteCount: reclaimableTicked, countStyle: .file)) reclaimed. On a volume that has no Trash they are deleted for good.")
                     }
             case .issues:
                 // Worked out from the selected issue, so it says why Run fix
@@ -674,6 +725,7 @@ struct ReviewView: View {
                 // as one answer from the library.
                 let lists = try await service.reviewLists()
                 guard generation == reloadGeneration else { return }
+                firstRead.land()
                 candidates = lists.candidates
                 itemsByID = lists.candidateItems
                 if selectedCandidateID == nil
@@ -696,6 +748,9 @@ struct ReviewView: View {
                 reclaimable = lists.reclaimableBytes
             } catch {
                 guard generation == reloadGeneration else { return }
+                // A failed read is still an answer: the error says why
+                // the queues are empty, where a spinner would not.
+                firstRead.land()
                 errorText = "\(error)"
             }
         }

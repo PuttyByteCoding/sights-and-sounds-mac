@@ -217,7 +217,7 @@ struct NewLibraryView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(Theme.categoryHue(entry.hashValue))
+                                .fill(Theme.categoryHue(LibraryTemplate.allCases.firstIndex(of: entry) ?? 0))
                                 .frame(width: 7, height: 7)
                             Text(entry.displayName)
                                 .font(Theme.ui(12.5, .semibold))

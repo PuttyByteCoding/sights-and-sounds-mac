@@ -85,7 +85,7 @@ struct HistoryPanel: View {
         } label: {
             HStack(spacing: 0) {
                 Text(item.fileName)
-                    .font(Theme.ui(11.5, playing ? .semibold : .regular))
+                    .font(Theme.mono(11.5, playing ? .semibold : .regular))
                     .foregroundStyle(playing ? Theme.Accent.amber : Theme.Text.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -100,9 +100,7 @@ struct HistoryPanel: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                    .fill(selected ? Theme.Surface.selectedRow : .clear))
+            .railRowSelection(selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

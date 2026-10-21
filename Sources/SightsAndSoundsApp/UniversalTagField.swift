@@ -132,10 +132,14 @@ struct ScreenFrame: Equatable {
 /// listed first and the raw lines under them; Enter on a tag applies it,
 /// Enter on a line opens New Tag seeded with it to clean up and create.
 /// Typing searches the whole vocabulary with the analysis's matches
-/// first. Esc closes whichever list is up and leaves the field empty.
+/// first — the item's own tags included, marked, so a click or Enter on
+/// one takes it OFF (the panel's `onApply` is a toggle): the field is
+/// also how a tag in any category is found to be removed. Esc closes
+/// whichever list is up and leaves the field empty.
 struct UniversalTagField: View {
     let index: [TagSearchEntry]
-    /// Tags already on the item — never offered.
+    /// Tags already on the item — never OFFERED by the ↑ ↓ ⇧↓ lists,
+    /// which exist to suggest; a typed search lists them as applied.
     let appliedIDs: Set<UUID>
     /// The session's recent applies, newest first, for ↑ on an empty
     /// query. Empty disables the gesture.
@@ -218,6 +222,8 @@ struct UniversalTagField: View {
         let matchedAlias: String?
         var fromAnalysis = false
         var fromScreen = false
+        /// Already on the item: picking this row removes the tag.
+        var applied = false
         var id: UUID { tag.id }
     }
 
@@ -238,6 +244,36 @@ struct UniversalTagField: View {
         let leading = Array(analysis.prefix(limit))
         let seen = Set(leading.map(\.id))
         return leading + rest.lazy.filter { !seen.contains($0.id) }.prefix(max(0, limit - leading.count))
+    }
+
+    /// A typed search over every category: what the analysis found
+    /// leads (unapplied only — it is a suggestion), then the whole
+    /// vocabulary ranked, the item's own tags among them marked
+    /// `applied` so the row reads as "on this item — pick to remove".
+    /// Pure, so it is tested.
+    static func searchHits(
+        index: [TagSearchEntry], appliedIDs: Set<UUID>, analysisTagIDs: [UUID],
+        query: String, limit: Int
+    ) -> [Hit] {
+        let byID = Dictionary(uniqueKeysWithValues: index.map { ($0.tag.id, $0) })
+        func hit(_ row: TagSearchEntry, alias: String?, fromAnalysis: Bool) -> Hit {
+            Hit(
+                tag: row.tag, categoryName: row.categoryName,
+                categoryHue: Theme.categoryHue(row.colorIndex),
+                matchedAlias: alias, fromAnalysis: fromAnalysis,
+                applied: appliedIDs.contains(row.tag.id))
+        }
+        let analysisRows = analysisTagIDs.compactMap { id -> TagSearchEntry? in
+            guard !appliedIDs.contains(id) else { return nil }
+            return byID[id]
+        }
+        let leading = TagSearchEntry.ranked(analysisRows, query: query, limit: limit).map {
+            hit($0.entry, alias: $0.alias, fromAnalysis: true)
+        }
+        let rest = TagSearchEntry.ranked(index, query: query, limit: limit).map {
+            hit($0.entry, alias: $0.alias, fromAnalysis: false)
+        }
+        return merged(analysis: leading, rest: rest, limit: limit)
     }
 
     /// The screen read as rows: the tags the text names (minus the
@@ -354,19 +390,10 @@ struct UniversalTagField: View {
         }
         // The analysis's matches lead — the tags the evidence names are
         // the likeliest answer to whatever is being typed — then the
-        // vocabulary, ranked before it is cut.
-        let byID = entriesByID
-        let analysisRows = analysisTagIDs.compactMap { id -> TagSearchEntry? in
-            guard !appliedIDs.contains(id) else { return nil }
-            return byID[id]
-        }
-        let leading = TagSearchEntry.ranked(analysisRows, query: query, limit: limit).map {
-            hit($0.entry, alias: $0.alias, fromAnalysis: true)
-        }
-        let rest = TagSearchEntry.ranked(
-            index.filter { !appliedIDs.contains($0.tag.id) }, query: query, limit: limit
-        ).map { hit($0.entry, alias: $0.alias) }
-        return Self.merged(analysis: leading, rest: rest, limit: limit)
+        // vocabulary, ranked before it is cut, applied tags marked.
+        return Self.searchHits(
+            index: index, appliedIDs: appliedIDs, analysisTagIDs: analysisTagIDs,
+            query: query, limit: limit)
     }
 
     /// Every row in walk order: tags, then screen lines.
@@ -439,6 +466,7 @@ struct UniversalTagField: View {
                     .textFieldStyle(.plain)
                     .font(Theme.ui(12))
                     .focused(focus, equals: focusID)
+                    .help("Every tag in every category — a pick applies it, or removes it when it is on the item; Enter with nothing picked creates")
                     .onSubmit(commit)
                     .onChange(of: draft) { _, _ in
                         highlighted = nil
@@ -655,8 +683,8 @@ struct UniversalTagField: View {
             HStack(spacing: 6) {
                 Circle().fill(hit.categoryHue).frame(width: 6, height: 6)
                 Text(hit.tag.name)
-                    .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.primary)
+                    .font(Theme.ui(12, hit.applied ? .semibold : .regular))
+                    .foregroundStyle(hit.applied ? Theme.Accent.amber : Theme.Text.primary)
                 if let alias = hit.matchedAlias {
                     Text("(\(alias))")
                         .font(Theme.ui(11))
@@ -667,6 +695,13 @@ struct UniversalTagField: View {
                         .font(Theme.mono(10))
                         .foregroundStyle(Theme.Accent.amber)
                 }
+                // On the item already: the pick takes it off, and the
+                // row must say so before the click.
+                if hit.applied {
+                    Image(systemName: "checkmark")
+                        .font(Theme.ui(9, .bold))
+                        .foregroundStyle(Theme.Accent.amber)
+                }
                 Spacer(minLength: 6)
                 Text(hit.categoryName)
                     .font(Theme.ui(10))
@@ -674,12 +709,14 @@ struct UniversalTagField: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                    .fill(active ? Theme.Surface.selectedRow : .clear))
+            .highlightedSuggestion(active)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(hit.applied ? "On this item — click to remove" : "Click to apply")
+        .accessibilityLabel(
+            hit.applied ? "\(hit.tag.name), \(hit.categoryName), applied" : "\(hit.tag.name), \(hit.categoryName)")
+        .accessibilityHint(hit.applied ? "Removes the tag" : "Applies the tag")
     }
 
     private func lineRow(_ line: String, active: Bool) -> some View {
@@ -698,9 +735,7 @@ struct UniversalTagField: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                    .fill(active ? Theme.Surface.selectedRow : .clear))
+            .highlightedSuggestion(active)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

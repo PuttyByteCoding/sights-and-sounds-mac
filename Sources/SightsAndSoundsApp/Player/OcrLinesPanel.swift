@@ -192,7 +192,7 @@ private struct LineRow: View {
     private func action(_ label: String, _ perform: @escaping () -> Void) -> some View {
         Button(label, action: perform)
             .buttonStyle(.plain)
-            .font(Theme.ui(10.5))
+            .font(Theme.ui(Theme.TypeScale.secondary))
             .foregroundStyle(Theme.Text.quaternary)
     }
 
@@ -334,7 +334,7 @@ private struct OcrTagSheet: View {
                     .foregroundStyle(Theme.Text.secondary)
                 Spacer(minLength: 0)
                 Text(choice.hint)
-                    .font(Theme.ui(10.5))
+                    .font(Theme.ui(Theme.TypeScale.secondary))
                     .foregroundStyle(Theme.Text.meta)
             }
             .padding(.vertical, 6)

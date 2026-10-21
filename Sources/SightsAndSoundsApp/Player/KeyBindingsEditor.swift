@@ -54,44 +54,36 @@ struct KeyBindingsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Tag Key Bindings").font(.title3)
+            Text("Tag Key Bindings")
+                .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
+                .foregroundStyle(Theme.Text.primary)
 
             let bindings = model.boundKeys.values.sorted { $0.key < $1.key }
             let names = namesByID
             if bindings.isEmpty {
                 Text("No bindings yet. A bound key toggles its tag on the playing item. Digits stamp from inside a tag field too.")
-                    .foregroundStyle(.secondary)
+                    .font(Theme.ui(Theme.TypeScale.body))
+                    .foregroundStyle(Theme.Text.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
-                List(bindings, id: \.key) { binding in
-                    HStack {
-                        Text(binding.key.count == 1 ? binding.key.uppercased() : binding.key)
-                            .font(.body.monospaced())
-                            .frame(width: 36, alignment: .leading)
-                        Text(names[binding.tagID] ?? "(deleted tag)")
-                        Spacer()
-                        // The flag is edited where it is read: flip it on
-                        // the row, and the binding is rewritten at once.
-                        Toggle("Advances", isOn: Binding(
-                            get: { binding.advance },
-                            set: { flag in
-                                Task {
-                                    errorText = await model.setKeyBinding(
-                                        binding.key, tagID: binding.tagID, advance: flag)
-                                }
-                            }))
-                            .toggleStyle(.checkbox)
-                            .font(.caption)
-                            .help("Applying the tag also moves to the next item")
-                        Button {
-                            Task { _ = await model.removeKeyBinding(binding.key) }
-                        } label: { Image(systemName: "trash") }
-                            .buttonStyle(.plain)
+                // Themed rows on a raised plate, not a system List: the
+                // sheet sits inside a charcoal window and must read as
+                // part of it (design review 2026-10-20, S5).
+                ScrollView {
+                    VStack(spacing: 1) {
+                        ForEach(bindings, id: \.key) { binding in
+                            bindingRow(binding, name: names[binding.tagID])
+                        }
                     }
                 }
-                .frame(minHeight: 140)
+                .frame(minHeight: 140, maxHeight: 220)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(Theme.Surface.raised)
+                        .stroke(Theme.Border.standard, lineWidth: 1))
             }
 
-            Divider()
+            Divider().overlay(Theme.Border.standard)
 
             HStack {
                 Picker("Key", selection: $selectedKey) {
@@ -107,7 +99,8 @@ struct KeyBindingsEditor: View {
                 // pick IS the bind, with the Advance toggle as its flag.
                 // The row appears above; the field clears for the next.
                 TextField("Find a tag to bind to \(selectedKey.count == 1 ? selectedKey.uppercased() : selectedKey)…", text: $query)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(12))
                     .focused($queryFocused)
                     .onSubmit {
                         if let row = highlighted ?? matches.first { bind(row) }
@@ -115,8 +108,18 @@ struct KeyBindingsEditor: View {
                     .onKeyPress(.downArrow) { move(1) }
                     .onKeyPress(.upArrow) { move(-1) }
                     .onChange(of: query) { _, _ in highlighted = nil }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.control)
+                            .fill(Theme.Surface.well)
+                            .stroke(
+                                queryFocused ? Theme.Border.activeControl : Theme.Border.standard,
+                                lineWidth: 1))
 
                 Toggle("Advance", isOn: $advance)
+                    .font(Theme.ui(Theme.TypeScale.secondary))
+                    .foregroundStyle(Theme.Text.secondary)
                     .help("New bindings advance to the next item when their tag is applied")
             }
 
@@ -145,9 +148,7 @@ struct KeyBindingsEditor: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.chip)
-                                    .fill(active ? Theme.Surface.selectedRow : .clear))
+                            .highlightedSuggestion(active)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -164,7 +165,9 @@ struct KeyBindingsEditor: View {
             }
 
             if let errorText {
-                Text(errorText).foregroundStyle(.red).font(.callout)
+                Text(errorText)
+                    .font(Theme.ui(Theme.TypeScale.body))
+                    .foregroundStyle(Theme.Status.red)
             }
 
             HStack {
@@ -173,6 +176,7 @@ struct KeyBindingsEditor: View {
                 // way out, so Esc. A button carries one shortcut, so the
                 // cancel key is bound to an unseen twin of it.
                 Button("Done") { dismiss() }
+                    .buttonStyle(PrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .background {
                         Button("Close") { dismiss() }
@@ -184,8 +188,54 @@ struct KeyBindingsEditor: View {
         }
         .padding(16)
         .frame(minWidth: 480)
+        .background(Theme.Surface.dialog)
         .onAppear(perform: rebuildPicks)
         .onChange(of: query) { _, _ in rebuildMatches() }
+    }
+
+    /// One bound key: the key in mono, the tag with its category, the
+    /// Advances flag edited where it is read, and Remove.
+    private func bindingRow(_ binding: TagKeyBinding, name: String?) -> some View {
+        HStack(spacing: 10) {
+            Text(binding.key.count == 1 ? binding.key.uppercased() : binding.key)
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.Text.primary)
+                .frame(width: 36, alignment: .leading)
+            Text(name ?? "(deleted tag)")
+                .font(Theme.ui(Theme.TypeScale.body))
+                .foregroundStyle(name == nil ? Theme.Text.quaternary : Theme.Text.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            // The flag is edited where it is read: flip it on the row,
+            // and the binding is rewritten at once.
+            Toggle("Advances", isOn: Binding(
+                get: { binding.advance },
+                set: { flag in
+                    Task {
+                        errorText = await model.setKeyBinding(
+                            binding.key, tagID: binding.tagID, advance: flag)
+                    }
+                }))
+                .toggleStyle(.checkbox)
+                .font(Theme.ui(Theme.TypeScale.secondary))
+                .foregroundStyle(Theme.Text.tertiary)
+                .help("Applying the tag also moves to the next item")
+            Button {
+                Task { _ = await model.removeKeyBinding(binding.key) }
+            } label: {
+                Image(systemName: "trash")
+                    .font(Theme.ui(11))
+                    .foregroundStyle(Theme.Text.tertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove the binding for \(binding.key.uppercased())")
+            .help("Remove this binding")
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
     }
 
     private var availableKeys: [String] {

@@ -63,6 +63,8 @@ struct GridViewOptions: View {
 
     @State private var activeSlot: TileSlot = .below
     @State private var expanded: TileValue?
+    /// The active view waiting on "are you sure" before it goes.
+    @State private var confirmDeleteView = false
 
     private var display: GridDisplaySettings { GridDisplaySettings.shared }
 
@@ -139,19 +141,31 @@ struct GridViewOptions: View {
                     persist()
                 }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
-                Button("Delete") {
-                    let id = display.grid.activeView.id
-                    display.grid.views.removeAll { $0.id == id }
-                    display.grid.activeViewID = display.grid.views.first?.id
-                    persist()
-                }
-                .buttonStyle(SecondaryButtonStyle(compact: true))
-                // The last view cannot go: a grid with no view has
-                // nothing to draw.
-                .disabled(display.grid.views.count < 2)
+                Button("Delete") { confirmDeleteView = true }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
+                    // The last view cannot go: a grid with no view has
+                    // nothing to draw.
+                    .disabled(display.grid.views.count < 2)
             }
         }
         .padding(.bottom, 14)
+        // Asked first, as deleting a saved filter is: there is no Undo to
+        // take it back, and the five shipped views are rebuilt by hand.
+        .confirmationDialog(deleteViewTitle, isPresented: $confirmDeleteView) {
+            Button("Delete", role: .destructive) { deleteActiveView() }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var deleteViewTitle: String {
+        "Delete the saved view “\(display.grid.activeView.name)”? This cannot be undone."
+    }
+
+    private func deleteActiveView() {
+        let id = display.grid.activeView.id
+        display.grid.views.removeAll { $0.id == id }
+        display.grid.activeViewID = display.grid.views.first?.id
+        persist()
     }
 
     private var viewName: Binding<String> {
@@ -222,7 +236,7 @@ struct GridViewOptions: View {
                     .font(Theme.ui(slot.isOverlay ? 12 : 9.5))
                     .foregroundStyle(
                         active ? Theme.Accent.amber
-                            : entries.isEmpty ? Theme.Border.subtleButtonHover
+                            : entries.isEmpty ? Theme.Text.disabled
                             : Theme.Text.secondary)
                 if !entries.isEmpty {
                     Text(summary(entries))

@@ -27,8 +27,11 @@ struct OrganiseView: View {
     /// The plan, made off the main actor.
     @State private var planner = OrganisePlanner()
     @State private var sessions: [LibraryDatabase.MoveSession] = []
-    @State private var status: String?
-    @State private var errorText: String?
+    /// What the last thing done came to, in the footer: a notice or an
+    /// error, never both at once in two colours.
+    @State private var status: StatusLineState?
+    /// "No Moves Yet" is an answer only once the history has been read.
+    @State private var historyRead = FirstRead()
     /// Move is being queued.
     @State private var applying = false
     /// A reorganize of this library is queued or running — from this
@@ -52,6 +55,7 @@ struct OrganiseView: View {
             case .plan: planTab
             case .history: historyTab
             }
+            footer
         }
         .frame(minWidth: 940, minHeight: 580)
         .background(Theme.Surface.content)
@@ -111,20 +115,25 @@ struct OrganiseView: View {
             .font(Theme.mono(11))
             .foregroundStyle(Theme.Text.quaternary)
             Spacer()
-            if let status {
-                Text(status)
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Accent.amber)
-            }
-            if let errorText {
-                Text(errorText)
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Status.red)
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
+    }
+
+    /// Status lives in the footer, where Review, Operations and
+    /// Maintenance keep theirs — one place per window.
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Spacer()
+            StatusLine(status)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 62)
+        .background(Theme.Surface.toolbar)
+        .overlay(alignment: .top) {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
         }
     }
@@ -360,7 +369,9 @@ struct OrganiseView: View {
 
     private var historyTab: some View {
         Group {
-            if sessions.isEmpty {
+            if !historyRead.landed {
+                FirstReadPlaceholder()
+            } else if historyRead.showsEmpty(sessions.isEmpty) {
                 VStack(spacing: 6) {
                     Text("No Moves Yet")
                         .font(Theme.ui(15, .semibold))
@@ -399,10 +410,14 @@ struct OrganiseView: View {
                     .foregroundStyle(Theme.Text.tertiary)
                 stateChip(session.state)
                 Spacer()
-                if session.revertibleCount > 0 {
-                    Button("Put all back") { revert(session) }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                }
+                // Unavailable, not hidden: a fully reverted run keeps the
+                // button, greyed, with the reason.
+                Button("Put all back") { revert(session) }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
+                    .disabled(session.revertibleCount == 0)
+                    .help(session.revertibleCount == 0
+                        ? "Nothing in this run can be put back"
+                        : "Put the \(session.revertibleCount) moves in this run back")
             }
             ForEach(session.logs) { log in
                 HStack(spacing: 8) {
@@ -434,11 +449,12 @@ struct OrganiseView: View {
                         .frame(width: 190, alignment: .leading)
                     if log.revertedAt == nil {
                         Button("Put back") { revert(log) }
-                            .buttonStyle(.plain)
-                            .font(Theme.ui(10.5))
-                            .foregroundStyle(Theme.Text.quaternary)
+                            .buttonStyle(SecondaryButtonStyle(compact: true))
                             .frame(width: 92, alignment: .trailing)
                     } else {
+                        // The word and the strike carry the state; the
+                        // row stays at full opacity so the paths — the
+                        // evidence — stay readable.
                         Text("reverted")
                             .font(Theme.ui(10.5))
                             .foregroundStyle(Theme.Text.meta)
@@ -506,7 +522,7 @@ struct OrganiseView: View {
                 // Returns once queued: history and the plan refresh when
                 // the moves land (the window follows the library's items).
                 try await model.service.run(.reorganize(template: template, itemIDs: ids), wait: .none)
-                status = "\(count) moves queued — each one logged and revertible"
+                status = .notice("\(count) moves queued — each one logged and revertible")
                 await readMoveQueue()
                 // Move stays unavailable until the queue confirms the moves
                 // (then "Moves queued…" takes over), so a second click
@@ -516,7 +532,7 @@ struct OrganiseView: View {
                 applying = false
             } catch {
                 applying = false
-                errorText = "\(error)"
+                status = .error("Could not queue the moves: \(error)")
             }
         }
     }
@@ -527,8 +543,8 @@ struct OrganiseView: View {
         Task {
             do {
                 try await service.revertMove(logID: id)
-                errorText = nil
-            } catch { errorText = "\(error)" }
+                status = .notice("\(log.fileName) put back")
+            } catch { status = .error("Could not put \(log.fileName) back: \(error)") }
             reloadHistory()
         }
     }
@@ -537,7 +553,7 @@ struct OrganiseView: View {
     /// and a run can be thousands.
     private func revert(_ session: LibraryDatabase.MoveSession) {
         let service = model.service
-        status = "Putting \(session.revertibleCount) moves back…"
+        status = .notice("Putting \(session.revertibleCount) moves back…")
         Task {
             let result: Result<MoveRevertOutcome, any Error>
             do {
@@ -552,17 +568,23 @@ struct OrganiseView: View {
     private func finishRevert(_ result: Result<MoveRevertOutcome, any Error>) {
         do {
             let outcome = try result.get()
-            errorText = outcome.failures.isEmpty
-                ? nil : outcome.failures.joined(separator: "; ")
-            status = "\(outcome.reverted) moves put back"
+            // A run only partly put back is an error with its count, not
+            // a notice with a footnote.
+            status = outcome.failures.isEmpty
+                ? .notice("\(outcome.reverted) moves put back")
+                : .error("\(outcome.reverted) moves put back; " + outcome.failures.joined(separator: "; "))
             reloadHistory()
-        } catch { errorText = "\(error)" }
+        } catch { status = .error("Could not put the run back: \(error)") }
     }
 
     private func reloadHistory() {
         let service = model.service
-        // A history that cannot be read leaves the one on screen.
-        Task { if let read = try? await service.moveSessions() { sessions = read } }
+        // A history that cannot be read leaves the one on screen — but it
+        // has been asked for, so an empty one is no longer a guess.
+        Task {
+            if let read = try? await service.moveSessions() { sessions = read }
+            historyRead.land()
+        }
     }
 }
 

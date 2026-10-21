@@ -45,14 +45,23 @@ struct MaintenanceView: View {
         _wholeLibrary = State(initialValue: scope == nil)
     }
     @State private var runs: [TagWriteRun] = []
+    /// What each run can be put back from; empty from a library whose Mac
+    /// does not say.
+    @State private var runReverts: [TagWriteRunRevert] = []
+    /// The run whose restore is being confirmed.
+    @State private var restoring: TagWriteRunRevert?
     @State private var backups: [LibraryDatabase.BackupFile] = []
     @State private var findings: [ValidationFinding] = []
     @State private var stagedCount = 0
     @State private var reclaimable: Int64 = 0
     @State private var sweeping = false
     @State private var sweepPaused = false
-    @State private var status: String?
-    @State private var errorText: String?
+    /// What the last thing done came to, in the footer: a notice or an
+    /// error, never both at once in two colours.
+    @State private var status: StatusLineState?
+    /// "No Findings" and "No backups yet" are answers only once the first
+    /// read has landed.
+    @State private var firstRead = FirstRead()
     @State private var confirmPurge = false
     @State private var isPurging = false
     @State private var unsavedSegments: [LibraryDatabase.UnsavedSegments]?
@@ -88,17 +97,6 @@ struct MaintenanceView: View {
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.Text.quaternary)
                 Spacer()
-                if let status {
-                    Text(status)
-                        .font(Theme.ui(11.5))
-                        .foregroundStyle(Theme.Accent.amber)
-                }
-                if let errorText {
-                    Text(errorText)
-                        .font(Theme.ui(11.5))
-                        .foregroundStyle(Theme.Status.red)
-                        .lineLimit(2)
-                }
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -269,15 +267,28 @@ struct MaintenanceView: View {
                             // The value being overwritten is load-bearing
                             // data, so it is quaternary or lighter — one
                             // of the three places a sub-AA grey shipped.
-                            Text(field.previousValues.joined(separator: "; "))
-                                .font(Theme.mono(10))
-                                .foregroundStyle(Theme.Text.quaternary)
-                                .strikethrough()
+                            // "was" says what the strike alone does not,
+                            // to the eye and to VoiceOver.
+                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                Text("was")
+                                    .font(Theme.mono(10))
+                                    .foregroundStyle(Theme.Text.quaternary)
+                                Text(field.previousValues.joined(separator: "; "))
+                                    .font(Theme.mono(10))
+                                    .foregroundStyle(Theme.Text.quaternary)
+                                    .strikethrough()
+                            }
                         }
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 14)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(field.name)
+                .accessibilityValue(
+                    field.previousValues.isEmpty
+                        ? "becomes \(field.newValues.joined(separator: "; "))"
+                        : "was \(field.previousValues.joined(separator: "; ")), becomes \(field.newValues.joined(separator: "; "))")
             }
         }
         .padding(10)
@@ -290,7 +301,7 @@ struct MaintenanceView: View {
     private var backupCentre: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                if backups.isEmpty {
+                if firstRead.showsEmpty(backups.isEmpty) {
                     Text("No backups yet. Back up now writes one dated file into the backup folder.")
                         .font(Theme.ui(12))
                         .foregroundStyle(Theme.Text.meta)
@@ -342,7 +353,9 @@ struct MaintenanceView: View {
 
     private var validationCentre: some View {
         Group {
-            if findings.isEmpty {
+            if !firstRead.landed {
+                FirstReadPlaceholder()
+            } else if firstRead.showsEmpty(findings.isEmpty) {
                 VStack(spacing: 6) {
                     Text("No Findings")
                         .font(Theme.ui(15, .semibold))
@@ -402,7 +415,7 @@ struct MaintenanceView: View {
             if let itemID = finding.mediaItemID {
                 Button("Mark for Deletion") {
                     let service = model.service
-                    Writes.run("mark the item for deletion", report: $errorText, then: { _ in reload() }) {
+                    Writes.run("mark the item for deletion", report: errorReport, then: { _ in reload() }) {
                         // One the library could not mark comes back with
                         // why, and is said like any other failure.
                         if let failure = try await service.setStaging(.toDelete, on: true, itemIDs: [itemID]).first {
@@ -427,7 +440,7 @@ struct MaintenanceView: View {
             if let itemID = finding.mediaItemID {
                 Button("Accept Disk Size") {
                     let service = model.service
-                    Writes.run("accept the size on disk", report: $errorText, then: { _ in reload() }) {
+                    Writes.run("accept the size on disk", report: errorReport, then: { _ in reload() }) {
                         try await service.acceptDiskSize(itemID: itemID)
                     }
                 }
@@ -445,20 +458,7 @@ struct MaintenanceView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Recent runs").modifier(Theme.sectionLabel())
                         ForEach(runs) { run in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(run.scopeDescription)
-                                    .font(Theme.ui(11.5))
-                                    .foregroundStyle(Theme.Text.secondary)
-                                    .lineLimit(1)
-                                Text(run.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(Theme.mono(10))
-                                    .foregroundStyle(Theme.Text.meta)
-                            }
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.control)
-                                    .fill(Theme.Surface.raised))
+                            runRow(run)
                         }
                     }
                 }
@@ -481,6 +481,69 @@ struct MaintenanceView: View {
         }
         .frame(width: 310)
         .background(Theme.Surface.raised)
+    }
+
+    /// A run is the unit of undo: its scope, when, how it went, whether it
+    /// has been put back, and the button that puts it back.
+    private func runRow(_ run: TagWriteRun) -> some View {
+        let revert = runReverts.first { $0.runID == run.id }
+        let restorable = revert.map { !$0.snapshotIDs.isEmpty } ?? false
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(run.scopeDescription)
+                    .font(Theme.ui(11.5))
+                    .foregroundStyle(Theme.Text.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let revert { revertChip(revert.state) }
+            }
+            HStack(spacing: 8) {
+                Text(run.startedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
+                Text(run.failedCount > 0
+                    ? "\(run.writtenCount) written · \(run.failedCount) failed"
+                    : "\(run.writtenCount) written")
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.quaternary)
+            }
+            // Unavailable, not hidden: a run with nothing to restore from
+            // keeps the button and says why.
+            Button("Restore embedded tags") { restoring = revert }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .disabled(!restorable)
+                .help(restoreHelp(run: run, revert: revert))
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Theme.Surface.raised))
+    }
+
+    private func restoreHelp(run: TagWriteRun, revert: TagWriteRunRevert?) -> String {
+        guard let revert else { return "This library's Mac does not say what the run can be put back from" }
+        if revert.snapshotIDs.isEmpty {
+            return run.writtenCount == 0
+                ? "Nothing was written in this run"
+                : "The snapshots this run took are gone"
+        }
+        return "Put back the tags each of the \(revert.snapshotIDs.count) files had before this run wrote it"
+    }
+
+    private func revertChip(_ state: TagWriteRunRevert.State) -> some View {
+        switch state {
+        case .applied:
+            ThemeBadge(text: state.displayName)
+        case .partlyReverted:
+            ThemeBadge(
+                text: state.displayName, fill: Theme.Status.warnBadgeFill,
+                foreground: Theme.Status.orange)
+        case .reverted:
+            ThemeBadge(
+                text: state.displayName, fill: Theme.Surface.iconTile,
+                foreground: Theme.Text.tertiary)
+        }
     }
 
     /// Different per tab, always three, always specific.
@@ -516,6 +579,7 @@ struct MaintenanceView: View {
                 .foregroundStyle(Theme.Text.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
+            StatusLine(status)
             switch tab {
             case .writeback:
                 Button("Preview only") { runPreview() }
@@ -523,6 +587,21 @@ struct MaintenanceView: View {
                 Button("Write tags") { writeTags() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(preview?.writableFiles.isEmpty ?? true)
+                    // The restore confirm hangs off the footer so it is
+                    // presented once, whichever run's button asked.
+                    .confirmationDialog(
+                        "Restore the embedded tags of \(restoring?.snapshotIDs.count ?? 0) files?",
+                        isPresented: Binding(
+                            get: { restoring != nil },
+                            set: { if !$0 { restoring = nil } })
+                    ) {
+                        Button("Restore \(restoring?.snapshotIDs.count ?? 0) Files") {
+                            if let restoring { restore(restoring) }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Each file gets back the tags it had before this run wrote it. What is in the file now is snapshotted first, so the restore is itself undoable.")
+                    }
             case .backup:
                 Button("Reveal in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting(
@@ -545,12 +624,17 @@ struct MaintenanceView: View {
                     deletableCount: stagedCount - (unsavedSegments?.count ?? 0),
                     saveSegments: { model.saveSegmentsAsFiles($0) },
                     deleteTheOthers: { purge() })
+                // The same shape as Review's delete: a short titled
+                // question, the count and the bytes in the body, a
+                // destructive button that carries its count, Cancel.
                 .confirmationDialog(
-                    "Remove \(stagedCount) marked items and move their staged files to the Trash? On a volume that has no Trash the files are deleted for good.",
+                    "Delete \(stagedCount) marked items?",
                     isPresented: $confirmPurge
                 ) {
                     Button("Delete \(stagedCount) Items", role: .destructive) { purge() }
                     Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("\(stagedCount) items leave the library and their staged files move to the Trash · \(ByteCountFormatter.string(fromByteCount: reclaimable, countStyle: .file)) reclaimed. On a volume that has no Trash the files are deleted for good.")
                 }
                 Button(sweeping ? (sweepPaused ? "Waiting — tasks are paused" : "Sweeping…") : "Run Sweep") {
                     runSweep()
@@ -587,6 +671,38 @@ struct MaintenanceView: View {
     /// library works out for itself.
     private var scopeIDs: [UUID]? { wholeLibrary ? nil : (scope ?? []) }
 
+    /// Where `Writes.run` reports a failure: into the footer's status
+    /// line, as an error.
+    private var errorReport: Binding<String?> {
+        Binding(
+            get: {
+                if case .error(let text)? = status { return text }
+                return nil
+            },
+            set: { status = $0.map(StatusLineState.error) })
+    }
+
+    /// Queue a restore per file of the run — each its own job, as the
+    /// kit models it, each taking its own pre-restore snapshot.
+    private func restore(_ revert: TagWriteRunRevert) {
+        restoring = nil
+        let service = model.service, ids = revert.snapshotIDs
+        Task {
+            var queued = 0
+            do {
+                for id in ids {
+                    try await service.run(.restoreSnapshot(id), wait: .none)
+                    queued += 1
+                }
+                status = .notice("Restoring \(queued) files — follow it in Background Tasks")
+            } catch {
+                status = .error(
+                    "Could not queue the restore after \(queued) of \(ids.count) files: \(error)")
+            }
+            reload(includingBackups: false)
+        }
+    }
+
     private func runPreview() {
         previewing = true
         status = nil
@@ -605,7 +721,7 @@ struct MaintenanceView: View {
         model.writeTags(itemIDs: ids, scope: wholeLibrary
             ? "whole library (\(ids.count) files)"
             : "filtered (\(ids.count) files)")
-        status = "Queued — follow it in Background Tasks"
+        status = .notice("Queued — follow it in Background Tasks")
         reload()
     }
 
@@ -614,11 +730,10 @@ struct MaintenanceView: View {
         Task {
             do {
                 let backup = try await service.backUp()
-                status = "Backed up to \(backup.lastPathComponent)"
-                errorText = nil
+                status = .notice("Backed up to \(backup.lastPathComponent)")
                 reload()
             } catch {
-                errorText = "Backup failed: \(error)"
+                status = .error("Backup failed: \(error)")
             }
         }
     }
@@ -631,7 +746,7 @@ struct MaintenanceView: View {
             sweeping = false
             // Counted once the findings it found have landed: counted here,
             // straight after asking, it was the count from before the sweep.
-            reload { status = "\(findings.count) findings" }
+            reload { status = .notice("\(findings.count) findings") }
         }
     }
 
@@ -642,7 +757,7 @@ struct MaintenanceView: View {
                 let unsaved = try await service.unsavedSegmentsOfMarked(itemIDs: nil)
                 if unsaved.isEmpty { confirmPurge = true } else { unsavedSegments = unsaved }
             } catch {
-                errorText = "\(error)"
+                status = .error("\(error)")
             }
         }
     }
@@ -682,10 +797,13 @@ struct MaintenanceView: View {
                 text += " \(outcome.rowFailures.count) items could not be removed from the library: "
                     + outcome.rowFailures.joined(separator: "; ")
             }
-            status = text
+            // A purge that left anything behind is reported as the
+            // failure it partly was.
+            let partly = !outcome.fileFailures.isEmpty || !outcome.rowFailures.isEmpty
+            status = partly ? .error(text) : .notice(text)
             reload()
         } catch {
-            errorText = "\(error)"
+            status = .error("\(error)")
         }
     }
 
@@ -714,9 +832,13 @@ struct MaintenanceView: View {
                 findings = read.findings
                 if let listed = read.backups { backups = listed }
                 runs = read.runs
+                runReverts = read.runReverts ?? []
                 stagedCount = read.stagedCount
                 reclaimable = read.reclaimableBytes
             }
+            // Asked, whatever the answer: the empty states are no longer
+            // guesses.
+            firstRead.land()
             reloading = false
             if reloadAgain {
                 reloadAgain = false
