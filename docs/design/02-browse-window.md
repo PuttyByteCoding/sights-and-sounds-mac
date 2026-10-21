@@ -32,6 +32,21 @@ disappearing — "exists but unused for this kind" is the information (#96).
 - A **legend** at the foot of the sidebar. Three colours and three glyphs is more than a
   first-time user will infer.
 
+**As built (Oct 2026).** Two of the points above landed differently, on purpose:
+
+- There is no chip bar above the grid. Every live slot — plus the folder, the search
+  text and the offline toggle, which have no chip — is listed in a **pinned filter
+  block at the top of the sidebar** (`LibraryWindowView` detail column,
+  `SidebarView.filterStatus`). The sidebar stays visible while the player owns the
+  detail column; a bar over the grid would vanish the moment you pressed Play. Each row
+  removes itself, Clear all clears the lot, and the block scrolls inside itself past
+  three rows so it never costs the tree its height.
+- Right-click does not step the cycle backwards. It opens the tag's menu, whose first
+  items are **Required / Optional / Excluded / Clear filter** — explicit, with a tick on
+  the current state — so any slot is one click and the editor keeps the gesture people
+  reach for. The legend footnote reads accordingly (see Copy). The bulk bar's Deselect
+  is a compact button labelled `Deselect` with Esc in its tooltip.
+
 ## 3 · Missing is a filter value
 
 Each category ends with an italic **`Missing — no <Category> tag`** row carrying its own

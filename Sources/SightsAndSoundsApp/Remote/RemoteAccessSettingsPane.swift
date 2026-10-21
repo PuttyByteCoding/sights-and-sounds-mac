@@ -12,18 +12,18 @@ struct RemoteAccessSettingsPane: View {
     @State private var address = ""
     @State private var showingCode = false
     @State private var revoking: ApprovedDevice?
+    /// How many Macs were approved when the code went up: one more when
+    /// the sheet comes down means the code was used.
+    @State private var approvedBeforeCode = 0
+    /// What became of the last code — said here, because the sheet is
+    /// gone by the time there is anything to say.
+    @State private var lastCodeOutcome: String?
 
     private var model: RemoteAccessModel { app.remoteAccess }
 
     var body: some View {
         Form {
-            HStack(spacing: 6) {
-                Image(systemName: "laptopcomputer")
-                Text("Applies to this Mac — every library. The approved Macs are kept in a file only you can read.")
-                Spacer()
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            ScopeHeader(scope: .app, storage: "The approved Macs are kept in a file only you can read.")
 
             Section("Remote Access") {
                 Toggle("Let approved Macs use this Mac\u{2019}s libraries", isOn: Binding(
@@ -55,6 +55,8 @@ struct RemoteAccessSettingsPane: View {
                     let chosen = addresses.contains(address) ? address : (addresses.first ?? "")
                     Task {
                         await model.beginPairing(address: chosen)
+                        approvedBeforeCode = model.devices.count
+                        lastCodeOutcome = nil
                         showingCode = model.pairingCode != nil
                     }
                 }
@@ -62,6 +64,11 @@ struct RemoteAccessSettingsPane: View {
                 Text(pairingLine(addresses))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let lastCodeOutcome {
+                    Text(lastCodeOutcome)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Approved Macs") {
@@ -88,8 +95,22 @@ struct RemoteAccessSettingsPane: View {
             await model.refresh()
             if address.isEmpty { address = model.addresses.first ?? "" }
         }
-        .sheet(isPresented: $showingCode, onDismiss: { Task { await model.endPairing() } }) {
-            PairingCodeSheet(model: model) { showingCode = false }
+        .sheet(isPresented: $showingCode, onDismiss: {
+            Task {
+                await model.endPairing()
+                await model.refresh()
+                if model.devices.count > approvedBeforeCode,
+                   let newest = model.devices.max(by: { $0.approvedAt < $1.approvedAt }) {
+                    lastCodeOutcome = "The last code was used by \(newest.name)."
+                } else if lastCodeOutcome == nil {
+                    lastCodeOutcome = "The last code was withdrawn unused."
+                }
+            }
+        }) {
+            PairingCodeSheet(model: model) { ranOut in
+                if ranOut { lastCodeOutcome = "The last code ran out before a Mac used it." }
+                showingCode = false
+            }
         }
         // The name is the other Mac's word for itself, so it is shown
         // as that, on its own line, not inside the question.
@@ -130,8 +151,24 @@ struct RemoteAccessSettingsPane: View {
 /// while this is up: closing it withdraws the code.
 private struct PairingCodeSheet: View {
     let model: RemoteAccessModel
-    let close: () -> Void
+    /// Called with `true` when the host withdrew the code (used, or out
+    /// of time) and `false` when Done was pressed.
+    let close: (Bool) -> Void
     @State private var copied = false
+    /// When the sheet went up — the code is good for ten minutes from
+    /// here, and the time left is said in words rather than implied by
+    /// the sheet vanishing.
+    @State private var shownAt = Date()
+    private static let lifetime: TimeInterval = 10 * 60
+
+    private func timeLeft(at now: Date) -> String {
+        let remaining = max(0, Self.lifetime - now.timeIntervalSince(shownAt))
+        let minutes = Int(remaining / 60)
+        let seconds = Int(remaining) % 60
+        if remaining <= 0 { return "The code has run out." }
+        if minutes >= 2 { return "Good for about \(minutes) more minutes and for one Mac." }
+        return "Good for \(minutes):\(String(format: "%02d", seconds)) more and for one Mac."
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -155,7 +192,13 @@ private struct PairingCodeSheet: View {
                     NSPasteboard.general.setString(code.text, forType: .string)
                     copied = true
                 }
-                Text("For \(code.address), port \(code.port). Good for ten minutes and for one Mac. Anyone who sees it in that time can ask to be let in, and you will be asked before they are.")
+                TimelineView(.periodic(from: shownAt, by: 1)) { context in
+                    Text(timeLeft(at: context.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Text("For \(code.address), port \(code.port). Anyone who sees it in that time can ask to be let in, and you will be asked before they are.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -164,13 +207,16 @@ private struct PairingCodeSheet: View {
                 Text("The code has been used or has run out.")
                     .foregroundStyle(.secondary)
             }
-            Button("Done", action: close)
+            Button("Done") { close(false) }
                 .keyboardShortcut(.defaultAction)
         }
         .padding(24)
-        // Used, or out of time: there is nothing left here to show.
+        .onAppear { shownAt = Date() }
+        // Used, or out of time: there is nothing left here to show, and
+        // the pane behind says which it was.
         .onChange(of: model.pairingCode) { _, code in
-            if code == nil { close() }
+            copied = false
+            if code == nil { close(true) }
         }
     }
 }

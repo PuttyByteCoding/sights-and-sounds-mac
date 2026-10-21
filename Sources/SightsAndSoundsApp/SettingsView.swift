@@ -20,14 +20,14 @@ struct SettingsView: View {
                 .tabItem { Label("Jobs", systemImage: "gearshape.2") }
             RepairSettingsPane()
                 .tabItem { Label("Repair", systemImage: "bandage") }
+            RemoteAccessSettingsPane()
+                .tabItem { Label("Remote Access", systemImage: "lock.laptopcomputer") }
             VocabularySettingsPane()
                 .tabItem { Label("Tag Category Configuration", systemImage: "tag") }
             SearchSettingsPane()
                 .tabItem { Label("Search String", systemImage: "magnifyingglass") }
             LibraryImportSettingsPane()
                 .tabItem { Label("Library Import", systemImage: "square.and.arrow.down.on.square") }
-            RemoteAccessSettingsPane()
-                .tabItem { Label("Remote Access", systemImage: "lock.laptopcomputer") }
         }
         // A minimum, not a fixed width — the Settings window resizes
         // like any other (#73). The infinity maximums matter: the
@@ -89,13 +89,21 @@ private struct SettingsWindowConfigurator: NSViewRepresentable {
 struct ScopeHeader: View {
     enum Scope { case app, library }
     let scope: Scope
+    /// Where the pane's data lives, when it is not the scope's usual
+    /// place — Remote Access keeps the approved Macs in a file of its own.
+    var storage: String? = nil
+
+    init(scope: Scope, storage: String? = nil) {
+        self.scope = scope
+        self.storage = storage
+    }
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: scope == .app ? "laptopcomputer" : "books.vertical")
             Text(scope == .app
-                ? "Applies to this Mac — every library. Stored in settings.json."
-                : "Applies to the selected library only. Stored in its library file.")
+                ? "Applies to this Mac — every library. \(storage ?? "Stored in settings.json.")"
+                : "Applies to the selected library only. \(storage ?? "Stored in its library file.")")
             Spacer()
         }
         .font(.caption)
@@ -875,6 +883,20 @@ private struct RepairSettingsPane: View {
                             Text(recipe.risk.displayName)
                                 .font(.caption)
                                 .foregroundStyle(recipe.risk == .lossy ? .orange : .green)
+                            // Order IS offer order (spec 13a §3), so it
+                            // is editable here, by keyboard-reachable
+                            // buttons rather than a drag.
+                            let index = recipes.firstIndex { $0.id == recipe.id } ?? 0
+                            Button { move(recipe, up: true) } label: { Image(systemName: "arrow.up") }
+                                .controlSize(.small)
+                                .disabled(index == 0)
+                                .accessibilityLabel("Offer \(recipe.name) earlier")
+                                .help("Offer this recipe earlier")
+                            Button { move(recipe, up: false) } label: { Image(systemName: "arrow.down") }
+                                .controlSize(.small)
+                                .disabled(index == recipes.count - 1)
+                                .accessibilityLabel("Offer \(recipe.name) later")
+                                .help("Offer this recipe later")
                         }
                         if !isAvailable(recipe.tool) {
                             Text("\(recipe.tool) not found")
@@ -930,6 +952,24 @@ private struct RepairSettingsPane: View {
             tools = lists.0
             recipes = lists.1
         }
+    }
+
+    /// Swap places with the neighbour: both rows take the other's
+    /// `sortOrder`, so the stored order and the shown order stay one
+    /// thing. Equal sortOrders (the seed gives 0, 1, 2, 9) are first
+    /// spread to the list's positions, or two swaps could cancel out.
+    private func move(_ recipe: RepairRecipe, up: Bool) {
+        guard let index = recipes.firstIndex(where: { $0.id == recipe.id }) else { return }
+        let other = up ? index - 1 : index + 1
+        guard recipes.indices.contains(other) else { return }
+        var ordered = recipes
+        for position in ordered.indices { ordered[position].sortOrder = position }
+        ordered.swapAt(index, other)
+        for position in ordered.indices { ordered[position].sortOrder = position }
+        for changed in ordered where changed.sortOrder != recipes.first(where: { $0.id == changed.id })?.sortOrder {
+            try? app.appDatabase?.saveRepairRecipe(changed)
+        }
+        recipes = ordered
     }
 
     private func save(_ recipe: RepairRecipe) {

@@ -52,4 +52,25 @@ import Testing
         ticks.listLoaded([a, b])
         #expect(ticks.ticked == [a, b])
     }
+
+    /// The Delete button's bytes are the ticked set's, not the list's: a
+    /// file held back by unticking it frees nothing.
+    @Test func reclaimableBytesAreSummedOverTheTickedSetOnly() {
+        var ticks = DeleteListTicks()
+        ticks.listLoaded([a, b, c])
+        let sizes: [UUID: Int64] = [a: 100, b: 250, c: 1_000]
+        #expect(ticks.reclaimableBytes(sizes: sizes) == 1_350)
+        ticks.toggle(c)
+        #expect(ticks.reclaimableBytes(sizes: sizes) == 350, "an unticked file was still counted")
+        ticks.clear()
+        #expect(ticks.reclaimableBytes(sizes: sizes) == 0)
+    }
+
+    /// A ticked file the list no longer carries (restored meanwhile)
+    /// counts for nothing rather than for a stale size.
+    @Test func aTickedFileWithNoListedSizeCountsForNothing() {
+        var ticks = DeleteListTicks()
+        ticks.listLoaded([a, b])
+        #expect(ticks.reclaimableBytes(sizes: [a: 40]) == 40)
+    }
 }

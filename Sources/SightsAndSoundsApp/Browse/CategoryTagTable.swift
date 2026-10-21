@@ -52,8 +52,13 @@ struct TagTableHeader: View {
                     .buttonStyle(SecondaryButtonStyle(compact: true))
                 Button("Paste List…", action: onPaste)
                     .buttonStyle(SecondaryButtonStyle(compact: true))
-                Button("+ Tag", action: onAddTag)
-                    .buttonStyle(PrimaryButtonStyle())
+                // The same "new" affordance as the sidebar's: a plus
+                // glyph, in the quiet weight, not a typed "+".
+                Button(action: onAddTag) {
+                    Label("Tag", systemImage: "plus")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .help("New tag in this category")
             }
         }
         .padding(.horizontal, 16)
@@ -108,8 +113,18 @@ struct TagTable: View {
                     Section {
                         ForEach(rows) { row in
                             if let header = row.clusterHeader {
-                                Text(header)
-                                    .modifier(Theme.sectionLabel(Theme.Accent.amber))
+                                // The count is a label; the winner's name
+                                // is NOT — the section-label modifier
+                                // uppercases, which would hide the one
+                                // thing a case-only drift needs shown.
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text("\(header.count) variants ·")
+                                        .modifier(Theme.sectionLabel(Theme.Accent.amber))
+                                    Text(header.winner)
+                                        .font(Theme.ui(10, .semibold))
+                                        .foregroundStyle(Theme.Accent.amber)
+                                        .lineLimit(1)
+                                }
                                     .padding(.horizontal, 16)
                                     .padding(.top, 12)
                                     .padding(.bottom, 5)

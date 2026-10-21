@@ -24,9 +24,14 @@ struct LibraryPropertiesView: View {
     @State private var errorText: String?
     @State private var draftName = ""
     @State private var statusText: String?
+    /// A failure shares the strip with a success, but never its colour:
+    /// "Backup failed" in the success amber was read as a success.
+    @State private var statusIsError = false
     @State private var tab: Tab = .info
     @State private var separators = "-._"
-    @State private var newExtension = ""
+    @State private var newSeparator = ""
+    @State private var newVideoExtension = ""
+    @State private var newAudioExtension = ""
 
     enum Tab: String, CaseIterable {
         case info, configuration
@@ -52,7 +57,10 @@ struct LibraryPropertiesView: View {
                         if let statusText {
                             Text(statusText)
                                 .font(Theme.ui(11.5))
-                                .foregroundStyle(Theme.Accent.amber)
+                                .foregroundStyle(statusIsError ? Theme.Status.redBright : Theme.Accent.amber)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .help(statusText)
                         }
                     }
                     .padding(.horizontal, 14)
@@ -230,6 +238,16 @@ struct LibraryPropertiesView: View {
                         .padding(.horizontal, 8)
                         .background(Capsule().fill(Theme.Surface.iconTile))
                     }
+                    // A removed separator can come back: the field takes
+                    // one or more characters and keeps the ones not
+                    // already in the set.
+                    TextField("", text: $newSeparator, prompt: Text("add"))
+                        .themeField(font: Theme.mono(11))
+                        .frame(width: 64)
+                        .disabled(isRemote)
+                        .onSubmit { addSeparators() }
+                        .accessibilityLabel("Add separator characters")
+                        .help("Type a character and press Return")
                 }
                 Text("\"dave-matthews.band_live_2024-06-14\" → \"\(separatorExample)\"")
                     .font(Theme.mono(10.5))
@@ -316,6 +334,19 @@ struct LibraryPropertiesView: View {
                     .background(Capsule().fill(Theme.Surface.iconTile))
                     .opacity(override == nil ? 0.6 : 1)
                 }
+                if override != nil {
+                    // An override that can only shrink would force "Use
+                    // app defaults" and "Override here" to get one
+                    // extension back. Typed as "mkv" or ".mkv".
+                    TextField(
+                        "", text: isVideo ? $newVideoExtension : $newAudioExtension,
+                        prompt: Text("add"))
+                        .themeField(font: Theme.mono(10.5))
+                        .frame(width: 72)
+                        .onSubmit { addExtension(isVideo: isVideo) }
+                        .accessibilityLabel("Add \(isVideo ? "video" : "audio") extension")
+                        .help("Type an extension and press Return")
+                }
             }
             if override != nil {
                 Text("Differs from the app-wide list. Existing items are untouched — this changes what the next scan picks up.")
@@ -397,13 +428,43 @@ struct LibraryPropertiesView: View {
 
     // MARK: - Writes
 
+    private func setStatus(_ text: String, error: Bool = false) {
+        statusText = text
+        statusIsError = error
+    }
+
+    private func addSeparators() {
+        let typed = newSeparator.filter { !$0.isWhitespace && !separators.contains($0) }
+        newSeparator = ""
+        guard !typed.isEmpty else { return }
+        separators.append(contentsOf: typed)
+        saveSeparators()
+    }
+
     private func saveSeparators() {
         let value = separators
         Task {
             do {
                 try await app.service(for: libraryID).setSeparatorCharacters(value)
-                statusText = "Separators saved."
-            } catch { statusText = "\(error)" }
+                setStatus("Separators saved.")
+            } catch { setStatus("Could not save the separators: \(error)", error: true) }
+        }
+    }
+
+    private func addExtension(isVideo: Bool) {
+        let raw = isVideo ? newVideoExtension : newAudioExtension
+        if isVideo { newVideoExtension = "" } else { newAudioExtension = "" }
+        let ext = raw.trimmingCharacters(in: .whitespaces)
+            .drop(while: { $0 == "." }).lowercased()
+        guard !ext.isEmpty, let info = snapshot?.info else { return }
+        if isVideo {
+            let current = info.videoExtensionsOverride ?? []
+            guard !current.contains(ext) else { return }
+            saveOverrides(video: current + [ext], audio: info.audioExtensionsOverride)
+        } else {
+            let current = info.audioExtensionsOverride ?? []
+            guard !current.contains(ext) else { return }
+            saveOverrides(video: info.videoExtensionsOverride, audio: current + [ext])
         }
     }
 
@@ -435,7 +496,7 @@ struct LibraryPropertiesView: View {
             do {
                 try await app.service(for: libraryID).setExtensionOverrides(video: video, audio: audio)
                 await load()
-            } catch { statusText = "\(error)" }
+            } catch { setStatus("Could not save the extensions: \(error)", error: true) }
         }
     }
 
@@ -464,10 +525,10 @@ struct LibraryPropertiesView: View {
                 // The list of libraries takes the name from the library.
                 try app.appDatabase?.register(try app.library(for: libraryID))
                 app.refresh()
-                statusText = "Renamed to \u{201C}\(name)\u{201D}."
+                setStatus("Renamed to \u{201C}\(name)\u{201D}.")
                 await load()
             } catch {
-                statusText = "Rename failed: \(error)"
+                setStatus("Rename failed: \(error)", error: true)
             }
         }
     }
@@ -476,12 +537,12 @@ struct LibraryPropertiesView: View {
         Task {
             do {
                 let backup = try await app.service(for: libraryID).backUp()
-                statusText = "Backed up to \(backup.lastPathComponent)"
+                setStatus("Backed up to \(backup.lastPathComponent)")
                 // On the Mac that made it; from another it is named above.
                 if !isRemote { NSWorkspace.shared.activateFileViewerSelecting([backup]) }
                 await load()
             } catch {
-                statusText = "Backup failed: \(error)"
+                setStatus("Backup failed: \(error)", error: true)
             }
         }
     }

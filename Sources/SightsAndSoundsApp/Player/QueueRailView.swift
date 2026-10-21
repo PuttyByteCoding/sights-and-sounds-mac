@@ -37,7 +37,7 @@ struct QueueRailView: View {
                 if !model.queue.requiredTagIDs.isEmpty {
                     Button("Clear") { model.queue.requiredTagIDs = [] }
                         .buttonStyle(.plain)
-                        .font(Theme.ui(10.5))
+                        .font(Theme.ui(Theme.TypeScale.secondary))
                         .foregroundStyle(Theme.Text.tertiary)
                 }
             }

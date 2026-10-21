@@ -8,6 +8,22 @@ enum ClickKind: Equatable {
     init(clickCount: Int?) {
         self = (clickCount ?? 1) >= 2 ? .double : .single
     }
+
+    /// Read off the event being handled. Only a mouse event carries a
+    /// click count — asking a key press for one raises — so a button
+    /// pressed from the keyboard or by VoiceOver is a single click.
+    init(event: NSEvent?) {
+        guard let event, Self.mouseUps.contains(event.type) else {
+            self = .single
+            return
+        }
+        self.init(clickCount: event.clickCount)
+    }
+
+    private static let mouseUps: Set<NSEvent.EventType> = [
+        .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+        .otherMouseDown, .otherMouseUp,
+    ]
 }
 
 extension View {
@@ -23,5 +39,28 @@ extension View {
             case .double: double()
             }
         }
+    }
+}
+
+/// The same single-or-double handler, as a button rather than a tap
+/// gesture: a row that is a button has a button's traits, a focus ring
+/// to reach from the keyboard, and VoiceOver reads it as one thing.
+/// The action still reads the click's own count, so the first click
+/// selects at once and the second opens.
+struct ClickButton<Label: View>: View {
+    let single: () -> Void
+    let double: () -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button {
+            switch ClickKind(event: NSApp.currentEvent) {
+            case .single: single()
+            case .double: double()
+            }
+        } label: {
+            label
+        }
+        .buttonStyle(.plain)
     }
 }

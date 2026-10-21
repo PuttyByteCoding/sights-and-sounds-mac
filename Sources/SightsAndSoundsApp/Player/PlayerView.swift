@@ -1124,7 +1124,7 @@ private struct PanelToggles: View {
                 .padding(.vertical, 5)
                 .padding(.horizontal, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
                         .fill(on ? Theme.Surface.segmentSelected : .clear))
         }
         .buttonStyle(.plain)
@@ -1154,7 +1154,7 @@ private struct FocusFooter: View {
                         .padding(.vertical, 2)
                         .padding(.horizontal, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 3)
+                            RoundedRectangle(cornerRadius: Theme.Radius.chip)
                                 .fill(model.zone == zone
                                     ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile))
                 }
@@ -1191,13 +1191,16 @@ private struct FocusFooter: View {
         let base = model.zone == .video
             ? "\(labels.segmentOpen) \(labels.segmentClose) segment · \(labels.triage) triage · numpad seek · Tab moves focus"
             : "Esc releases to video · numpad seek still works · Tab moves focus"
-        // The modes that change the keyboard under you: the digits',
-        // whenever a digit is bound, and the laptop numpad while it is on.
-        var hint = base
+        // The modes that change the keyboard under you: triage, while it
+        // is on, leads — it changes what the flag keys DO; then the
+        // digits', whenever a digit is bound; then the laptop numpad,
+        // named by its key while off so a keyboard without a keypad is
+        // told how to get one, and by its off key while on.
+        var hint = model.triageMode ? "Triage · \(model.triageCount) done · \(base)" : base
         if model.hasDigitBindings {
             hint += model.digitsStampTags ? " · 1–9 stamp tags" : " · 1–9 type"
         }
-        if model.laptopNumpad { hint += " · laptop numpad on (⌃⌃ off)" }
+        hint += model.laptopNumpad ? " · laptop numpad on (⌃⌃ off)" : " · ⌃⌃ laptop numpad"
         return hint
     }
 }
@@ -1328,15 +1331,14 @@ private struct SegmentRowView: View {
                         model.renameSegment(row.id, to: draftName)
                         renaming = nil
                     }
+            } else if row.isRenameable {
+                name(selected: selected)
+                    .help("Double-click to rename")
             } else {
-                Text(row.name)
-                    .font(Theme.ui(12))
-                    .foregroundStyle(selected ? Theme.Text.primary : Theme.Text.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                name(selected: selected)
             }
             Spacer(minLength: 4)
-            Text("\(TransportBarTime.format(row.start))–\(TransportBarTime.format(row.end))")
+            Text(row.rangeText)
                 .font(Theme.mono(9.5))
                 .foregroundStyle(Theme.Text.disabled)
             Button {
@@ -1362,25 +1364,42 @@ private struct SegmentRowView: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 12)
-        .background(selected ? Theme.Surface.selectedSegment : .clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle()
-                    .fill(Theme.Accent.amber)
-                    .frame(width: Theme.Border.selectionInsetWidth)
-            }
-        }
+        .railRowSelection(selected)
         .contentShape(Rectangle())
         .onClicks(
             single: {
                 model.selectedSegmentID = row.id
                 model.zone = .segments
             },
-            double: {
-                guard row.isRenameable else { return }
-                draftName = row.name
-                renaming = row.id
-            })
+            double: beginRename)
+        // Rename is double-click for the mouse; the menu and the
+        // VoiceOver action reach the same path without it.
+        .contextMenu {
+            if row.isRenameable {
+                Button("Rename", action: beginRename)
+            }
+        }
+        .modifier(SegmentRowAccessibility(
+            row: row, selected: selected, editing: renaming == row.id,
+            rename: beginRename,
+            play: { model.playSegment(row) },
+            remove: { model.removeSegment(row) }))
+    }
+
+    private func name(selected: Bool) -> some View {
+        Text(row.name)
+            .font(Theme.ui(12))
+            .foregroundStyle(selected ? Theme.Text.primary : Theme.Text.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+    }
+
+    /// The one rename path: double-click, the Rename menu item and the
+    /// VoiceOver action all land here. A hide block has no name to give.
+    private func beginRename() {
+        guard row.isRenameable else { return }
+        draftName = row.name
+        renaming = row.id
     }
 
     private var hue: Color {
@@ -1388,6 +1407,49 @@ private struct SegmentRowView: View {
         case .song: Theme.Segment.song
         case .clip: Theme.Segment.clip
         case .hide: Theme.Segment.hide
+        }
+    }
+}
+
+/// A segment row to VoiceOver: one button — `Song Tweezer, 0:12–1:30 ·
+/// 1:18`, selected or not — with Rename, Play and Remove as actions. The
+/// row is a click target rather than a `Button` (Finder-style single and
+/// double click), so the traits are declared here. While the name is
+/// being edited the row is left as its parts, so the field is reachable.
+private struct SegmentRowAccessibility: ViewModifier {
+    let row: SegmentRow
+    let selected: Bool
+    let editing: Bool
+    let rename: () -> Void
+    let play: () -> Void
+    let remove: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if editing {
+            content
+        } else {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(row.accessibilityLabel)
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+                .accessibilityAction(named: "Play", play)
+                .accessibilityAction(named: "Remove", remove)
+                .modifier(RenameAction(enabled: row.isRenameable, rename: rename))
+        }
+    }
+
+    private struct RenameAction: ViewModifier {
+        let enabled: Bool
+        let rename: () -> Void
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if enabled {
+                content.accessibilityAction(named: "Rename", rename)
+            } else {
+                content
+            }
         }
     }
 }
@@ -1405,7 +1467,7 @@ struct ZoneBadge: View {
             .padding(.vertical, 1)
             .padding(.horizontal, 5)
             .background(
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: Theme.Radius.chip)
                     .fill(active ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile))
     }
 }
@@ -1637,7 +1699,7 @@ private struct ScrubberView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: Self.previewWidth)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
                     .shadow(radius: 3)
             }
             Text(TransportBarTime.format(seconds))
@@ -1646,7 +1708,7 @@ private struct ScrubberView: View {
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .background(
-                    RoundedRectangle(cornerRadius: 3).fill(Theme.Surface.iconTile))
+                    RoundedRectangle(cornerRadius: Theme.Radius.chip).fill(Theme.Surface.iconTile))
         }
         .offset(x: overlayX(fraction: fraction, width: width), y: -Self.previewWidth * 9 / 16 / 2 - 44)
         .allowsHitTesting(false)
@@ -1783,7 +1845,7 @@ private struct QueuePanel: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text(model.queue.title)
-                    .font(Theme.ui(10.5, .semibold))
+                    .font(Theme.ui(Theme.TypeScale.secondary, .semibold))
                     .foregroundStyle(Theme.Text.secondary)
                     .lineLimit(1)
                 Text("\(model.queueItems.count)")
@@ -1833,6 +1895,9 @@ private struct QueuePanel: View {
                 .disabled(model.isRefreshingQueue)
                 .accessibilityLabel("Refresh this queue")
                 .help("Refresh — re-run this queue's definition (⌘R)")
+                // The same Tab badge the rail's panels carry: the queue
+                // is a zone too, and its ring alone did not say so.
+                ZoneBadge(zone: .queue)
             }
             .padding(.horizontal, 8)
             .frame(height: Self.headerHeight)
@@ -1939,10 +2004,10 @@ private struct QueueCell: View {
             .frame(width: cellWidth)
             .padding(3)
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(isCurrent ? Theme.Accent.amber.opacity(0.15) : Color.clear))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .stroke(isCurrent ? Theme.Accent.amber : Color.clear, lineWidth: 2))
             .help(item.fileName)
             .task(id: item.id) {
@@ -2010,7 +2075,7 @@ private struct KeyMapSheet: View {
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(Theme.Surface.well)
                     .stroke(Theme.Border.standard, lineWidth: 1))
             .padding(.horizontal, 16)
@@ -2098,7 +2163,7 @@ private struct KeyMapSheet: View {
             .frame(width: 150)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(differs && active ? Theme.Surface.selectedRow : .clear))
     }
 }

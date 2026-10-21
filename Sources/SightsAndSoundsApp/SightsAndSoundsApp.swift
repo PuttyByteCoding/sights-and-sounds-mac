@@ -717,10 +717,22 @@ struct BrowseModelFocusKey: FocusedValueKey {
     typealias Value = BrowseModel
 }
 
+/// The focused library window's "show the command palette" switch, so
+/// View ▸ Command Palette… (⌃K) is a menu item anyone can find rather
+/// than a shortcut you had to be told about.
+struct CommandPaletteFocusKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 extension FocusedValues {
     var browseModel: BrowseModel? {
         get { self[BrowseModelFocusKey.self] }
         set { self[BrowseModelFocusKey.self] = newValue }
+    }
+
+    var commandPalette: Binding<Bool>? {
+        get { self[CommandPaletteFocusKey.self] }
+        set { self[CommandPaletteFocusKey.self] = newValue }
     }
 
     var openLibraryID: UUID? {
@@ -762,8 +774,17 @@ struct ViewMenuCommands: View {
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.openLibraryID) private var focusedLibraryID
     @FocusedValue(\.browseModel) private var focusedBrowse
+    @FocusedBinding(\.commandPalette) private var commandPalette
 
     var body: some View {
+        Divider()
+        // ⌃K over the library window: one field reaching windows,
+        // filters, tagging, operations and views. A menu shortcut is read
+        // before any view's key handler, so it works from the grid, the
+        // player and a tag field alike.
+        Button("Command Palette…") { commandPalette = true }
+            .keyboardShortcut("k", modifiers: .control)
+            .disabled(commandPalette == nil)
         Divider()
         Group {
             aux("Tag Manager", .categories, key: "1")
@@ -861,16 +882,26 @@ struct PlayerRequest: Hashable {
 /// playback, filters) runs on data that is fake by construction.
 struct DemoLibraryButton: View {
     @Environment(AppModel.self) private var model
-    @State private var busyText: String?
+    /// Where "working…" is said. Inside the picker's More… menu the
+    /// button is a menu item, and a menu that is closed cannot show
+    /// progress — so the picker lends a binding and draws the label in
+    /// its own row. Standing alone, the button says it itself.
+    var busyText: Binding<String?>?
+    var inMenu = false
+    @State private var ownBusyText: String?
+
+    private var busy: Binding<String?> { busyText ?? $ownBusyText }
 
     var body: some View {
-        if let busyText {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(busyText).font(.caption)
-            }
-        } else {
+        if inMenu {
             Button("Create Demo Library…", systemImage: "sparkles") { create() }
+                .disabled(busy.wrappedValue != nil)
+                .help("A fake concert collection with generated media files")
+        } else if let text = busy.wrappedValue {
+            LibraryGenerationLabel(text: text)
+        } else {
+            Button("Create Demo Library…") { create() }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("A fake concert collection with generated media files")
         }
     }
@@ -884,7 +915,7 @@ struct DemoLibraryButton: View {
         panel.prompt = "Create Here"
         guard panel.runModal() == .OK, let folder = panel.url else { return }
 
-        busyText = "Generating demo library…"
+        busy.wrappedValue = "Generating demo library…"
         let appDatabase = model.appDatabase
         Task.detached(priority: .userInitiated) {
             var failure: String?
@@ -912,7 +943,7 @@ struct DemoLibraryButton: View {
             }
             let message = failure
             await MainActor.run {
-                busyText = nil
+                busy.wrappedValue = nil
                 if let message { model.loadError = "Demo library failed: \(message)" }
                 model.refresh()
             }
@@ -926,16 +957,24 @@ struct DemoLibraryButton: View {
 /// What the sweep concludes about them can be set beside what they are.
 struct SignalSamplesLibraryButton: View {
     @Environment(AppModel.self) private var model
-    @State private var busyText: String?
+    /// See `DemoLibraryButton.busyText`: lent by the picker when this is
+    /// a menu item, so the progress reads while the menu is closed.
+    var busyText: Binding<String?>?
+    var inMenu = false
+    @State private var ownBusyText: String?
+
+    private var busy: Binding<String?> { busyText ?? $ownBusyText }
 
     var body: some View {
-        if let busyText {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(busyText).font(.caption)
-            }
-        } else {
+        if inMenu {
             Button("Create Signal Samples…", systemImage: "waveform.path.ecg") { create() }
+                .disabled(busy.wrappedValue != nil)
+                .help("Short generated files, each showing one property Media Signal reads (needs ffmpeg)")
+        } else if let text = busy.wrappedValue {
+            LibraryGenerationLabel(text: text)
+        } else {
+            Button("Create Signal Samples…") { create() }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Short generated files, each showing one property Media Signal reads (needs ffmpeg)")
         }
     }
@@ -953,7 +992,7 @@ struct SignalSamplesLibraryButton: View {
         panel.prompt = "Create Here"
         guard panel.runModal() == .OK, let folder = panel.url else { return }
 
-        busyText = "Making signal samples…"
+        busy.wrappedValue = "Making signal samples…"
         let appDatabase = model.appDatabase
         Task.detached(priority: .userInitiated) {
             var failure: String?
@@ -965,7 +1004,7 @@ struct SignalSamplesLibraryButton: View {
                     mediaFolder: folder.appendingPathComponent("Signal Samples", isDirectory: true),
                     ffmpeg: ffmpeg, registerIn: appDatabase
                 ) { done, total in
-                    Task { @MainActor in busyText = "Making signal samples… \(done) of \(total)" }
+                    Task { @MainActor in busy.wrappedValue = "Making signal samples… \(done) of \(total)" }
                 }
             } catch let error as LibraryCreationError {
                 // The name is fixed here; only the folder can change.
@@ -975,7 +1014,7 @@ struct SignalSamplesLibraryButton: View {
             }
             let message = failure
             await MainActor.run {
-                busyText = nil
+                busy.wrappedValue = nil
                 if let message { model.loadError = "Signal samples failed: \(message)" }
                 model.refresh()
             }
@@ -1014,7 +1053,8 @@ struct AddExistingLibraryButton: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Button("Add Existing…", systemImage: "folder.badge.plus") { add() }
+        Button("Add Existing…") { add() }
+            .buttonStyle(SecondaryButtonStyle(compact: true))
             .help("Register a library file — e.g. one the migrator produced")
     }
 
@@ -1043,6 +1083,22 @@ struct AddExistingLibraryButton: View {
             } catch {
                 model.loadError = "Could not add library: \(error)"
             }
+        }
+    }
+}
+
+/// "Generating demo library…" beside a spinner, in the picker's button
+/// row: the one line of progress a library being made has.
+struct LibraryGenerationLabel: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text(text)
+                .font(Theme.ui(Theme.TypeScale.secondary))
+                .foregroundStyle(Theme.Text.tertiary)
+                .lineLimit(1)
         }
     }
 }

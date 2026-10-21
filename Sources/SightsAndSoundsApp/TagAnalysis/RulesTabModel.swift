@@ -23,6 +23,11 @@ final class RulesTabModel {
     /// An Apply in flight: a rule's writes walk the library, so they run
     /// off the main actor and the button waits for them.
     private(set) var isApplying = false
+    /// What "Make a rule from this…" just did — made a rule, or found
+    /// the one already covering the value. Landing on a card with "no
+    /// actions yet" and no word of how you got there was the gap spec
+    /// 14's bridging copy exists to close. Cleared by the next selection.
+    private(set) var notice: String?
 
     private var dryRunTask: Task<Void, Never>?
     /// The draft's walk; tests slow it down to overlap edits with it.
@@ -100,6 +105,7 @@ final class RulesTabModel {
         selectedID = rule.id
         draft = rule
         lastApplied = nil
+        notice = nil
         refreshDryRun()
     }
 
@@ -210,6 +216,9 @@ final class RulesTabModel {
         case .success(let found):
             await reload()
             select(found.rule)
+            notice = found.made
+                ? "New rule from \u{201C}\(value)\u{201D} — add an action to make it do something."
+                : "Already covered by a rule — showing it."
             return found.made
         case .failure(let error):
             loadError = "\(error)"

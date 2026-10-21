@@ -56,6 +56,26 @@ import Testing
         #expect(model.loadError == nil)
     }
 
+    /// Landing on a rule card with "no actions yet" said nothing about
+    /// how you got there. The model now says whether the press made a
+    /// rule or found the one already covering the value — and the next
+    /// selection clears it, so it never describes another rule.
+    @Test func makingARuleSaysWhetherItWasMadeOrFound() async throws {
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "Rules")
+        let model = RulesTabModel(service: LocalLibraryService(library: library))
+
+        #expect(await model.makeRule(key: "artist", value: "Alpha"))
+        #expect(model.notice?.hasPrefix("New rule from \u{201C}Alpha\u{201D}") == true, "\(model.notice ?? "nil")")
+
+        #expect(await model.makeRule(key: "artist", value: "Alpha") == false)
+        #expect(model.notice == "Already covered by a rule — showing it.")
+
+        let rule = try #require(model.rules.first)
+        model.select(rule)
+        #expect(model.notice == nil)
+    }
+
     /// Save Schema pressed twice for a new schema: the second press asked
     /// to make it again and was refused for the name the first had taken.
     @Test func savingANewSchemaTwiceInAHurrySavesItOnce() async throws {

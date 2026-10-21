@@ -677,10 +677,12 @@ private struct JobInspector: View {
                 }
 
                 VStack(spacing: 6) {
-                    ForEach(actions, id: \.self) { action in
+                    ForEach(Self.actions, id: \.self) { action in
                         Button(label(for: action)) { onAction(action) }
                             .buttonStyle(SecondaryButtonStyle(compact: true))
                             .frame(maxWidth: .infinity)
+                            .disabled(!available(action))
+                            .help(requirement(for: action))
                     }
                 }
             }
@@ -688,13 +690,28 @@ private struct JobInspector: View {
         }
     }
 
-    /// Actions follow state, and stay visible when unavailable.
-    private var actions: [JobAction] {
-        switch job.state {
-        case .running: [.cancel]
-        case .queued: [.runNext, .cancel]
-        case .failed, .cancelled: [.retry, .copyError]
-        case .succeeded: [.runAgain]
+    /// Every action, always — greyed when the job's state rules it out,
+    /// with the tooltip saying which state it wants. Hiding them made the
+    /// inspector's foot a different height per row and left no way to
+    /// learn what a queued job could have had done to it.
+    static let actions: [JobAction] = [.runNext, .cancel, .retry, .runAgain, .copyError]
+
+    private func available(_ action: JobAction) -> Bool {
+        switch action {
+        case .cancel: job.state == .running || job.state == .queued
+        case .runNext: job.state == .queued
+        case .retry, .copyError: job.state == .failed || job.state == .cancelled
+        case .runAgain: job.state == .succeeded
+        }
+    }
+
+    private func requirement(for action: JobAction) -> String {
+        switch action {
+        case .cancel: "Only a running or queued job can be cancelled"
+        case .runNext: "Only a queued job can be run next"
+        case .retry: "Only a failed or cancelled job can be retried"
+        case .runAgain: "Only a finished job can be run again"
+        case .copyError: "Only a failed or cancelled job has an error to copy"
         }
     }
 

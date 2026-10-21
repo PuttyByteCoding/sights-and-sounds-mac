@@ -14,6 +14,10 @@ struct CategoryInspector: View {
     let onDelete: () -> Void
 
     @State private var confirmDelete = false
+    /// The name as the library has it, so leaving the field writes only
+    /// when something was typed.
+    @State private var savedName = ""
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -28,7 +32,21 @@ struct CategoryInspector: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.control)
                                 .fill(Theme.Surface.well)
                                 .stroke(Theme.Border.standard, lineWidth: 1))
-                        .onSubmit { onChange(category) }
+                        .focused($nameFocused)
+                        .onSubmit { commitName() }
+                        // Clicking away used to lose the edit: the toggles
+                        // save on change, Notes save on a pause, and the
+                        // name saved on Enter only.
+                        .onChange(of: nameFocused) { was, now in
+                            if FieldCommit.onFocusChange(
+                                from: was, to: now, text: category.name, stored: savedName)
+                            {
+                                commitName()
+                            }
+                        }
+                    Text(FieldCommit.hint)
+                        .font(Theme.ui(10.5))
+                        .foregroundStyle(Theme.Text.quaternary)
                 }
 
                 section("Behaviour") {
@@ -39,13 +57,10 @@ struct CategoryInspector: View {
                         Text("Display style")
                             .font(Theme.ui(12))
                             .foregroundStyle(Theme.Text.secondary)
-                        Picker("", selection: bound(\.displayStyle)) {
-                            ForEach(TagDisplayStyle.allCases, id: \.self) { style in
-                                Text(style.displayName).tag(style)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
+                        ThemeSegmentedControl(
+                            selection: bound(\.displayStyle),
+                            options: TagDisplayStyle.allCases.map { (value: $0, label: $0.displayName) },
+                            emphasis: .neutral)
                         Text("Renders every tag as a toggle instead of autocomplete. Small fixed sets only.")
                             .font(Theme.ui(10.5))
                             .foregroundStyle(Theme.Text.disabled)
@@ -57,13 +72,17 @@ struct CategoryInspector: View {
                 }
 
                 section("Name formatting") {
+                    // A popup, like the write-back field below, not a
+                    // segmented control: the four labels set in the
+                    // app's segmented control come to ~380pt, and this
+                    // column has ~300. The example line underneath shows
+                    // the choice in effect either way.
                     Picker("", selection: bound(\.textFormat)) {
                         Text("As typed").tag(TextFormat.noFormatting)
                         Text("Title Case").tag(TextFormat.titleCase)
                         Text("lowercase").tag(TextFormat.allLowercase)
                         Text("UPPERCASE").tag(TextFormat.allUppercase)
                     }
-                    .pickerStyle(.segmented)
                     .labelsHidden()
                     toggleRow(
                         "Separators to spaces", isOn: bound(\.separatorsToSpaces),
@@ -113,19 +132,32 @@ struct CategoryInspector: View {
                         categoryID: category.id, onChange: onFieldsChange)
                 }
 
-                Button("Delete Category…") { confirmDelete = true }
-                    .buttonStyle(SecondaryButtonStyle(compact: true))
-                    .confirmationDialog(
-                        "Delete \u{201C}\(category.name)\u{201D}?",
-                        isPresented: $confirmDelete
-                    ) {
-                        Button("Delete", role: .destructive) { onDelete() }
-                    } message: {
-                        Text("Removes the category, its \(tagCount) tags, every tagging that used them, and any field values underneath. This cannot be undone from this window.")
-                    }
+                // Set apart from the Add button above it: a rule, a gap,
+                // and red — the one destructive action in this column
+                // must not read as the next item in a list of edits.
+                Divider()
+                Spacer(minLength: 16)
+                Button { confirmDelete = true } label: {
+                    Text("Delete Category…").foregroundStyle(Theme.Status.red)
+                }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .confirmationDialog(
+                    "Delete \u{201C}\(category.name)\u{201D}?",
+                    isPresented: $confirmDelete
+                ) {
+                    Button("Delete", role: .destructive) { onDelete() }
+                } message: {
+                    Text("Removes the category, its \(tagCount) tags, every tagging that used them, and any field values underneath. This cannot be undone from this window.")
+                }
             }
             .padding(14)
         }
+        .onAppear { savedName = category.name }
+    }
+
+    private func commitName() {
+        savedName = category.name
+        onChange(category)
     }
 
     private var preview: String {
@@ -200,6 +232,11 @@ struct TagInspector: View {
     let onChange: () -> Void
 
     @State private var name: String = ""
+    /// The name as the library has it, so leaving the field writes only
+    /// when something was typed — and never re-sends a rename the kit
+    /// has already taken.
+    @State private var savedName: String = ""
+    @FocusState private var nameFocused: Bool
     @State private var notes: String = ""
     /// Notes are written as typed; the window is told once, when this
     /// tag is left, so the list it re-reads carries them without
@@ -212,6 +249,10 @@ struct TagInspector: View {
     @State private var notesSave: Task<Void, Never>?
     @State private var newAlias = ""
     @State private var values: [UUID: String] = [:]
+    /// Field values as the library has them; a field is written on
+    /// leaving it only when it differs.
+    @State private var savedValues: [UUID: String] = [:]
+    @FocusState private var focusedField: UUID?
     @State private var convertTarget: UUID?
     @State private var confirmDelete = false
     @State private var errorText: String?
@@ -236,19 +277,16 @@ struct TagInspector: View {
                             RoundedRectangle(cornerRadius: Theme.Radius.control)
                                 .fill(Theme.Surface.well)
                                 .stroke(Theme.Border.standard, lineWidth: 1))
-                        .onSubmit {
-                            // Renaming onto an existing name is refused by
-                            // the kit: merging is a deliberate operation,
-                            // not a rename side effect.
-                            let service = service, tagID = tag.id, name = name
-                            Task {
-                                do {
-                                    try await service.renameTag(tagID, to: name)
-                                    errorText = nil
-                                } catch { errorText = "\(error)" }
-                                onChange()
+                        .focused($nameFocused)
+                        .onSubmit { commitName() }
+                        .onChange(of: nameFocused) { was, now in
+                            if FieldCommit.onFocusChange(from: was, to: now, text: name, stored: savedName) {
+                                commitName()
                             }
                         }
+                    Text(FieldCommit.hint)
+                        .font(Theme.ui(10.5))
+                        .foregroundStyle(Theme.Text.quaternary)
                 }
 
                 HStack(spacing: 14) {
@@ -398,19 +436,29 @@ struct TagInspector: View {
                                     RoundedRectangle(cornerRadius: Theme.Radius.control)
                                         .fill(Theme.Surface.well)
                                         .stroke(Theme.Border.standard, lineWidth: 1))
-                                .onSubmit {
-                                    let value = values[field.id] ?? "", tagID = tag.id
-                                    Writes.run("save \(field.name)", report: $errorText, then: { _ in onChange() }) {
-                                        [service] in try await service.setFieldValue(value, tagID: tagID, field: field)
-                                    }
-                                }
+                                .focused($focusedField, equals: field.id)
+                                .onSubmit { commitField(field) }
                             }
                         }
+                    }
+                    // On the section, not the ForEach — a modifier on a
+                    // ForEach is applied to every row, and this would
+                    // have written the field once per row. Leaving a
+                    // field (for another, or for anywhere) writes what
+                    // was typed in it.
+                    .onChange(of: focusedField) { was, now in
+                        guard let was, was != now,
+                            let field = fields.first(where: { $0.id == was }),
+                            FieldCommit.onFocusChange(
+                                from: true, to: false,
+                                text: values[was] ?? "", stored: savedValues[was] ?? "")
+                        else { return }
+                        commitField(field)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Instead of deleting").modifier(Theme.sectionLabel())
+                    Text("Convert instead").modifier(Theme.sectionLabel())
                     HStack(spacing: 6) {
                         Picker("", selection: $convertTarget) {
                             Text("Convert to alias of…").tag(UUID?.none)
@@ -432,20 +480,27 @@ struct TagInspector: View {
                         .buttonStyle(SecondaryButtonStyle(compact: true))
                         .disabled(convertTarget == nil)
                     }
-                    Button("Delete Tag…") { confirmDelete = true }
-                        .buttonStyle(SecondaryButtonStyle(compact: true))
-                        .confirmationDialog(
-                            "Delete \u{201C}\(tag.name)\u{201D}?", isPresented: $confirmDelete
-                        ) {
-                            Button("Delete", role: .destructive) {
-                                let tagID = tag.id
-                                Writes.run("delete the tag", report: $errorText, then: { _ in onChange() }) {
-                                    [service] in try await service.deleteTag(tagID)
-                                }
-                            }
-                        } message: {
-                            Text("Removes the tag from \(uses) items. Consider Convert to alias instead — that keeps the taggings and folds the name into another tag.")
+                }
+
+                // Outside the section that offers the alternative, and
+                // set apart from it: a rule, a gap, and red.
+                Divider()
+                Spacer(minLength: 16)
+                Button { confirmDelete = true } label: {
+                    Text("Delete Tag…").foregroundStyle(Theme.Status.red)
+                }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .confirmationDialog(
+                    "Delete \u{201C}\(tag.name)\u{201D}?", isPresented: $confirmDelete
+                ) {
+                    Button("Delete", role: .destructive) {
+                        let tagID = tag.id
+                        Writes.run("delete the tag", report: $errorText, then: { _ in onChange() }) {
+                            [service] in try await service.deleteTag(tagID)
                         }
+                    }
+                } message: {
+                    Text("Removes the tag from \(uses) items. Consider Convert to alias instead — that keeps the taggings and folds the name into another tag.")
                 }
 
                 if let errorText {
@@ -459,10 +514,12 @@ struct TagInspector: View {
         }
         .onAppear {
             name = tag.name
+            savedName = tag.name
             notes = tag.notes
         }
         .task(id: tag.id) {
             values = (try? await service.fieldValues(tagID: tag.id)) ?? [:]
+            savedValues = values
         }
         // Leaving the tag (another selected, or the window closing) is
         // when the list needs to know the notes moved.
@@ -479,6 +536,28 @@ struct TagInspector: View {
         }
     }
 
+    /// Renaming onto an existing name is refused by the kit: merging is
+    /// a deliberate operation, not a rename side effect.
+    private func commitName() {
+        let service = service, tagID = tag.id, name = name
+        savedName = name
+        Task {
+            do {
+                try await service.renameTag(tagID, to: name)
+                errorText = nil
+            } catch { errorText = "\(error)" }
+            onChange()
+        }
+    }
+
+    private func commitField(_ field: FieldDefinition) {
+        let value = values[field.id] ?? "", tagID = tag.id
+        savedValues[field.id] = value
+        Writes.run("save \(field.name)", report: $errorText, then: { _ in onChange() }) {
+            [service] in try await service.setFieldValue(value, tagID: tagID, field: field)
+        }
+    }
+
     private func saveNotes(_ text: String, then: @escaping () -> Void = {}) {
         notesSave = nil
         let service = service, tagID = tag.id
@@ -491,6 +570,23 @@ struct TagInspector: View {
             then()
         }
     }
+}
+
+/// When a text field's focus moves, whether the edit it held is written.
+///
+/// Enter commits; so does leaving the field — a click elsewhere used to
+/// lose the edit silently, while the toggles beside it saved on every
+/// change. Nothing is written when the text is what the library already
+/// has, so a glance into a field costs no write and never re-sends a
+/// rename the kit has already taken.
+enum FieldCommit {
+    static func onFocusChange(from was: Bool, to now: Bool, text: String, stored: String) -> Bool {
+        was && !now && text != stored
+    }
+
+    /// The line under a field that commits this way — the one the tag
+    /// sheet shows, extended with the second way out.
+    static let hint = "Enter saves · so does leaving the field"
 }
 
 /// The fields of one scope, listed and edited in place.

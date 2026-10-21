@@ -585,7 +585,7 @@ struct ImportView: View {
             }
             Spacer()
             Text("\(selection.paths.count) selected")
-                .font(Theme.ui(11.5))
+                .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.Text.quaternary)
             Button(importButtonTitle) {
                 beginImport()
@@ -968,6 +968,10 @@ private struct FinishedSummary: Identifiable, Equatable {
     var id: String { title + text }
 }
 
+/// The four steps, each with a numbered marker: a check on a green
+/// plate for done, the number on amber for the current step, and the
+/// number in an outline for what is still to come — so the position
+/// reads from the markers alone, not from a dot's colour and weight.
 private struct StepStrip: View {
     let step: ImportView.Step
     let scanPath: String?
@@ -976,9 +980,7 @@ private struct StepStrip: View {
         HStack(spacing: 10) {
             ForEach(ImportView.Step.allCases, id: \.self) { entry in
                 HStack(spacing: 6) {
-                    Circle()
-                        .fill(color(for: entry))
-                        .frame(width: 7, height: 7)
+                    marker(for: entry)
                     Text(entry.title)
                         .font(Theme.ui(12, entry == step ? .semibold : .regular))
                         .foregroundStyle(color(for: entry))
@@ -1002,10 +1004,57 @@ private struct StepStrip: View {
         }
     }
 
+    private enum Phase { case done, current, pending }
+
+    private func phase(of entry: ImportView.Step) -> Phase {
+        if entry.rawValue < step.rawValue { return .done }
+        if entry == step { return .current }
+        return .pending
+    }
+
     private func color(for entry: ImportView.Step) -> Color {
-        if entry.rawValue < step.rawValue { return Theme.Status.green }
-        if entry == step { return Theme.Accent.amber }
-        return Theme.Text.disabled
+        switch phase(of: entry) {
+        case .done: Theme.Status.green
+        case .current: Theme.Accent.amber
+        case .pending: Theme.Text.quaternary
+        }
+    }
+
+    @ViewBuilder
+    private func marker(for entry: ImportView.Step) -> some View {
+        let size: CGFloat = 16
+        switch phase(of: entry) {
+        case .done:
+            Circle()
+                .fill(Theme.Status.green)
+                .frame(width: size, height: size)
+                .overlay {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.Text.onAmber)
+                }
+                .accessibilityLabel("Step \(entry.rawValue + 1), done")
+        case .current:
+            Circle()
+                .fill(Theme.Accent.amber)
+                .frame(width: size, height: size)
+                .overlay {
+                    Text("\(entry.rawValue + 1)")
+                        .font(Theme.mono(9.5, .bold))
+                        .foregroundStyle(Theme.Text.onAmber)
+                }
+                .accessibilityLabel("Step \(entry.rawValue + 1), current")
+        case .pending:
+            Circle()
+                .stroke(Theme.Border.raised, lineWidth: 1)
+                .frame(width: size, height: size)
+                .overlay {
+                    Text("\(entry.rawValue + 1)")
+                        .font(Theme.mono(9.5, .semibold))
+                        .foregroundStyle(Theme.Text.quaternary)
+                }
+                .accessibilityLabel("Step \(entry.rawValue + 1)")
+        }
     }
 }
 
@@ -1121,7 +1170,7 @@ private struct ImportSourceRow: View {
                     .foregroundStyle(Theme.Text.quaternary)
                 if let lastSeen = source.lastSeenAt {
                     Text("scanned \(lastSeen.formatted(.relative(presentation: .named)))")
-                        .font(Theme.ui(10))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Text.disabled)
                 }
             }

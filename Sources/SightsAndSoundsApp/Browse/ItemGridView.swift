@@ -601,30 +601,22 @@ private struct BulkBar: View {
                 .popover(isPresented: $showTagRemover, arrowEdge: .top) {
                     BulkTagRemover()
                 }
-            Menu("Review") {
-                Button("Mark as needs review") { Task { await model.markSelectionNeedsReview() } }
-                Button("Mark reviewed") { Task { await model.markSelectionReviewed() } }
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Put these on the Needs Review list, or take them off it")
             divider
-            // Mark and unmark as a pair, so a mixed selection can be
-            // brought to either state in one click.
-            Menu("Deletion") {
-                Button("Mark for deletion") { model.markSelectionForDeletion() }
-                Button("Restore from deletion") { model.unmarkSelectionForDeletion() }
+            // The three marks in one menu, each with its undo beside it,
+            // so a mixed selection can be brought to either state in one
+            // click — and the bar has one control for marking, not three.
+            Menu {
+                ForEach(Array(BulkMark.menuSections.enumerated()), id: \.offset) { index, section in
+                    if index > 0 { Divider() }
+                    ForEach(section, id: \.self) { mark in
+                        Button(mark.title) { Task { await mark.perform(on: model) } }
+                    }
+                }
+            } label: {
+                ThemeMenuLabel("Mark…")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Stage these files for deletion, or put staged ones back")
-            Menu("Won't play") {
-                Button("Mark as won't play") { model.markSelectionWontPlay() }
-                Button("Clear won't play") { model.unmarkSelectionWontPlay() }
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Flag these as having a playback issue, or clear the flag")
+            .themedMenu()
+            .help("Needs Review, the delete list, or won't play — on or off for the whole selection")
             Button("Examine") { model.examineSelection() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Run the Media Signal analysis on these files now, ahead of the library sweep")
@@ -639,10 +631,9 @@ private struct BulkBar: View {
             }
             .buttonStyle(SecondaryButtonStyle(compact: true))
             divider
-            Button("Deselect · esc") { model.clearSelection() }
-                .buttonStyle(.plain)
-                .font(Theme.ui(12))
-                .foregroundStyle(Theme.Text.quaternary)
+            Button("Deselect") { model.clearSelection() }
+                .buttonStyle(SecondaryButtonStyle(compact: true))
+                .help("Esc")
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 12)
@@ -658,6 +649,45 @@ private struct BulkBar: View {
         Rectangle()
             .fill(Theme.Border.raised)
             .frame(width: 1, height: 17)
+    }
+}
+
+/// What the bulk bar's Mark… menu can do to a selection: each of the
+/// three marks, on and off. One table, so the menu and its test read the
+/// same list and the same words.
+enum BulkMark: CaseIterable, Hashable {
+    case needsReview, reviewed
+    case forDeletion, restoreFromDeletion
+    case wontPlay, clearWontPlay
+
+    /// The menu, a mark and its undo per section.
+    static let menuSections: [[BulkMark]] = [
+        [.needsReview, .reviewed],
+        [.forDeletion, .restoreFromDeletion],
+        [.wontPlay, .clearWontPlay],
+    ]
+
+    var title: String {
+        switch self {
+        case .needsReview: "Mark as needs review"
+        case .reviewed: "Mark reviewed"
+        case .forDeletion: "Mark for deletion"
+        case .restoreFromDeletion: "Restore from deletion"
+        case .wontPlay: "Mark as won't play"
+        case .clearWontPlay: "Clear won't play"
+        }
+    }
+
+    @MainActor
+    func perform(on model: BrowseModel) async {
+        switch self {
+        case .needsReview: await model.markSelectionNeedsReview()
+        case .reviewed: await model.markSelectionReviewed()
+        case .forDeletion: model.markSelectionForDeletion()
+        case .restoreFromDeletion: model.unmarkSelectionForDeletion()
+        case .wontPlay: model.markSelectionWontPlay()
+        case .clearWontPlay: model.unmarkSelectionWontPlay()
+        }
     }
 }
 

@@ -262,12 +262,11 @@ struct BrowseView: View {
             }
         }
         // ⌃K over the library window: one field reaching windows,
-        // filters, tagging, operations and views.
-        .background {
-            Button("Command Palette") { showPalette = true }
-                .keyboardShortcut("k", modifiers: .control)
-                .hidden()
-        }
+        // filters, tagging, operations and views. The key and the item
+        // live in View ▸ Command Palette…, which reads this binding from
+        // the focused window — a menu item is findable, a bare shortcut
+        // is not.
+        .focusedSceneValue(\.commandPalette, $showPalette)
         .sheet(isPresented: $showPalette) {
             CommandPalette().environment(model)
         }
@@ -284,8 +283,9 @@ struct BrowseView: View {
 }
 
 /// The window's status strip: sweep progress on the left while one runs,
-/// the tile-size slider on the right — where Finder, Photos and every
-/// other grid put it, and reachable without opening a popover.
+/// the key legend there otherwise, the tile-size slider on the right —
+/// where Finder, Photos and every other grid put it, and reachable
+/// without opening a popover.
 ///
 /// It is always present rather than appearing with the sweep, because a
 /// strip that comes and goes reflows the grid under the pointer. The
@@ -293,10 +293,19 @@ struct BrowseView: View {
 /// settings.json is written only when the drag settles — the same
 /// contract View Options uses, and the same one control in two places
 /// must share or they fight over the file.
+///
+/// Painted from the tokens like the rest of the window: a `.bar`
+/// material tracks the system appearance and opened light under a
+/// charcoal grid on a Mac in Light mode.
 private struct GridFooter: View {
     let status: BrowseModel.ThumbnailQueueStatus?
 
     private var display: GridDisplaySettings { GridDisplaySettings.shared }
+
+    /// The grid's single keys, where they can be read without opening
+    /// anything. Space is Quick Look, as everywhere else on the Mac; Return
+    /// plays.
+    static let keyLegend = "V views · X select · Space preview · ⏎ play · ⌃K commands"
 
     var body: some View {
         HStack(spacing: 10) {
@@ -304,26 +313,34 @@ private struct GridFooter: View {
                 if let total = status.total, total > 0 {
                     ProgressView(value: Double(status.current), total: Double(total))
                         .frame(width: 160)
-                    Text("Generating thumbnails: \(status.current) of \(total)")
+                    Text("Generating thumbnails: ")
+                        + Text("\(status.current) of \(total)").font(Theme.mono(Theme.TypeScale.secondary))
                 } else {
                     ProgressView()
                         .controlSize(.small)
                     Text("Thumbnail sweep queued…")
                 }
                 if status.failed > 0 {
-                    Text("\(status.failed) failed")
-                        .foregroundStyle(.orange)
+                    (Text("\(status.failed)").font(Theme.mono(Theme.TypeScale.secondary)) + Text(" failed"))
+                        .foregroundStyle(Theme.Status.orange)
                 }
+            } else {
+                Text(Self.keyLegend)
+                    .font(Theme.mono(10.5))
+                    .lineLimit(1)
+                    .help("V cycles the saved views · X selects the focused tile · Space previews it in Quick Look · Return plays it · ⌘A selects everything shown · ⌃K opens the command palette")
             }
             Spacer(minLength: 12)
             sizeSlider
         }
-        .font(.caption)
-        .monospacedDigit()
-        .foregroundStyle(.secondary)
+        .font(Theme.ui(Theme.TypeScale.secondary))
+        .foregroundStyle(Theme.Text.quaternary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.bar)
+        .background(Theme.Surface.toolbar)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+        }
     }
 
     private var sizeSlider: some View {

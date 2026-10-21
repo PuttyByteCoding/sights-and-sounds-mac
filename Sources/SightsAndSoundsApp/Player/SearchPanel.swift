@@ -37,9 +37,13 @@ struct SearchPanel: View {
                         isEditing = true
                     } label: {
                         Image(systemName: "plus")
+                            .font(Theme.ui(11))
+                            .foregroundStyle(Theme.Text.tertiary)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("New format")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("New search")
                     .help("New format")
                 }
             }
@@ -119,10 +123,17 @@ struct SearchPanel: View {
 
             HStack(spacing: 6) {
                 Text("Name")
-                    .font(Theme.ui(10.5, .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.ui(Theme.TypeScale.secondary, .semibold))
+                    .foregroundStyle(Theme.Text.tertiary)
                 TextField("Format name", text: draft.name)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(Theme.ui(12))
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.control)
+                            .fill(Theme.Surface.well)
+                            .stroke(Theme.Border.standard, lineWidth: 1))
             }
 
             Text("Parts").font(Theme.ui(9.5, .semibold)).foregroundStyle(Theme.Text.quaternary)
@@ -135,11 +146,13 @@ struct SearchPanel: View {
             // fired from a tag field would be a surprise.
             HStack {
                 Button("Cancel") { isEditing = false }
+                    .buttonStyle(SecondaryButtonStyle(compact: true))
                 Spacer()
                 Button("Save") {
                     model.saveSearchFormat(draft.wrappedValue)
                     isEditing = false
                 }
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(draft.wrappedValue.parts.isEmpty)
             }
             .padding(.top, 4)

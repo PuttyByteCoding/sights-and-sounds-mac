@@ -129,3 +129,14 @@ minimum not fixed width, infinity maximums so the scene has something to grow in
 next…" sentence — each one answers a question that would otherwise be asked once per session.
 The vocabulary import's additive promise: *existing categories keep their configuration;
 missing categories, tags, aliases and fields are created. Nothing is deleted.*
+
+## As built — 20 October 2026
+
+- **Repair:** recipe order is editable with ↑/↓ buttons on each row rather
+  than a drag; the stored `sortOrder` and the shown order are kept as one
+  thing. There is no add-recipe or add-tool action yet: recipes are edited
+  as data in the app database. `RepairRecipe.Risk` models two cost labels
+  — lossless (stream copy) and last resort (re-encodes); the spec's third,
+  a plain re-encode that is not a last resort, is not modelled.
+- **Tab order:** app-wide panes first (General, Import, Playback, Jobs,
+  Repair, Remote Access), then the per-library panes.

@@ -82,6 +82,19 @@ struct RulesTabView: View {
         ScrollView {
             if let draft = model.draft {
                 VStack(alignment: .leading, spacing: 16) {
+                    if let notice = model.notice {
+                        Text(notice)
+                            .font(Theme.ui(Theme.TypeScale.secondary))
+                            .foregroundStyle(Theme.Accent.amber)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                                    .fill(Theme.Surface.raised)
+                                    .stroke(Theme.Border.activeCard, lineWidth: 1))
+                    }
                     matcherSection(draft)
                     actionsSection(draft)
                     dryRunSection
