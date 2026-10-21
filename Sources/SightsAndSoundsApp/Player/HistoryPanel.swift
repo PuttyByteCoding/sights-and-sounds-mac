@@ -29,8 +29,8 @@ struct HistoryPanel: View {
                 Text("History").modifier(Theme.sectionLabel())
                 Spacer()
                 Text(model.historyRows.isEmpty ? "" : "\(model.historyRows.count)")
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                 ZoneBadge(zone: .history)
             }
             .padding(.horizontal, 12)
@@ -38,7 +38,7 @@ struct HistoryPanel: View {
             if model.historyRows.isEmpty {
                 Text("Nothing watched yet.")
                     .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 22)
                     .frame(maxWidth: .infinity)
@@ -121,7 +121,7 @@ struct HistoryPanel: View {
         } else {
             Text("start")
                 .font(Theme.mono(10))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
         }
     }
 }

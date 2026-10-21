@@ -195,7 +195,7 @@ private struct ErrorBanner: View {
                 .textSelection(.enabled)
             Spacer(minLength: 8)
             Button(action: dismiss) {
-                Image(systemName: "xmark").font(Theme.ui(9, .semibold))
+                Image(systemName: "xmark").font(Theme.ui(10, .semibold))
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.Text.tertiary)
@@ -228,7 +228,7 @@ private struct EmptyGridState: View {
                 .foregroundStyle(Theme.Text.quaternary)
             Text(detail)
                 .font(Theme.ui(12.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

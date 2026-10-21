@@ -144,7 +144,7 @@ struct BrowseView: View {
                             .foregroundStyle(Theme.Text.quaternary)
                         Text(kindSummary)
                             .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     .fixedSize()
                     .padding(.horizontal, 8)
@@ -346,7 +346,7 @@ private struct GridFooter: View {
     private var sizeSlider: some View {
         HStack(spacing: 6) {
             Image(systemName: "square.grid.3x3")
-                .font(Theme.ui(9))
+                .font(Theme.ui(10))
                 .foregroundStyle(Theme.Text.disabled)
             Slider(
                 value: Binding(

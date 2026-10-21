@@ -374,7 +374,7 @@ struct TagPickerSheet: View {
                                 : "No other tag in the library.")
                             : "No tag matches that.")
                             .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .padding(10)
                     }
                     ForEach(shown) { candidate in

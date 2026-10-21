@@ -88,7 +88,7 @@ struct OperationsView: View {
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
             Text("Each runs as a background job on this library's queue, one at a time.")
                 .font(Theme.ui(10.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(12)
         }
@@ -118,7 +118,7 @@ struct OperationsView: View {
                 // nothing about why it is missing.
                 Text(requirement ?? entry.produces)
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(requirement == nil ? Theme.Text.disabled : Theme.Status.orange)
+                    .foregroundStyle(requirement == nil ? Theme.Text.meta : Theme.Status.orange)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -141,7 +141,7 @@ struct OperationsView: View {
     /// freely each can be used.
     private func kindChip(_ kind: Operation.Kind) -> some View {
         Text(kind.label)
-            .font(Theme.ui(9, .bold))
+            .font(Theme.ui(10, .bold))
             .foregroundStyle(kind.color)
             .padding(.vertical, 1.5)
             .padding(.horizontal, 5)
@@ -195,27 +195,23 @@ struct OperationsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Use the arrows to reorder — this is the order they will play in.")
                     .font(Theme.ui(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 ForEach(orderedJoinParts) { item in
                     HStack(spacing: 8) {
                         Image(systemName: "line.3.horizontal")
-                            .font(Theme.ui(9))
+                            .font(Theme.ui(10))
                             .foregroundStyle(Theme.Text.disabled)
                         Text(item.fileName)
                             .font(Theme.mono(11))
                             .foregroundStyle(Theme.Text.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        Button {
+                        IconButton("Move \(item.fileName) up", systemImage: "arrow.up") {
                             move(item, by: -1)
-                        } label: { Image(systemName: "arrow.up").font(Theme.ui(9)) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.Text.quaternary)
-                        Button {
+                        }
+                        IconButton("Move \(item.fileName) down", systemImage: "arrow.down") {
                             move(item, by: 1)
-                        } label: { Image(systemName: "arrow.down").font(Theme.ui(9)) }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.Text.quaternary)
+                        }
                     }
                     .padding(.vertical, 4)
                     .padding(.horizontal, 9)
@@ -288,6 +284,10 @@ struct OperationsView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!accepted)
+                    // A drawn square says nothing to VoiceOver.
+                    .accessibilityLabel("Include \(item.fileName)")
+                    .accessibilityValue(on ? "ticked" : "not ticked")
+                    .accessibilityAddTraits(.isToggle)
                     .frame(width: 26, alignment: .leading)
                     Text(item.fileName)
                         .font(Theme.mono(11))
@@ -373,7 +373,7 @@ struct OperationsView: View {
         HStack {
             Text(label)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             Text(value)
                 .font(Theme.mono(11))
@@ -388,7 +388,7 @@ struct OperationsView: View {
         HStack {
             Text("existing values replaced")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             if previewingWriteback {
                 ProgressView().controlSize(.small)
@@ -638,7 +638,7 @@ private struct OcrControls: View {
             if let note {
                 Text(note)
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

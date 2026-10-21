@@ -161,7 +161,7 @@ struct LibraryPropertiesView: View {
                 }
                 Text("All of it recomputes from disk. A gap here is work the background jobs have not reached yet, not damage.")
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -222,17 +222,13 @@ struct LibraryPropertiesView: View {
                             Text(String(character))
                                 .font(Theme.mono(11))
                                 .foregroundStyle(Theme.Text.secondary)
-                            Button {
+                            IconButton(
+                                "Remove separator \(String(character))", systemImage: "xmark",
+                                size: 8, help: "Remove this separator"
+                            ) {
                                 separators.removeAll { $0 == character }
                                 saveSeparators()
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(Theme.ui(8))
-                                    .foregroundStyle(Theme.Text.disabled)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove separator \(String(character))")
-                            .help("Remove this separator")
                         }
                         .padding(.vertical, 3)
                         .padding(.horizontal, 8)
@@ -254,7 +250,7 @@ struct LibraryPropertiesView: View {
                     .foregroundStyle(Theme.Accent.amber)
                 Text("A category chooses whether to convert separators; the set is the library's, so a hyphen means the same thing everywhere.")
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -299,7 +295,7 @@ struct LibraryPropertiesView: View {
                 ThemeBadge(
                     text: override == nil ? "from Settings" : "this library",
                     fill: override == nil ? Theme.Surface.iconTile : Theme.Surface.iconTileSelected,
-                    foreground: override == nil ? Theme.Text.disabled : Theme.Accent.amber)
+                    foreground: override == nil ? Theme.Text.meta : Theme.Accent.amber)
                 Spacer()
                 Button(override == nil ? "Override here" : "Use app defaults") {
                     setOverride(
@@ -315,18 +311,12 @@ struct LibraryPropertiesView: View {
                         Text(".\(ext)")
                             .font(Theme.mono(10.5))
                             .foregroundStyle(
-                                override == nil ? Theme.Text.disabled : Theme.Text.secondary)
+                                override == nil ? Theme.Text.meta : Theme.Text.secondary)
                         if override != nil {
-                            Button {
-                                removeExtension(ext, isVideo: isVideo)
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(Theme.ui(8))
-                                    .foregroundStyle(Theme.Text.disabled)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove extension \(ext)")
-                            .help("Remove this extension")
+                            IconButton(
+                                "Remove extension \(ext)", systemImage: "xmark",
+                                size: 8, help: "Remove this extension"
+                            ) { removeExtension(ext, isVideo: isVideo) }
                         }
                     }
                     .padding(.vertical, 3)
@@ -351,7 +341,7 @@ struct LibraryPropertiesView: View {
             if override != nil {
                 Text("Differs from the app-wide list. Existing items are untouched — this changes what the next scan picks up.")
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

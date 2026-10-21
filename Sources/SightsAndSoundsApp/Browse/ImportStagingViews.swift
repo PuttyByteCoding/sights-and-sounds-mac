@@ -33,8 +33,8 @@ struct StagingBoxView: View {
                     onSticky(!box.sticky)
                 } label: {
                     Text("sticky")
-                        .font(Theme.ui(9.5, box.sticky ? .bold : .regular))
-                        .foregroundStyle(box.sticky ? Theme.Accent.amber : Theme.Text.disabled)
+                        .font(Theme.ui(10, box.sticky ? .bold : .regular))
+                        .foregroundStyle(box.sticky ? Theme.Accent.amber : Theme.Text.meta)
                         .padding(.vertical, 1.5)
                         .padding(.horizontal, 6)
                         .background(
@@ -136,7 +136,7 @@ struct StagingBoxView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "plus")
-                    .font(Theme.ui(9))
+                    .font(Theme.ui(10))
                     .foregroundStyle(Theme.categoryHue(category.category.colorIndex))
                 Text(name)
                     .font(Theme.ui(11.5))
@@ -144,7 +144,7 @@ struct StagingBoxView: View {
                 if isFolderWord {
                     ThemeBadge(
                         text: "folder", fill: Theme.Surface.iconTile,
-                        foreground: Theme.Text.disabled)
+                        foreground: Theme.Text.meta)
                 }
                 Spacer(minLength: 0)
             }
@@ -172,16 +172,9 @@ struct StagingBoxView: View {
             Text(name)
                 .font(Theme.ui(11))
                 .foregroundStyle(hue)
-            Button {
-                remove()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(Theme.ui(8))
-                    .foregroundStyle(hue.opacity(0.7))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(name)")
-            .help("Remove")
+            IconButton(
+                "Remove \(name)", systemImage: "xmark", size: 8, color: hue.opacity(0.7),
+                help: "Remove", action: remove)
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)

@@ -202,7 +202,7 @@ struct ReviewView: View {
                     HStack {
                         Text(entry.title(0).replacingOccurrences(of: " 0", with: ""))
                             .font(Theme.ui(11))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                         Spacer()
                         Text("\(resolvedThisPass[entry] ?? 0)")
                             .font(Theme.mono(10.5))
@@ -274,8 +274,8 @@ struct ReviewView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(meta)
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
@@ -425,8 +425,8 @@ struct ReviewView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(item.folderPath)
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -472,7 +472,7 @@ struct ReviewView: View {
                 .foregroundStyle(Theme.Text.quaternary)
             Text(detail)
                 .font(Theme.ui(12.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
         }
@@ -813,8 +813,8 @@ private struct IssueDetail: View {
                                     .font(Theme.ui(11.5))
                                     .foregroundStyle(Theme.Status.orange)
                                 Text("captured \(evidence.capturedAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(Theme.mono(9.5))
-                                    .foregroundStyle(Theme.Text.disabled)
+                                    .font(Theme.mono(10))
+                                    .foregroundStyle(Theme.Text.meta)
                             }
                         }
                     }
@@ -835,7 +835,7 @@ private struct IssueDetail: View {
                                 .stroke(Theme.Border.standard, lineWidth: 1))
                     Text("Captured when the file failed, not re-run now — a clean probe today would answer a different question.")
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -846,7 +846,7 @@ private struct IssueDetail: View {
                     if recipes.isEmpty {
                         Text("No repair recipes configured.")
                             .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                 }
             }
@@ -876,7 +876,7 @@ private struct IssueDetail: View {
                     // are legitimate, only one should be reached for
                     // first.
                     Text(recipe.risk.displayName)
-                        .font(Theme.ui(9.5))
+                        .font(Theme.ui(10))
                         .foregroundStyle(
                             recipe.risk == .lossy ? Theme.Status.orange : Theme.Status.green)
                         .padding(.vertical, 1)
@@ -888,7 +888,7 @@ private struct IssueDetail: View {
                     Spacer(minLength: 0)
                     Text(recipe.estimate)
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 if !recipe.notes.isEmpty {
                     Text(recipe.notes)
@@ -896,8 +896,8 @@ private struct IssueDetail: View {
                         .foregroundStyle(Theme.Text.tertiary)
                 }
                 Text(recipe.command(input: item.fileName, output: "repaired-\(item.fileName)"))
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -1019,7 +1019,7 @@ private struct CompareView: View {
         HStack(spacing: 9) {
             Text("Choose which file to keep, or say the matcher got it wrong.")
                 .font(Theme.ui(11.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             Button("Keep both") { keepBoth() }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
@@ -1246,17 +1246,17 @@ private struct ComparePane: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text("/ 100")
                     .font(Theme.ui(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             ForEach(Array(score.components.enumerated()), id: \.offset) { _, component in
                 HStack {
                     Text(component.label)
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                     Spacer()
                     if component.maxPoints > 0 {
                         Text(String(format: "%.0f/%.0f", component.points, component.maxPoints))
-                            .font(Theme.mono(9.5))
+                            .font(Theme.mono(10))
                             .foregroundStyle(Theme.Text.quaternary)
                     }
                 }
@@ -1309,7 +1309,7 @@ private struct ComparePane: View {
         return HStack {
             Text(label)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             Text(format(value))
                 .font(Theme.mono(10.5))

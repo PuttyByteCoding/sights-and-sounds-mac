@@ -332,9 +332,9 @@ private struct RailView: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "arrow.left.arrow.right")
-                        .font(Theme.ui(9))
+                        .font(Theme.ui(10))
                         .foregroundStyle(
-                            model.showingReaderIO ? Theme.Accent.amber : Theme.Text.disabled)
+                            model.showingReaderIO ? Theme.Accent.amber : Theme.Text.meta)
                         .frame(width: 13)
                     Text("Raw in · processed out")
                         .font(Theme.ui(Theme.TypeScale.body,
@@ -376,7 +376,7 @@ private struct RailView: View {
                         .font(Theme.ui(Theme.TypeScale.body, active ? .semibold : .regular))
                         .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
                     Text("\(undecided) undecided")
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(10))
                         .foregroundStyle(
                             undecided == 0 ? Theme.Text.zeroCount : Theme.Text.quaternary)
                 }
@@ -590,9 +590,9 @@ private struct CandidateTableRow: View {
                         .font(Theme.ui(Theme.TypeScale.row))
                         .foregroundStyle(
                             candidate.suppressedByRule == nil
-                                ? Theme.Text.primary : Theme.Text.disabled)
+                                ? Theme.Text.primary : Theme.Text.meta)
                         .strikethrough(
-                            candidate.suppressedByRule != nil, color: Theme.Text.disabled)
+                            candidate.suppressedByRule != nil, color: Theme.Text.meta)
                         .lineLimit(1)
                     if candidate.suppressedByRule != nil {
                         ThemeBadge(
@@ -648,7 +648,7 @@ private struct CandidateTableRow: View {
         } else if row.findings.contains(where: \.alreadyApplied) {
             chip("Already applied", Theme.Text.quaternary)
         } else if candidate.suppressedByRule != nil {
-            chip("Ignored", Theme.Text.disabled)
+            chip("Ignored", Theme.Text.meta)
         } else {
             Text("—").font(Theme.ui(11)).foregroundStyle(Theme.Text.zeroCount)
         }
@@ -714,7 +714,7 @@ private struct FramesStrip: View {
                     Text("Matching frames").modifier(Theme.sectionLabel())
                     Text("the moment the text was read")
                         .font(Theme.ui(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                     Spacer()
                     Button(hidden ? "Show" : "Hide") { hidden.toggle() }
                         .buttonStyle(.plain)
@@ -762,7 +762,7 @@ private struct StripStill: View {
             .frame(width: 116, height: 66)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
             Text(TransportBarTime.format(seconds))
-                .font(Theme.mono(9))
+                .font(Theme.mono(10))
                 .foregroundStyle(Theme.Text.primary)
                 .padding(.horizontal, 3)
                 .background(Color.black.opacity(0.65))
@@ -888,8 +888,8 @@ private struct DecidePane: View {
                     .fill(Theme.Surface.well)
                     .stroke(Theme.Border.standard, lineWidth: 1))
             Text("Select text · right-click · New Tag")
-                .font(Theme.ui(9.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .font(Theme.ui(10))
+                .foregroundStyle(Theme.Text.meta)
         }
     }
 
@@ -987,7 +987,7 @@ private struct DecidePane: View {
                             .foregroundStyle(Theme.Text.primary)
                         Spacer(minLength: 6)
                         Text(category.allowMultiple ? "multiple" : "one only")
-                            .font(Theme.ui(9.5))
+                            .font(Theme.ui(10))
                             .foregroundStyle(Theme.Text.quaternary)
                     }
                     .padding(.horizontal, 8)

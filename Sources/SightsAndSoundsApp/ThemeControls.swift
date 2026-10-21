@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The controls the comps draw over and over: three button weights, a
-/// badge, and a segmented control. They live here rather than in each
+/// badge, a segmented control, a path and a progress bar. They live here rather than in each
 /// screen because "one name, one place" (layout rule 5) applies to a
 /// shape as much as to a string — five views drawing their own amber
 /// button is five places to change the radius.
@@ -63,7 +63,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
 // MARK: - Badge
 
-/// The 9px uppercase plate that sits beside a name — `OPEN`, an offline
+/// The 10px uppercase plate that sits beside a name — `OPEN`, an offline
 /// count, a status word. Deliberately tiny and deliberately not grey: at
 /// this size only a tinted plate reads.
 struct ThemeBadge: View {
@@ -73,12 +73,87 @@ struct ThemeBadge: View {
 
     var body: some View {
         Text(text)
-            .font(Theme.ui(9, .bold))
+            .font(Theme.ui(10, .bold))
             .foregroundStyle(foreground)
             .padding(.vertical, 1.5)
             .padding(.horizontal, 6)
             .background(RoundedRectangle(cornerRadius: Theme.Radius.chip).fill(fill))
             .fixedSize()
+    }
+}
+
+// MARK: - Icon button
+
+/// An icon-only button with a hit target and a name.
+///
+/// A bare glyph in a `.plain` button is exactly as big as its strokes —
+/// an 8pt × is a 6pt target — and says nothing to VoiceOver. This gives
+/// every such button the same 22pt minimum square, a rectangular content
+/// shape so the whole square takes the click, and a required label that
+/// doubles as the tooltip unless a longer `help` is given.
+///
+/// The symbol initialiser draws the glyph in `Theme.Text.meta`: a glyph
+/// that does something is an action, not a disabled control, so it is
+/// never drawn in `disabled`. The closure form takes any glyph — a
+/// `Text("★")`, a symbol whose colour follows state.
+struct IconButton<Glyph: View>: View {
+    private let label: String
+    private let help: String
+    private let action: () -> Void
+    private let glyph: Glyph
+
+    /// Minimum side of the clickable square.
+    static var minimumTarget: CGFloat { 22 }
+
+    init(
+        _ label: String, help: String? = nil,
+        action: @escaping () -> Void, @ViewBuilder glyph: () -> Glyph
+    ) {
+        self.label = label
+        self.help = help ?? label
+        self.action = action
+        self.glyph = glyph()
+    }
+
+    var body: some View {
+        Button(action: action) {
+            glyph
+                .frame(minWidth: Self.minimumTarget, minHeight: Self.minimumTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .help(help)
+    }
+}
+
+extension IconButton where Glyph == IconGlyph {
+    /// An SF Symbol glyph. `size` is the symbol's point size, never below
+    /// the type scale's 10 unless the caller has a reason (a pill's × sits
+    /// beside 11pt text and is sized to it).
+    init(
+        _ label: String, systemImage: String,
+        size: CGFloat = Theme.TypeScale.sectionLabel, weight: Font.Weight = .regular,
+        color: Color = Theme.Text.meta, help: String? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.init(label, help: help, action: action) {
+            IconGlyph(systemImage: systemImage, size: size, weight: weight, color: color)
+        }
+    }
+}
+
+/// The glyph `IconButton` draws for its symbol initialiser.
+struct IconGlyph: View {
+    let systemImage: String
+    let size: CGFloat
+    let weight: Font.Weight
+    let color: Color
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(Theme.ui(size, weight))
+            .foregroundStyle(color)
     }
 }
 
@@ -243,5 +318,125 @@ extension Menu {
         menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+    }
+}
+
+// MARK: - Progress bar
+
+/// The 5pt bar the comps draw for anything with a fraction: a well
+/// track, an amber fill, and diagonal stripes flowing along the fill
+/// while the work is live.
+///
+/// Never the stock `ProgressView` for a bar. It paints the system accent
+/// on charcoal and tracks the user's accent colour, so it was the one
+/// control in the app that did not belong to it. The small circular
+/// spinner is fine — it is a standard control, which macOS keeps.
+struct ThemeProgressBar: View {
+    enum Mode: Equatable {
+        /// 0…1, clamped: a job past its estimate fills the track rather
+        /// than overflowing it.
+        case determinate(Double)
+        /// Known to be working, with no total to count against. The
+        /// whole track takes a dimmer fill so it reads as "busy", not
+        /// "done".
+        case indeterminate
+    }
+
+    let mode: Mode
+    /// Whether the stripes move. On for work happening now; off for a
+    /// bar that is paused or finished, where the fill stands still.
+    var running = false
+
+    static let height: CGFloat = 5
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static func determinate(_ fraction: Double, running: Bool = false) -> ThemeProgressBar {
+        ThemeProgressBar(mode: .determinate(fraction), running: running)
+    }
+
+    /// `current` of `total`, as the job rows count. A total of zero is
+    /// indeterminate — there is nothing to be a fraction of.
+    static func determinate(_ current: Int, of total: Int, running: Bool = false) -> ThemeProgressBar {
+        guard total > 0 else { return .indeterminate(running: running) }
+        return determinate(Double(current) / Double(total), running: running)
+    }
+
+    static func indeterminate(running: Bool = true) -> ThemeProgressBar {
+        ThemeProgressBar(mode: .indeterminate, running: running)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                    .fill(Theme.Surface.well)
+                RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                    .fill(Theme.Accent.amber.opacity(fillOpacity))
+                    .frame(width: fillWidth(in: geometry.size.width))
+                    .overlay {
+                        if running {
+                            Stripes(moving: !reduceMotion)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip))
+                        }
+                    }
+            }
+        }
+        .frame(height: Self.height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Progress")
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var fraction: Double? {
+        switch mode {
+        case .determinate(let value): min(max(value, 0), 1)
+        case .indeterminate: nil
+        }
+    }
+
+    private var fillOpacity: Double { fraction == nil ? 0.45 : 1 }
+
+    private func fillWidth(in width: CGFloat) -> CGFloat {
+        guard let fraction else { return width }
+        // A started job shows a sliver even at 0 of N, so "running" and
+        // "empty track" never look the same.
+        return max(width * fraction, fraction > 0 || running ? Self.height : 0)
+    }
+
+    private var accessibilityValue: String {
+        guard let fraction else { return "working" }
+        return "\(Int((fraction * 100).rounded())) percent"
+    }
+
+    /// Diagonal bands of the on-amber ink at low opacity, slid along
+    /// the fill once a second or so. The comp animates its stripes;
+    /// Reduce Motion keeps them but holds them still.
+    private struct Stripes: View {
+        let moving: Bool
+        private let band: CGFloat = 4
+        private let period: CGFloat = 9
+
+        var body: some View {
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: !moving)) { context in
+                let phase = moving
+                    ? CGFloat(context.date.timeIntervalSinceReferenceDate * 18)
+                        .truncatingRemainder(dividingBy: period)
+                    : 0
+                Canvas { graphics, size in
+                    var path = Path()
+                    var x = -size.height - period + phase
+                    while x < size.width + size.height {
+                        path.move(to: CGPoint(x: x, y: size.height))
+                        path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                        path.addLine(to: CGPoint(x: x + size.height + band, y: 0))
+                        path.addLine(to: CGPoint(x: x + band, y: size.height))
+                        path.closeSubpath()
+                        x += period
+                    }
+                    graphics.fill(path, with: .color(Theme.Text.onAmber.opacity(0.22)))
+                }
+            }
+        }
     }
 }

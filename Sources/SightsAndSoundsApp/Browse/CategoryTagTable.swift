@@ -21,7 +21,7 @@ struct TagTableHeader: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text("\(tagCount) tags · \(usageTotal) taggings")
                     .font(Theme.mono(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 Spacer()
             }
             HStack(spacing: 9) {
@@ -104,7 +104,7 @@ struct TagTable: View {
                     ? "No near-duplicate names in this category."
                     : "No tags match that filter.")
                     .font(Theme.ui(12.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -180,11 +180,11 @@ struct TagTable: View {
                         ? Theme.Accent.amber : Theme.Text.quaternary))
                 if let index = sortSpec.firstIndex(where: { $0.column == column }) {
                     Text(sortSpec[index].ascending ? "▲" : "▼")
-                        .font(Theme.ui(7))
+                        .font(Theme.ui(10))
                         .foregroundStyle(Theme.Accent.amber)
                     if sortSpec.count > 1 {
                         Text("\(index + 1)")
-                            .font(Theme.mono(8))
+                            .font(Theme.mono(10))
                             .foregroundStyle(Theme.Accent.amber)
                     }
                 }
@@ -211,6 +211,10 @@ struct TagTable: View {
                         .frame(width: 13, height: 13)
                 }
                 .buttonStyle(.plain)
+                // A drawn square says nothing to VoiceOver.
+                .accessibilityLabel("Merge \(tag.name)")
+                .accessibilityValue(picks.contains(tag.id) ? "ticked" : "not ticked")
+                .accessibilityAddTraits(.isToggle)
                 .frame(width: 30, alignment: .leading)
             }
             HStack(spacing: 5) {
@@ -220,15 +224,15 @@ struct TagTable: View {
                     .lineLimit(1)
                 if tag.hiddenByDefault {
                     Image(systemName: "eye.slash")
-                        .font(Theme.ui(9))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.ui(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .help("Hidden by default — items carrying it leave listings unless it is filtered on")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text((aliases[tag.id] ?? []).joined(separator: ", "))
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: 150, alignment: .leading)
@@ -238,21 +242,23 @@ struct TagTable: View {
                 .foregroundStyle(
                     (usage[tag.id] ?? 0) == 0 ? Theme.Text.zeroCount : Theme.Text.quaternary)
                 .frame(width: 66, alignment: .trailing)
-            Button {
+            // VoiceOver read the glyph alone as "black star".
+            IconButton("Favourite \(tag.name)") {
                 onToggleFavorite(tag)
-            } label: {
+            } glyph: {
                 Text("★")
                     .font(Theme.ui(11))
                     .foregroundStyle(tag.isFavorite ? Theme.Accent.amber : Theme.Text.zeroCount)
             }
-            .buttonStyle(.plain)
+            .accessibilityValue(tag.isFavorite ? "on" : "off")
+            .accessibilityAddTraits(.isToggle)
             .frame(width: 40, alignment: .center)
             Menu {
                 rowMenu(tag)
             } label: {
                 Image(systemName: "ellipsis")
                     .font(Theme.ui(10))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

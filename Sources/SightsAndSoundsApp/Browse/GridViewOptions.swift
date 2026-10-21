@@ -78,7 +78,7 @@ struct GridViewOptions: View {
                 layoutGrid
                 Text("The outer ring sits beside the thumbnail; the inner seven overlay it.")
                     .font(Theme.ui(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 9)
                 valueList
@@ -99,7 +99,7 @@ struct GridViewOptions: View {
                 Spacer()
                 Text("press V to cycle")
                     .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             FlowRow(spacing: 5) {
                 ForEach(display.grid.views) { view in
@@ -240,7 +240,7 @@ struct GridViewOptions: View {
                             : Theme.Text.secondary)
                 if !entries.isEmpty {
                     Text(summary(entries))
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Accent.amber)
                         .lineLimit(1)
                 }
@@ -319,7 +319,7 @@ struct GridViewOptions: View {
                             .overlay {
                                 if on {
                                     Image(systemName: "checkmark")
-                                        .font(Theme.ui(9, .bold))
+                                        .font(Theme.ui(10, .bold))
                                         .foregroundStyle(Theme.Text.onAmber)
                                 }
                             }
@@ -336,12 +336,12 @@ struct GridViewOptions: View {
                 // through eleven of them.
                 if let elsewhere {
                     Text(elsewhere.displayName.lowercased())
-                        .font(Theme.mono(9))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                 } else {
                     Text(option.hint)
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 // The settings appear only on a value you have already
                 // ticked, and only where they apply.
@@ -350,10 +350,10 @@ struct GridViewOptions: View {
                         expanded = expanded == option.value ? nil : option.value
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(Theme.ui(9))
+                            .font(Theme.ui(10))
                             .foregroundStyle(
                                 expanded == option.value
-                                    ? Theme.Accent.amber : Theme.Text.disabled)
+                                    ? Theme.Accent.amber : Theme.Text.meta)
                             .rotationEffect(.degrees(expanded == option.value ? 90 : 0))
                     }
                     .buttonStyle(.plain)
@@ -431,7 +431,7 @@ struct GridViewOptions: View {
         HStack(spacing: 7) {
             Text(label)
                 .font(Theme.ui(10.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .frame(width: 50, alignment: .leading)
             content()
         }
@@ -494,7 +494,7 @@ struct GridViewOptions: View {
             .toggleStyle(.checkbox)
             Text("Off, every kind keeps one frame and anything narrower pillarboxes inside it — which is what keeps the grid readable at ten thousand items.")
                 .font(Theme.ui(10.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

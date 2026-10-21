@@ -64,7 +64,7 @@ struct ReaderIOView: View {
             } else if report.sources.isEmpty {
                 Text("Nothing found.")
                     .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             } else {
                 HStack(alignment: .top, spacing: 12) {
                     column("Raw in") {
@@ -76,7 +76,7 @@ struct ReaderIOView: View {
                         if produced.isEmpty {
                             Text("Nothing survived — parsed away, rule-ignored, or already a tag.")
                                 .font(Theme.ui(10.5))
-                                .foregroundStyle(Theme.Text.disabled)
+                                .foregroundStyle(Theme.Text.meta)
                         }
                         ForEach(produced) { row in
                             producedRow(row)
@@ -109,17 +109,17 @@ struct ReaderIOView: View {
             HStack(spacing: 5) {
                 if let key = source.key {
                     Text(key)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Status.blueBright)
                 }
                 if let file = source.sourceFile {
                     Text(file)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Status.orangeMuted)
                 }
                 if let seconds = source.timeSeconds {
                     Text(TransportBarTime.format(seconds))
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(10))
                         .foregroundStyle(Theme.Text.quaternary)
                 }
                 Spacer(minLength: 4)
@@ -178,14 +178,14 @@ struct ReaderIOView: View {
                 .font(Theme.ui(11))
                 .foregroundStyle(
                     row.candidate.suppressedByRule == nil
-                        ? Theme.Text.primary : Theme.Text.disabled)
+                        ? Theme.Text.primary : Theme.Text.meta)
                 .strikethrough(row.candidate.suppressedByRule != nil)
                 .textSelection(.enabled)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Text(bucketLabel(row))
-                .font(Theme.ui(9))
+                .font(Theme.ui(10))
                 .foregroundStyle(bucketColor(row))
         }
         .padding(.horizontal, 6)

@@ -68,7 +68,7 @@ struct OcrLinesPanel: View {
             Text("On-screen text").modifier(Theme.sectionLabel())
             Text("Vision OCR · click a line to seek")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             if !lines.isEmpty {
                 Button("Copy all") { copyAll() }
@@ -93,7 +93,7 @@ struct OcrLinesPanel: View {
                     : "Scan queued — the lines appear here when it finishes.")
                 : "No scanned text for this item yet.")
                 .font(Theme.ui(12))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             if !scanQueued {
                 Button("Scan On-Screen Text") { enqueueScan() }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
@@ -311,6 +311,7 @@ private struct OcrTagSheet: View {
             Spacer()
             Button("Cancel") { dismiss() }
                 .buttonStyle(SecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 11)
@@ -334,7 +335,7 @@ private struct OcrTagSheet: View {
                 Spacer(minLength: 0)
                 Text(choice.hint)
                     .font(Theme.ui(Theme.TypeScale.secondary))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 9)

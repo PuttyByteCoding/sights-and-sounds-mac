@@ -234,11 +234,19 @@ struct PlayerView: View {
         // reach the next item without closing the panel or grabbing the
         // mouse. Shift is the way through, in both maps, and it costs
         // only extending a selection by one character.
+        //
+        // And `?` — the one printable key that comes through. A fresh
+        // item lands the keyboard in the first tag field, so without
+        // this the cheat sheet typed a question mark into the tag.
         if NSApp.keyWindow?.firstResponder is NSTextView {
             if let scalar = press.key.character.unicodeScalars.first,
                (0xF704...0xF70C).contains(scalar.value) {
                 let index = Int(scalar.value - 0xF704) + 1
                 return model.handleBoundKey("F\(index)")
+            }
+            if let character = press.characters.first, PlayerKeyMap.opensKeyboardMap(character) {
+                showKeyMap = true
+                return true
             }
             if press.modifiers.contains(.numericPad), let character = press.characters.first,
                character.isNumber || character == "-" {
@@ -313,7 +321,7 @@ struct PlayerView: View {
         }
 
         // `?` is the keyboard map — chooser and permanent cheat sheet.
-        if character == "?" {
+        if PlayerKeyMap.opensKeyboardMap(character) {
             showKeyMap = true
             return true
         }
@@ -759,6 +767,16 @@ private struct PlayerContent: View {
             .help("Open the Tag Analysis companion beside this player")
         }
         ToolbarItem {
+            // The cheat sheet stands on its own in the toolbar — the
+            // comp's `?` — and stays in the More menu beside it, so the
+            // menu still lists everything the window can do.
+            Button("Keyboard map", systemImage: "questionmark") {
+                showKeyMap = true
+            }
+            .help("Keyboard map (?)")
+            .accessibilityLabel("Keyboard map")
+        }
+        ToolbarItem {
             Menu {
                 Button("Keyboard Map…", systemImage: "questionmark.square") {
                     showKeyMap = true
@@ -963,15 +981,11 @@ private struct TransportBlock: View {
     private func transportButton(
         _ symbol: String, help: String, on: Bool = false, action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        // An icon alone says nothing to VoiceOver; a toggle says its state.
+        IconButton(TransportAccessibility.label(fromHelp: help), help: help, action: action) {
             Image(systemName: symbol)
                 .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.tertiary)
-                .frame(width: 20)
         }
-        .buttonStyle(.plain)
-        .help(help)
-        // An icon alone says nothing to VoiceOver; a toggle says its state.
-        .accessibilityLabel(TransportAccessibility.label(fromHelp: help))
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
@@ -1040,7 +1054,7 @@ private struct FlagButtons: View {
         } label: {
             Text(glyph)
                 .font(Theme.ui(12))
-                .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.disabled)
+                .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.meta)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 9)
                 .background(
@@ -1148,9 +1162,9 @@ private struct FocusFooter: View {
                     model.zone = zone
                 } label: {
                     Text(zone.displayName)
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(10))
                         .foregroundStyle(
-                            model.zone == zone ? Theme.Accent.amber : Theme.Text.disabled)
+                            model.zone == zone ? Theme.Accent.amber : Theme.Text.meta)
                         .padding(.vertical, 2)
                         .padding(.horizontal, 6)
                         .background(
@@ -1165,7 +1179,7 @@ private struct FocusFooter: View {
             // place for a few seconds, then the hint comes back.
             Text(browse.searchNotice ?? hint)
                 .font(Theme.ui(11))
-                .foregroundStyle(browse.searchNotice == nil ? Theme.Text.disabled : Theme.Text.primary)
+                .foregroundStyle(browse.searchNotice == nil ? Theme.Text.meta : Theme.Text.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
@@ -1273,8 +1287,8 @@ private struct SegmentsPanel: View {
                 Spacer()
                 Text(model.segments.isEmpty
                     ? "" : "\(model.songCount) songs · \(model.clipCount) clips")
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
                 ZoneBadge(zone: .segments)
             }
             .padding(.horizontal, 12)
@@ -1282,7 +1296,7 @@ private struct SegmentsPanel: View {
             if model.segments.isEmpty {
                 Text("No songs or clips yet. Press \(model.keyMap.labels.segmentOpen) to open a segment, \(model.keyMap.labels.segmentClose) to close it.")
                     .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 12)
@@ -1317,7 +1331,7 @@ private struct SegmentRowView: View {
         let selected = model.selectedSegmentID == row.id
         HStack(spacing: 8) {
             Text(row.kind.badge)
-                .font(Theme.mono(9, .bold))
+                .font(Theme.mono(10, .bold))
                 .foregroundStyle(hue)
                 .padding(.vertical, 1.5)
                 .padding(.horizontal, 5)
@@ -1339,28 +1353,19 @@ private struct SegmentRowView: View {
             }
             Spacer(minLength: 4)
             Text(row.rangeText)
-                .font(Theme.mono(9.5))
-                .foregroundStyle(Theme.Text.disabled)
-            Button {
-                model.playSegment(row)
-            } label: {
-                Image(systemName: "play.fill").font(Theme.ui(9))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.Text.tertiary)
-            .accessibilityLabel("Play from \(TransportBarTime.format(row.start))")
-            .help("Play from \(TransportBarTime.format(row.start))")
-            Button {
-                model.removeSegment(row)
-            } label: {
-                Image(systemName: "xmark").font(Theme.ui(9))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.Text.disabled)
-            .accessibilityLabel(row.kind == .hide ? "Remove this hide block" : "Remove this segment")
-            .help(row.kind == .hide
-                ? "Remove this hide block — the file is untouched"
-                : "Remove this segment — the range's name, not the media")
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.Text.meta)
+            IconButton(
+                "Play from \(TransportBarTime.format(row.start))",
+                systemImage: "play.fill", color: Theme.Text.tertiary
+            ) { model.playSegment(row) }
+            IconButton(
+                row.kind == .hide ? "Remove this hide block" : "Remove this segment",
+                systemImage: "xmark",
+                help: row.kind == .hide
+                    ? "Remove this hide block — the file is untouched"
+                    : "Remove this segment — the range's name, not the media"
+            ) { model.removeSegment(row) }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 12)
@@ -1462,8 +1467,8 @@ struct ZoneBadge: View {
     var body: some View {
         let active = model.zone == zone
         Text("Tab")
-            .font(Theme.mono(9))
-            .foregroundStyle(active ? Theme.Accent.amber : Theme.Text.disabled)
+            .font(Theme.mono(10))
+            .foregroundStyle(active ? Theme.Accent.amber : Theme.Text.meta)
             .padding(.vertical, 1)
             .padding(.horizontal, 5)
             .background(
@@ -1904,7 +1909,7 @@ private struct QueuePanel: View {
             if model.queueItems.isEmpty, !model.isRefreshingQueue {
                 Text("Nothing matches — Refresh again later.")
                     .font(Theme.ui(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
                     .frame(height: thumbHeight + metadataHeight + 18)
@@ -2026,7 +2031,8 @@ private struct QueueCell: View {
 
 /// Both maps side by side: the chooser, and thereafter the cheat sheet.
 /// Only four rows differ, and they are the highlighted ones.
-private struct KeyMapSheet: View {
+/// Internal, not private: the tests present it and send Esc.
+struct KeyMapSheet: View {
     @Environment(PlayerModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var choice = AppSettingsStore.shared.current.keyMap
@@ -2052,7 +2058,7 @@ private struct KeyMapSheet: View {
             // sheet, and "what does [ do" is a typed question.
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(Theme.ui(9))
+                    .font(Theme.ui(10))
                     .foregroundStyle(Theme.Text.disabled)
                 TextField("Search by name or key", text: $query)
                     .textFieldStyle(.plain)
@@ -2065,7 +2071,7 @@ private struct KeyMapSheet: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(Theme.ui(10))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
@@ -2093,7 +2099,7 @@ private struct KeyMapSheet: View {
                     if rows.isEmpty {
                         Text("No rows match \u{201C}\(query)\u{201D}.")
                             .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 14)
                     }
@@ -2119,14 +2125,22 @@ private struct KeyMapSheet: View {
             HStack(alignment: .top, spacing: 10) {
                 Text("Rows that differ are highlighted. Everything else is identical in both maps.")
                     .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                // Esc leaves without changing the map; Return keeps the
+                // choice. Both reach here from the search field — the
+                // sheet took the keyboard on open, so it must give a
+                // keyboard way back out.
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                 Button("Done") {
                     AppSettingsStore.shared.update { $0.keyMap = choice }
                     dismiss()
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
             }
             .padding(16)
         }
@@ -2159,7 +2173,7 @@ private struct KeyMapSheet: View {
             .font(Theme.mono(11.5))
             .foregroundStyle(
                 differs ? (active ? Theme.Accent.amber : Theme.Text.quaternary)
-                    : Theme.Text.disabled)
+                    : Theme.Text.meta)
             .frame(width: 150)
             .padding(.vertical, 5)
             .background(

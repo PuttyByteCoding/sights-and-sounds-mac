@@ -33,12 +33,12 @@ struct SignalSummaryView: View {
         HStack {
             Text(line.phrase)
                 .font(Theme.ui(10.5, emphasized ? .semibold : .regular))
-                .foregroundStyle(emphasized ? Theme.Text.secondary : Theme.Text.disabled)
+                .foregroundStyle(emphasized ? Theme.Text.secondary : Theme.Text.meta)
                 .lineLimit(1)
             Spacer()
             if !line.isFact, line.category != "Unknown" {
                 Text(String(format: "%.0f%%", line.confidence * 100))
-                    .font(Theme.mono(9.5))
+                    .font(Theme.mono(10))
                     .foregroundStyle(Theme.Text.quaternary)
             }
         }

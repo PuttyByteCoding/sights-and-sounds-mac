@@ -129,7 +129,7 @@ struct KeyBindingsEditor: View {
                     if matches.isEmpty {
                         Text("No tag matches that.")
                             .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .padding(8)
                     }
                     let first = highlighted ?? matches.first
@@ -172,9 +172,18 @@ struct KeyBindingsEditor: View {
 
             HStack {
                 Spacer()
+                // Done is the one button: the primary, so Return; and the
+                // way out, so Esc. A button carries one shortcut, so the
+                // cancel key is bound to an unseen twin of it.
                 Button("Done") { dismiss() }
                     .buttonStyle(PrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
+                    .background {
+                        Button("Close") { dismiss() }
+                            .keyboardShortcut(.cancelAction)
+                            .hidden()
+                            .accessibilityHidden(true)
+                    }
             }
         }
         .padding(16)

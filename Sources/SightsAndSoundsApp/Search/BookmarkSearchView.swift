@@ -64,7 +64,7 @@ struct BookmarkSearchView: View {
                 if terms.isEmpty, !loading {
                     Text("no values — every bookmark listed")
                         .font(Theme.ui(11))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
             }
         }
@@ -182,7 +182,7 @@ private struct BookmarkRow: View {
     private func detail(_ label: String, _ value: String) -> some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(Theme.ui(9.5, .semibold))
+                .font(Theme.ui(10, .semibold))
                 .foregroundStyle(Theme.Text.quaternary)
             Text(value)
                 .font(Theme.ui(11))

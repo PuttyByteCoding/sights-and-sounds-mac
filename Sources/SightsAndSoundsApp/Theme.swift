@@ -116,7 +116,12 @@ enum Theme {
         static let tertiary = Color(hex: 0xA79E90)
         /// 5.0:1 — the floor for text at 10–12px.
         static let quaternary = Color(hex: 0x8C8478)
-        /// 3.4:1 — non-informational only. Never a value someone reads.
+        /// Secondary data people read — counts, paths, timestamps, hints,
+        /// instructions. The same colour as `quaternary`, named for the
+        /// job: a value a decision depends on is never drawn dimmer than
+        /// this, however small the type.
+        static let meta = quaternary
+        /// 3.4:1 — controls that are actually disabled, decorative only.
         static let disabled = Color(hex: 0x6E6659)
         /// A count of zero. Dimmed rather than hidden: "exists, but
         /// nothing under these kinds" is the information (#96), and the
@@ -154,7 +159,7 @@ enum Theme {
         static let destructiveFill = Color(hex: 0x8A3428)
         static let destructiveText = Color(hex: 0xFFEDE8)
 
-        /// Badge fills: a tinted plate behind 9px uppercase text.
+        /// Badge fills: a tinted plate behind 10px uppercase text.
         static let goodBadgeFill = Color(hex: 0x1F3320)
         static let warnBadgeFill = Color(hex: 0x3A2C18)
         /// The warning tone in body copy, where `orange` would shout.
@@ -169,6 +174,40 @@ enum Theme {
         static let song = Color(hex: 0x6FBFB0)
         static let clip = Color(hex: 0xC58BB8)
         static let hide = Color(hex: 0xD07A6A)
+    }
+
+    // MARK: - Job families
+
+    /// The five families a background job belongs to, each with the hue
+    /// the tasks window draws it in. Colour says family; the state pill
+    /// says status — two encodings of two facts, never two of one.
+    ///
+    /// Its own palette, not borrowed: ingest used to read the player's
+    /// song colour and operations a tag-category hue, so a change meant
+    /// for one surface would have moved the other.
+    enum JobFamily: CaseIterable, Sendable {
+        /// Import, content hashing, thumbnails — getting files in and
+        /// described.
+        case ingest
+        /// Duplicate sweeps and the fingerprints they match on.
+        case duplicates
+        /// Edits to the media itself — export, remux, encode, block
+        /// removal, OCR, join, reorganise.
+        case operations
+        /// Tag write-back and its restore.
+        case writeback
+        /// Validation.
+        case validation
+
+        var color: Color {
+            switch self {
+            case .ingest: Color(hex: 0x6FBFB0)
+            case .duplicates: Color(hex: 0xC58BB8)
+            case .operations: Color(hex: 0x8B93E8)
+            case .writeback: Color(hex: 0xE9A23B)
+            case .validation: Color(hex: 0x9DBF7F)
+            }
+        }
     }
 
     // MARK: - Motion

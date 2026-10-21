@@ -156,7 +156,7 @@ struct ImportView: View {
                     if model.sources.isEmpty {
                         Text("No sources yet — add a folder to import from.")
                             .font(Theme.ui(12.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     ForEach(model.sources) { source in
                         ImportSourceRow(
@@ -176,7 +176,7 @@ struct ImportView: View {
                     }
                     Text("Scans are additive: new files are imported, known files are skipped, and files missing from disk are never removed.")
                         .font(Theme.ui(11))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -188,7 +188,7 @@ struct ImportView: View {
                         ? "This library overrides the app-wide lists — edit in Settings › Library Import."
                         : "App-wide lists — edit in Settings › Import, or override per library in Settings › Library Import.")
                         .font(Theme.ui(11))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -197,7 +197,7 @@ struct ImportView: View {
                     if history.isEmpty {
                         Text("No imports recorded yet.")
                             .font(Theme.ui(12))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                     }
                     ForEach(history) { record in
                         ImportHistoryRow(record: record)
@@ -254,8 +254,8 @@ struct ImportView: View {
                 notice = nil
             } label: {
                 Image(systemName: "xmark")
-                    .font(Theme.ui(9))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.ui(10))
+                    .foregroundStyle(Theme.Text.meta)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
@@ -348,7 +348,7 @@ struct ImportView: View {
                             ? "Nothing new under this source."
                             : "No media files under this source.")
                             .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(12)
                     }
@@ -403,6 +403,10 @@ struct ImportView: View {
             }
             .buttonStyle(.plain)
             .disabled(node.new == 0)
+            // A drawn square says nothing to VoiceOver.
+            .accessibilityLabel("Import the new files in \(node.name)")
+            .accessibilityValue(checked ? "ticked" : "not ticked")
+            .accessibilityAddTraits(.isToggle)
             .help(node.new == 0 ? "Nothing new here" : "Select the new files in this folder and its subfolders")
             if node.children.isEmpty {
                 Color.clear.frame(width: 10, height: 10)
@@ -411,8 +415,8 @@ struct ImportView: View {
                     if collapsed { collapsedFolders.remove(node.path) } else { collapsedFolders.insert(node.path) }
                 } label: {
                     Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                        .font(Theme.ui(9, .semibold))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.ui(10, .semibold))
+                        .foregroundStyle(Theme.Text.meta)
                         .frame(width: 10, height: 10)
                 }
                 .buttonStyle(.plain)
@@ -424,8 +428,8 @@ struct ImportView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(counts)
-                    .font(Theme.mono(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.mono(10))
+                    .foregroundStyle(Theme.Text.meta)
             }
             Spacer(minLength: 0)
         }
@@ -470,7 +474,7 @@ struct ImportView: View {
                     ? "Click a folder on the left to see its files."
                     : "No files match this scope and filter.")
                     .font(Theme.ui(12.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
@@ -506,7 +510,7 @@ struct ImportView: View {
             .padding(.top, 9)
             Text("Applies to every selected file in this import. Sticky boxes keep their values for the next one; the rest clear once it lands.")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -516,7 +520,7 @@ struct ImportView: View {
                     if boxes.isEmpty {
                         Text("No boxes configured yet — Configure boxes… picks which categories and fields stage here.")
                             .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(boxes) { box in
@@ -553,7 +557,7 @@ struct ImportView: View {
                     .font(Theme.ui(11.5))
                     .foregroundStyle(
                         willApplySummary.hasPrefix("Nothing")
-                            ? Theme.Text.disabled : Theme.Text.secondary)
+                            ? Theme.Text.meta : Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
@@ -570,11 +574,11 @@ struct ImportView: View {
                     .foregroundStyle(Theme.Status.green)
                 Text("\(outcome.knownCount) already in library")
                     .font(Theme.mono(11))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 if outcome.removedCount > 0 {
                     Text("\(outcome.removedCount) removed")
                         .font(Theme.mono(11))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 let skipped = outcome.skippedByExtension.values.reduce(0, +)
                 if skipped > 0 {
@@ -615,14 +619,13 @@ struct ImportView: View {
                     .font(Theme.ui(Theme.TypeScale.dialogTitle, .semibold))
                     .foregroundStyle(Theme.Text.primary)
                 if let progress {
-                    ProgressView(
-                        value: Double(progress.current),
-                        total: Double(max(progress.total, 1)))
+                    ThemeProgressBar.determinate(progress.current, of: progress.total, running: true)
                     Text("\(progress.current) of \(progress.total) probed and inserted")
                         .font(Theme.mono(11))
                         .foregroundStyle(Theme.Text.quaternary)
                 } else {
-                    ProgressView().controlSize(.small)
+                    // Started, no count yet: the same bar, working.
+                    ThemeProgressBar.indeterminate(running: true)
                 }
                 HStack(spacing: 9) {
                     Spacer()
@@ -1016,7 +1019,7 @@ private struct StepStrip: View {
         switch phase(of: entry) {
         case .done: Theme.Status.green
         case .current: Theme.Accent.amber
-        case .pending: Theme.Text.quaternary
+        case .pending: Theme.Text.meta
         }
     }
 
@@ -1040,7 +1043,7 @@ private struct StepStrip: View {
                 .frame(width: size, height: size)
                 .overlay {
                     Text("\(entry.rawValue + 1)")
-                        .font(Theme.mono(9.5, .bold))
+                        .font(Theme.mono(10, .bold))
                         .foregroundStyle(Theme.Text.onAmber)
                 }
                 .accessibilityLabel("Step \(entry.rawValue + 1), current")
@@ -1050,8 +1053,8 @@ private struct StepStrip: View {
                 .frame(width: size, height: size)
                 .overlay {
                     Text("\(entry.rawValue + 1)")
-                        .font(Theme.mono(9.5, .semibold))
-                        .foregroundStyle(Theme.Text.quaternary)
+                        .font(Theme.mono(10, .semibold))
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .accessibilityLabel("Step \(entry.rawValue + 1)")
         }
@@ -1083,6 +1086,10 @@ private struct CandidateRow: View {
             }
             .buttonStyle(.plain)
             .disabled(candidate.isKnown)
+            .accessibilityLabel("Import \(candidate.fileName)")
+            .accessibilityValue(
+                candidate.isKnown ? "already in library" : isSelected ? "ticked" : "not ticked")
+            .accessibilityAddTraits(.isToggle)
             .frame(width: 34, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(candidate.fileName)
@@ -1093,8 +1100,8 @@ private struct CandidateRow: View {
                     .truncationMode(.middle)
                 if !candidate.folderPath.isEmpty {
                     Text(candidate.folderPath)
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -1158,7 +1165,7 @@ private struct ImportSourceRow: View {
                     if !source.enabled {
                         ThemeBadge(
                             text: "disabled", fill: Theme.Surface.iconTile,
-                            foreground: Theme.Text.disabled)
+                            foreground: Theme.Text.meta)
                     }
                 }
                 PathText(path: source.rootPath, size: 10.5)
@@ -1171,7 +1178,7 @@ private struct ImportSourceRow: View {
                 if let lastSeen = source.lastSeenAt {
                     Text("scanned \(lastSeen.formatted(.relative(presentation: .named)))")
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
             }
             Button("Scan", action: onScan)
@@ -1190,11 +1197,11 @@ private struct ImportHistoryRow: View {
 
     private var stateLabel: (text: String, color: Color) {
         switch record.state {
-        case .queued: ("queued", Theme.Text.disabled)
+        case .queued: ("queued", Theme.Text.meta)
         case .running: ("running", Theme.Status.blue)
         case .succeeded: ("done", Theme.Status.green)
         case .failed: ("failed", Theme.Status.orange)
-        case .cancelled: ("cancelled", Theme.Text.disabled)
+        case .cancelled: ("cancelled", Theme.Text.meta)
         }
     }
 
@@ -1213,8 +1220,8 @@ private struct ImportHistoryRow: View {
             Spacer()
             Text((record.finishedAt ?? record.createdAt)
                 .formatted(date: .abbreviated, time: .shortened))
-                .font(Theme.mono(9.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .font(Theme.mono(10))
+                .foregroundStyle(Theme.Text.meta)
         }
     }
 }
@@ -1236,7 +1243,7 @@ private struct FinishedSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Text("Thumbnails and content hashes are queued as background jobs and will fill in on their own.")
                 .font(Theme.ui(11.5))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 9) {
                 Spacer()

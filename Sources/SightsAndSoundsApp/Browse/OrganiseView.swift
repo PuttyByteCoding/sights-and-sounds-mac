@@ -214,7 +214,7 @@ struct OrganiseView: View {
 
             Text("A token names a category; underscores stand in for spaces. Anything else is literal, and a slash makes a level.")
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
 
             ForEach(planner.validationErrors, id: \.self) { error in
@@ -248,8 +248,8 @@ struct OrganiseView: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Text(entry.fromFolder.isEmpty ? "(root)" : entry.fromFolder)
-                                .font(Theme.mono(9.5))
-                                .foregroundStyle(Theme.Text.disabled)
+                                .font(Theme.mono(10))
+                                .foregroundStyle(Theme.Text.meta)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -266,7 +266,7 @@ struct OrganiseView: View {
                                 // tag it and run again.
                                 Text("stays where it is")
                                     .font(Theme.ui(11))
-                                    .foregroundStyle(Theme.Text.disabled)
+                                    .foregroundStyle(Theme.Text.meta)
                                 if let reason = entry.reason {
                                     Text(reason)
                                         .font(Theme.ui(10.5))
@@ -310,7 +310,7 @@ struct OrganiseView: View {
                             }
                             Text("A skipped item is left exactly where it is. Tag it and run the plan again — nothing has to be undone first.")
                                 .font(Theme.ui(10.5))
-                                .foregroundStyle(Theme.Text.disabled)
+                                .foregroundStyle(Theme.Text.meta)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -327,7 +327,7 @@ struct OrganiseView: View {
                                     Spacer()
                                     Text("\(entry.count)")
                                         .font(Theme.mono(10))
-                                        .foregroundStyle(Theme.Text.disabled)
+                                        .foregroundStyle(Theme.Text.meta)
                                 }
                             }
                         }
@@ -345,7 +345,7 @@ struct OrganiseView: View {
                 .disabled(applying || movesPending || !planner.isCurrent || planner.plan.movableCount == 0 || !planner.validationErrors.isEmpty)
                 Text("Runs as a background job. Each move is logged individually, so a bad template is one session to put back rather than a restore from backup.")
                     .font(Theme.ui(10.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)
@@ -361,7 +361,7 @@ struct OrganiseView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text(label)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
         }
     }
 
@@ -378,7 +378,7 @@ struct OrganiseView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("Staging, reorganization and manual moves appear here, each revertible.")
                         .font(Theme.ui(12.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -389,7 +389,7 @@ struct OrganiseView: View {
                         }
                         Text("Reverting is one-shot per move — a move that has been put back cannot be put back again, and the entry stays as the record that it happened.")
                             .font(Theme.ui(10.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -428,8 +428,8 @@ struct OrganiseView: View {
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(log.fromPath)
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(width: 190, alignment: .leading)
@@ -441,8 +441,8 @@ struct OrganiseView: View {
                     // that the move happened, not a description of where
                     // the file is now.
                     Text(log.toPath)
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                         .strikethrough(log.revertedAt != nil)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -457,7 +457,7 @@ struct OrganiseView: View {
                         // evidence — stay readable.
                         Text("reverted")
                             .font(Theme.ui(10.5))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .foregroundStyle(Theme.Text.meta)
                             .frame(width: 92, alignment: .trailing)
                     }
                 }
@@ -474,10 +474,10 @@ struct OrganiseView: View {
         let color: Color = switch state {
         case .applied: Theme.Status.green
         case .partlyReverted: Theme.Status.orange
-        case .fullyReverted: Theme.Text.disabled
+        case .fullyReverted: Theme.Text.meta
         }
         return Text(state.displayName)
-            .font(Theme.ui(9, .bold))
+            .font(Theme.ui(10, .bold))
             .foregroundStyle(color)
             .padding(.vertical, 1.5)
             .padding(.horizontal, 6)

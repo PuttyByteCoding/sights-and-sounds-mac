@@ -196,6 +196,15 @@ public enum PlayerKeyMap {
         }
     }
 
+    /// `?` opens the keyboard map — chooser and permanent cheat sheet.
+    /// It is the ONE printable key that reaches the window while a text
+    /// field owns the keyboard: a fresh item lands the keyboard in the
+    /// first tag field, and "what does this key do" must be answerable
+    /// from there without typing a question mark into the tag. Every
+    /// other printable key stays with the field.
+    public static func opensKeyboardMap(_ character: Character) -> Bool {
+        character == "?"
+    }
 
     // MARK: - The four rows the maps disagree on
 

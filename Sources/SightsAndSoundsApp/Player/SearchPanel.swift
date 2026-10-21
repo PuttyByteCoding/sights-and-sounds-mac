@@ -29,8 +29,8 @@ struct SearchPanel: View {
                 Spacer()
                 if !isEditing {
                     Text(model.searchFormats.formats.isEmpty ? "" : "\(model.searchFormats.formats.count)")
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                     Button {
                         let count = model.searchFormats.formats.count
                         draft = SearchRecipe(name: count == 0 ? "Default" : "Format \(count + 1)")
@@ -54,7 +54,7 @@ struct SearchPanel: View {
             } else if model.searchFormats.formats.isEmpty {
                 Text("No search formats yet — press + to make one, or add it in Settings › Search String.")
                     .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 22)
@@ -70,7 +70,7 @@ struct SearchPanel: View {
                         // string ⌘⇧C copies, whatever else is listed.
                         if let primary = model.searchFormats.defaultFormat {
                             Text("⌘⇧C copies")
-                                .font(Theme.ui(9.5, .semibold))
+                                .font(Theme.ui(10, .semibold))
                                 .foregroundStyle(Theme.Accent.amber)
                                 .padding(.horizontal, 4)
                             row(primary, isDefault: true)
@@ -78,7 +78,7 @@ struct SearchPanel: View {
                         let others = model.searchFormats.formats.filter { $0.id != model.searchFormats.defaultFormat?.id }
                         if !others.isEmpty {
                             Text("Other formats")
-                                .font(Theme.ui(9.5, .semibold))
+                                .font(Theme.ui(10, .semibold))
                                 .foregroundStyle(Theme.Text.quaternary)
                                 .padding(.horizontal, 4)
                                 .padding(.top, 6)
@@ -89,8 +89,8 @@ struct SearchPanel: View {
                     .padding(.bottom, 8)
                 }
                 Text("Click a string to copy it · Edit to change it · “Use for ⌘⇧C” moves the default")
-                    .font(Theme.ui(9.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .font(Theme.ui(10))
+                    .foregroundStyle(Theme.Text.meta)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
             }
@@ -106,11 +106,11 @@ struct SearchPanel: View {
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Would copy")
-                    .font(Theme.ui(9.5, .semibold))
+                    .font(Theme.ui(10, .semibold))
                     .foregroundStyle(Theme.Accent.amber)
                 Text(string.isEmpty ? "(nothing for this item yet)" : string)
                     .font(Theme.mono(11))
-                    .foregroundStyle(string.isEmpty ? Theme.Text.disabled : Theme.Text.primary)
+                    .foregroundStyle(string.isEmpty ? Theme.Text.meta : Theme.Text.primary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -136,9 +136,9 @@ struct SearchPanel: View {
                             .stroke(Theme.Border.standard, lineWidth: 1))
             }
 
-            Text("Parts").font(Theme.ui(9.5, .semibold)).foregroundStyle(Theme.Text.quaternary)
+            Text("Parts").font(Theme.ui(10, .semibold)).foregroundStyle(Theme.Text.quaternary)
             RecipeParts(recipe: draft, categories: model.panelVocabulary.map(\.category), compact: true)
-            Text("Rules").font(Theme.ui(9.5, .semibold)).foregroundStyle(Theme.Text.quaternary).padding(.top, 4)
+            Text("Rules").font(Theme.ui(10, .semibold)).foregroundStyle(Theme.Text.quaternary).padding(.top, 4)
             RecipeRules(recipe: draft, compact: true, preview: model.searchSubject)
 
             // No key equivalents: in the player window Return belongs to
@@ -175,7 +175,7 @@ struct SearchPanel: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text(string.isEmpty ? "(nothing for this item)" : string)
                         .font(Theme.mono(11))
-                        .foregroundStyle(string.isEmpty ? Theme.Text.disabled : Theme.Text.primary)
+                        .foregroundStyle(string.isEmpty ? Theme.Text.meta : Theme.Text.primary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -213,7 +213,7 @@ struct SearchPanel: View {
                     model.setDefaultSearchFormat(format.id)
                 } label: {
                     Text("Use for ⌘⇧C")
-                        .font(Theme.ui(9.5))
+                        .font(Theme.ui(10))
                         .foregroundStyle(Theme.Text.tertiary)
                         .padding(.vertical, 2)
                         .padding(.horizontal, 5)

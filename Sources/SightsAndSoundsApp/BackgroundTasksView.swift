@@ -20,6 +20,9 @@ struct BackgroundTasksView: View {
     @State private var selectedJob: JobRecord?
     @State private var filter: StateFilter = .all
     @State private var toast: String?
+    /// The sweeps ledger is shut unless it was left open: it is a
+    /// maintenance tool, and the lanes and table come first.
+    @AppStorage("backgroundTasks.sweepsExpanded") private var sweepsExpanded = false
 
     struct Lane: Identifiable {
         let id: UUID
@@ -57,10 +60,13 @@ struct BackgroundTasksView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Toolbar, banner, lanes, then the sweeps ledger shut, then
+            // the table: spec 06's order, with the sweeps where they do
+            // not push the state of the machine below the fold.
             toolbar
             if app.tasksPaused { pausedBanner }
-            SweepPanel()
             if !lanes.isEmpty { laneCards }
+            SweepPanel(isExpanded: $sweepsExpanded)
             HStack(spacing: 0) {
                 table
                 Rectangle().fill(Theme.Border.standard).frame(width: 1)
@@ -205,7 +211,7 @@ struct BackgroundTasksView: View {
                         .foregroundStyle(Theme.Text.quaternary)
                     Text("Workers sleep until there is work. This is the normal state.")
                         .font(Theme.ui(12.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -240,7 +246,7 @@ struct BackgroundTasksView: View {
             } else {
                 Text("Select a job to see its timeline, payload and any error.")
                     .font(Theme.ui(12))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                     .multilineTextAlignment(.center)
                     .padding(20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -439,7 +445,7 @@ private struct LaneCard: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text(lane.queued == 0 ? "no queue" : "\(lane.queued) queued")
                     .font(Theme.mono(10))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
                 Spacer(minLength: 12)
                 Button(lane.isPaused ? "Resume" : "Pause") { onPause(!lane.isPaused) }
                     .buttonStyle(SecondaryButtonStyle(compact: true))
@@ -452,22 +458,21 @@ private struct LaneCard: View {
                             .font(Theme.ui(12))
                             .foregroundStyle(Theme.Text.secondary)
                         Text(running.kind)
-                            .font(Theme.mono(9))
-                            .foregroundStyle(Theme.Text.disabled)
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.meta)
                     }
-                    ProgressView(
-                        value: Double(running.progressCurrent),
-                        total: Double(max(running.progressTotal ?? 1, 1)))
-                        .frame(height: 5)
+                    ThemeProgressBar.determinate(
+                        running.progressCurrent, of: running.progressTotal ?? 0,
+                        running: !lane.isPaused)
                     Text(progressText(running))
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.Text.meta)
                 }
             } else {
                 Text(!lane.isAnswering ? "not answering"
                     : lane.isPaused ? "paused · waiting for work" : "no job running")
                     .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Text.disabled)
+                    .foregroundStyle(Theme.Text.meta)
             }
         }
         .padding(11)
@@ -516,7 +521,7 @@ private struct JobRow: View {
                 if let summary = job.summary {
                     Text(summary)
                         .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .lineLimit(1)
                 } else if let error = job.error {
                     Text(error)
@@ -533,11 +538,21 @@ private struct JobRow: View {
                 .frame(width: 132, alignment: .leading)
             Group {
                 if job.state == .running, let total = job.progressTotal, total > 0 {
-                    ProgressView(value: Double(job.progressCurrent), total: Double(total))
+                    // The bar and the count: a bar alone says "some",
+                    // and the row beneath it, finished, says a number.
+                    HStack(spacing: 6) {
+                        ThemeProgressBar.determinate(job.progressCurrent, of: total, running: true)
+                        Text("\(job.progressCurrent) of \(total)")
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.disabled)
+                            .fixedSize()
+                    }
+                } else if job.state == .running {
+                    ThemeProgressBar.indeterminate(running: true)
                 } else if let total = job.progressTotal, total > 0 {
-                    Text("\(job.progressCurrent)/\(total)")
+                    Text("\(job.progressCurrent) of \(total)")
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                 } else {
                     Text("—")
                         .font(Theme.mono(10))
@@ -547,15 +562,18 @@ private struct JobRow: View {
             .frame(width: 118, alignment: .leading)
             Text(elapsed)
                 .font(Theme.mono(10))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
                 .frame(width: 92, alignment: .trailing)
             HStack(spacing: 6) {
                 StatePill(state: job.state)
                 if job.state == .queued || job.state == .running {
-                    Button("Cancel", action: onCancel)
-                        .buttonStyle(.plain)
-                        .font(Theme.ui(10.5))
-                        .foregroundStyle(Theme.Text.quaternary)
+                    // Irreversible, so it gets a real target — the word
+                    // alone was a ~12pt one.
+                    IconButton("Cancel \(JobNames.displayName(job.kind))", action: onCancel) {
+                        Text("Cancel")
+                            .font(Theme.ui(10.5))
+                            .foregroundStyle(Theme.Text.quaternary)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -591,7 +609,7 @@ private struct StatePill: View {
 
     var body: some View {
         Text(label)
-            .font(Theme.ui(9, .bold))
+            .font(Theme.ui(10, .bold))
             .foregroundStyle(color)
             .padding(.vertical, 1.5)
             .padding(.horizontal, 6)
@@ -615,7 +633,7 @@ private struct StatePill: View {
         case .running: Theme.Accent.amber
         case .succeeded: Theme.Status.green
         case .failed: Theme.Status.red
-        case .cancelled: Theme.Text.disabled
+        case .cancelled: Theme.Text.meta
         }
     }
 }
@@ -637,11 +655,22 @@ private struct JobInspector: View {
                         .foregroundStyle(Theme.Text.primary)
                     Text(job.kind)
                         .font(Theme.mono(10))
-                        .foregroundStyle(Theme.Text.disabled)
+                        .foregroundStyle(Theme.Text.meta)
                         .textSelection(.enabled)
                     Text(library)
                         .font(Theme.ui(11.5))
                         .foregroundStyle(Theme.Text.quaternary)
+                }
+
+                if job.state == .running {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Progress").modifier(Theme.sectionLabel())
+                        ThemeProgressBar.determinate(
+                            job.progressCurrent, of: job.progressTotal ?? 0, running: true)
+                        Text(progressText)
+                            .font(Theme.mono(10))
+                            .foregroundStyle(Theme.Text.quaternary)
+                    }
                 }
 
                 if let summary = job.summary {
@@ -725,11 +754,18 @@ private struct JobInspector: View {
         }
     }
 
+    /// The same words the lane card uses for the same job.
+    private var progressText: String {
+        guard let total = job.progressTotal, total > 0 else { return "working…" }
+        let percent = Int(Double(job.progressCurrent) / Double(total) * 100)
+        return "\(job.progressCurrent) of \(total) · \(percent)%"
+    }
+
     private func timelineRow(_ label: String, _ date: Date?) -> some View {
         HStack {
             Text(label)
                 .font(Theme.ui(11))
-                .foregroundStyle(Theme.Text.disabled)
+                .foregroundStyle(Theme.Text.meta)
             Spacer()
             Text(date?.formatted(date: .abbreviated, time: .standard) ?? "—")
                 .font(Theme.mono(10))
@@ -781,15 +817,24 @@ enum JobNames {
         }
     }
 
-    /// Colour by family, derived from the kind's prefix — ingest,
-    /// duplicates, operations, write-back, validation.
-    static func familyColor(_ kind: String) -> Color {
+    /// The family a kind belongs to, from the prefix every `Job.kind`
+    /// carries. Anything not named is an operation — the edits to media
+    /// are the family that grows. The prefixes are the kinds' real ones:
+    /// `hash`, `thumbnail` and `fingerprint` used to be listed here and
+    /// never matched `contentHash.sweep`, `thumbnails.sweep` or
+    /// `fingerprints.capture`, so those drew as operations.
+    static func family(_ kind: String) -> Theme.JobFamily {
         switch kind.split(separator: ".").first.map(String.init) ?? "" {
-        case "import", "hash", "thumbnail": Theme.Segment.song
-        case "duplicates", "fingerprint": Theme.Status.mauve
-        case "writeback", "restore": Theme.Accent.amber
-        case "validation": Color(hex: 0x9DBF7F)
-        default: Color(hex: 0x8B93E8)
+        case "import", "contentHash", "thumbnails", "mediaSignal", "tagAnalysis": .ingest
+        case "duplicates", "fingerprints": .duplicates
+        case "writeback": .writeback
+        case "validation": .validation
+        default: .operations
         }
+    }
+
+    /// Colour by family; the palette lives with the other tokens.
+    static func familyColor(_ kind: String) -> Color {
+        family(kind).color
     }
 }
