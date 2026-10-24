@@ -42,7 +42,7 @@ struct SightsAndSoundsApp: App {
         // as soon as a library is chosen. A `Window`, not a `WindowGroup`
         // — there is only ever one, and choosing twice should return to
         // the one already up rather than stack a second.
-        Window("Sights and Sounds", id: Self.pickerWindowID) {
+        Window("Libraries", id: Self.pickerWindowID) {
             LibraryPickerView()
                 .environment(model)
                 .uiZoomed()
@@ -56,17 +56,30 @@ struct SightsAndSoundsApp: App {
             // targets the library window group with no library, which
             // can only open an empty window. Libraries open from here.
             CommandGroup(replacing: .newItem) {
+                NewLibraryCommand()
+                    .environment(model)
                 OpenLibraryCommand()
                     .environment(model)
             }
-            // Every workspace, in the system View menu — the toolbar's
-            // overflow menu and the palette both reach the same windows,
-            // but the menu bar is where anyone looks first, and it is the
-            // only one of the three that is discoverable without already
-            // being in a library window.
-            CommandGroup(after: .sidebar) {
+            // The workspaces have a menu of their own rather than a
+            // tail on View. They are all per-library and all open a
+            // window, which is one job; View had been carrying four.
+            CommandMenu("Library") {
+                LibraryMenuCommands()
+                    .environment(model)
+            }
+            // What is left of View: the palette and the zoom. Appended
+            // to the toolbar group, not the sidebar group — this app has
+            // no sidebar command, and asking for one made SwiftUI
+            // materialise a stray Toggle Sidebar item in Help.
+            CommandGroup(replacing: .toolbar) {
                 ViewMenuCommands()
                     .environment(model)
+            }
+            // The windows that are not a library: they belong with the
+            // other windows, not among the library workspaces.
+            CommandGroup(before: .windowList) {
+                AppWindowCommands()
             }
             // The search string (spec 17): three commands that act on the
             // focused window's item — playing, else singly selected —
@@ -395,6 +408,10 @@ final class AppModel {
     enum PickerContext { case launch, menu }
 
     var pickerContext: PickerContext = .launch
+    /// Set by File ▸ New Library…, read and cleared by the picker,
+    /// which owns the sheet. The menu item has no view of its own to
+    /// raise it from.
+    var startsNewLibrary = false
     /// The library whose window "This window" would close. Nil from
     /// launch, and nil from the menu when no library window has focus.
     var pickerOriginLibraryID: UUID?
@@ -747,6 +764,21 @@ extension FocusedValues {
 /// window" would close. With no library window focused there is nothing
 /// to replace, so the placement band stays away and the dialog behaves as
 /// it does at launch, apart from cancel still meaning cancel.
+struct NewLibraryCommand: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("New Library…") {
+            model.pickerContext = .menu
+            model.refresh()
+            model.startsNewLibrary = true
+            openWindow(id: SightsAndSoundsApp.pickerWindowID)
+        }
+        .keyboardShortcut("n", modifiers: .command)
+    }
+}
+
 struct OpenLibraryCommand: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
@@ -763,70 +795,48 @@ struct OpenLibraryCommand: View {
     }
 }
 
-/// The View menu's workspace entries. Enabled only while a library
-/// window has focus: every one of these windows is per-library, so with
-/// no library in front there is nothing coherent for them to open.
+/// The Library menu: one window per workspace, every one of them
+/// per-library. Enabled only while a library window has focus — with no
+/// library in front there is nothing coherent for them to open.
 ///
 /// Operations is deliberately absent — it opens against a selection of
 /// items (`AuxWindowRequest.itemIDs`), which a menu bar does not have.
-struct ViewMenuCommands: View {
+///
+/// Titles and icons come from `Destination`, the one table the toolbar
+/// and the command palette read as well.
+struct LibraryMenuCommands: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.openLibraryID) private var focusedLibraryID
     @FocusedValue(\.browseModel) private var focusedBrowse
-    @FocusedBinding(\.commandPalette) private var commandPalette
 
     var body: some View {
-        Divider()
-        // ⌃K over the library window: one field reaching windows,
-        // filters, tagging, operations and views. A menu shortcut is read
-        // before any view's key handler, so it works from the grid, the
-        // player and a tag field alike.
-        Button("Command Palette…") { commandPalette = true }
-            .keyboardShortcut("k", modifiers: .control)
-            .disabled(commandPalette == nil)
-        Divider()
         Group {
-            aux("Tag Manager", .categories, key: "1")
-            aux("Import", .importMedia, key: "2")
-            aux("Review", .review, key: "3")
-            aux("Organise", .organise, key: "4")
-            aux("Maintenance", .maintenance, key: "5")
-            aux("Tag Analysis", .tagAnalysis, key: "6")
-            aux("History", .watched, key: "7")
+            aux(.tagManager, key: "1")
+            aux(.importMedia, key: "2")
+            aux(.review, key: "3")
+            aux(.organise, key: "4")
+            aux(.maintenance, key: "5")
+            aux(.tagAnalysis, key: "6")
+            aux(.history, key: "7")
+            Divider()
             // ⌘I, the Mac's Get Info key. It was ⌥⌘8, which macOS keeps
             // for Accessibility Zoom on/off — it never reached the app for
             // anyone with that shortcut enabled.
-            Button("Library Properties") {
+            Button {
                 guard let focusedLibraryID else { return }
                 openWindow(id: "properties", value: focusedLibraryID)
+            } label: {
+                Destination.libraryProperties.label
             }
             .keyboardShortcut("i", modifiers: .command)
         }
         .disabled(focusedLibraryID == nil)
-        Divider()
-        // App-wide, so never disabled: tasks and the log exist without a
-        // library window in front.
-        Button("Background Tasks") { openWindow(id: "tasks") }
-            .keyboardShortcut("9", modifiers: [.command, .option])
-        Button("Log") { openWindow(id: "log") }
-            .keyboardShortcut("0", modifiers: [.command, .option])
-        Divider()
-        // ⌘= is the zoom-in key (the same physical key as +, unshifted —
-        // the convention every browser follows).
-        Button("Zoom In") { UIZoom.shared.zoomIn() }
-            .keyboardShortcut("=", modifiers: .command)
-        Button("Zoom Out") { UIZoom.shared.zoomOut() }
-            .keyboardShortcut("-", modifiers: .command)
-        Button("Actual Size") { UIZoom.shared.reset() }
-            .keyboardShortcut("0", modifiers: .command)
     }
 
-    private func aux(
-        _ title: String, _ kind: AuxWindowRequest.Kind, key: Character
-    ) -> some View {
-        Button(title) {
-            guard let focusedLibraryID else { return }
+    private func aux(_ destination: Destination, key: Character) -> some View {
+        Button {
+            guard let focusedLibraryID, let kind = destination.auxKind else { return }
             // Tag Analysis follows a player: the focused window opens
             // one first, and it opens the companion.
             if kind == .tagAnalysis {
@@ -834,6 +844,8 @@ struct ViewMenuCommands: View {
                 return
             }
             openWindow(id: "aux", value: Self.request(kind, libraryID: focusedLibraryID, browse: focusedBrowse))
+        } label: {
+            destination.label
         }
         .keyboardShortcut(KeyEquivalent(key), modifiers: [.command, .option])
     }
@@ -848,6 +860,50 @@ struct ViewMenuCommands: View {
             return AuxWindowRequest(libraryID: libraryID, kind: kind)
         }
         return browse.auxRequest(kind)
+    }
+}
+
+/// What is left in View once the workspaces have their own menu: the
+/// one field that reaches everything, and the zoom.
+struct ViewMenuCommands: View {
+    @FocusedBinding(\.commandPalette) private var commandPalette
+
+    var body: some View {
+        // ⌃K over the library window: one field reaching windows,
+        // filters, tagging, operations and views. A menu shortcut is read
+        // before any view's key handler, so it works from the grid, the
+        // player and a tag field alike.
+        Button("Command Palette…", systemImage: "magnifyingglass") { commandPalette = true }
+            .keyboardShortcut("k", modifiers: .control)
+            .disabled(commandPalette == nil)
+        Divider()
+        // ⌘= is the zoom-in key (the same physical key as +, unshifted —
+        // the convention every browser follows).
+        Button("Zoom In", systemImage: "plus.magnifyingglass") { UIZoom.shared.zoomIn() }
+            .keyboardShortcut("=", modifiers: .command)
+        Button("Zoom Out", systemImage: "minus.magnifyingglass") { UIZoom.shared.zoomOut() }
+            .keyboardShortcut("-", modifiers: .command)
+        Button("Actual Size", systemImage: "1.magnifyingglass") { UIZoom.shared.reset() }
+            .keyboardShortcut("0", modifiers: .command)
+    }
+}
+
+/// The app's own windows, in the Window menu beside the library windows
+/// the system lists there. App-wide, so never disabled: tasks and the
+/// log exist without a library window in front.
+struct AppWindowCommands: View {
+    var body: some View {
+        TasksWindowButton()
+            .keyboardShortcut("9", modifiers: [.command, .option])
+        LogWindowButton()
+            .keyboardShortcut("0", modifiers: [.command, .option])
+        // Writes this app's own windows and menus to a folder: the
+        // permission-free way to show someone helping remotely what the
+        // app looks like, without handing them the whole screen.
+        Button("Capture UI Snapshot", systemImage: "camera.viewfinder") {
+            UISnapshot.captureAndReveal()
+        }
+        Divider()
     }
 }
 
@@ -1026,8 +1082,8 @@ struct LogWindowButton: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Log", systemImage: "text.alignleft") {
-            openWindow(id: "log")
+        Button(action: { openWindow(id: "log") }) {
+            Destination.log.label
         }
         .help("The app's debug log — what happened, and why")
     }
@@ -1037,8 +1093,8 @@ struct TasksWindowButton: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Background Tasks", systemImage: "list.bullet.rectangle") {
-            openWindow(id: "tasks")
+        Button(action: { openWindow(id: "tasks") }) {
+            Destination.backgroundTasks.label
         }
         .help("Imports, hashing, thumbnails and operations — across all libraries")
     }

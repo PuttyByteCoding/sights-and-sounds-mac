@@ -178,14 +178,14 @@ struct BrowseView: View {
                     }
                 }
                 ToolbarItem {
-                    Button("Import", systemImage: "square.and.arrow.down") {
-                        openAux(.importMedia)
+                    Button(action: { openAux(.importMedia) }) {
+                        Destination.importMedia.label
                     }
                     .help("Add source folders and scan them for new files")
                 }
                 ToolbarItem {
-                    Button("Tag Manager", systemImage: "tag.square") {
-                        openAux(.categories)
+                    Button(action: { openAux(.categories) }) {
+                        Destination.tagManager.label
                     }
                     .help("Author this library's vocabulary — categories, tags, aliases and fields")
                 }
@@ -193,7 +193,7 @@ struct BrowseView: View {
                     Button {
                         openAux(.review)
                     } label: {
-                        Label("Review", systemImage: "checklist")
+                        Destination.review.label
                             .badge(model.pendingDuplicateCount)
                     }
                     .help(model.pendingDuplicateCount > 0
@@ -201,25 +201,25 @@ struct BrowseView: View {
                         : "Duplicates, the delete list and playback issues")
                 }
                 ToolbarItem {
-                    Button("History", systemImage: "clock.arrow.circlepath") {
-                        openAux(.watched)
+                    Button(action: { openAux(.watched) }) {
+                        Destination.history.label
                     }
                     .help("What you have played, and where you stopped")
                 }
                 ToolbarItem {
                     Menu {
-                        Button("Library Properties…", systemImage: "info.circle") {
-                            openWindow(id: "properties", value: model.libraryID)
+                        Button(action: { openWindow(id: "properties", value: model.libraryID) }) {
+                            Destination.libraryProperties.label
                         }
                         Divider()
-                        Button("Organise…", systemImage: "folder.badge.gearshape") {
-                            openAux(.organise)
+                        Button(action: { openAux(.organise) }) {
+                            Destination.organise.label
                         }
-                        Button("Maintenance…", systemImage: "checkmark.seal") {
-                            openAux(.maintenance)
+                        Button(action: { openAux(.maintenance) }) {
+                            Destination.maintenance.label
                         }
-                        Button("Tag Analysis…", systemImage: "tag.square") {
-                            openAux(.tagAnalysis)
+                        Button(action: { openAux(.tagAnalysis) }) {
+                            Destination.tagAnalysis.label
                         }
                         Button("Back Up Now", systemImage: "externaldrive.badge.timemachine") {
                             // Off the main actor: a full backup of a large
@@ -249,9 +249,9 @@ struct BrowseView: View {
                         .disabled(model.visibleItems.isEmpty)
                         PurgeButton()
                     } label: {
-                        Label("Maintenance", systemImage: "wrench.adjustable")
+                        Label("More", systemImage: "ellipsis.circle")
                     }
-                    .help("Move history, reorganize, validate, back up, write tags, purge")
+                    .help("Properties, organise, maintenance, tag analysis, back up, write tags, purge")
                 }
                 ToolbarItem {
                     LogWindowButton()

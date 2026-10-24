@@ -22,7 +22,6 @@ struct LibraryPickerView: View {
 
     @State private var selection: UUID?
     @State private var placement: Placement = .newWindow
-    @State private var showingNewLibrary = false
     @State private var showingConnect = false
     @State private var movingHost: SavedHost?
     /// Progress of a demo or sample library being made. The buttons that
@@ -86,7 +85,7 @@ struct LibraryPickerView: View {
                 selection = defaultSelection
             }
         }
-        .sheet(isPresented: $showingNewLibrary) {
+        .sheet(isPresented: Bindable(model).startsNewLibrary) {
             NewLibraryView()
                 .environment(model)
         }
@@ -277,7 +276,7 @@ struct LibraryPickerView: View {
 
     private var buttonRow: some View {
         HStack(spacing: 8) {
-            Button("New Library…") { showingNewLibrary = true }
+            Button("New Library…") { model.startsNewLibrary = true }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
                 .help("Create a new library from a template")
             AddExistingLibraryButton()
