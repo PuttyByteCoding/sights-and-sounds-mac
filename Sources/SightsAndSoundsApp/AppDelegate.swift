@@ -15,6 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by the app's first window; weak, the app owns the model.
     weak var model: AppModel?
 
+    /// A review that cannot see the screen asks for the windows and the
+    /// menus by setting `SAS_UI_SNAPSHOT_DIR`; nothing happens without
+    /// it. See `UISnapshot` for why this exists rather than a screen
+    /// recording.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UISnapshot.captureIfEnvironmentAsks()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let running = model?.runningJobCount() ?? 0
         guard running > 0 else { return terminateOnceWritesSettle(sender) }

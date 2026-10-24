@@ -328,36 +328,25 @@ struct CommandPalette: View {
         openWindow(id: "aux", value: model.auxRequest(kind))
     }
 
+    /// Titles and symbols come from `Destination`, so the palette, the
+    /// toolbar and the Library menu cannot drift apart again. History
+    /// joins them: it was reachable from the toolbar and the menu but
+    /// not from here.
     private var goTo: [PaletteCommand] {
-        [
-            PaletteCommand(group: .goTo, title: "Tag Manager", symbol: "tag.square") {
-                aux(.categories)
-            },
-            PaletteCommand(group: .goTo, title: "Import", symbol: "square.and.arrow.down") {
-                aux(.importMedia)
-            },
-            PaletteCommand(group: .goTo, title: "Review", symbol: "checklist") {
-                aux(.review)
-            },
-            PaletteCommand(group: .goTo, title: "Organise", symbol: "folder.badge.gearshape") {
-                aux(.organise)
-            },
-            PaletteCommand(group: .goTo, title: "Maintenance", symbol: "checkmark.seal") {
-                aux(.maintenance)
-            },
-            PaletteCommand(group: .goTo, title: "Tag Analysis", symbol: "tag.square") {
-                aux(.tagAnalysis)
-            },
-            PaletteCommand(group: .goTo, title: "Background Tasks", symbol: "gearshape.2") {
-                openWindow(id: "tasks")
-            },
-            PaletteCommand(group: .goTo, title: "Library Properties", symbol: "info.circle") {
-                openWindow(id: "properties", value: model.libraryID)
-            },
-            PaletteCommand(group: .goTo, title: "Log", symbol: "doc.text") {
-                openWindow(id: "log")
-            },
-        ]
+        return Destination.allCases.map { destination in
+            return PaletteCommand(
+                group: .goTo, title: destination.title, symbol: destination.symbol,
+                run: {
+                    switch destination {
+                    case .backgroundTasks: openWindow(id: "tasks")
+                    case .log: openWindow(id: "log")
+                    case .libraryProperties:
+                        openWindow(id: "properties", value: model.libraryID)
+                    default:
+                        if let kind = destination.auxKind { aux(kind) }
+                    }
+                })
+        }
     }
 
     private var filters: [PaletteCommand] {

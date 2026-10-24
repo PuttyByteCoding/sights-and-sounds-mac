@@ -43,12 +43,12 @@ import Testing
         // does: it built a bare request, so Maintenance opened on the
         // whole library and a second window beside the toolbar's.
         for kind in AuxWindowRequest.Kind.allCases {
-            #expect(ViewMenuCommands.request(kind, libraryID: model.libraryID, browse: model)
+            #expect(LibraryMenuCommands.request(kind, libraryID: model.libraryID, browse: model)
                     == model.auxRequest(kind), "\(kind)")
         }
         // A focused grid of another library lends nothing.
         let elsewhere = UUID()
-        #expect(ViewMenuCommands.request(.maintenance, libraryID: elsewhere, browse: model)
+        #expect(LibraryMenuCommands.request(.maintenance, libraryID: elsewhere, browse: model)
                 == AuxWindowRequest(libraryID: elsewhere, kind: .maintenance))
     }
 

@@ -1035,15 +1035,19 @@ private struct FlagButtons: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            flag(.favorite, on: item.isFavorite, "★", "Favorite (F)")
-            flag(.needsReview, on: item.needsReview, "⟳", "Needs review (R)")
-            flag(.playbackIssue, on: item.playbackIssue, "⚠", "Playback issue (W)")
-            flag(.markedForDeletion, on: item.markedForDeletion, "⌫", "Marked for deletion (D or ⌫ · ⇧⌫ always marks and moves on)")
+            flag(.favorite, on: item.isFavorite, "Favorite (F)")
+            flag(.needsReview, on: item.needsReview, "Needs review (R)")
+            flag(.playbackIssue, on: item.playbackIssue, "Playback issue (W)")
+            flag(.markedForDeletion, on: item.markedForDeletion, "Marked for deletion (D or ⌫ · ⇧⌫ always marks and moves on)")
         }
     }
 
+    /// Symbol over name. These four were bare Unicode with nothing under
+    /// them; the name is what makes them readable without hovering, and
+    /// the symbols are the ones the command palette uses for the same
+    /// four flags.
     private func flag(
-        _ flag: PlayerToggleFlag, on: Bool, _ glyph: String, _ help: String
+        _ flag: PlayerToggleFlag, on: Bool, _ help: String
     ) -> some View {
         Button {
             switch flag {
@@ -1052,15 +1056,19 @@ private struct FlagButtons: View {
             default: model.perform(action(for: flag))
             }
         } label: {
-            Text(glyph)
-                .font(Theme.ui(12))
-                .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.meta)
-                .padding(.vertical, 5)
-                .padding(.horizontal, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.control)
-                        .fill(on ? Theme.Surface.iconTileSelected : .clear)
-                        .stroke(on ? Theme.Accent.amber : Theme.Border.subtleButton, lineWidth: 1))
+            VStack(spacing: 2) {
+                Image(systemName: on ? flag.onSymbol : flag.symbol)
+                    .font(Theme.ui(12))
+                Text(flag.buttonTitle)
+                    .font(Theme.ui(9, .medium))
+            }
+            .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.meta)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 9)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(on ? Theme.Surface.iconTileSelected : .clear)
+                    .stroke(on ? Theme.Accent.amber : Theme.Border.subtleButton, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .help(help)
