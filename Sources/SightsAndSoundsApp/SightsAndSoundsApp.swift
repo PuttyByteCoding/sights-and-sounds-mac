@@ -903,6 +903,7 @@ struct AppWindowCommands: View {
         Button("Capture UI Snapshot", systemImage: "camera.viewfinder") {
             UISnapshot.captureAndReveal()
         }
+        .keyboardShortcut("s", modifiers: [.control, .command])
         Divider()
     }
 }

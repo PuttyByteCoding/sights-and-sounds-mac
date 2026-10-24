@@ -104,9 +104,14 @@ struct SidebarView: View {
                 .padding(.bottom, 16)
             }
         }
+        // Clear of the traffic lights and the toolbar above them: the
+        // column is not a List, so SwiftUI insets nothing here itself.
+        .belowTheTitleBar()
         // The column's own surface, drawn edge to edge — including under
         // the toolbar, where a system material would otherwise show
-        // through and put a seam across the top of the sidebar.
+        // through and put a seam across the top of the sidebar. Applied
+        // after the inset so the surface still reaches the window's top
+        // edge while the content starts below it.
         .background { Theme.Surface.sidebar.ignoresSafeArea() }
 
         .sheet(isPresented: $showSaveFilter) {

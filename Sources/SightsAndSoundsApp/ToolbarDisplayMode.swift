@@ -1,21 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// Makes icons-with-labels the toolbar's default, once, and then gets out
-/// of the way.
+/// Puts a label under every toolbar icon, on every window, every launch.
 ///
 /// SwiftUI exposes no toolbar display-mode API, and AppKit's default here
 /// comes up icon-only — every button a glyph you have to hover to
-/// identify. macOS *does* remember a per-toolbar choice, but only for a
-/// toolbar that autosaves its configuration, which SwiftUI does not turn
-/// on; without it the choice is discarded at quit, which is why it had to
-/// be set again every launch.
+/// identify.
 ///
-/// So this does two things and each matters: it enables autosaving, and
-/// it applies the icon-and-label default **only when no saved
-/// configuration exists**. First launch gets labels; any later change is
-/// the user's and survives, rather than being stamped back over on the
-/// next window.
+/// This used to set icon-and-label only when no saved configuration
+/// existed, so that a later choice of the user's would survive. That
+/// deference was the bug: a toolbar saved as icon-only once stays
+/// icon-only for good, and the library window was found in exactly that
+/// state — nine bare glyphs across the top. An icon without a word under
+/// it is not a thing this app ships, so the display mode is no longer
+/// negotiable.
+///
+/// Autosaving stays on, and it still carries what it should: which items
+/// are in the toolbar and in what order. Only the labels are forced.
 ///
 /// It is a zero-size background view because the toolbar belongs to the
 /// NSWindow, and a SwiftUI view's only route to its window is an NSView
@@ -31,12 +32,8 @@ struct ToolbarDisplayMode: NSViewRepresentable {
             // ask again once this pass of the run loop has finished.
             DispatchQueue.main.async { [weak self] in
                 guard let toolbar = self?.window?.toolbar else { return }
-                let key = "NSToolbar Configuration \(toolbar.identifier)"
-                let hasSavedChoice = UserDefaults.standard.object(forKey: key) != nil
                 toolbar.autosavesConfiguration = true
-                if !hasSavedChoice {
-                    toolbar.displayMode = .iconAndLabel
-                }
+                toolbar.displayMode = .iconAndLabel
             }
         }
     }
