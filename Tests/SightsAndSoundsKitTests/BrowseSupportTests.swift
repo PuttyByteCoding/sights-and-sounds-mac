@@ -78,14 +78,17 @@ import Testing
 
     // MARK: Filter mutation helpers
 
+    /// The first click lands on optional: the common case is "any of
+    /// these", so adding tags one after another widens the listing
+    /// rather than narrowing it to nothing.
     @Test func tagCycleWalksAllFourStates() {
         var filter = MediaFilter()
         let id = UUID()
 
         filter.cycleTag(id)
-        #expect(filter.slot(of: id) == .required)
-        filter.cycleTag(id)
         #expect(filter.slot(of: id) == .optional)
+        filter.cycleTag(id)
+        #expect(filter.slot(of: id) == .required)
         filter.cycleTag(id)
         #expect(filter.slot(of: id) == .excluded)
         filter.cycleTag(id)
@@ -102,11 +105,17 @@ import Testing
         filter.cycleTag(id, reverse: true)
         #expect(filter.slot(of: id) == .excluded)
         filter.cycleTag(id, reverse: true)
-        #expect(filter.slot(of: id) == .optional)
-        filter.cycleTag(id, reverse: true)
         #expect(filter.slot(of: id) == .required)
         filter.cycleTag(id, reverse: true)
+        #expect(filter.slot(of: id) == .optional)
+        filter.cycleTag(id, reverse: true)
         #expect(filter.isEmpty)
+    }
+
+    /// The tag menu and the legend list the slots in the order the click
+    /// walks them, so the two never disagree about what comes next.
+    @Test func slotsAreListedInTheOrderTheClickWalksThem() {
+        #expect(MediaFilter.TagSlot.allCases == [.optional, .required, .excluded])
     }
 
     /// A term occupies one slot at a time, whichever list it started in.
@@ -126,7 +135,7 @@ import Testing
         let categoryID = UUID()
 
         filter.cycle(.status(.favorite))
-        #expect(filter.required == [.status(.favorite)])
+        #expect(filter.optional == [.status(.favorite)])
         filter.cycle(.missingCategory(categoryID))
         filter.cycle(.missingCategory(categoryID), reverse: true)
         #expect(filter.slot(of: .missingCategory(categoryID)) == nil)

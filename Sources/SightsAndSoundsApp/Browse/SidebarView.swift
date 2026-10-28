@@ -1126,7 +1126,7 @@ private struct TagFilterRow: View {
     }
 }
 
-/// The four states a term can be in, as menu items: Required, Optional
+/// The four states a term can be in, as menu items: Optional, Required
 /// and Excluded tick the one the term is in and set it directly; Clear
 /// filter takes it out. A four-state cycle with no reverse is a guessing
 /// game every time you overshoot — this is the reverse, and more.
@@ -1230,7 +1230,7 @@ private struct SlotRow: View {
                     ? "\(count) items — the filter takes none of them away"
                     : "\(count) of \(unfilteredCount) items survive the current filter")
         }
-        parts.append("Click cycles through required, optional and excluded")
+        parts.append("Click cycles through optional, required and excluded")
         parts.append("right-click to edit the tag")
         return parts.joined(separator: ". ")
     }
