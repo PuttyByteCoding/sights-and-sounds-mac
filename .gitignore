@@ -75,3 +75,6 @@ snapshot*.json
 
 # CodeGraph index — local code-intelligence database, rebuilt with `codegraph init`
 .codegraph/
+
+# Task worktrees (superpowers using-git-worktrees)
+.worktrees/

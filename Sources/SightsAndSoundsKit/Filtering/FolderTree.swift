@@ -63,7 +63,7 @@ public enum FolderTreeBuilder {
 extension MediaFilter {
     /// Which of the three slots a term currently sits in, if any.
     public enum TagSlot: Sendable, CaseIterable {
-        case required, optional, excluded
+        case optional, required, excluded
     }
 
     public func slot(of term: FilterTerm) -> TagSlot? {
@@ -91,13 +91,18 @@ extension MediaFilter {
     }
 
     /// The browse panel's click cycle, over all four states:
-    /// none → required → optional → excluded → none.
+    /// none → optional → required → excluded → none.
+    ///
+    /// Optional comes first because the first click on a tag is usually
+    /// the start of "any of these": adding tags one by one then widens
+    /// the listing, where required-first narrowed it to nothing by the
+    /// second tag.
     ///
     /// `reverse` is the right-click, and it is not optional garnish: a
     /// four-state cycle you can only walk forwards is a guessing game
     /// every time you overshoot.
     public mutating func cycle(_ term: FilterTerm, reverse: Bool = false) {
-        let order: [TagSlot?] = [nil, .required, .optional, .excluded]
+        let order: [TagSlot?] = [nil, .optional, .required, .excluded]
         let current = order.firstIndex(of: slot(of: term)) ?? 0
         let next = (current + (reverse ? order.count - 1 : 1)) % order.count
         setSlot(order[next], for: term)

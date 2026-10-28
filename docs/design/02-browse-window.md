@@ -42,7 +42,7 @@ disappearing — "exists but unused for this kind" is the information (#96).
   removes itself, Clear all clears the lot, and the block scrolls inside itself past
   three rows so it never costs the tree its height.
 - Right-click does not step the cycle backwards. It opens the tag's menu, whose first
-  items are **Required / Optional / Excluded / Clear filter** — explicit, with a tick on
+  items are **Optional / Required / Excluded / Clear filter** — explicit, with a tick on
   the current state — so any slot is one click and the editor keeps the gesture people
   reach for. The legend footnote reads accordingly (see Copy). The bulk bar's Deselect
   is a compact button labelled `Deselect` with Esc in its tooltip.
@@ -136,7 +136,7 @@ gutter), **Clean** (duration only).
 
 | Element | String |
 |---|---|
-| Filter slots legend | `Required — item must carry it` · `Optional — any one of these` · `Excluded — item must not carry it` |
+| Filter slots legend | `Optional — any one of these` · `Required — item must carry it` · `Excluded — item must not carry it` |
 | Legend footnote | `Click cycles through the slots. Right-click a tag for its menu.` |
 | Missing row | `Missing — no <Category> tag` |
 | Offline banner | `N of these M items live on <Sources> — tags, fields and thumbnails are local and current. Only playback and file operations are unavailable.` |
