@@ -717,10 +717,7 @@ struct SidebarView: View {
     /// Biggest first, ties broken by name so the order is total — an
     /// unstable sort down a long list reshuffles on every refresh.
     private func byCount(_ tags: [Tag]) -> [Tag] {
-        let counts = model.filteredTagCounts
-        func count(_ tag: Tag) -> Int {
-            counts[tag.id] ?? model.counts.byTag[tag.id] ?? 0
-        }
+        func count(_ tag: Tag) -> Int { model.tagCount(tag.id) }
         return tags.sorted {
             let (a, b) = (count($0), count($1))
             return a == b

@@ -517,12 +517,22 @@ final class BrowseModel {
     /// on library-wide numbers.
     private(set) var filteredMissingCounts: [UUID: Int] = [:]
 
+    /// The number beside a tag wherever it is drawn — a sidebar row, a
+    /// pill on a tile or under the video: how many items survive the
+    /// current filter with this tag added, or, with nothing filtered,
+    /// how many wear it in the library.
+    func tagCount(_ tagID: UUID) -> Int {
+        filteredTagCounts[tagID] ?? counts.byTag[tagID] ?? 0
+    }
+
     /// Everything a tile needs about one item that is not on its row.
     func tileContext(for item: MediaItem) -> TileContext {
-        TileContext(
+        let tags = itemTags[item.id] ?? []
+        return TileContext(
             isOnline: isOnline(item),
             sourceName: source(for: item)?.name,
-            tags: itemTags[item.id] ?? [],
+            tags: tags,
+            tagCounts: Dictionary(tags.map { ($0.id, tagCount($0.id)) }, uniquingKeysWith: { first, _ in first }),
             missingCategories: itemMissingCategories[item.id] ?? [],
             isDuplicate: duplicateFlaggedIDs.contains(item.id))
     }
