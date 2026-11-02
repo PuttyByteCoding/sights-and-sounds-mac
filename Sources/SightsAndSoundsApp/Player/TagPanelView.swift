@@ -373,6 +373,9 @@ private struct CheckboxCategoryView: View {
 
 private struct PillCategoryView: View {
     @Environment(PlayerModel.self) private var model
+    /// For the count after each applied pill's name — the sidebar's
+    /// number, read from the window the player sits in.
+    @Environment(BrowseModel.self) private var browse
     let entry: CategoryTags
     var takesFocus = false
     var focus: FocusState<UUID?>.Binding
@@ -594,7 +597,7 @@ private struct PillCategoryView: View {
                 FlowRow(spacing: 4) {
                     ForEach(applied) { tag in
                         HStack(spacing: 4) {
-                            Text(tag.name)
+                            TagPillLabel.text(tag.name, count: browse.tagCount(tag.id), countColor: hue.opacity(0.65))
                                 .font(Theme.ui(11.5))
                                 .foregroundStyle(hue)
                             IconButton(

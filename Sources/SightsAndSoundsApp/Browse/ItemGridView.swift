@@ -716,7 +716,9 @@ private struct BulkTagRemover: View {
                                 Task { await model.removeTagFromSelection(pill.id) }
                             } label: {
                                 HStack(spacing: 4) {
-                                    Text(pill.name)
+                                    TagPillLabel.text(
+                                        pill.name, count: model.tagCount(pill.id),
+                                        countColor: Theme.Text.quaternary)
                                     Image(systemName: "xmark")
                                         .font(Theme.ui(8, .bold))
                                 }

@@ -6,12 +6,16 @@ struct TileContext {
     var isOnline = true
     var sourceName: String?
     var tags: [TagPill] = []
+    /// How many items wear each of `tags`, by tag id — the sidebar's
+    /// number, so a pill and the row it filters by agree. A tag with no
+    /// entry draws without a number; the queue strip passes none.
+    var tagCounts: [UUID: Int] = [:]
     var missingCategories: [String] = []
     var isDuplicate = false
 }
 
 /// One value rendered: a short run of text, a glyph, or a pill.
-private struct TileBadge: Hashable {
+struct TileBadge: Hashable {
     var text: String
     var color: Color
     var isPill = false
@@ -19,6 +23,9 @@ private struct TileBadge: Hashable {
     /// Set on tag pills only. A badge is otherwise just text, but a tag
     /// pill IS a tag, and right-clicking one has to know which.
     var tagID: UUID?
+    /// The number drawn after a tag pill's name: how many items wear the
+    /// tag. Nil draws no number.
+    var count: Int?
 }
 
 /// The mark over an item that is on its way out or will not play: a
@@ -228,7 +235,7 @@ struct TileCard: View {
     @ViewBuilder
     private func badgeView(_ badge: TileBadge, entry: TileEntry, slot: TileSlot) -> some View {
         let outside = !slot.isOverlay
-        let text = Text(badge.text)
+        let text = TagPillLabel.text(badge.text, count: badge.count, countColor: badge.color.opacity(0.65))
             .font(badge.isGlyph
                 ? Theme.ui(outside ? 12 : 13)
                 : Theme.mono(outside ? 10 : 9.5, .semibold))
@@ -291,7 +298,7 @@ struct TileCard: View {
     /// What each value renders, and nothing at all when it does not
     /// apply — so a favourite star and an offline badge cost no space on
     /// an item that is neither.
-    private static func badges(
+    static func badges(
         for value: TileValue, item: MediaItem, context: TileContext
     ) -> [TileBadge] {
         switch value {
@@ -350,18 +357,16 @@ struct TileCard: View {
                 text: "Missing: " + context.missingCategories.joined(separator: ", "),
                 color: Theme.Status.orange)]
         case .tags:
-            return context.tags.map {
-                TileBadge(
-                    text: $0.name, color: Theme.categoryHue($0.colorIndex),
-                    isPill: true, tagID: $0.id)
-            }
+            return context.tags.map { pill(for: $0, context: context) }
         case .tagsIn(let categoryID):
-            return context.tags.filter { $0.categoryID == categoryID }.map {
-                TileBadge(
-                    text: $0.name, color: Theme.categoryHue($0.colorIndex),
-                    isPill: true, tagID: $0.id)
-            }
+            return context.tags.filter { $0.categoryID == categoryID }.map { pill(for: $0, context: context) }
         }
+    }
+
+    private static func pill(for tag: TagPill, context: TileContext) -> TileBadge {
+        TileBadge(
+            text: tag.name, color: Theme.categoryHue(tag.colorIndex),
+            isPill: true, tagID: tag.id, count: context.tagCounts[tag.id])
     }
 
     /// Resolution for video; sample rate and channels for audio, because
