@@ -1533,15 +1533,16 @@ final class PlayerModel {
     }
 
     /// R and the toolbar button: Needs Review on or off, moving on after
-    /// a mark when the setting says so. Clearing the mark stays put, as
-    /// unmarking for deletion does: what you just cleared is still in
-    /// front of you. Nothing moves unless the mark actually landed.
+    /// CLEARING the mark when the setting says so — clearing is the end
+    /// of a review, so the next item is what comes next. Marking stays
+    /// put: the item was flagged to be looked at. Nothing moves unless
+    /// the clear actually landed.
     func markNeedsReview() {
         guard let item else { return }
-        let marking = !item.needsReview
+        let clearing = item.needsReview
         perform(.toggleNeedsReview)
         guard AppSettingsStore.shared.current.needsReviewMarkAdvances,
-              marking, self.item?.needsReview == true else { return }
+              clearing, self.item?.needsReview == false else { return }
         if triageMode { triageCount += 1 }
         goNext()
     }

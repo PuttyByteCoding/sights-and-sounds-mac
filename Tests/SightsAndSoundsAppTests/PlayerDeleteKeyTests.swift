@@ -152,9 +152,10 @@ import Testing
         try await waitUntil { (try? stored(library, a.id))??.markedForDeletion == true }
     }
 
-    /// The same setting for Needs Review: R and the toolbar button move
-    /// on after marking when it is on; clearing the mark stays put.
-    @Test func withItsSettingOnMarkingNeedsReviewMovesOn() async throws {
+    /// The Needs Review setting runs the other way: R and the toolbar
+    /// button move on after CLEARING the mark (the review is done) when
+    /// it is on; marking stays put, so the item can be looked at.
+    @Test func withItsSettingOnClearingNeedsReviewMovesOn() async throws {
         let (library, source, root) = try await makeLibrary()
         defer { try? FileManager.default.removeItem(at: root) }
         let a = try await insert(library, source, root, "a.mp4", variant: 0)
@@ -172,12 +173,17 @@ import Testing
         try await waitUntil { model.item?.needsReview == true }
         #expect(model.item?.id == a.id)  // off: stays put
 
-        AppSettingsStore.shared.update { $0.needsReviewMarkAdvances = true }
-        model.markNeedsReview()  // clearing never moves, setting or not
+        #expect(model.handle(character: "r", shift: false, numpad: false))
         try await waitUntil { model.item?.needsReview == false }
+        #expect(model.item?.id == a.id)  // off: clearing stays put too
+
+        AppSettingsStore.shared.update { $0.needsReviewMarkAdvances = true }
+        model.markNeedsReview()  // marking never moves, setting or not
+        try await waitUntil { model.item?.needsReview == true }
+        try await Task.sleep(for: .milliseconds(300))
         #expect(model.item?.id == a.id)
-        model.markNeedsReview()  // marking does
+        model.markNeedsReview()  // clearing does
         try await waitUntil { model.item?.id == b.id }
-        try await waitUntil { (try? stored(library, a.id))??.needsReview == true }
+        try await waitUntil { (try? stored(library, a.id))??.needsReview == false }
     }
 }
