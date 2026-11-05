@@ -29,8 +29,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// moves: what was just restored stays in front of you.
     public var deletionMarkAdvances: Bool
 
-    /// The same for Needs Review (R, the toolbar button): marking moves
-    /// on, clearing the mark never does.
+    /// For Needs Review (R, the toolbar button) it runs the other way:
+    /// clearing the mark moves on, marking never does.
     public var needsReviewMarkAdvances: Bool
 
     /// Which elements the player's info bar shows.

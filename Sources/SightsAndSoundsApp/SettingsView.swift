@@ -312,8 +312,8 @@ private struct PlaybackSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
             Section("Needs review") {
-                Toggle("Move to the next item after marking", isOn: $needsReviewMarkAdvances)
-                Text("R and the toolbar button mark the item as needing review and move on. Clearing the mark stays put. Applies immediately.")
+                Toggle("Move to the next item after clearing", isOn: $needsReviewMarkAdvances)
+                Text("R and the toolbar button clear Needs Review and move on. Marking an item as needing review stays put. Applies immediately.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
