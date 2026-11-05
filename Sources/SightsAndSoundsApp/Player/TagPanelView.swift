@@ -35,7 +35,8 @@ struct PanelRowDrag: Transferable, Equatable {
 /// Checkbox categories render as checkbox lists (Alt+1…9 toggles the
 /// first one); everything else is pills + autocomplete.
 struct TagPanelView: View {
-    @Environment(PlayerModel.self) private var model
+    /// What is being tagged: the player's item, or an import's staging.
+    let model: any TagPanelHost
     /// Which category's Add field holds the keyboard. Panel-owned so Tab
     /// can WALK it: each field advances to the next search category, and
     /// a per-field Bool could not know who is next.
@@ -77,15 +78,10 @@ struct TagPanelView: View {
                 // The digits' mode, beside the fields it governs: a
                 // digit typed here stamps a tag or spells a name, and
                 // which one must be readable before the key goes down.
-                if model.hasDigitBindings {
-                    Text(model.digitsStampTags ? "1–9 stamp tags" : "1–9 type")
-                        .font(Theme.mono(10))
-                        .foregroundStyle(model.digitsStampTags ? Theme.Accent.amber : Theme.Text.meta)
-                        .help(model.digitsStampTags
-                            ? "Top-row digits apply their bound tags, inside a tag field too — ⇧⇧ to type"
-                            : "Top-row digits type — ⇧⇧ to stamp")
+                if let player = model.playerModel {
+                    DigitsMode(player: player)
+                    ZoneBadge(zone: .tags)
                 }
-                ZoneBadge(zone: .tags)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -127,7 +123,7 @@ struct TagPanelView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { model.zone = .tags }
+        .onTapGesture { model.tagFieldFocused() }
         // The focus lives here as FocusState; the model mirrors it so
         // the player's key handler — where Tab actually arrives — can
         // walk it. Two onChanges, one in each direction, and the guards
@@ -155,19 +151,24 @@ struct TagPanelView: View {
             }
         case .universal:
             pseudoRow("Universal", row: row) {
-                GlobalTagField(takesFocus: firstTypableRow == row, focus: $focusedCategory)
+                GlobalTagField(
+                    model: model, takesFocus: firstTypableRow == row, focus: $focusedCategory,
+                    onAdvance: { forward in advance(from: PlayerModel.universalFieldFocusID, forward: forward) })
             }
         case .results:
-            pseudoRow("Tag Analysis Results", row: row) {
-                AnalysisResultsField(
-                    session: model.analysisSession,
-                    appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
-                    categories: model.panelVocabulary.map(\.category),
-                    focus: $focusedCategory,
-                    focusID: PlayerModel.analysisResultsFieldFocusID,
-                    itemID: model.item?.id,
-                    onListChange: { model.tagFieldListOpen = $0 },
-                    onApply: { model.applyTag($0.id) })
+            // Tag Analysis reads a playing item; without one there is no row.
+            if let player = model.playerModel {
+                pseudoRow("Tag Analysis Results", row: row) {
+                    AnalysisResultsField(
+                        session: player.analysisSession,
+                        appliedIDs: Set(player.itemTags.flatMap(\.tags).map(\.id)),
+                        categories: player.panelVocabulary.map(\.category),
+                        focus: $focusedCategory,
+                        focusID: PlayerModel.analysisResultsFieldFocusID,
+                        itemID: player.item?.id,
+                        onListChange: { player.tagFieldListOpen = $0 },
+                        onApply: { player.applyTag($0.id) })
+                }
             }
         }
     }
@@ -186,11 +187,13 @@ struct TagPanelView: View {
         switch entry.category.displayStyle {
         case .checkboxes, .radio:
             CheckboxCategoryView(
+                model: model,
                 entry: entry,
                 isAltTarget: entry.id == model.checkboxCategory?.id,
                 single: entry.category.displayStyle == .radio)
         case .search:
             PillCategoryView(
+                model: model,
                 entry: entry,
                 takesFocus: takesFocus,
                 focus: $focusedCategory,
@@ -277,6 +280,46 @@ extension View {
     }
 }
 
+/// The digits' mode, beside the fields it governs: a digit typed here
+/// stamps a tag or spells a name, and which one must be readable before
+/// the key goes down. The player's alone — digit keys stamp a playing item.
+private struct DigitsMode: View {
+    let player: PlayerModel
+
+    var body: some View {
+        if player.hasDigitBindings {
+            Text(player.digitsStampTags ? "1–9 stamp tags" : "1–9 type")
+                .font(Theme.mono(10))
+                .foregroundStyle(player.digitsStampTags ? Theme.Accent.amber : Theme.Text.meta)
+                .help(player.digitsStampTags
+                    ? "Top-row digits apply their bound tags, inside a tag field too — ⇧⇧ to type"
+                    : "Top-row digits type — ⇧⇧ to stamp")
+        }
+    }
+}
+
+/// "sticky": the category's staged tags stay for the next import.
+struct StickyChip: View {
+    let on: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text("sticky")
+                .font(Theme.ui(10, on ? .bold : .regular))
+                .foregroundStyle(on ? Theme.Accent.amber : Theme.Text.meta)
+                .padding(.vertical, 1.5)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.chip)
+                        .fill(on ? Theme.Surface.iconTileSelected : Theme.Surface.iconTile))
+        }
+        .buttonStyle(.plain)
+        .help("Keep this category's tags for the next import")
+        .accessibilityValue(on ? "on" : "off")
+    }
+}
+
 /// A category's own hue, for its heading and its pills.
 private struct CategoryHeading: View {
     let category: TagCategory
@@ -284,6 +327,9 @@ private struct CategoryHeading: View {
     /// whole category. On the HANDLE, not the block — a drag that
     /// starts anywhere would fight text selection and the pills.
     var draggable = false
+    /// The Import window's "keep for the next import" chip; nil draws none.
+    var sticky: Bool?
+    var onSticky: (Bool) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -293,6 +339,10 @@ private struct CategoryHeading: View {
             Text(category.name)
                 .font(Theme.ui(12, .semibold))
                 .foregroundStyle(Theme.Text.primary)
+            if let sticky {
+                Spacer(minLength: 6)
+                StickyChip(on: sticky) { onSticky(!sticky) }
+            }
             if draggable {
                 Spacer(minLength: 6)
                 // Far right, where every list puts its grip.
@@ -310,7 +360,7 @@ private struct CategoryHeading: View {
 }
 
 private struct CheckboxCategoryView: View {
-    @Environment(PlayerModel.self) private var model
+    let model: any TagPanelHost
     let entry: CategoryTags
     let isAltTarget: Bool
     /// A radio category shows the same list; picking replaces rather
@@ -320,7 +370,10 @@ private struct CheckboxCategoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            CategoryHeading(category: entry.category, draggable: true)
+            CategoryHeading(
+                category: entry.category, draggable: true,
+                sticky: model.sticky(for: entry.id),
+                onSticky: { model.setSticky($0, for: entry.id) })
             ForEach(Array(entry.tags.enumerated()), id: \.element.id) { index, tag in
                 let on = model.hasTag(tag.id)
                 Button {
@@ -355,10 +408,8 @@ private struct CheckboxCategoryView: View {
                     TagActionButtons(
                         tag: tag, service: model.service, libraryID: model.libraryID,
                         pending: $pending,
-                        removal: on ? TagRemoval(
-                            label: TagRemoval.label(for: model.item?.kind ?? .video)
-                        ) { model.toggleTag(tag.id) } : nil,
-                        itemID: on ? model.item?.id : nil)
+                        removal: on ? TagRemoval(label: model.removalLabel) { model.toggleTag(tag.id) } : nil,
+                        itemID: on ? model.actionItemID : nil)
                 }
             }
         }
@@ -372,7 +423,7 @@ private struct CheckboxCategoryView: View {
 }
 
 private struct PillCategoryView: View {
-    @Environment(PlayerModel.self) private var model
+    let model: any TagPanelHost
     /// For the count after each applied pill's name — the sidebar's
     /// number, read from the window the player sits in.
     @Environment(BrowseModel.self) private var browse
@@ -415,6 +466,41 @@ private struct PillCategoryView: View {
     }
 
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
+
+    /// The host's names that are not tags yet (the Import window's
+    /// folder words), narrowed by what is typed, never one already
+    /// applied. Offered under the matches; a click makes the tag.
+    private var extraNames: [String] {
+        let applied = Set(self.applied.map { PillCategoryView.searchFold($0.name) })
+        let typed = PillCategoryView.searchFold(query)
+        return Array(model.extraNames(for: entry.id).filter { name in
+            let folded = PillCategoryView.searchFold(name)
+            return !applied.contains(folded) && (typed.isEmpty || folded.contains(typed))
+        }.prefix(3))
+    }
+
+    private func extraNameRow(_ name: String) -> some View {
+        Button {
+            model.applyName(name, in: entry.id)
+            draft = ""
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "plus")
+                    .font(Theme.ui(10))
+                    .foregroundStyle(hue)
+                Text(name)
+                    .font(Theme.ui(11.5))
+                    .foregroundStyle(Theme.Text.secondary)
+                ThemeBadge(text: "folder", fill: Theme.Surface.iconTile, foreground: Theme.Text.meta)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 2)
+            .padding(.horizontal, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("A word from the folder's name — makes it a tag in \(entry.category.name)")
+    }
 
     /// A suggested tag, and the alias that put it there when the tag's
     /// own name did not match. Carried rather than recomputed at draw
@@ -591,7 +677,10 @@ private struct PillCategoryView: View {
         let rows = suggestions
         let activeID = activeSuggestion(in: rows)?.id
         VStack(alignment: .leading, spacing: 6) {
-            CategoryHeading(category: entry.category, draggable: true)
+            CategoryHeading(
+                category: entry.category, draggable: true,
+                sticky: model.sticky(for: entry.id),
+                onSticky: { model.setSticky($0, for: entry.id) })
 
             if !applied.isEmpty {
                 FlowRow(spacing: 4) {
@@ -618,10 +707,8 @@ private struct PillCategoryView: View {
                             TagActionButtons(
                                 tag: tag, service: model.service, libraryID: model.libraryID,
                                 pending: $pending,
-                                removal: TagRemoval(
-                                    label: TagRemoval.label(for: model.item?.kind ?? .video)
-                                ) { model.toggleTag(tag.id) },
-                                itemID: model.item?.id)
+                                removal: TagRemoval(label: model.removalLabel) { model.toggleTag(tag.id) },
+                                itemID: model.actionItemID)
                         }
                     }
                 }
@@ -656,7 +743,7 @@ private struct PillCategoryView: View {
                         browsingAll = false
                     }
                     .onChange(of: focus.wrappedValue) { _, now in
-                        if now == entry.id { model.zone = .tags }
+                        if now == entry.id { model.tagFieldFocused() }
                     }
                     // Arrows before the field sees them: a single-line
                     // field does nothing with up and down, and shifted
@@ -697,13 +784,14 @@ private struct PillCategoryView: View {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, suggestion in
                     suggestionRow(index, suggestion, active: suggestion.id == activeID)
                 }
+                ForEach(extraNames, id: \.self) { extraNameRow($0) }
             }
         }
-        .task(id: model.item?.id) {
+        .task(id: model.taggingSubjectID) {
             if takesFocus { focus.wrappedValue = entry.id }
         }
         .onChange(of: listOpen) { _, open in model.tagFieldListOpen = open }
-        .onChange(of: model.item?.id) { _, _ in
+        .onChange(of: model.taggingSubjectID) { _, _ in
             // A new video is a fresh judgment — an open history overlay
             // from the last one must not hang over its field.
             showingHistory = false
@@ -789,21 +877,24 @@ private struct DragPreview: View {
 /// their Enter creates INTO that category with no dialog detour); this
 /// is the panel-wide complement, same matching rule.
 private struct GlobalTagField: View {
-    @Environment(PlayerModel.self) private var model
+    let model: any TagPanelHost
     /// First in the panel order — takes the keyboard when an item loads.
     var takesFocus = false
     /// The panel's shared focus, keyed by the universal sentinel — which
     /// is what puts this field IN the Tab walk with the categories.
     var focus: FocusState<UUID?>.Binding
+    /// Tab and ⇧Tab, where no window-wide handler takes them first.
+    var onAdvance: (Bool) -> Void
 
     var body: some View {
+        let player = model.playerModel
         UniversalTagField(
             index: model.tagSearchIndex,
             appliedIDs: Set(model.itemTags.flatMap(\.tags).map(\.id)),
             recentTagIDs: model.recentlyAppliedTagIDs,
             // What the companion found leads the list — only while a
             // companion is open, since no scan runs otherwise.
-            analysisTagIDs: model.analysisSession.flatMap { session in
+            analysisTagIDs: player?.analysisSession.flatMap { session in
                 session.companionIsOpen
                     ? AnalysisResultsField.candidates(
                         analysis: session.analysis,
@@ -812,23 +903,26 @@ private struct GlobalTagField: View {
                         .map(\.tag.id)
                     : nil
             } ?? [],
-            analysisRunning: model.analysisSession.map { $0.companionIsOpen && $0.isAnalyzing } ?? false,
-            analysisOpen: model.analysisSession?.companionIsOpen ?? false,
+            analysisRunning: player?.analysisSession.map { $0.companionIsOpen && $0.isAnalyzing } ?? false,
+            analysisOpen: player?.analysisSession?.companionIsOpen ?? false,
             // ⇧↓ reads the frame at the playhead: the playing file, never
             // audio, never an offline file.
-            screenFrame: model.isAudio ? nil : model.fileURL.map {
-                ScreenFrame(fileURL: $0, seconds: model.currentSeconds)
+            screenFrame: player.flatMap { player in
+                player.isAudio ? nil : player.fileURL.map {
+                    ScreenFrame(fileURL: $0, seconds: player.currentSeconds)
+                }
             },
-            screenReadRequests: model.screenReadRequests,
+            screenReadRequests: player?.screenReadRequests ?? 0,
             categories: model.panelVocabulary.map(\.category),
             service: model.service,
             libraryID: model.libraryID,
             focus: focus,
             focusID: PlayerModel.universalFieldFocusID,
-            itemID: model.item?.id,
+            itemID: model.taggingSubjectID,
             takesFocus: takesFocus,
-            onFocus: { model.zone = .tags },
+            onFocus: { model.tagFieldFocused() },
             onListChange: { model.tagFieldListOpen = $0 },
+            onAdvance: onAdvance,
             onApply: { model.toggleTag($0.id) },
             onCreated: { tag in
                 model.refreshTagging()

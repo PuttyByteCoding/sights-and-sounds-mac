@@ -243,9 +243,9 @@ import Testing
         #expect(try #require(outcome).cancelled)
     }
 
-    /// The run asks the library's service for everything — the words
-    /// staged becoming tags, the job, its row — so it is the same run
-    /// for a library another Mac holds.
+    /// The run asks the library's service for everything — a tag made
+    /// while the groups are readied, the job, its row — so it is the
+    /// same run for a library another Mac holds.
     @Test(.timeLimit(.minutes(1)))
     func aRunGoesThroughTheLibrarysService() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -265,12 +265,11 @@ import Testing
         stub.filesAreOnThisMac = false
         let run = ImportRun(service: stub)
         run.pollInterval = .milliseconds(20)
-        let draft = StagingDraft(pendingNames: [PendingTagName(name: "Alpha", categoryID: band.id)])
-
         var outcome: ImportRun.Outcome?
         run.start(sourceID: source.id, preparing: {
-            let staged = await draft.staging(through: stub)
-            return [ImportRun.Group(paths: ["a.m4a"], staging: staged)]
+            let alpha = try? await stub.ensureTag(named: "Alpha", inCategory: band.id)
+            let draft = StagingDraft(tagIDs: alpha.map { [$0.id] } ?? [])
+            return [ImportRun.Group(paths: ["a.m4a"], staging: draft.payload)]
         }) { outcome = $0 }
         #expect(run.isRunning, "the run did not count as running while its groups were made ready")
         for _ in 0..<800 where outcome == nil { try await Task.sleep(for: .milliseconds(25)) }

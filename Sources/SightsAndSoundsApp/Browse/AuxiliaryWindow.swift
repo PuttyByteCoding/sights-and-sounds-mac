@@ -167,7 +167,7 @@ struct AuxiliaryWindowView: View {
             case .review: ReviewView()
             case .organise: OrganiseView(scope: request.scopeItemIDs)
             case .maintenance: MaintenanceView(scope: request.scopeItemIDs)
-            case .importMedia: ImportView(initialSourceID: request.sourceID)
+            case .importMedia: ImportView(browse: model, initialSourceID: request.sourceID)
             case .operations: OperationsView(itemIDs: request.itemIDs)
             case .watched: WatchedView()
             case .tagAnalysis:

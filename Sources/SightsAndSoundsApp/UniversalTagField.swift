@@ -177,6 +177,10 @@ struct UniversalTagField: View {
     /// query. The player uses it to let Esc close the list instead of
     /// leaving.
     var onListChange: (Bool) -> Void = { _ in }
+    /// Tab (true) and ⇧Tab (false) move to the next field. In the
+    /// player the window's key handler takes Tab first; a window without
+    /// one (Import) gets it here.
+    var onAdvance: ((Bool) -> Void)?
     let onApply: (Tag) -> Void
     let onCreated: (Tag) -> Void
 
@@ -485,6 +489,11 @@ struct UniversalTagField: View {
                     .onKeyPress(.escape) {
                         guard listOpen else { return .ignored }
                         closeList()
+                        return .handled
+                    }
+                    .onKeyPress(keys: [.tab]) { press in
+                        guard let onAdvance else { return .ignored }
+                        onAdvance(!press.modifiers.contains(.shift))
                         return .handled
                     }
                     // Return beside the arrows, not only as the field's
