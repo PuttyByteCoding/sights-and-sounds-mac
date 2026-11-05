@@ -4,13 +4,11 @@ import SightsAndSoundsKit
 /// files the table shows; the files ticked for import; and the focused
 /// folder, whose words are offered as tag suggestions.
 ///
-/// Clicking a folder's name makes it the scope, on its own. The flow is
-/// one folder at a time — pick a folder, stage its tags, import it, pick
-/// the next — and the click used to tick the folder only while nothing
-/// else was ticked: with one folder in scope, a click on another
-/// highlighted it and the table went on showing the first folder's
-/// files. The tick box is for the other case, several folders in one
-/// import: it adds a folder to the scope, or takes it out.
+/// Several folders go into one import. Clicking a folder's name, or its
+/// tick box, adds it to the scope and clicking again takes it out; Clear
+/// empties it. A click used to replace the scope with that one folder,
+/// so only the small tick box could add a second, and the tree read as
+/// one folder at a time.
 struct ImportFolderSelection: Equatable {
     /// The folders whose files the table shows.
     private(set) var checked: Set<String> = []
@@ -22,25 +20,29 @@ struct ImportFolderSelection: Equatable {
         self.focused = focused
     }
 
-    /// This folder, alone: its new files are what the table shows and
-    /// what Import would take. A folder with nothing new is still shown —
+    /// In or out of the scope, subfolders included. A folder added is
+    /// focused, for its words; one with nothing new is still shown, since
     /// its known files are the answer to "is this one in yet?"
     mutating func click(_ folder: String, in outcome: ScanOutcome) {
-        focused = folder
-        checked = [folder]
-        paths = outcome.newPaths(under: folder)
-    }
-
-    /// Add a folder to the scope, subfolders included, or take it out.
-    mutating func toggle(_ folder: String, in outcome: ScanOutcome) {
         if checked.contains(folder) {
             checked.remove(folder)
-            paths.subtract(outcome.candidates
-                .filter { ScanOutcome.isUnder($0.folderPath, folder) }.map(\.relativePath))
+            if focused == folder { focused = nil }
+            // What another folder still in the scope covers stays, and so
+            // does a file unticked by hand: only what nothing covers goes.
+            let covered = checked.reduce(into: Set<String>()) { $0.formUnion(outcome.newPaths(under: $1)) }
+            paths.formIntersection(covered)
         } else {
             checked.insert(folder)
+            focused = folder
             paths.formUnion(outcome.newPaths(under: folder))
         }
+    }
+
+    /// Nothing in scope, nothing selected.
+    mutating func clear() {
+        checked = []
+        paths = []
+        focused = nil
     }
 
     mutating func toggleFile(_ path: String) {
