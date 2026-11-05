@@ -21,6 +21,12 @@ struct ImportView: View {
     var initialSourceID: UUID? = nil
     @State private var openedOnSource = false
 
+    init(browse: BrowseModel, initialSourceID: UUID? = nil) {
+        self.initialSourceID = initialSourceID
+        _tagging = State(initialValue: ImportTagging(
+            service: browse.service, libraryID: browse.libraryID))
+    }
+
     enum Step: Int, CaseIterable {
         case source, scan, review, importing
 
@@ -57,14 +63,20 @@ struct ImportView: View {
     @State private var probes: [String: ProbeResult] = [:]
     @State private var probedSource: UUID?
 
-    // Staging: one set of boxes, for the import in hand. Sticky boxes
-    // keep their values for the next one; the rest clear once it lands.
-    @State private var boxes: [ImportBox] = []
-    @State private var staging = StagingDraft()
+    // Staging, for the import in hand: the player's tag panel over what
+    // is staged, and the media-item field boxes under it. Sticky keeps a
+    // category's tags or a field's value for the next import; the rest
+    // clear once it lands.
+    @State private var tagging: ImportTagging
     @State private var showConfigure = false
-    /// Saves of the boxes, one at a time in the order made: a save is a
-    /// request now, and an older one must not land on top of a newer.
-    @State private var boxWrites = WriteQueue()
+    private var staging: StagingDraft {
+        get { tagging.draft }
+        nonmutating set { tagging.draft = newValue }
+    }
+    private var boxes: [ImportBox] {
+        get { tagging.boxes }
+        nonmutating set { tagging.boxes = newValue }
+    }
 
     // Running
     @State private var run: ImportRun?
@@ -111,8 +123,17 @@ struct ImportView: View {
         .frame(minWidth: 900, minHeight: 560)
         .background(Theme.Surface.content)
         .task {
+            tagging.onVocabularyChanged = { [model] in model.refresh(.vocabulary) }
             await reload()
             scanInitialSource()
+        }
+        .onChange(of: model.vocabulary, initial: true) { showVocabulary() }
+        .onChange(of: model.tagAliases) { showVocabulary() }
+        .onChange(of: selection.focused, initial: true) { tagging.folderWords = folderWords }
+        .onChange(of: tagging.failure) { _, failure in
+            guard let failure else { return }
+            notice = failure
+            tagging.failure = nil
         }
         .onChange(of: model.sources) {
             Task {
@@ -122,10 +143,9 @@ struct ImportView: View {
         }
         .sheet(isPresented: $showConfigure) {
             ConfigureBoxesSheet(
-                boxes: $boxes,
-                categories: model.vocabulary.map(\.category),
+                boxes: Bindable(tagging).boxes,
                 fields: itemFields,
-                onSave: { saved in saveBoxes(saved) })
+                onSave: { _ in tagging.saveBoxes() })
         }
         .sheet(item: $finished) { summary in
             FinishedSheet(
@@ -326,7 +346,7 @@ struct ImportView: View {
                     .fill(Theme.Surface.well)
                     .stroke(Theme.Border.standard, lineWidth: 1))
             Spacer()
-            Button("Configure boxes…") { showConfigure = true }
+            Button("Configure fields…") { showConfigure = true }
                 .buttonStyle(SecondaryButtonStyle(compact: true))
         }
         .padding(.horizontal, 14)
@@ -502,68 +522,72 @@ struct ImportView: View {
 
     private var stageRail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Stage").modifier(Theme.sectionLabel())
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 9)
-            Text("Applies to every selected file in this import. Sticky boxes keep their values for the next one; the rest clear once it lands.")
+            Text("Applies to every selected file in this import. Sticky keeps a category's tags or a field's value for the next one; the rest clear once it lands.")
                 .font(Theme.ui(11))
                 .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if boxes.isEmpty {
-                        Text("No boxes configured yet — Configure boxes… picks which categories and fields stage here.")
-                            .font(Theme.ui(11.5))
-                            .foregroundStyle(Theme.Text.meta)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    ForEach(boxes) { box in
-                        StagingBoxView(
-                            box: box,
-                            vocabulary: model.vocabulary,
-                            fields: itemFields,
-                            folderWords: folderWords,
-                            draft: $staging,
-                            onSticky: { sticky in
-                                setSticky(box, sticky)
-                            })
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Flags").modifier(Theme.sectionLabel())
-                        Toggle(isOn: $staging.clearsNeedsReview) {
-                            Text("Already reviewed").font(Theme.ui(12))
-                        }
-                        .toggleStyle(.checkbox)
-                        Toggle(isOn: $staging.marksFavorite) {
-                            Text("Favourite").font(Theme.ui(12))
-                        }
-                        .toggleStyle(.checkbox)
-                    }
-                    .foregroundStyle(Theme.Text.secondary)
-                }
-                .padding(12)
-            }
-
             Rectangle().fill(Theme.Border.standard).frame(height: 1)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Will apply").modifier(Theme.sectionLabel())
-                Text(willApplySummary)
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(
-                        willApplySummary.hasPrefix("Nothing")
-                            ? Theme.Text.meta : Theme.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            // The player's panel: the same fields, keys and pills, over
+            // what this import will apply.
+            TagPanelView(model: tagging)
+                .frame(maxHeight: .infinity)
+                .layoutPriority(1)
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            ScrollView {
+                fieldsAndFlags.padding(12)
             }
-            .padding(12)
+            .frame(maxHeight: 220)
+            .fixedSize(horizontal: false, vertical: true)
+            Rectangle().fill(Theme.Border.standard).frame(height: 1)
+            willApply
         }
         .frame(width: 340)
         .background(Theme.Surface.raised)
+    }
+
+    /// The media-item field boxes and the two flags, under the panel.
+    private var fieldsAndFlags: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(boxes.filter { $0.fieldID != nil }) { box in
+                StagingBoxView(
+                    box: box,
+                    fields: itemFields,
+                    draft: Bindable(tagging).draft,
+                    onSticky: { sticky in setSticky(box, sticky) })
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Flags").modifier(Theme.sectionLabel())
+                Toggle(isOn: Bindable(tagging).draft.clearsNeedsReview) {
+                    Text("Already reviewed").font(Theme.ui(12))
+                }
+                .toggleStyle(.checkbox)
+                Toggle(isOn: Bindable(tagging).draft.marksFavorite) {
+                    Text("Favourite").font(Theme.ui(12))
+                }
+                .toggleStyle(.checkbox)
+            }
+            .foregroundStyle(Theme.Text.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var willApply: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Will apply").modifier(Theme.sectionLabel())
+            Text(willApplySummary)
+                .font(Theme.ui(11.5))
+                .foregroundStyle(
+                    willApplySummary.hasPrefix("Nothing")
+                        ? Theme.Text.meta : Theme.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+    }
+
+    private func showVocabulary() {
+        tagging.show(vocabulary: model.vocabulary, aliases: model.tagAliases)
     }
 
     private var footer: some View {
@@ -682,28 +706,13 @@ struct ImportView: View {
             .filter { $0.count > 2 }
     }
 
-    /// What the sticky boxes kept from the last import — only values that
-    /// still exist: a sticky tag since deleted left a dead id in the draft
-    /// that showed as an empty "Will apply" with no pill to remove.
-    private func stickyDraft() -> StagingDraft {
-        let present = Set(model.vocabulary.flatMap(\.tags).map(\.id))
-        return StagingDraft(
-            tagIDs: boxes.filter(\.sticky).flatMap(\.stickyTagIDs).filter { present.contains($0) },
-            fieldValues: Dictionary(
-                uniqueKeysWithValues: boxes.compactMap { box in
-                    guard box.sticky, let fieldID = box.fieldID,
-                          let value = box.stickyValue else { return nil }
-                    return (fieldID, value)
-                }))
-    }
-
     private var willApplySummary: String {
         let draft = staging
         guard !draft.isEmpty else { return "Nothing staged yet — files import untagged." }
         var parts: [String] = []
         let names = draft.tagIDs.compactMap { id in
             model.vocabulary.flatMap(\.tags).first { $0.id == id }?.name
-        } + draft.pendingNames.map(\.name)
+        }
         if !names.isEmpty { parts.append(names.joined(separator: " · ")) }
         if !draft.fieldValues.isEmpty { parts.append("\(draft.fieldValues.count) field values") }
         if draft.clearsNeedsReview { parts.append("already reviewed") }
@@ -756,7 +765,7 @@ struct ImportView: View {
                 outcome = result
                 boxes = saved
                 // Sticky boxes arrive already filled.
-                staging = stickyDraft()
+                staging = tagging.stickyDraft()
                 if probedSource != source.id {
                     probes = [:]
                     probedSource = source.id
@@ -797,11 +806,6 @@ struct ImportView: View {
         return { try? await service.probeFile(sourceID: sourceID, relativePath: relativePath) }
     }
 
-    private func saveBoxes(_ boxes: [ImportBox]) {
-        let service = model.service
-        boxWrites.send { try await service.setImportBoxes(boxes) }
-    }
-
     private var importButtonTitle: String {
         if run?.isRunning == true { return "Importing…" }
         return selection.paths.isEmpty ? "Nothing selected" : "Import \(selection.paths.count) Files"
@@ -819,12 +823,12 @@ struct ImportView: View {
         self.run = run
         step = .importing
         run.start(sourceID: source.id, preparing: {
-            let resolved = await sent.staging(through: service)
-            return [ImportRun.Group(paths: imported.sorted(), staging: resolved.isEmpty ? nil : resolved)]
+            let payload = sent.payload
+            return [ImportRun.Group(paths: imported.sorted(), staging: payload.isEmpty ? nil : payload)]
         }) { result in
             let tally = result.tally
             // Sticky boxes keep their values for the next import.
-            persistSticky()
+            tagging.persistSticky(from: sent)
             let extensionSkips = outcome?.skippedByExtension.values.reduce(0, +) ?? 0
             var lines = [
                 "\(tally.inserted) media items inserted",
@@ -855,7 +859,7 @@ struct ImportView: View {
             if let updated { selection.afterImport(imported, updated: updated) }
             // The boxes keep only their sticky values — unless they were
             // changed since Import was pressed, which is the next import's.
-            if staging == sent { staging = stickyDraft() }
+            if staging == sent { staging = tagging.stickyDraft() }
         }
     }
 
@@ -869,22 +873,7 @@ struct ImportView: View {
     private func setSticky(_ box: ImportBox, _ sticky: Bool) {
         guard let index = boxes.firstIndex(where: { $0.id == box.id }) else { return }
         boxes[index].sticky = sticky
-        saveBoxes(boxes)
-    }
-
-    private func persistSticky() {
-        let draft = staging
-        for index in boxes.indices where boxes[index].sticky {
-            if let categoryID = boxes[index].categoryID {
-                let inCategory = model.vocabulary
-                    .first { $0.category.id == categoryID }?.tags.map(\.id) ?? []
-                boxes[index].stickyTagIDs = draft.tagIDs.filter { inCategory.contains($0) }
-            }
-            if let fieldID = boxes[index].fieldID {
-                boxes[index].stickyValue = draft.fieldValues[fieldID]
-            }
-        }
-        saveBoxes(boxes)
+        tagging.saveBoxes()
     }
 
     /// Counts, reachability, history and the effective extension lists —
@@ -912,37 +901,23 @@ struct ImportView: View {
     }
 }
 
-/// What the rail is staging, before it becomes a payload.
-///
-/// `pendingNames` are staged words that are not tags yet — a suggestion
-/// from a folder name, or something typed. They become tags through
-/// `ensureTag` when the import runs, so the category's formatting rule
-/// and its aliases apply exactly as they would anywhere else, and
-/// nothing is written by merely suggesting.
+/// What the rail is staging, before it becomes a payload. Every tag is
+/// a real one by now: a folder word or a typed name picked in the panel
+/// is made into a tag at the pick.
 struct StagingDraft: Equatable {
     var tagIDs: [UUID] = []
-    var pendingNames: [PendingTagName] = []
     var fieldValues: [UUID: String] = [:]
     var clearsNeedsReview = false
     var marksFavorite = false
 
     var isEmpty: Bool {
-        tagIDs.isEmpty && pendingNames.isEmpty && fieldValues.isEmpty
-            && !clearsNeedsReview && !marksFavorite
+        tagIDs.isEmpty && fieldValues.isEmpty && !clearsNeedsReview && !marksFavorite
     }
 
-    /// Resolve the pending names against the library, then hand the job
-    /// a payload of ids.
-    func staging(through service: any LibraryService) async -> ImportStaging {
-        var ids = tagIDs
-        for pending in pendingNames {
-            if let tag = try? await service.ensureTag(
-                named: pending.name, inCategory: pending.categoryID) {
-                ids.append(tag.id)
-            }
-        }
-        return ImportStaging(
-            tagIDs: ids, fieldValues: fieldValues,
+    /// What the import job is handed.
+    var payload: ImportStaging {
+        ImportStaging(
+            tagIDs: tagIDs, fieldValues: fieldValues,
             clearsNeedsReview: clearsNeedsReview, marksFavorite: marksFavorite)
     }
 }

@@ -996,9 +996,6 @@ final class PlayerModel {
     /// first for every key the text-input guard does not exempt.
     var tagFieldCategoryID: UUID?
 
-    /// Move the keyboard to the next (or previous) search category's
-    /// field, wrapping. False when there is nothing to walk — no search
-    /// categories — so the caller can fall back to the zone walk.
     /// The Universal field's slot in the focus walk — a fixed sentinel
     /// beside the category IDs, placed by its persisted position.
     static let universalFieldFocusID = UUID(
@@ -1148,26 +1145,6 @@ final class PlayerModel {
         if case .failure(let error) = await writes.run({ try await work(service) }) { return "\(error)" }
         await startTaggingRead()?.value
         return nil
-    }
-
-    @discardableResult
-    func advanceTagField(reverse: Bool) -> Bool {
-        // The walk is the panel's order, minus the checkbox categories
-        // (they have no field to type in).
-        let typable = Set(panelVocabulary.filter { $0.category.displayStyle == .search }.map(\.id))
-        let fields = panelRows.compactMap { row -> UUID? in
-            if let id = row.categoryID { return typable.contains(id) ? id : nil }
-            return row.focusID
-        }
-        guard !fields.isEmpty else { return false }
-        guard let current = tagFieldCategoryID, let index = fields.firstIndex(of: current)
-        else {
-            tagFieldCategoryID = fields.first
-            return true
-        }
-        let next = (index + (reverse ? fields.count - 1 : 1)) % fields.count
-        tagFieldCategoryID = fields[next]
-        return true
     }
 
     /// Only this item's tags: what a tag key, a toggle or an apply of an
@@ -1819,4 +1796,16 @@ extension Notification.Name {
     /// A player loaded an item. userInfo: `libraryID`, `sender` (the
     /// player's token). History queues over the library re-run on it.
     static let sasPlaybackDidLoad = Notification.Name("sasPlaybackDidLoad")
+}
+
+// MARK: - The tag panel's host
+
+/// The player as the tag panel's subject: the item on screen, written
+/// as each tag is picked.
+extension PlayerModel: TagPanelHost {
+    var taggingSubjectID: UUID? { item?.id }
+    var removalLabel: String { TagRemoval.label(for: item?.kind ?? .video) }
+    var actionItemID: UUID? { item?.id }
+    var playerModel: PlayerModel? { self }
+    func tagFieldFocused() { zone = .tags }
 }

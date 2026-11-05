@@ -1238,7 +1238,7 @@ private struct SegmentsAndTagsRail: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.panels.tags {
-                TagPanelView()
+                TagPanelView(model: model)
                     .frame(maxHeight: .infinity)
                     .layoutPriority(model.panels.segments ? 1.35 : 1)
                     .zoneRing(.tags)
