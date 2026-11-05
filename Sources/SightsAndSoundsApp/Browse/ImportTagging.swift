@@ -23,9 +23,6 @@ final class ImportTagging: TagPanelHost {
     /// The saved boxes: media-item fields shown under the panel, and
     /// which categories are sticky.
     var boxes: [ImportBox] = []
-    /// Words from the focused folder's name, offered under each
-    /// category's matches.
-    var folderWords: [String] = []
     /// A write that failed, for the window's notice line.
     var failure: String?
 
@@ -129,25 +126,6 @@ final class ImportTagging: TagPanelHost {
     }
 
     func tagFieldFocused() {}
-
-    func extraNames(for categoryID: UUID) -> [String] { folderWords }
-
-    /// A folder word picked: the tag it names, made if it is not one yet
-    /// (through `ensureTag`, so the category's formatting rule and its
-    /// aliases apply), then staged.
-    func applyName(_ name: String, in categoryID: UUID) {
-        let service = service
-        Task { [weak self] in
-            do {
-                let tag = try await service.ensureTag(named: name, inCategory: categoryID)
-                guard let self else { return }
-                self.onVocabularyChanged()
-                if !self.hasTag(tag.id) { self.toggleTag(tag.id) }
-            } catch {
-                self?.failure = "Could not make the tag \u{201C}\(name)\u{201D}: \(error)"
-            }
-        }
-    }
 
     func sticky(for categoryID: UUID) -> Bool? {
         boxes.first { $0.categoryID == categoryID }?.sticky ?? false

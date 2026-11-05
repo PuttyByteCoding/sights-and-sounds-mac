@@ -131,33 +131,4 @@ import Testing
             vocabulary: [CategoryTags(category: f.venue, tags: [f.venues[1]])], aliases: [:])
         #expect(f.tagging.stickyDraft().tagIDs.isEmpty)
     }
-
-    /// A folder word is offered in every category, and picking it makes
-    /// the tag — through the library's own path — and stages it.
-    @Test func aPickedFolderWordBecomesAStagedTag() async throws {
-        let f = try await fixture()
-        f.tagging.folderWords = ["Frisco"]
-        #expect(f.tagging.extraNames(for: f.venue.id) == ["Frisco"])
-        var asked = 0
-        f.tagging.onVocabularyChanged = { asked += 1 }
-
-        f.tagging.applyName("Frisco", in: f.venue.id)
-        for _ in 0..<200 where f.tagging.draft.tagIDs.isEmpty {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let made = try await f.library.writer.read { db in
-            try SightsAndSoundsKit.Tag.filter(Column("name") == "Frisco").fetchOne(db)
-        }
-        let tag = try #require(made)
-        #expect(tag.tagCategoryID == f.venue.id)
-        #expect(f.tagging.draft.tagIDs == [tag.id])
-        #expect(asked == 1)
-
-        // A word that names a tag already there stages that tag.
-        f.tagging.applyName("fillmore", in: f.venue.id)
-        for _ in 0..<200 where f.tagging.draft.tagIDs.count < 2 {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(f.tagging.draft.tagIDs == [tag.id, f.venues[0].id])
-    }
 }

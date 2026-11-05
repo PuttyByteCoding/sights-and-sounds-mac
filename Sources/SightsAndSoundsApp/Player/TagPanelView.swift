@@ -467,41 +467,6 @@ private struct PillCategoryView: View {
 
     private var query: String { draft.trimmingCharacters(in: .whitespaces) }
 
-    /// The host's names that are not tags yet (the Import window's
-    /// folder words), narrowed by what is typed, never one already
-    /// applied. Offered under the matches; a click makes the tag.
-    private var extraNames: [String] {
-        let applied = Set(self.applied.map { PillCategoryView.searchFold($0.name) })
-        let typed = PillCategoryView.searchFold(query)
-        return Array(model.extraNames(for: entry.id).filter { name in
-            let folded = PillCategoryView.searchFold(name)
-            return !applied.contains(folded) && (typed.isEmpty || folded.contains(typed))
-        }.prefix(3))
-    }
-
-    private func extraNameRow(_ name: String) -> some View {
-        Button {
-            model.applyName(name, in: entry.id)
-            draft = ""
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "plus")
-                    .font(Theme.ui(10))
-                    .foregroundStyle(hue)
-                Text(name)
-                    .font(Theme.ui(11.5))
-                    .foregroundStyle(Theme.Text.secondary)
-                ThemeBadge(text: "folder", fill: Theme.Surface.iconTile, foreground: Theme.Text.meta)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 2)
-            .padding(.horizontal, 5)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("A word from the folder's name — makes it a tag in \(entry.category.name)")
-    }
-
     /// A suggested tag, and the alias that put it there when the tag's
     /// own name did not match. Carried rather than recomputed at draw
     /// time so the row can say WHY it is being offered — "Soundboard
@@ -784,7 +749,6 @@ private struct PillCategoryView: View {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, suggestion in
                     suggestionRow(index, suggestion, active: suggestion.id == activeID)
                 }
-                ForEach(extraNames, id: \.self) { extraNameRow($0) }
             }
         }
         .task(id: model.taggingSubjectID) {

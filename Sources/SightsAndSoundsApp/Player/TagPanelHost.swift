@@ -54,11 +54,6 @@ protocol TagPanelHost: AnyObject {
     /// them.
     var playerModel: PlayerModel? { get }
 
-    /// Names offered under a category's matches that are not tags yet —
-    /// the Import window's words from the folder name.
-    func extraNames(for categoryID: UUID) -> [String]
-    /// One of those names picked: make it a tag, then apply it.
-    func applyName(_ name: String, in categoryID: UUID)
     /// Whether a category keeps its tags for the next import; nil draws
     /// no control.
     func sticky(for categoryID: UUID) -> Bool?
@@ -67,8 +62,6 @@ protocol TagPanelHost: AnyObject {
 
 extension TagPanelHost {
     var playerModel: PlayerModel? { nil }
-    func extraNames(for categoryID: UUID) -> [String] { [] }
-    func applyName(_ name: String, in categoryID: UUID) {}
     func sticky(for categoryID: UUID) -> Bool? { nil }
     func setSticky(_ sticky: Bool, for categoryID: UUID) {}
 

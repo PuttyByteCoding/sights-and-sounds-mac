@@ -30,12 +30,10 @@ import Testing
     @Test func clickingFoldersAddsEachToTheScope() {
         var selection = ImportFolderSelection()
         selection.click("shows", in: outcome)
-        #expect(selection.focused == "shows")
         #expect(selection.checked == ["shows"])
         #expect(selection.paths == ["shows/1995/d1.mp4", "shows/1995/disc2/d2.mp4"])
 
         selection.click("audio", in: outcome)
-        #expect(selection.focused == "audio", "the last folder clicked gives the word suggestions")
         #expect(selection.checked == ["shows", "audio"])
         #expect(selection.paths == ["shows/1995/d1.mp4", "shows/1995/disc2/d2.mp4", "audio/b.m4a"])
     }
@@ -47,12 +45,6 @@ import Testing
         selection.click("audio", in: outcome)
         #expect(selection.checked == ["shows"])
         #expect(selection.paths == ["shows/1995/d1.mp4", "shows/1995/disc2/d2.mp4"])
-        // The folder that left was the focused one: no words from it.
-        #expect(selection.focused == nil)
-
-        selection.click("audio", in: outcome)
-        selection.click("shows", in: outcome)
-        #expect(selection.focused == "audio", "taking out another folder keeps the focus")
     }
 
     @Test func clickingAFolderWithNothingNewStillShowsIt() {
@@ -91,7 +83,6 @@ import Testing
         selection.click("audio", in: outcome)
         selection.clear()
         #expect(selection.checked.isEmpty && selection.paths.isEmpty)
-        #expect(selection.focused == nil)
     }
 
     @Test func anImportedFolderLeavesTheScopeAndTheOthersStay() {
@@ -104,11 +95,11 @@ import Testing
         #expect(selection.paths == ["audio/b.m4a"])
     }
 
-    @Test func aRescanStartsOverWithTheFirstFolderFocused() {
+    @Test func aRescanStartsOver() {
         var selection = ImportFolderSelection()
         selection.click("shows", in: outcome)
-        selection.reset(focusing: "audio")
-        #expect(selection == ImportFolderSelection(focused: "audio"))
+        selection.reset()
+        #expect(selection == ImportFolderSelection())
         #expect(selection.checked.isEmpty && selection.paths.isEmpty)
     }
 }
