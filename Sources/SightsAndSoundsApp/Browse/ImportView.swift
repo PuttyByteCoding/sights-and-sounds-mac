@@ -50,10 +50,9 @@ struct ImportView: View {
     @State private var notice: String?
     @State private var scanTask: Task<Void, Never>?
     // Review state. The rail is a tree of the source's folders; clicking
-    // one shows and selects the new files under it, ticking adds another.
-    // Nothing is chosen to begin with: the flow is pick a folder, stage
-    // its tags, import it, then the next — so the window must not decide
-    // the first folder for you.
+    // one adds it, and the new files under it, to the import, and
+    // clicking again takes it out. Nothing is chosen to begin with, so
+    // the window does not decide the first folder for you.
     @State private var selection = ImportFolderSelection()
     @State private var collapsedFolders: Set<String> = []
     @State private var statusFilter: StatusFilter = .newOnly
@@ -358,9 +357,17 @@ struct ImportView: View {
 
     private var scopeRail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(statusFilter == .newOnly ? "Folders with new files" : "Folders").modifier(Theme.sectionLabel())
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+            HStack {
+                Text(statusFilter == .newOnly ? "Folders with new files" : "Folders").modifier(Theme.sectionLabel())
+                Spacer()
+                if !selection.checked.isEmpty {
+                    Button("Clear") { selection.clear() }
+                        .buttonStyle(SecondaryButtonStyle(compact: true))
+                        .help("Take every folder out of this import")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
             ScrollView {
                 VStack(spacing: 1) {
                     if folderTree.isEmpty {
@@ -456,12 +463,12 @@ struct ImportView: View {
         .padding(.vertical, 6)
         .padding(.leading, 12 + CGFloat(depth) * 14)
         .padding(.trailing, 12)
-        .background(selection.focused == node.path ? Theme.Surface.selectedRow : .clear)
+        // Every folder in the scope is lit, not just the last one clicked.
+        .background(checked ? Theme.Surface.selectedRow : .clear)
         .contentShape(Rectangle())
-        // Clicking the name makes this folder the scope: its files in the
-        // table, its new ones selected, its words as tag suggestions. It
-        // used to tick the folder only while nothing else was ticked, so
-        // the second folder clicked showed the first folder's files.
+        // Clicking the name adds this folder to the scope (its files in
+        // the table, its new ones selected, its words as tag suggestions)
+        // or takes it out. Several folders go into one import.
         .onTapAsButton {
             if let outcome { selection.click(node.path, in: outcome) }
         }
@@ -469,7 +476,7 @@ struct ImportView: View {
 
     private func toggleFolder(_ path: String) {
         guard let outcome else { return }
-        selection.toggle(path, in: outcome)
+        selection.click(path, in: outcome)
     }
 
     private var fileTable: some View {
