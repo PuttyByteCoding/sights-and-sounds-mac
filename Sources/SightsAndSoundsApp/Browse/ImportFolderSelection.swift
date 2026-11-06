@@ -1,8 +1,7 @@
 import SightsAndSoundsKit
 
 /// What the Import window's rail has chosen: the folders in scope, whose
-/// files the table shows; the files ticked for import; and the focused
-/// folder, whose words are offered as tag suggestions.
+/// files the table shows, and the files ticked for import.
 ///
 /// Several folders go into one import. Clicking a folder's name, or its
 /// tick box, adds it to the scope and clicking again takes it out; Clear
@@ -14,26 +13,18 @@ struct ImportFolderSelection: Equatable {
     private(set) var checked: Set<String> = []
     /// The files Import will take.
     private(set) var paths: Set<String> = []
-    var focused: String?
-
-    init(focused: String? = nil) {
-        self.focused = focused
-    }
-
-    /// In or out of the scope, subfolders included. A folder added is
-    /// focused, for its words; one with nothing new is still shown, since
-    /// its known files are the answer to "is this one in yet?"
+    /// In or out of the scope, subfolders included. A folder with nothing
+    /// new is still shown, since its known files are the answer to "is
+    /// this one in yet?"
     mutating func click(_ folder: String, in outcome: ScanOutcome) {
         if checked.contains(folder) {
             checked.remove(folder)
-            if focused == folder { focused = nil }
             // What another folder still in the scope covers stays, and so
             // does a file unticked by hand: only what nothing covers goes.
             let covered = checked.reduce(into: Set<String>()) { $0.formUnion(outcome.newPaths(under: $1)) }
             paths.formIntersection(covered)
         } else {
             checked.insert(folder)
-            focused = folder
             paths.formUnion(outcome.newPaths(under: folder))
         }
     }
@@ -42,7 +33,6 @@ struct ImportFolderSelection: Equatable {
     mutating func clear() {
         checked = []
         paths = []
-        focused = nil
     }
 
     mutating func toggleFile(_ path: String) {
@@ -58,8 +48,8 @@ struct ImportFolderSelection: Equatable {
     }
 
     /// A fresh scan: nothing in scope, nothing selected — pick a folder
-    /// first — with the first folder focused for its suggestions.
-    mutating func reset(focusing folder: String?) {
-        self = ImportFolderSelection(focused: folder)
+    /// first.
+    mutating func reset() {
+        self = ImportFolderSelection()
     }
 }

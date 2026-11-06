@@ -128,7 +128,6 @@ struct ImportView: View {
         }
         .onChange(of: model.vocabulary, initial: true) { showVocabulary() }
         .onChange(of: model.tagAliases) { showVocabulary() }
-        .onChange(of: selection.focused, initial: true) { tagging.folderWords = folderWords }
         .onChange(of: tagging.failure) { _, failure in
             guard let failure else { return }
             notice = failure
@@ -702,17 +701,6 @@ struct ImportView: View {
         }
     }
 
-    /// Words from the focused folder's name, offered as suggestions —
-    /// never applied. A filename parser that silently invents tags is
-    /// unpickable-apart later.
-    private var folderWords: [String] {
-        guard let focusedFolder = selection.focused, !focusedFolder.isEmpty else { return [] }
-        return focusedFolder
-            .split(whereSeparator: { "/-_. ".contains($0) })
-            .map(String.init)
-            .filter { $0.count > 2 }
-    }
-
     private var willApplySummary: String {
         let draft = staging
         guard !draft.isEmpty else { return "Nothing staged yet — files import untagged." }
@@ -778,7 +766,7 @@ struct ImportView: View {
                     probedSource = source.id
                 }
                 // Nothing chosen, nothing selected: pick a folder first.
-                selection.reset(focusing: result.folderTree(newOnly: true).first?.path)
+                selection.reset()
                 collapsedFolders = []
                 step = .review
             } catch {
@@ -909,8 +897,8 @@ struct ImportView: View {
 }
 
 /// What the rail is staging, before it becomes a payload. Every tag is
-/// a real one by now: a folder word or a typed name picked in the panel
-/// is made into a tag at the pick.
+/// a real one by now: a name typed in the panel that is not a tag yet
+/// goes through the New Tag sheet first.
 struct StagingDraft: Equatable {
     var tagIDs: [UUID] = []
     var fieldValues: [UUID: String] = [:]
