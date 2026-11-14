@@ -1,7 +1,10 @@
 import Foundation
 import GRDB
 
-/// Runs queued jobs for one library, one at a time, oldest first.
+/// Runs queued jobs for one library, one at a time, oldest first — with
+/// one exception: a job that jumps the queue (an import, which someone
+/// is waiting on in a window) goes ahead of background work, and a
+/// sweep already running steps aside for it between files.
 ///
 /// Phase 1 scope: the abstraction and its state machine, proven end to
 /// end. Signal-driven waking, per-worker settings and the cross-library
@@ -71,9 +74,30 @@ public actor JobRunner {
 
     /// Persist a new queued job and return its record.
     public func enqueue(_ type: any Job.Type, payload: Data? = nil) throws -> JobRecord {
-        let record = JobRecord(kind: type.kind, payload: payload)
+        let record = newRecord(kind: type.kind, payload: payload)
         try library.writer.write { try record.insert($0) }
         return record
+    }
+
+    /// A queue-jumping kind starts at `JobRecord.queueJumpPriority`, one
+    /// fixed number, so imports keep their own order among themselves.
+    private func newRecord(kind: String, payload: Data?) -> JobRecord {
+        var record = JobRecord(kind: kind, payload: payload)
+        if jobTypes[kind]?.jumpsQueue == true { record.priority = JobRecord.queueJumpPriority }
+        return record
+    }
+
+    /// Whether a queue-jumping job is waiting for the one running. A
+    /// queue jumper itself never steps aside: imports keep their order.
+    private func isQueueJumperWaiting(for kind: String) throws -> Bool {
+        guard jobTypes[kind]?.jumpsQueue != true else { return false }
+        let jumpers = jobTypes.filter { $0.value.jumpsQueue }.map(\.key)
+        guard !jumpers.isEmpty else { return false }
+        return try library.writer.read { db in
+            try JobRecord
+                .filter(Column("state") == JobState.queued.rawValue && jumpers.contains(Column("kind")))
+                .fetchCount(db) > 0
+        }
     }
 
     /// Push a queued job to the front of this library's lane.
@@ -108,7 +132,7 @@ public actor JobRunner {
     public func retry(_ jobID: UUID) throws -> JobRecord? {
         guard let original = try library.writer.read({ try JobRecord.fetchOne($0, key: jobID) })
         else { return nil }
-        let record = JobRecord(kind: original.kind, payload: original.payload)
+        let record = newRecord(kind: original.kind, payload: original.payload)
         try library.writer.write { try record.insert($0) }
         return record
     }
@@ -249,8 +273,9 @@ public actor JobRunner {
         defer { drain = nil }
         var settled: [UUID] = []
         while !isPaused, let next = try nextQueued() {
-            await run(next)
-            settled.append(next.id)
+            // One that stepped aside is queued again, not settled: it is
+            // reached again behind the import it made way for.
+            if await run(next) { settled.append(next.id) }
         }
         return settled
     }
@@ -270,7 +295,10 @@ public actor JobRunner {
         }
     }
 
-    private func run(_ record: JobRecord) async {
+    /// Runs one job. False when it stepped aside for an import and is
+    /// queued again; true when it settled, however it settled.
+    @discardableResult
+    private func run(_ record: JobRecord) async -> Bool {
         // A queued job is cancelled by `requestCancel` itself; this is the
         // fallback for when that write failed and only the mark was left.
         if cancelRequested.remove(record.id) != nil {
@@ -279,7 +307,7 @@ public actor JobRunner {
                 row.state = .cancelled
                 row.finishedAt = Date()
             }
-            return
+            return true
         }
 
         guard let type = jobTypes[record.kind] else {
@@ -289,7 +317,7 @@ public actor JobRunner {
                 row.error = UnknownJobKindError(kind: record.kind).description
                 row.finishedAt = Date()
             }
-            return
+            return true
         }
 
         do {
@@ -310,6 +338,13 @@ public actor JobRunner {
                 },
                 summaryHandler: { [weak self] text in
                     try? await self?.recordSummary(jobID: jobID, text: text)
+                },
+                waitingCheck: { [weak self, kind = record.kind] in
+                    guard let self else { return false }
+                    return (try? await self.isQueueJumperWaiting(for: kind)) ?? false
+                },
+                enqueueHandler: { [weak self] type, payload in
+                    _ = try await self?.enqueue(type, payload: payload)
                 }
             )
 
@@ -335,6 +370,15 @@ public actor JobRunner {
                     row.finishedAt = Date()
                 }
                 await job.cancelled(context)
+            } catch is SteppingAside {
+                // Back in the queue, as it was before it started; what it
+                // finished stays finished, and the rest is its next run.
+                AppLog.shared.info("jobs", "\(record.kind): stepped aside for an import")
+                try transition(jobID) { row in
+                    row.state = .queued
+                    row.startedAt = nil
+                }
+                return false
             }
         } catch {
             AppLog.shared.error("jobs", "\(record.kind): failed — \(error)")
@@ -344,6 +388,7 @@ public actor JobRunner {
                 row.finishedAt = Date()
             }
         }
+        return true
     }
 
     private func isCancelRequested(_ jobID: UUID) -> Bool {

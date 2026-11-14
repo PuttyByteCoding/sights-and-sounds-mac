@@ -102,6 +102,7 @@ public struct FingerprintCaptureJob: Job {
 
         for (index, item) in pending.enumerated() {
             try await context.checkCancellation()
+            try await context.stepAsideIfAnImportIsWaiting()
             guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)

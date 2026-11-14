@@ -20,6 +20,9 @@ import GRDB
 ///     reads them in its own phase.
 public struct ImportJob: Job {
     public static let kind = "import.scan"
+    /// Someone is waiting on it in the Import window: it goes ahead of
+    /// the sweeps, which step aside for it between files.
+    public static let jumpsQueue = true
 
     public struct Payload: Codable, Sendable {
         public var sourceID: UUID
@@ -150,6 +153,7 @@ public struct ImportJob: Job {
         var existing = Set(exactKnown.map { $0.lowercased() })
 
         var inserted = 0
+        var insertedIDs: [UUID] = []
         var skipped = 0
         // Paths this run inserted, folded: a second spelling of one is a
         // different file on a case-sensitive volume, not "already imported".
@@ -200,6 +204,7 @@ public struct ImportJob: Job {
                 // the summary says so — a cancelled job used to write none,
                 // and the window counted it as nothing inserted.
                 await context.setSummary(summary(cancelledAfter: index))
+                try? await queueHashing()
                 throw CancellationError()
             }
             try await insert(candidate)
@@ -263,6 +268,7 @@ public struct ImportJob: Job {
                 vanished.formUnion(try staging.apply(to: item.id, in: library, resolved: resolved))
             }
             inserted += 1
+            insertedIDs.append(item.id)
         }
 
         // Source seen successfully — stamp it.
@@ -274,6 +280,15 @@ public struct ImportJob: Job {
         let finalSummary = summary(cancelledAfter: nil)
         if finalSummary.contains(" — ") { AppLog.shared.warning("import", finalSummary) }
         await context.setSummary(finalSummary)
+        try await queueHashing()
+
+        /// What this import brought in is hashed by a job of its own,
+        /// queued behind any other import and run in its turn — never
+        /// something the next import waits for.
+        func queueHashing() async throws {
+            guard !insertedIDs.isEmpty else { return }
+            try await ContentHashJob.enqueue(in: context, itemIDs: insertedIDs)
+        }
     }
 }
 

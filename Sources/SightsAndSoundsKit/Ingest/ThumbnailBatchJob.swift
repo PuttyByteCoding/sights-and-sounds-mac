@@ -104,6 +104,7 @@ public struct ThumbnailBatchJob: Job {
 
         for (index, item) in candidates.enumerated() {
             try await context.checkCancellation()
+            try await context.stepAsideIfAnImportIsWaiting()
             guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let fileURL = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)
