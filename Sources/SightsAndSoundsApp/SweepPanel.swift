@@ -261,7 +261,7 @@ extension SweepKind {
         case .metadata: "The ffprobe pairs Tag Analysis mines."
         case .signal: "What each file declares about its encoding, and how its frames are really timed."
         case .thumbnails: "The grid's stills. A file with no frame to show is skipped until retried."
-        case .duplicates: "Pairs flagged from hashes and fingerprints. Rejected pairs stay rejected, so there is nothing to recalculate."
+        case .duplicates: "Pairs flagged from hashes and fingerprints. Hash pairs are checked after each import; fingerprint matching runs only when started here. Rejected pairs stay rejected, so there is nothing to recalculate."
         }
     }
 }
