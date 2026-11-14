@@ -38,6 +38,14 @@ struct ImportView: View {
             case .importing: "Import"
             }
         }
+
+        /// Where "Import more" on the finished sheet leaves the window:
+        /// where it already is. A finished import comes back to Review
+        /// with the scan updated in place, so the next folders are ticked
+        /// there. It used to go back to Source, and choosing the source
+        /// again rescanned the whole folder. A failed or cancelled run is
+        /// already rescanning, and that scan carries on.
+        var afterImportMore: Step { self == .importing ? .review : self }
     }
 
     @State private var step: Step = .source
@@ -151,7 +159,7 @@ struct ImportView: View {
                 summary: summary.text,
                 onMore: {
                     finished = nil
-                    step = .source
+                    step = step.afterImportMore
                 },
                 onOpen: {
                     // The library window is behind this one, and its grid
