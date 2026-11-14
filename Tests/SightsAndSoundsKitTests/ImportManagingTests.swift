@@ -195,7 +195,9 @@ import Testing
     }
 
     /// The signal an import ends with: each worker queued once, however
-    /// often it is said, on the Mac that has the files.
+    /// often it is said, on the Mac that has the files. The fingerprint
+    /// match compares every fingerprint with every other, so it is not
+    /// one of them: it runs when Duplicate Check is started by hand.
     @Test func wakingTheWorkersQueuesEachOnce() async throws {
         let f = try await Fixture(paused: true)
         defer { f.tearDown() }
@@ -203,7 +205,7 @@ import Testing
         try await f.service.wakeWorkers()
         let kinds = try await f.library.writer.read { try JobRecord.fetchAll($0) }.map(\.kind).sorted()
         #expect(kinds == [
-            ContentHashJob.kind, FingerprintCaptureJob.kind, FingerprintMatchSweepJob.kind,
+            ContentHashJob.kind, FingerprintCaptureJob.kind,
             HashDuplicateSweepJob.kind, ThumbnailBatchJob.kind,
         ].sorted())
         let jobless = LocalLibraryService(library: f.library)

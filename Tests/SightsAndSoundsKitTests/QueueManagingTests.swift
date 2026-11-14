@@ -122,5 +122,7 @@ import Testing
         // Nothing to forget for the duplicate check, whatever is asked.
         try await f.service.startSweep(.duplicates, after: .forgetEverything)
         #expect(try f.kinds(.queued).contains(HashDuplicateSweepJob.kind))
+        // Started by hand is the only way the fingerprint match runs.
+        #expect(try f.kinds(.queued).contains(FingerprintMatchSweepJob.kind))
     }
 }

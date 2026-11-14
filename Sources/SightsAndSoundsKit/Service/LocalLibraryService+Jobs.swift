@@ -65,10 +65,11 @@ extension LocalLibraryService {
             _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
         }
         // Duplicates ride the same signal: hash pairs after hashing,
-        // fingerprints after capture, matches after both.
+        // fingerprints after capture. The fingerprint match is not woken
+        // here: it compares every fingerprint with every other, so it
+        // runs only when Duplicate Check is started by hand.
         _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
         _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
-        _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
         await runner.startDraining()
     }
 

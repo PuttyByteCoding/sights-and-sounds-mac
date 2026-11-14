@@ -783,7 +783,9 @@ import Testing
         let woken = try await rig.library.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT kind) FROM job WHERE state = 'queued'") ?? 0
         }
-        #expect(woken == 5)
+        // Hashes, thumbnails, hash pairs and fingerprint capture: the
+        // fingerprint match runs only when started by hand.
+        #expect(woken == 4)
 
         try await remote.enableExtension("xyz")
         let after = try await remote.importOverview()
