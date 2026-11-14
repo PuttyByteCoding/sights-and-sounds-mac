@@ -2,8 +2,9 @@ import CryptoKit
 import Foundation
 import GRDB
 
-/// Hashes every item that doesn't have a content hash yet. One job sweeps
-/// the whole library: per-item failures are recorded beside the feature
+/// Hashes every item that doesn't have a content hash yet — the whole
+/// library, or only the items an import brought in, which each import
+/// queues as a job of its own. Per-item failures are recorded beside the feature
 /// (`contentHashFailure`) and the sweep continues — a broken file never
 /// stalls the queue, and the failure row stops the worker from retrying
 /// the same file every signal (cleared on manual retry).
@@ -16,14 +17,28 @@ import GRDB
 public struct ContentHashJob: Job {
     public static let kind = "contentHash.sweep"
 
+    struct Payload: Codable {
+        var itemIDs: [UUID]
+    }
+
     let fileAccess: any FileAccess
+    /// Nil sweeps the whole library.
+    let itemIDs: Set<UUID>?
 
     public init(payload: Data?) throws {
         fileAccess = LiveFileAccess()
+        itemIDs = try payload.map { Set(try JSONDecoder().decode(Payload.self, from: $0).itemIDs) }
     }
 
-    init(fileAccess: any FileAccess) {
+    init(fileAccess: any FileAccess, itemIDs: Set<UUID>? = nil) {
         self.fileAccess = fileAccess
+        self.itemIDs = itemIDs
+    }
+
+    /// A hash job for these items only: what an import brought in.
+    static func enqueue(in context: JobContext, itemIDs: [UUID]) async throws {
+        try await context.enqueue(
+            ContentHashJob.self, payload: JSONEncoder().encode(Payload(itemIDs: itemIDs)))
     }
 
     public func run(_ context: JobContext) async throws {
@@ -51,7 +66,7 @@ public struct ContentHashJob: Job {
                                 WHERE contentHashFailure.mediaItemID = mediaItem.id) \
                 ORDER BY mediaItem.relativePath
                 """)
-        }.filter { onlineSources.contains($0.sourceID) }
+        }.filter { onlineSources.contains($0.sourceID) && itemIDs?.contains($0.id) != false }
 
         var hashed = 0
         var failed = 0
@@ -60,6 +75,7 @@ public struct ContentHashJob: Job {
 
         for (index, item) in pending.enumerated() {
             try await context.checkCancellation()
+            try await context.stepAsideIfAnImportIsWaiting()
             guard let source = sources[item.sourceID], !lostSources.contains(source.id) else { continue }
             let url = URL(fileURLWithPath: source.rootPath, isDirectory: true)
                 .appendingPathComponent(item.relativePath)

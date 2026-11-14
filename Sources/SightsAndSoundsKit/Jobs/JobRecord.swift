@@ -36,11 +36,15 @@ public struct JobRecord: Codable, Equatable, Identifiable, Sendable, FetchableRe
     public var summary: String?
     public var progressCurrent: Int
     public var progressTotal: Int?
-    /// Queue position weight. 0 for everything enqueued normally; "Run
-    /// next" raises it above the current maximum among queued rows. It
+    /// Queue position weight. 0 for everything enqueued normally, and
+    /// `queueJumpPriority` for a kind that jumps the queue (imports);
+    /// "Run next" raises it above the current maximum among queued rows. It
     /// decides what starts NEXT and never what stops — the runner is
     /// serialized, and a job mid-write finishes.
     public var priority: Int
+    /// Where an import starts: ahead of every background job, and level
+    /// with other imports, so they run in the order they were queued.
+    public static let queueJumpPriority = 1_000
     public var createdAt: Date
     public var startedAt: Date?
     public var finishedAt: Date?

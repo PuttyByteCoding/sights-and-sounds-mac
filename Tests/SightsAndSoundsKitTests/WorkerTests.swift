@@ -34,9 +34,15 @@ import Testing
             await runner.register(ThumbnailBatchJob.self)
         }
 
+        /// The import alone, off the lane: an import queues a hash job
+        /// for what it brought in, and the hashing here is each test's
+        /// own to run.
         func importAll() async throws {
-            _ = try await ImportJob.enqueue(on: runner, sourceID: source.id)
-            try await runner.runPending()
+            let job = ImportJob(
+                payload: .init(sourceID: source.id, relativePaths: nil), fileAccess: LiveFileAccess())
+            try await job.run(JobContext(
+                library: library, jobID: UUID(),
+                progressHandler: { _, _ in }, cancellationCheck: { false }, summaryHandler: { _ in }))
         }
 
         func tearDown() {
@@ -67,7 +73,9 @@ import Testing
 
         await f.runner.setPaused(false)
         let drained = try await f.runner.runPending()
-        #expect(drained == [job.id])
+        // The import, then the hash job it queued for what it brought in.
+        #expect(drained.first == job.id)
+        #expect(drained.count == 2)
         let done = try await f.library.writer.read { try JobRecord.fetchOne($0, key: job.id)! }
         #expect(done.state == .succeeded)
     }

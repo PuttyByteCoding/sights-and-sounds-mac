@@ -9,6 +9,11 @@ public protocol Job: Sendable {
     /// kind; queued rows outlive code.
     static var kind: String { get }
 
+    /// A job someone is waiting on in a window: it goes to the front of
+    /// the lane, ahead of background work, and a sweep that is running
+    /// steps aside for it between files. Imports; nothing else.
+    static var jumpsQueue: Bool { get }
+
     init(payload: Data?) throws
 
     func run(_ context: JobContext) async throws
@@ -18,6 +23,8 @@ public protocol Job: Sendable {
 }
 
 extension Job {
+    public static var jumpsQueue: Bool { false }
+
     public func cancelled(_ context: JobContext) async {}
 }
 
@@ -30,6 +37,11 @@ public struct JobContext: Sendable {
     let progressHandler: @Sendable (Int, Int?) async -> Void
     let cancellationCheck: @Sendable () async -> Bool
     let summaryHandler: @Sendable (String) async -> Void
+    /// Whether a queue-jumping job is waiting. Off without a runner.
+    var waitingCheck: @Sendable () async -> Bool = { false }
+    /// Queues another job on this library's lane. Without a runner, a
+    /// test's context, there is no lane and nothing is queued.
+    var enqueueHandler: @Sendable (any Job.Type, Data?) async throws -> Void = { _, _ in }
 
     /// Persist progress. Throttling is the job's concern (report at natural
     /// batch boundaries, not per byte).
@@ -48,11 +60,30 @@ public struct JobContext: Sendable {
         if await isCancelled { throw CancellationError() }
     }
 
+    /// Background work calls this between files. With an import waiting
+    /// it throws `SteppingAside`, and the runner puts this job back in
+    /// the queue, behind the import, to start again where the work
+    /// stands: a sweep decides its work per run, so what it finished
+    /// stays finished. Never between the halves of a write.
+    public func stepAsideIfAnImportIsWaiting() async throws {
+        if await waitingCheck() { throw SteppingAside() }
+    }
+
+    /// Queue a follow-up job on this library's lane, behind the jobs
+    /// already waiting; the runner starts it in its turn.
+    public func enqueue(_ type: any Job.Type, payload: Data? = nil) async throws {
+        try await enqueueHandler(type, payload)
+    }
+
     /// Record the job's one-line outcome ("38 new, 2 skipped").
     public func setSummary(_ text: String) async {
         await summaryHandler(text)
     }
 }
+
+/// Thrown by `stepAsideIfAnImportIsWaiting`: not a failure and not a
+/// cancel. The runner queues the job again.
+public struct SteppingAside: Error {}
 
 /// Thrown when a queued row names a kind no registered conformance claims.
 public struct UnknownJobKindError: Error, CustomStringConvertible {
