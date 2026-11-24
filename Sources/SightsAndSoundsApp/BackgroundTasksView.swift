@@ -799,8 +799,10 @@ enum JobNames {
         switch kind {
         case ImportJob.kind: "Import"
         case ContentHashJob.kind: "Content hashing"
+        case IntegrityCheckJob.kind: "Integrity check"
         case ThumbnailBatchJob.kind: "Thumbnail generation"
         case HashDuplicateSweepJob.kind: "Duplicate check (hashes)"
+        case LikelyDuplicateSweepJob.kind: "Duplicate check (names, sizes)"
         case FingerprintCaptureJob.kind: "Audio fingerprinting"
         case FingerprintMatchSweepJob.kind: "Duplicate check (fingerprints)"
         case ClipExportJob.kind: "Clip export"

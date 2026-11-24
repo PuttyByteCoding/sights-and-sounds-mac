@@ -286,7 +286,7 @@ public struct ImportJob: Job {
         /// queued behind any other import and run in its turn — never
         /// something the next import waits for.
         func queueHashing() async throws {
-            guard !insertedIDs.isEmpty else { return }
+            guard !insertedIDs.isEmpty, info?.hashesFiles == true else { return }
             try await ContentHashJob.enqueue(in: context, itemIDs: insertedIDs)
         }
     }

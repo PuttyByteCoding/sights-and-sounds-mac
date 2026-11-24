@@ -29,6 +29,7 @@ struct LibraryPropertiesView: View {
     @State private var statusIsError = false
     @State private var tab: Tab = .info
     @State private var separators = "-._"
+    @State private var hashesFiles = false
     @State private var newSeparator = ""
     @State private var newVideoExtension = ""
     @State private var newAudioExtension = ""
@@ -192,6 +193,16 @@ struct LibraryPropertiesView: View {
     @ViewBuilder
     private func configurationTab(_ snapshot: Snapshot) -> some View {
         VStack(alignment: .leading, spacing: 16) {
+            section("Content hashes") {
+                Toggle("Hash every file (MD5)", isOn: Binding(
+                    get: { hashesFiles },
+                    set: { saveHashesFiles($0) }))
+                    .font(Theme.ui(12.5))
+                Text("For files that cannot be replaced: each is read once, end to end, and its hash kept, so Background Tasks ▸ Sweeps ▸ Verify Integrity can later tell whether it has changed. Off, nothing is read for it — the better choice for files re-encoded before import. Turning it off keeps the hashes already stored.")
+                    .font(Theme.ui(10.5))
+                    .foregroundStyle(Theme.Text.meta)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             section("Name") {
                 HStack(spacing: 8) {
                     TextField("Name", text: $draftName)
@@ -431,6 +442,19 @@ struct LibraryPropertiesView: View {
         saveSeparators()
     }
 
+    private func saveHashesFiles(_ on: Bool) {
+        hashesFiles = on
+        Task {
+            do {
+                try await app.service(for: libraryID).setHashesFiles(on)
+                setStatus(on ? "Hashing on — files not hashed yet are queued." : "Hashing off.")
+            } catch {
+                hashesFiles = !on
+                setStatus("Could not change hashing: \(error)", error: true)
+            }
+        }
+    }
+
     private func saveSeparators() {
         let value = separators
         Task {
@@ -499,6 +523,7 @@ struct LibraryPropertiesView: View {
             snapshot = loaded
             draftName = loaded.info?.name ?? ""
             separators = loaded.info?.separatorCharacters ?? "-._"
+            hashesFiles = loaded.info?.hashesFiles ?? false
         } catch {
             errorText = "\(error)"
         }

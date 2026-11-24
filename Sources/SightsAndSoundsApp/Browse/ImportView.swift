@@ -1219,7 +1219,7 @@ private struct FinishedSheet: View {
                 .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Thumbnails and content hashes are queued as background jobs and will fill in on their own.")
+            Text("Thumbnails, and content hashes for a library that hashes its files, are queued as background jobs and will fill in on their own.")
                 .font(Theme.ui(11.5))
                 .foregroundStyle(Theme.Text.meta)
                 .fixedSize(horizontal: false, vertical: true)

@@ -41,6 +41,19 @@ public struct ContentHashJob: Job {
             ContentHashJob.self, payload: JSONEncoder().encode(Payload(itemIDs: itemIDs)))
     }
 
+    /// A whole file's MD5, lowercase hex, read on a thread of its own:
+    /// see Blocking. The hash stored here and the one Verify Integrity
+    /// checks it against are made by this one function.
+    static func md5(of url: URL, fileAccess: any FileAccess) async throws -> String {
+        try await Blocking.run { [fileAccess] in
+            var hasher = Insecure.MD5()
+            try fileAccess.readFile(at: url) { chunk in
+                hasher.update(data: chunk)
+            }
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
     public func run(_ context: JobContext) async throws {
         let library = context.library
 
@@ -82,13 +95,7 @@ public struct ContentHashJob: Job {
 
             do {
                 // A whole file, read on a thread of its own: see Blocking.
-                let digest = try await Blocking.run { [fileAccess] in
-                    var hasher = Insecure.MD5()
-                    try fileAccess.readFile(at: url) { chunk in
-                        hasher.update(data: chunk)
-                    }
-                    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-                }
+                let digest = try await Self.md5(of: url, fileAccess: fileAccess)
                 try await library.writer.write { db in
                     try db.execute(
                         sql: "UPDATE mediaItem SET contentHash = ? WHERE id = ?",

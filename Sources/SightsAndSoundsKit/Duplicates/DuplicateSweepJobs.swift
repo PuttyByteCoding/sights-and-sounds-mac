@@ -59,6 +59,59 @@ public struct HashDuplicateSweepJob: Job {
     }
 }
 
+/// Flags pairs whose names differ only by a copy marker, or whose byte
+/// size and running time agree (`LikelyDuplicateMatcher`). Reads the
+/// library only — no file is opened — so it is cheap enough to run with
+/// the hash check after every import. Existing rows of any status block
+/// re-flagging, as for the other sweeps. Files only, and never an item
+/// already on the delete list.
+public struct LikelyDuplicateSweepJob: Job {
+    public static let kind = "duplicates.likelySweep"
+
+    public init(payload: Data?) throws {}
+
+    public func run(_ context: JobContext) async throws {
+        let library = context.library
+        try await library.writer.write { try DuplicateCandidate.dropSweepPairsWithSegments($0) }
+        let files = try await library.read { db -> [LikelyDuplicateMatcher.File] in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, fileName, fileSize, durationSeconds FROM mediaItem \
+                WHERE parentMediaItemID IS NULL AND markedForDeletion = 0
+                """
+            ).map { row in
+                LikelyDuplicateMatcher.File(
+                    id: row["id"], fileName: row["fileName"],
+                    fileSize: row["fileSize"], durationSeconds: row["durationSeconds"])
+            }
+        }
+        try await context.checkCancellation()
+        let pairs = LikelyDuplicateMatcher.pairs(in: files)
+
+        var flagged = 0
+        for (index, pair) in pairs.enumerated() {
+            if index % 200 == 0 {
+                try await context.checkCancellation()
+                await context.reportProgress(current: index, total: pairs.count)
+            }
+            let candidate = DuplicateCandidate(
+                itemA: pair.a, itemB: pair.b, source: pair.source, confidence: pair.confidence)
+            let inserted = try await library.writer.write { db -> Bool in
+                do {
+                    try candidate.insert(db)
+                    return true
+                } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
+                    return false  // pair already known (any status)
+                }
+            }
+            if inserted { flagged += 1 }
+        }
+        await context.setSummary(
+            flagged == 0 ? "no new likely pairs" : "\(flagged) likely pairs flagged")
+    }
+}
+
 /// Computes missing audio fingerprints via an external Chromaprint tool
 /// (fpcalc). No tool installed is a *note*, not a failure — the sweep
 /// succeeds with a summary telling the user how to enable it.
@@ -272,7 +325,7 @@ extension DuplicateCandidate {
         try db.execute(
             sql: """
             DELETE FROM duplicateCandidate \
-            WHERE status = 'pending' AND source IN ('contentHash', 'fingerprint') \
+            WHERE status = 'pending' AND source IN ('contentHash', 'fingerprint', 'similarName', 'sizeAndLength') \
             AND (itemAID IN (SELECT id FROM mediaItem WHERE parentMediaItemID IS NOT NULL) \
               OR itemBID IN (SELECT id FROM mediaItem WHERE parentMediaItemID IS NOT NULL))
             """)

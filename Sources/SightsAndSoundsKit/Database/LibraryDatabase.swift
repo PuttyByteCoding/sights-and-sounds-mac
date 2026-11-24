@@ -1098,6 +1098,24 @@ public final class LibraryDatabase: Sendable {
             }
         }
 
+        // Hashing became a choice per library, off unless chosen (Home
+        // Videos chooses it), and a stored hash became something to check
+        // a file against: one row per item, its last integrity check.
+        // Existing libraries start off too; their stored hashes are kept.
+        migrator.registerMigration("perLibraryHashing") { db in
+            try db.alter(table: "libraryInfo") { t in
+                t.add(column: "hashesFiles", .boolean).notNull().defaults(to: false)
+            }
+            try db.create(table: "integrityCheck") { t in
+                t.primaryKey("mediaItemID", .blob)
+                    .references("mediaItem", onDelete: .cascade)
+                t.column("checkedAt", .datetime).notNull()
+                t.column("matched", .boolean).notNull()
+                t.column("actualHash", .text)
+                t.column("message", .text)
+            }
+        }
+
         return migrator
     }
 
@@ -1109,6 +1127,21 @@ public final class LibraryDatabase: Sendable {
             info.videoExtensionsOverride = video
             info.audioExtensionsOverride = audio
             try info.update(db)
+        }
+    }
+
+    /// Whether this library hashes its files (`LibraryInfo.hashesFiles`).
+    public func setHashesFiles(_ on: Bool) throws {
+        try writer.write { db in
+            try db.execute(sql: "UPDATE libraryInfo SET hashesFiles = ?", arguments: [on])
+        }
+    }
+
+    /// Whether this library hashes its files. A library with no identity
+    /// row yet does not.
+    public func hashesFiles() throws -> Bool {
+        try writer.read { db in
+            try Bool.fetchOne(db, sql: "SELECT hashesFiles FROM libraryInfo LIMIT 1") ?? false
         }
     }
 

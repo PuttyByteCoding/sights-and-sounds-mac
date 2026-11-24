@@ -138,6 +138,7 @@ public enum ServiceRequest: Codable, Equatable, Sendable {
     case renameLibrary(name: String)
     case setSeparatorCharacters(characters: String)
     case setExtensionOverrides(video: [String]?, audio: [String]?)
+    case setHashesFiles(on: Bool)
 
     // AnalysisManaging
     case itemAnalysis(itemID: UUID)
@@ -525,6 +526,9 @@ extension ServiceRequest {
             return nothing
         case .setSeparatorCharacters(let characters):
             try await service.setSeparatorCharacters(characters)
+            return nothing
+        case .setHashesFiles(let on):
+            try await service.setHashesFiles(on)
             return nothing
         case .setExtensionOverrides(let video, let audio):
             try await service.setExtensionOverrides(video: video, audio: audio)

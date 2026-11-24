@@ -18,5 +18,6 @@ enum ExpectedMigrations {
         "segmentLookupIndex", "moveJournal",
         "moveJournalRevertsAndSwaps", "searchIndex", "mediaSignal", "mediaSignalSeries",
         "foreignKeyIndexes", "validationFindingSource", "fileRewrites", "removedItems",
+        "perLibraryHashing",
     ]
 }

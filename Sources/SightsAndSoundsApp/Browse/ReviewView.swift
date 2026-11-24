@@ -298,6 +298,8 @@ struct ReviewView: View {
         case .manual: "manual"
         case .fingerprint: "fingerprint"
         case .contentHash: "identical file"
+        case .similarName: "similar name"
+        case .sizeAndLength: "same size and length"
         }
     }
 
@@ -1008,6 +1010,13 @@ private struct CompareView: View {
             lines.append("Fingerprint matching needs 25 seconds of audio; shorter files never appear here at all.")
         case .manual:
             lines.append("Flagged by hand.")
+        case .similarName:
+            lines.append("The names differ only by a copy marker such as \u{201C}copy\u{201D} or \u{201C}(1)\u{201D}.")
+            if itemA.fileSize == itemB.fileSize {
+                lines.append("Exactly the same size.")
+            }
+        case .sizeAndLength:
+            lines.append("Exactly the same size and running time, under different names.")
         }
         if let a = itemA.durationSeconds, let b = itemB.durationSeconds {
             lines.append(String(format: "Duration differs by %.1f s.", abs(a - b)))

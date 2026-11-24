@@ -294,6 +294,9 @@ final class StubLibraryService: LibraryService, @unchecked Sendable {
     func setSeparatorCharacters(_ characters: String) async throws {
         try await run { try await base.setSeparatorCharacters(characters) }
     }
+    func setHashesFiles(_ on: Bool) async throws {
+        try await run { try await base.setHashesFiles(on) }
+    }
     func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
         try await run { try await base.setExtensionOverrides(video: video, audio: audio) }
     }

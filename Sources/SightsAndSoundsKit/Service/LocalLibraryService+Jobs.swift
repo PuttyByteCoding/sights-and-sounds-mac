@@ -60,16 +60,28 @@ extension LocalLibraryService {
     /// so the list here is only which workers there are.
     public func wakeWorkers() async throws {
         guard let runner else { throw ServiceError.noJobRunner }
-        _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+        // Hashing is the library's choice: a library that does not hash
+        // never has its files read end to end for it.
+        if try library.hashesFiles() {
+            _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+        }
         if let libraryID = try library.info()?.libraryID {
             _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID)
         }
-        // Duplicates ride the same signal: hash pairs after hashing,
-        // fingerprints after capture. The fingerprint match is not woken
-        // here: it compares every fingerprint with every other, so it
-        // runs only when Duplicate Check is started by hand.
+        // Duplicates ride the same signal: hash pairs after hashing, and
+        // the name/size/length check, which reads only the library. The
+        // fingerprint match is never woken here: it compares every
+        // fingerprint with every other, so it runs only when Duplicate
+        // Check is started by hand. Capture is woken only while
+        // fingerprint matching is on in Settings.
+        let settings = AppSettingsStore.shared.current
         _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
-        _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
+        if settings.likelyDuplicateMatching {
+            _ = try await runner.enqueueUnlessPending(LikelyDuplicateSweepJob.self)
+        }
+        if settings.fingerprintMatching {
+            _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
+        }
         await runner.startDraining()
     }
 

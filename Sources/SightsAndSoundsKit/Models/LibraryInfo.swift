@@ -36,13 +36,24 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
     /// its parts name categories.
     public var searchRecipe: String?
 
+    /// Whether this library keeps a content hash (MD5) of every file.
+    /// Off by default: hashing reads each file end to end, which on a
+    /// network volume is the costliest thing an import queues, and a
+    /// library whose files are re-encoded before import gains nothing
+    /// from it. On for a library of files that cannot be replaced (Home
+    /// Videos), where the stored hash is what Verify Integrity checks
+    /// the file against later. Turning it off keeps the hashes already
+    /// stored.
+    public var hashesFiles: Bool
+
     public init(
         libraryID: UUID = UUID(), name: String, createdAt: Date = Date(),
         videoExtensionsOverride: [String]? = nil,
         audioExtensionsOverride: [String]? = nil,
         importBoxes: String? = nil,
         separatorCharacters: String = "-._",
-        searchRecipe: String? = nil
+        searchRecipe: String? = nil,
+        hashesFiles: Bool = false
     ) {
         self.id = 1
         self.libraryID = libraryID
@@ -53,6 +64,7 @@ public struct LibraryInfo: Codable, Equatable, Sendable, FetchableRecord, Persis
         self.importBoxes = importBoxes
         self.separatorCharacters = separatorCharacters
         self.searchRecipe = searchRecipe
+        self.hashesFiles = hashesFiles
     }
 
     /// The effective import sets for this library.

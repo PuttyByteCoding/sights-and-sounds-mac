@@ -21,6 +21,11 @@ public protocol PropertiesManaging: Sendable {
     /// The extensions this library takes as video and as audio, in
     /// place of the app's own; nil for either goes back to the app's.
     func setExtensionOverrides(video: [String]?, audio: [String]?) async throws
+
+    /// Whether the library hashes its files. Turned on, the files not
+    /// hashed yet are queued for hashing; turned off, nothing more is
+    /// hashed and the hashes already stored are kept.
+    func setHashesFiles(_ on: Bool) async throws
 }
 
 public struct LibraryProperties: Codable, Equatable, Sendable {
@@ -146,5 +151,12 @@ extension LocalLibraryService {
 
     public func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
         try library.setExtensionOverrides(video: video, audio: audio)
+    }
+
+    public func setHashesFiles(_ on: Bool) async throws {
+        try library.setHashesFiles(on)
+        guard on, let runner else { return }
+        _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+        await runner.startDraining()
     }
 }

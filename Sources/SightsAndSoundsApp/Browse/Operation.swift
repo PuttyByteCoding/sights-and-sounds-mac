@@ -261,13 +261,13 @@ enum Operation: String, CaseIterable {
     func command(preset: EncodeJob.Preset, mode: RemuxJob.Mode) -> String {
         switch self {
         case .optimize:
-            "ffmpeg -i {in} -c copy -movflags +faststart {out}"
+            // What runs is AVFoundation's passthrough export, not ffmpeg.
+            "AVFoundation passthrough export · optimized for network use (index moved to the front)"
         case .repair:
             "ffmpeg -i {in} -c copy {out}"
         case .encode:
-            preset == .h264
-                ? "ffmpeg -i {in} -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac {out}"
-                : "ffmpeg -i {in} -c:v libx265 -preset medium -crf 22 -tag:v hvc1 -c:a aac {out}"
+            // Made from the arguments the job passes, so the two agree.
+            (["ffmpeg -i {in}"] + preset.ffmpegArguments + ["{out}"]).joined(separator: " ")
         case .join:
             "ffmpeg -f concat -safe 0 -i parts.txt -c copy {out}"
         case .clipExport:

@@ -31,10 +31,28 @@ public struct EncodeJob: Job {
         var videoArguments: [String] {
             switch self {
             case .h264:
-                ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"]
+                ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-profile:v", "high",
+                 "-pix_fmt", "yuv420p"] + Self.keyframeArguments
             case .hevc:
                 ["-c:v", "libx265", "-preset", "medium", "-crf", "22", "-tag:v", "hvc1"]
+                    + Self.keyframeArguments
             }
+        }
+
+        /// A keyframe every two seconds, whatever the frame rate. The
+        /// encoders' default is one per 250 frames (eight to ten seconds),
+        /// and a seek, a skip, a clip's in-point or a scrub lands on the
+        /// keyframe before it and decodes forward from there: over a
+        /// network share that is seconds of video read before the frame
+        /// asked for appears. Two seconds costs a few percent in size.
+        static let keyframeArguments = ["-force_key_frames", "expr:gte(t,n_forced*2)"]
+
+        /// Everything after the input: video, audio and container. The
+        /// container line is the ported one — AAC 192k, and the index at
+        /// the front (`+faststart`) so playback over a network can start
+        /// without first reading the end of the file.
+        public var ffmpegArguments: [String] {
+            videoArguments + ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
         }
     }
 
@@ -89,12 +107,9 @@ public struct EncodeJob: Job {
             at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         await context.reportProgress(current: 0, total: 1)
-        // Ported audio/container line: aac 192k, faststart.
         try await FfmpegTool.produce(
             outputURL,
-            arguments: ["-i", fileURL.path]
-                + payload.preset.videoArguments
-                + ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"],
+            arguments: ["-i", fileURL.path] + payload.preset.ffmpegArguments,
             tool: tool, fileAccess: fileAccess, isCancelled: { await context.isCancelled })
 
         let probe = await MediaProbe.probe(url: outputURL)

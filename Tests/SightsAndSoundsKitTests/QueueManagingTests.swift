@@ -88,7 +88,10 @@ import Testing
             try await f.service.startSweep(kind, after: .nothing)
             try await f.service.startSweep(kind, after: .nothing)
         }
-        #expect(try f.kinds(.queued) == SweepKind.allCases.flatMap(\.jobKinds).sorted())
+        // The fingerprint match is the one job left out: fingerprint
+        // matching is off by default (Settings ▸ Jobs).
+        #expect(try f.kinds(.queued) == SweepKind.allCases.flatMap(\.jobKinds)
+            .filter { $0 != FingerprintMatchSweepJob.kind }.sorted())
         #expect(SweepKind.allCases.filter { !$0.canRetry } == [.duplicates])
         #expect(SweepKind.allCases.filter { !$0.canRecalculate } == [.duplicates])
     }
@@ -98,6 +101,7 @@ import Testing
         let statuses = try await f.service.sweepStatuses()
         #expect(statuses[.contentHash] == (try f.library.contentHashStatus()))
         #expect(statuses[.fingerprint] == (try f.library.fingerprintStatus()))
+        #expect(statuses[.integrity] == (try f.library.integrityStatus()))
         #expect(statuses[.metadata] == (try f.library.metadataSweepStatus()))
         #expect(statuses[.signal] == (try f.library.signalStatus()))
         #expect(statuses[.thumbnails] != nil && statuses[.duplicates] == nil)
@@ -122,7 +126,9 @@ import Testing
         // Nothing to forget for the duplicate check, whatever is asked.
         try await f.service.startSweep(.duplicates, after: .forgetEverything)
         #expect(try f.kinds(.queued).contains(HashDuplicateSweepJob.kind))
-        // Started by hand is the only way the fingerprint match runs.
-        #expect(try f.kinds(.queued).contains(FingerprintMatchSweepJob.kind))
+        #expect(try f.kinds(.queued).contains(LikelyDuplicateSweepJob.kind))
+        // Fingerprint matching is off by default, so even started by hand
+        // the duplicate check leaves the match out.
+        #expect(try !f.kinds(.queued).contains(FingerprintMatchSweepJob.kind))
     }
 }

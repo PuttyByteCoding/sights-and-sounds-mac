@@ -13,11 +13,19 @@ public struct LibraryPlan: Sendable, Equatable, Codable {
     public var categories: [PlannedCategory]
     /// Media-item-scope fields (tag-scope fields live on their category).
     public var itemFields: [PlannedItemField]
+    /// Whether the new library hashes its files (`LibraryInfo.hashesFiles`).
+    /// Optional so a vocabulary file written before it existed still
+    /// reads; nil is off.
+    public var hashesFiles: Bool?
 
-    public init(name: String, categories: [PlannedCategory] = [], itemFields: [PlannedItemField] = []) {
+    public init(
+        name: String, categories: [PlannedCategory] = [], itemFields: [PlannedItemField] = [],
+        hashesFiles: Bool? = nil
+    ) {
         self.name = name
         self.categories = categories
         self.itemFields = itemFields
+        self.hashesFiles = hashesFiles
     }
 
     /// Problems that would make the plan unwritable. Empty means valid.

@@ -53,7 +53,7 @@ public struct JobLane: Codable, Equatable, Sendable {
 
 /// The data the library derives from its files, one sweep for each.
 public enum SweepKind: String, Codable, CaseIterable, Sendable, Identifiable {
-    case contentHash, fingerprint, metadata, signal, thumbnails, duplicates
+    case contentHash, integrity, fingerprint, metadata, signal, thumbnails, duplicates
 
     public var id: String { rawValue }
 
@@ -61,11 +61,13 @@ public enum SweepKind: String, Codable, CaseIterable, Sendable, Identifiable {
     public var jobKinds: [String] {
         switch self {
         case .contentHash: [ContentHashJob.kind]
+        case .integrity: [IntegrityCheckJob.kind]
         case .fingerprint: [FingerprintCaptureJob.kind]
         case .metadata: [MetadataSweepJob.kind]
         case .signal: [MediaSignalJob.kind]
         case .thumbnails: [ThumbnailBatchJob.kind]
-        case .duplicates: [HashDuplicateSweepJob.kind, FingerprintMatchSweepJob.kind]
+        case .duplicates:
+            [HashDuplicateSweepJob.kind, LikelyDuplicateSweepJob.kind, FingerprintMatchSweepJob.kind]
         }
     }
 
@@ -121,6 +123,7 @@ extension LocalLibraryService {
         // without one, and the others still say theirs.
         var statuses: [SweepKind: SweepStatus] = [:]
         statuses[.contentHash] = try? library.contentHashStatus()
+        statuses[.integrity] = try? library.integrityStatus()
         statuses[.fingerprint] = try? library.fingerprintStatus()
         statuses[.metadata] = try? library.metadataSweepStatus()
         statuses[.signal] = try? library.signalStatus()
@@ -133,14 +136,22 @@ extension LocalLibraryService {
     public func startSweep(_ kind: SweepKind, after preparation: SweepPreparation) async throws {
         let runner = try queue()
         let libraryID = try library.info()?.libraryID
+        // A sweep started here is asked for by hand, so it runs whatever
+        // the library's hashing choice or the fingerprint setting: those
+        // decide only what is queued without asking (after an import, on
+        // a mount). The one exception is the fingerprint MATCH inside the
+        // duplicate check, which runs only while matching is on.
+        let settings = AppSettingsStore.shared.current
         switch (preparation, kind) {
         case (.nothing, _), (_, .duplicates): break
         case (.forgetFailures, .contentHash): try library.retryContentHashFailures()
+        case (.forgetFailures, .integrity): try library.retryIntegrityFailures()
         case (.forgetFailures, .fingerprint): try library.retryFingerprintFailures()
         case (.forgetFailures, .metadata): try library.retryMetadataSweepFailures()
         case (.forgetFailures, .signal): try library.retrySignalFailures()
         case (.forgetFailures, .thumbnails): try library.retryThumbnailFailures()
         case (.forgetEverything, .contentHash): try library.resetContentHashes()
+        case (.forgetEverything, .integrity): try library.resetIntegrityChecks()
         case (.forgetEverything, .fingerprint): try library.resetFingerprints()
         case (.forgetEverything, .metadata): try library.resetMetadataSweepAll()
         case (.forgetEverything, .signal): try library.resetSignalFindings()
@@ -149,6 +160,7 @@ extension LocalLibraryService {
         }
         switch kind {
         case .contentHash: _ = try await runner.enqueueUnlessPending(ContentHashJob.self)
+        case .integrity: _ = try await runner.enqueueUnlessPending(IntegrityCheckJob.self)
         case .fingerprint: _ = try await runner.enqueueUnlessPending(FingerprintCaptureJob.self)
         case .metadata: _ = try await runner.enqueueUnlessPending(MetadataSweepJob.self)
         case .signal: _ = try await runner.enqueueUnlessPending(MediaSignalJob.self)
@@ -156,7 +168,12 @@ extension LocalLibraryService {
             if let libraryID { _ = try await ThumbnailBatchJob.enqueueUnlessPending(on: runner, libraryID: libraryID) }
         case .duplicates:
             _ = try await runner.enqueueUnlessPending(HashDuplicateSweepJob.self)
-            _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
+            if settings.likelyDuplicateMatching {
+                _ = try await runner.enqueueUnlessPending(LikelyDuplicateSweepJob.self)
+            }
+            if settings.fingerprintMatching {
+                _ = try await runner.enqueueUnlessPending(FingerprintMatchSweepJob.self)
+            }
         }
         await runner.startDraining()
     }

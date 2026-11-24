@@ -75,6 +75,7 @@ public enum LibraryCreator {
         _ library: LibraryDatabase, plan: LibraryPlan, firstSource: Source?, registerIn app: AppDatabase?
     ) throws {
         try library.ensureInfo(name: plan.name)
+        if plan.hashesFiles == true { try library.setHashesFiles(true) }
 
         try library.writer.write { db in
             // The colour is dealt in plan order, so a new library's

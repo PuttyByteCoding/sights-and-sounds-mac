@@ -783,9 +783,10 @@ import Testing
         let woken = try await rig.library.writer.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT kind) FROM job WHERE state = 'queued'") ?? 0
         }
-        // Hashes, thumbnails, hash pairs and fingerprint capture: the
-        // fingerprint match runs only when started by hand.
-        #expect(woken == 4)
+        // Thumbnails, hash pairs and name/size pairs. Hashing is off for
+        // a library until chosen, and fingerprint capture until turned on
+        // in Settings; the match runs only when started by hand.
+        #expect(woken == 3)
 
         try await remote.enableExtension("xyz")
         let after = try await remote.importOverview()
@@ -840,7 +841,10 @@ import Testing
         #expect(lane == directLane)
         #expect(lane.isPaused == true)
         let queued = lane.jobs.map(\.kind).sorted()
-        #expect(queued == (SweepKind.contentHash.jobKinds + SweepKind.duplicates.jobKinds).sorted())
+        // Fingerprint matching is off by default: the duplicate check
+        // leaves the match out.
+        #expect(queued == (SweepKind.contentHash.jobKinds + SweepKind.duplicates.jobKinds)
+            .filter { $0 != FingerprintMatchSweepJob.kind }.sorted())
 
         let hash = try #require(lane.jobs.first { $0.kind == SweepKind.contentHash.jobKinds[0] })
         try await remote.moveJobToFront(id: hash.id)
@@ -904,6 +908,12 @@ import Testing
         #expect(!ServiceRequest.renameLibrary(name: "x").onlyReads)
         #expect(!ServiceRequest.setSeparatorCharacters(characters: "x").onlyReads)
         #expect(!ServiceRequest.setExtensionOverrides(video: nil, audio: nil).onlyReads)
+
+        // Hashing is the library's own choice, made from another Mac too.
+        #expect(try !rig.library.hashesFiles())
+        try await remote.setHashesFiles(true)
+        #expect(try rig.library.hashesFiles())
+        #expect(!ServiceRequest.setHashesFiles(on: true).onlyReads)
     }
 
     /// Tag Analysis, from another Mac: the video is read on the host,

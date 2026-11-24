@@ -198,6 +198,8 @@ import Testing
     /// often it is said, on the Mac that has the files. The fingerprint
     /// match compares every fingerprint with every other, so it is not
     /// one of them: it runs when Duplicate Check is started by hand.
+    /// Hashing is the library's choice and fingerprint capture the app's,
+    /// both off by default.
     @Test func wakingTheWorkersQueuesEachOnce() async throws {
         let f = try await Fixture(paused: true)
         defer { f.tearDown() }
@@ -205,9 +207,13 @@ import Testing
         try await f.service.wakeWorkers()
         let kinds = try await f.library.writer.read { try JobRecord.fetchAll($0) }.map(\.kind).sorted()
         #expect(kinds == [
-            ContentHashJob.kind, FingerprintCaptureJob.kind,
-            HashDuplicateSweepJob.kind, ThumbnailBatchJob.kind,
+            HashDuplicateSweepJob.kind, LikelyDuplicateSweepJob.kind, ThumbnailBatchJob.kind,
         ].sorted())
+        // A library that hashes has its hashing woken too.
+        try f.library.setHashesFiles(true)
+        try await f.service.wakeWorkers()
+        let woken = try await f.library.writer.read { try JobRecord.fetchAll($0) }.map(\.kind)
+        #expect(woken.filter { $0 == ContentHashJob.kind }.count == 1)
         let jobless = LocalLibraryService(library: f.library)
         await #expect(throws: ServiceError.noJobRunner) { try await jobless.wakeWorkers() }
     }

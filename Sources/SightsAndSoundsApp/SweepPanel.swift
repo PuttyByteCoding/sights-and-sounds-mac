@@ -74,7 +74,9 @@ struct SweepPanel: View {
                 if let kind = confirmRecalc { recalculate(kind) }
             }
         } message: {
-            Text("Every item's stored data for this kind is forgotten, then the sweep rebuilds it. Nothing else is touched.")
+            Text(confirmRecalc == .contentHash
+                ? "Every stored hash is forgotten and made again from the files as they are now — including any that have changed, so damage found later can no longer be told apart. To check the files against the hashes you have, use Verify Integrity instead."
+                : "Every item's stored data for this kind is forgotten, then the sweep rebuilds it. Nothing else is touched.")
         }
     }
 
@@ -246,6 +248,7 @@ extension SweepKind {
     var title: String {
         switch self {
         case .contentHash: "Content Hashes (MD5)"
+        case .integrity: "Verify Integrity"
         case .fingerprint: "Audio Fingerprints"
         case .metadata: "Embedded Metadata"
         case .signal: "Media Signal"
@@ -256,12 +259,15 @@ extension SweepKind {
 
     var detail: String {
         switch self {
-        case .contentHash: "Identity hash per file — duplicates and the migration boundary key off it."
-        case .fingerprint: "Acoustic fingerprints for near-duplicate matching."
+        case .contentHash: "An MD5 per file. Queued after imports only for a library that hashes (Library Properties); Verify here hashes any library. Recalculating replaces the reference hashes Verify Integrity checks against."
+        case .integrity: "Hashes each file again and compares it with its stored hash. Verify checks files never checked; Recalculate All reads every hashed file again."
+        case .fingerprint: AppSettingsStore.shared.current.fingerprintMatching
+            ? "Acoustic fingerprints for near-duplicate matching."
+            : "Matching is off in Settings ▸ Jobs: nothing is fingerprinted unless started here."
         case .metadata: "The ffprobe pairs Tag Analysis mines."
         case .signal: "What each file declares about its encoding, and how its frames are really timed."
         case .thumbnails: "The grid's stills. A file with no frame to show is skipped until retried."
-        case .duplicates: "Pairs flagged from hashes and fingerprints. Hash pairs are checked after each import; fingerprint matching runs only when started here. Rejected pairs stay rejected, so there is nothing to recalculate."
+        case .duplicates: "Pairs flagged from identical hashes, copy-style names, and matching size and length, checked after each import. Fingerprint matching, when on in Settings, runs only when started here. Rejected pairs stay rejected, so there is nothing to recalculate."
         }
     }
 }

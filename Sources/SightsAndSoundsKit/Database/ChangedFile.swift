@@ -78,6 +78,9 @@ extension LibraryDatabase {
             arguments: [itemID])
         try db.execute(sql: "UPDATE mediaItem SET contentHash = NULL WHERE id = ?", arguments: [itemID])
         try db.execute(sql: "DELETE FROM contentHashFailure WHERE mediaItemID = ?", arguments: [itemID])
+        // The check was against the old bytes' hash, which is gone: this
+        // app changed the file, so a new hash is the new reference.
+        try db.execute(sql: "DELETE FROM integrityCheck WHERE mediaItemID = ?", arguments: [itemID])
         try db.execute(sql: "DELETE FROM metadataSweepState WHERE mediaItemID = ?", arguments: [itemID])
         try db.execute(
             sql: """

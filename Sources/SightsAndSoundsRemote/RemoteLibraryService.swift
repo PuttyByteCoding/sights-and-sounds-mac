@@ -553,6 +553,9 @@ public final class RemoteLibraryService: LibraryService, @unchecked Sendable {
     public func setExtensionOverrides(video: [String]?, audio: [String]?) async throws {
         try await tell(.setExtensionOverrides(video: video, audio: audio))
     }
+    public func setHashesFiles(_ on: Bool) async throws {
+        try await tell(.setHashesFiles(on: on))
+    }
 
     // MARK: AnalysisManaging
 

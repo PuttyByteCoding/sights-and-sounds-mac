@@ -8,8 +8,8 @@ import Foundation
 /// the Kit declares.
 public enum JobCatalog {
     public static let all: [any Job.Type] = [
-        ImportJob.self, ContentHashJob.self, ThumbnailBatchJob.self,
-        HashDuplicateSweepJob.self, FingerprintCaptureJob.self,
+        ImportJob.self, ContentHashJob.self, IntegrityCheckJob.self, ThumbnailBatchJob.self,
+        HashDuplicateSweepJob.self, LikelyDuplicateSweepJob.self, FingerprintCaptureJob.self,
         FingerprintMatchSweepJob.self, ClipExportJob.self, RemuxJob.self,
         EncodeJob.self, BlockRemovalJob.self, OcrJob.self, JoinJob.self,
         ReorganizeJob.self, WritebackJob.self, RestoreTagsJob.self, RemoveFromLibraryJob.self,

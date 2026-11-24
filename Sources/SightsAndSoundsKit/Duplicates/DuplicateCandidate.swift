@@ -22,6 +22,13 @@ public enum CandidateSource: String, Codable, Sendable, CaseIterable {
     case fingerprint
     /// Identical content hashes — byte-for-byte the same file.
     case contentHash
+    /// The names differ only by a copy marker — "Show copy.mp4",
+    /// "Show (1).mp4", "Show - Copy.mp4" beside "Show.mp4" — with the
+    /// confidence raised when the size and running time agree too.
+    case similarName
+    /// Different names, but the same byte size and the same running
+    /// time: read from the library alone, no file opened.
+    case sizeAndLength
 }
 
 public enum CandidateMatchKind: String, Codable, Sendable, CaseIterable {

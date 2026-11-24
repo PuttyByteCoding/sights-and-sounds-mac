@@ -127,6 +127,21 @@ public struct AppSettings: Codable, Sendable, Equatable {
     /// the search string.
     public var webSearchURL: String
 
+    /// Audio fingerprint capture and matching for the duplicate check.
+    /// Off by default: capture runs fpcalc over every file and the match
+    /// compares every fingerprint with every other, which is the heaviest
+    /// work the queue does, and its pairs were often wrong. Off, capture
+    /// is not queued after imports or mounts and Duplicate Check leaves
+    /// the match out; the Audio Fingerprints sweep still runs when
+    /// started by hand, and fingerprints already taken are kept.
+    public var fingerprintMatching: Bool
+
+    /// The cheap duplicate check: files whose names differ only by a
+    /// copy marker ("copy", "(1)", "- Copy"), or that share an exact byte
+    /// size and running time. Reads only the library, never a file, so it
+    /// is on by default.
+    public var likelyDuplicateMatching: Bool
+
     public static let defaultWebSearchURL = "https://duckduckgo.com/?q={query}"
 
     public static let defaultVideoExtensions = [
@@ -168,7 +183,9 @@ public struct AppSettings: Codable, Sendable, Equatable {
         analysisResultsFieldPosition: Int = 1,
         tagPanelRowOrder: [String] = [],
         firefoxProfilePath: String? = nil,
-        webSearchURL: String = AppSettings.defaultWebSearchURL
+        webSearchURL: String = AppSettings.defaultWebSearchURL,
+        fingerprintMatching: Bool = false,
+        likelyDuplicateMatching: Bool = true
     ) {
         self.backupDirectory = backupDirectory
         self.logDirectory = logDirectory
@@ -202,6 +219,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
         self.tagPanelRowOrder = tagPanelRowOrder
         self.firefoxProfilePath = firefoxProfilePath
         self.webSearchURL = webSearchURL
+        self.fingerprintMatching = fingerprintMatching
+        self.likelyDuplicateMatching = likelyDuplicateMatching
     }
 
     public init(from decoder: Decoder) throws {
@@ -273,6 +292,10 @@ public struct AppSettings: Codable, Sendable, Equatable {
         firefoxProfilePath = container.lenient(String.self, forKey: .firefoxProfilePath)
         webSearchURL = container.lenient(String.self, forKey: .webSearchURL)
             ?? defaults.webSearchURL
+        fingerprintMatching = container.lenient(Bool.self, forKey: .fingerprintMatching)
+            ?? defaults.fingerprintMatching
+        likelyDuplicateMatching = container.lenient(Bool.self, forKey: .likelyDuplicateMatching)
+            ?? defaults.likelyDuplicateMatching
     }
 }
 

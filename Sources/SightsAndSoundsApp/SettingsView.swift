@@ -505,10 +505,24 @@ private struct JobsSettingsPane: View {
     @State private var interval = AppSettingsStore.shared.current.ocrSampleIntervalSeconds
     @State private var budget = AppSettingsStore.shared.current.ocrBudgetSecondsPerRun
     @State private var ocr = AppSettingsStore.shared.current.ocr
+    @State private var fingerprintMatching = AppSettingsStore.shared.current.fingerprintMatching
+    @State private var likelyDuplicateMatching = AppSettingsStore.shared.current.likelyDuplicateMatching
 
     var body: some View {
         Form {
             ScopeHeader(scope: .app)
+            Section("Duplicate check") {
+                Toggle("Match names, sizes and running times", isOn: $likelyDuplicateMatching)
+                Text("Pairs \u{201C}Show.mp4\u{201D} with \u{201C}Show copy.mp4\u{201D}, \u{201C}Show (1).mp4\u{201D} or \u{201C}Show - Copy.mp4\u{201D}, and files of exactly the same size and length under different names. Reads only the library, never the files, and runs after each import.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("Audio fingerprint matching", isOn: $fingerprintMatching)
+                Text("Reads every file with fpcalc, then compares every fingerprint with every other: the heaviest work the queue does, and the most false matches. Off, nothing is fingerprinted after imports and Duplicate Check leaves the match out; fingerprints already taken are kept.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section("OCR text scanning") {
                 LabeledContent("Sample a frame every") {
                     TextField("seconds", value: $interval, format: .number)
@@ -549,6 +563,12 @@ private struct JobsSettingsPane: View {
         .onChange(of: interval) { AppSettingsStore.shared.update { $0.ocrSampleIntervalSeconds = interval } }
         .onChange(of: budget) { AppSettingsStore.shared.update { $0.ocrBudgetSecondsPerRun = budget } }
         .onChange(of: ocr) { AppSettingsStore.shared.update { $0.ocr = ocr } }
+        .onChange(of: fingerprintMatching) {
+            AppSettingsStore.shared.update { $0.fingerprintMatching = fingerprintMatching }
+        }
+        .onChange(of: likelyDuplicateMatching) {
+            AppSettingsStore.shared.update { $0.likelyDuplicateMatching = likelyDuplicateMatching }
+        }
     }
 }
 

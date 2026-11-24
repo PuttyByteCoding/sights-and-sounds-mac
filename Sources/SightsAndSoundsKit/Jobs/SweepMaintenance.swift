@@ -106,6 +106,8 @@ extension LibraryDatabase {
         try writer.write { db in
             try db.execute(sql: "UPDATE mediaItem SET contentHash = NULL")
             try ContentHashFailure.deleteAll(db)
+            // Each check compared a file with the hash just forgotten.
+            try db.execute(sql: "DELETE FROM integrityCheck")
         }
     }
 

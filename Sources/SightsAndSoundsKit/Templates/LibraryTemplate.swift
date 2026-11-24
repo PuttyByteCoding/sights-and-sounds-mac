@@ -131,6 +131,8 @@ public enum LibraryTemplate: String, CaseIterable, Sendable, Identifiable {
                 ])
 
         case .homeVideos:
+            // Footage nobody can shoot again: hashed, so Verify Integrity
+            // has something to check each file against.
             return LibraryPlan(
                 name: name,
                 categories: [
@@ -150,7 +152,8 @@ public enum LibraryTemplate: String, CaseIterable, Sendable, Identifiable {
                         allowMultiple: false,
                         sortOrder: 30,
                         writebackField: "LOCATION"),
-                ])
+                ],
+                hashesFiles: true)
         }
     }
 }

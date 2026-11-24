@@ -132,6 +132,7 @@ import Testing
         }
         let library = try LibraryDatabase.openInMemory()
         try library.ensureInfo(name: "Hash per import")
+        try library.setHashesFiles(true)
         let source = Source(name: "Root", rootPath: root.path)
         try await library.writer.write { [source] in try source.insert($0) }
         let runner = JobRunner(library: library, paused: true)
@@ -149,6 +150,29 @@ import Testing
             try String.fetchAll($0, sql: "SELECT relativePath FROM mediaItem WHERE contentHash IS NOT NULL ORDER BY relativePath")
         }
         #expect(hashed == ["set/a.m4a", "set/b.m4a"])
+    }
+
+    /// A library that does not hash — the default — queues no hashing
+    /// for what an import brings in.
+    @Test func anImportIntoALibraryThatDoesNotHashQueuesNoHashJob() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sas-import-nohash-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try DemoMediaFactory.writeAudio(to: root.appendingPathComponent("set/a.m4a"), seconds: 1, variant: 1)
+        let library = try LibraryDatabase.openInMemory()
+        try library.ensureInfo(name: "No hashing")
+        #expect(try !library.hashesFiles())
+        let source = Source(name: "Root", rootPath: root.path)
+        try await library.writer.write { [source] in try source.insert($0) }
+        let runner = JobRunner(library: library)
+        try await ImportJob.enqueue(on: runner, sourceID: source.id, relativePaths: ["set/a.m4a"])
+        try await runner.runPending()
+        let kinds = try await library.read { try JobRecord.fetchAll($0) }.map(\.kind)
+        #expect(kinds == [ImportJob.kind])
+        let hashed = try await library.read {
+            try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM mediaItem WHERE contentHash IS NOT NULL") ?? 0
+        }
+        #expect(hashed == 0)
     }
 
     /// An import that brought nothing in queues nothing.
